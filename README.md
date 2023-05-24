@@ -1,8 +1,8 @@
-# privateGPT-PLUS
+# localGPT
 
 This project was inspired by the original privateGPT (https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT. 
 
-In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT.
+In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. 
 
 Ask questions to your documents without an internet connection, using the power of LLMs. 100% private, no data leaves your execution environment at any point. You can ingest documents and ask questions without an internet connection!
 
@@ -28,6 +28,7 @@ This repo uses a [state of the union transcript](https://github.com/imartinez/pr
 ## Instructions for ingesting your own dataset
 
 Put any and all of your .txt, .pdf, or .csv files into the source_documents directory
+in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory. 
 
 Run the following command to ingest all the data.
 
@@ -45,7 +46,7 @@ Note: When you run this for the first time, it will download take time as it has
 In order to ask a question, run a command like:
 
 ```shell
-python privateGPTPLUS.py
+python localGPT.py
 ```
 
 And wait for the script to require your input. 
