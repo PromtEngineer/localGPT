@@ -16,18 +16,12 @@ In order to set your environment up to run the code here, first install all requ
 pip install -r requirements.txt
 ```
 
-Rename `example.env` to `.env` and edit the variables appropriately.
-```
-PERSIST_DIRECTORY: is the folder you want your vectorstore in
-
-```
-
 ## Test dataset
-This repo uses a [state of the union transcript](https://github.com/imartinez/privateGPT/blob/main/source_documents/state_of_the_union.txt) as an example.
+This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
 
 ## Instructions for ingesting your own dataset
 
-Put any and all of your .txt, .pdf, or .csv files into the source_documents directory
+Put any and all of your .txt, .pdf, or .csv files into the SOURCE_DOCUMENTS directory
 in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory. 
 
 Run the following command to ingest all the data.
@@ -36,9 +30,9 @@ Run the following command to ingest all the data.
 python ingest.py
 ```
 
-It will create a `db` folder containing the local vectorstore. Will take time, depending on the size of your documents.
+It will create an index containing the local vectorstore. Will take time, depending on the size of your documents.
 You can ingest as many documents as you want, and all will be accumulated in the local embeddings database. 
-If you want to start from an empty database, delete the `db` folder.
+If you want to start from an empty database, delete the `index`.
 
 Note: When you run this for the first time, it will download take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
 
@@ -87,4 +81,4 @@ To install a C++ compiler on Windows 10/11, follow these steps:
 4. Run the installer and select the "gcc" component.
 
 # Disclaimer
-This is a test project to validate the feasibility of a fully private solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. The models selection is not optimized for performance, but for privacy; but it is possible to use different models and vectorstores to improve performance.
+This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license. 
