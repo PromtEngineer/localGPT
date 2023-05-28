@@ -40,7 +40,7 @@ Note: When you run this for the first time, it will download take time as it has
 In order to ask a question, run a command like:
 
 ```shell
-python localGPT.py
+python run_localGPT.py
 ```
 
 And wait for the script to require your input. 
