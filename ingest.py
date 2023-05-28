@@ -22,9 +22,9 @@ def load_single_document(file_path: str) -> Document:
 
 def load_documents(source_dir: str) -> List[Document]:
     # Loads all documents from source documents directory
-    docs_path = f"/privateGPT/{source_dir}" # replace this with the absolute path of the source_documents folder
-    all_files = os.listdir(docs_path)
-    return [load_single_document(f"{docs_path}/{file_path}") for file_path in all_files if file_path[-4:] in ['.txt', '.pdf', '.csv'] ]
+    # docs_path = f"/privateGPT/{source_dir}" # replace this with the absolute path of the source_documents folder
+    all_files = os.listdir(source_dir)
+    return [load_single_document(f"{source_dir}/{file_path}") for file_path in all_files if file_path[-4:] in ['.txt', '.pdf', '.csv'] ]
 
 
 def main():

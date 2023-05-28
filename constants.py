@@ -6,7 +6,7 @@ from chromadb.config import Settings
 PERSIST_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 
 # Define the folder for storing database
-SOURCE_DIRECTORY = f"{PERSIST_DIRECTORY}/source_documents"
+SOURCE_DIRECTORY = f"{PERSIST_DIRECTORY}/SOURCE_DOCUMENTS"
 
 # Define the Chroma settings
 CHROMA_SETTINGS = Settings(
