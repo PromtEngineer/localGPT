@@ -1,16 +1,10 @@
-from dotenv import load_dotenv
 from langchain.chains import RetrievalQA
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
-import torch
-import transformers
+from constants import CHROMA_SETTINGS, SOURCE_DIRECTORY, PERSIST_DIRECTORY
 from transformers import LlamaTokenizer, LlamaForCausalLM, GenerationConfig, pipeline
-import os
-
-load_dotenv()
-persist_directory = os.environ.get('PERSIST_DIRECTORY')
 
 
 from constants import CHROMA_SETTINGS
@@ -51,7 +45,7 @@ def main():
     embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl",
                                                 model_kwargs={"device": "cuda"})
     # load the vectorstore
-    db = Chroma(persist_directory=persist_directory, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
+    db = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
     retriever = db.as_retriever()
     # Prepare the LLM
     callbacks = [StreamingStdOutCallbackHandler()]
@@ -75,6 +69,7 @@ def main():
         print(answer)
         
         # # Print the relevant sources used for the answer
+        print("________________________SOURCE DOCUMENTS________________________")
         for document in docs:
             print("\n> " + document.metadata["source"] + ":")
             print(document.page_content)
