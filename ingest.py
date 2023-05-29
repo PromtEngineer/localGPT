@@ -1,4 +1,5 @@
 import os
+import click
 from typing import List
 
 from langchain.document_loaders import TextLoader, PDFMinerLoader, CSVLoader
@@ -22,12 +23,18 @@ def load_single_document(file_path: str) -> Document:
 
 def load_documents(source_dir: str) -> List[Document]:
     # Loads all documents from source documents directory
-    # docs_path = f"/privateGPT/{source_dir}" # replace this with the absolute path of the source_documents folder
     all_files = os.listdir(source_dir)
     return [load_single_document(f"{source_dir}/{file_path}") for file_path in all_files if file_path[-4:] in ['.txt', '.pdf', '.csv'] ]
 
 
-def main():
+@click.command()
+@click.option('--device_type', default='gpu', help='device to run on, select gpu or cpu')
+def main(device_type, ):
+    # load the instructorEmbeddings
+    if device_type in ['cpu', 'CPU']:
+        device='cpu'
+    else:
+        device='cuda'
 
     # Load documents and split in chunks
     print(f"Loading documents from {SOURCE_DIRECTORY}")
@@ -39,7 +46,7 @@ def main():
 
     # Create embeddings
     embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl",
-                                                model_kwargs={"device": "cuda"})
+                                                model_kwargs={"device": device})
     
     db = Chroma.from_documents(texts, embeddings, persist_directory=PERSIST_DIRECTORY, client_settings=CHROMA_SETTINGS)
     db.persist()

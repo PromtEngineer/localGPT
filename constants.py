@@ -3,10 +3,12 @@ import os
 from chromadb.config import Settings
 
 # load_dotenv()
-PERSIST_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
+ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 
 # Define the folder for storing database
-SOURCE_DIRECTORY = f"{PERSIST_DIRECTORY}/SOURCE_DOCUMENTS"
+SOURCE_DIRECTORY = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
+
+PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/DB"
 
 # Define the Chroma settings
 CHROMA_SETTINGS = Settings(
