@@ -2,7 +2,7 @@
 
 This project was inspired by the original privateGPT (https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT. 
 
-In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. 
+In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. It also has CPU support if you do not have a GPU (see below for instruction). 
 
 Ask questions to your documents without an internet connection, using the power of LLMs. 100% private, no data leaves your execution environment at any point. You can ingest documents and ask questions without an internet connection!
 
@@ -54,6 +54,19 @@ Hit enter. Wait while the LLM model consumes the prompt and prepares the answer.
 Note: When you run this for the first time, it will need internet connection to download the vicuna-7B model. After that you can turn off your internet connection, and the script inference would still work. No data gets out of your local environment.
 
 Type `exit` to finish the script.
+
+# Run it on CPU
+By default, localGPT will use your GPU to run both the `ingest.py` and `run_localGPT.py` scripts. But if you do not have a GPU and want to run this on CPU, now you can do that (Warning: Its going to be slow!). You will need to use `--device_type cpu`flag with both scripts. 
+
+For Ingestion run the following: 
+```shell
+python ingest.py --device_type cpu
+```
+In order to ask a question, run a command like:
+
+```shell
+python run_localGPT.py --device_type cpu
+```
 
 # How does it work?
 Selecting the right local models and the power of `LangChain` you can run the entire pipeline locally, without any data leaving your environment, and with reasonable performance.
