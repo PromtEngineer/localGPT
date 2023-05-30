@@ -96,5 +96,32 @@ To install a C++ compiler on Windows 10/11, follow these steps:
 ### NVIDIA Driver's Issues:
 Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-ubuntu-22-04) to install NVIDIA Drivers. 
 
+
+### M1/M2 Macbook users:
+
+1- Follow this [page] (https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
+
+2- By following the page, here is an example of you may initiate in your terminal
+
+% xcode-select --install
+% conda install pytorch torchvision torchaudio -c pytorch-nightly
+% pip install chardet
+% pip install cchardet
+% pip uninstall charset_normalizer
+% pip install charset_normalizer
+% pip install pdfminer.six
+% pip install xformers
+
+3- Create a new "verifymps.py" in the same directory (localGPT) where you have all files and environment.
+
+import torch
+if torch.backends.mps.is_available():
+    mps_device = torch.device("mps")
+    x = torch.ones(1, device=mps_device)
+print (x)
+
+else:
+    print ("MPS device not found.")
+
 # Disclaimer
 This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license. 
