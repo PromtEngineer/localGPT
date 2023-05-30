@@ -8,8 +8,6 @@ from constants import (CHROMA_SETTINGS, PERSIST_DIRECTORY,
 from transformers import LlamaTokenizer, LlamaForCausalLM, pipeline
 import click
 
-from constants import CHROMA_SETTINGS
-
 def load_model():
     '''
     Select a model on huggingface. 
