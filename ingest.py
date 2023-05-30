@@ -6,7 +6,8 @@ from langchain.document_loaders import TextLoader, PDFMinerLoader, CSVLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain.docstore.document import Document
-from constants import CHROMA_SETTINGS, SOURCE_DIRECTORY, PERSIST_DIRECTORY
+from constants import (CHROMA_SETTINGS, SOURCE_DIRECTORY,
+                       PERSIST_DIRECTORY, INSTRUCT_EMBEDDING_MODEL_NAME)
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 
 
@@ -45,7 +46,8 @@ def main(device_type, ):
     print(f"Split into {len(texts)} chunks of text")
 
     # Create embeddings
-    embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl",
+    print(f"Loading InstructEmbeddings model {INSTRUCT_EMBEDDING_MODEL_NAME}")
+    embeddings = HuggingFaceInstructEmbeddings(model_name=INSTRUCT_EMBEDDING_MODEL_NAME,
                                                 model_kwargs={"device": device})
     
     db = Chroma.from_documents(texts, embeddings, persist_directory=PERSIST_DIRECTORY, client_settings=CHROMA_SETTINGS)

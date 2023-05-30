@@ -3,7 +3,8 @@ from langchain.chains import RetrievalQA
 from langchain.vectorstores import Chroma
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
-from constants import CHROMA_SETTINGS, PERSIST_DIRECTORY
+from constants import (CHROMA_SETTINGS, PERSIST_DIRECTORY,
+                       LLM_MODEL_NAME, INSTRUCT_EMBEDDING_MODEL_NAME)
 from transformers import LlamaTokenizer, LlamaForCausalLM, pipeline
 import click
 
@@ -15,7 +16,7 @@ def load_model():
     If you are running this for the first time, it will download a model for you. 
     subsequent runs will use the model from the disk. 
     '''
-    model_id = "TheBloke/vicuna-7B-1.1-HF"
+    model_id = LLM_MODEL_NAME
     tokenizer = LlamaTokenizer.from_pretrained(model_id)
 
     model = LlamaForCausalLM.from_pretrained(model_id,
@@ -49,8 +50,9 @@ def main(device_type, ):
         device='cuda'
 
     print(f"Running on: {device}")
-        
-    embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl",
+    
+    print(f"Loading InstructEmbeddings model {INSTRUCT_EMBEDDING_MODEL_NAME}")    
+    embeddings = HuggingFaceInstructEmbeddings(model_name=INSTRUCT_EMBEDDING_MODEL_NAME,
                                                 model_kwargs={"device": device})
     # load the vectorstore
     db = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
@@ -58,6 +60,7 @@ def main(device_type, ):
     # Prepare the LLM
     # callbacks = [StreamingStdOutCallbackHandler()]
     # load the LLM for generating Natural Language responses. 
+    print(f"Loading LLM model {LLM_MODEL_NAME}")
     llm = load_model()
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
     # Interactive questions and answers
