@@ -123,7 +123,15 @@ print (x)
 else:
     print ("MPS device not found.")
     
- 4- Find "instructor.py" and open it in VS Code to edit. Once you open "instructor.py" with VS Code, replace the code snippet that has "device_type" with the following codes:
+ 4- Find "instructor.py" and open it in VS Code to edit.
+ 
+ The "instructor.py" is probably embeded similar to this: file_path = "/System/Volumes/Data/Users/USERNAME/anaconda3/envs/LocalGPT/lib/python3.10/site-packages/InstructorEmbedding/instructor.py"
+ 
+ You can open the "instrictor.py" and then edit it using this code:
+ # Open the file in VSCode
+subprocess.run(["open", "-a", "Visual Studio Code", file_path])
+ 
+ Once you open "instructor.py" with VS Code, replace the code snippet that has "device_type" with the following codes:
  
          if device is None:
             device = self._target_device
