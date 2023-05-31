@@ -122,6 +122,26 @@ print (x)
 
 else:
     print ("MPS device not found.")
+    
+ 4- Find "instructor.py" and open it in VS Code to edit. Once you open "instructor.py" with VS Code, replace the code snippet that has "device_type" with the following codes:
+ 
+         if device is None:
+            device = self._target_device
+
+        # Replace the line: self.to(device)
+	
+        if device in ['cpu', 'CPU']:
+            device = torch.device('cpu')
+
+        elif device in ['mps', 'MPS']:
+            device = torch.device('mps')
+        
+        else:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        self.to(device)
+        
+
 
 # Disclaimer
 This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license. 
