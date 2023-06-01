@@ -1,7 +1,7 @@
 import os
 import click
 from typing import List
-
+from utils import xlxs_to_csv
 from langchain.document_loaders import TextLoader, PDFMinerLoader, CSVLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
@@ -24,8 +24,16 @@ def load_single_document(file_path: str) -> Document:
 def load_documents(source_dir: str) -> List[Document]:
     # Loads all documents from source documents directory
     all_files = os.listdir(source_dir)
-    return [load_single_document(f"{source_dir}/{file_path}") for file_path in all_files if
-            file_path[-4:] in ['.txt', '.pdf', '.csv']]
+    docs = []
+    for file_path in all_files:
+        if file_path[-4:] == 'xlsx':
+            for doc in xlxs_to_csv(f"{source_dir}/{file_path}"):
+                docs.append(load_single_document(doc))
+        elif file_path[-4:] in ['.txt', '.pdf', '.csv']:
+            docs.append(load_single_document(f"{source_dir}/{file_path}"))
+    return docs
+    # return [load_single_document(f"{source_dir}/{file_path}") for file_path in all_files if
+    #         file_path[-4:] in ['.txt', '.pdf', '.csv']]
 
 
 @click.command()
