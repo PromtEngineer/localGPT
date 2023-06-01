@@ -1,28 +1,28 @@
 # localGPT
 
-This project was inspired by the original privateGPT (https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT. 
+This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT. 
 
-In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. It also has CPU support if you do not have a GPU (see below for instruction). 
+In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. It also has CPU support if you do not have a GPU (see below for instructions). 
 
-Ask questions to your documents without an internet connection, using the power of LLMs. 100% private, no data leaves your execution environment at any point. You can ingest documents and ask questions without an internet connection!
+Ask questions to your documents without an internet connection, using the power of LLMs. 100% private, no data leaves your execution environment at any point.
 
-Built with [LangChain](https://github.com/hwchase17/langchain) and [Vicuna-7B](https://huggingface.co/TheBloke/vicuna-7B-1.1-HF) and [InstructorEmbeddings](https://instructor-embedding.github.io/)
+Built with [LangChain](https://github.com/hwchase17/langchain) and [Vicuna-7B](https://huggingface.co/TheBloke/vicuna-7B-1.1-HF) and [InstructorEmbeddings](https://instructor-embedding.github.io/).
 
 
 # Environment Setup
-In order to set your environment up to run the code here, first install all requirements:
+In order to set your environment up to run the code here, first install all requirements.
 
 ```shell
 pip install -r requirements.txt
 ```
 
 ## Test dataset
-This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
+This repo uses the [Constitution of USA](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
 
 ## Instructions for ingesting your own dataset
 
 Put any and all of your .txt, .pdf, or .csv files into the SOURCE_DOCUMENTS directory
-in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory. 
+in the load_documents() function and replace the docs_path with the absolute path of your source_documents directory. 
 
 Run the following command to ingest all the data.
 
@@ -30,14 +30,14 @@ Run the following command to ingest all the data.
 python ingest.py
 ```
 
-It will create an index containing the local vectorstore. Will take time, depending on the size of your documents.
+It will create an index containing the local vectorstore. It will take time, depending on the size of your documents.
 You can ingest as many documents as you want, and all will be accumulated in the local embeddings database. 
 If you want to start from an empty database, delete the `index`.
 
-Note: When you run this for the first time, it will download take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
+Note: When you run this for the first time, it will take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
 
 ## Ask questions to your documents, locally!
-In order to ask a question, run a command like:
+In order to ask a question, run `run_localGPT.py`.
 
 ```shell
 python run_localGPT.py
@@ -56,7 +56,7 @@ Note: When you run this for the first time, it will need internet connection to 
 Type `exit` to finish the script.
 
 # Run it on CPU
-By default, localGPT will use your GPU to run both the `ingest.py` and `run_localGPT.py` scripts. But if you do not have a GPU and want to run this on CPU, now you can do that (Warning: Its going to be slow!). You will need to use `--device_type cpu`flag with both scripts. 
+By default, localGPT will use your GPU to run both the `ingest.py` and `run_localGPT.py` scripts. But if you do not have a GPU and want to run this on CPU, now you can do that (**Warning: Its going to be slow!**). You will need to use `--device_type cpu` flag with both scripts. 
 
 For Ingestion run the following: 
 ```shell
@@ -81,7 +81,7 @@ Selecting the right local models and the power of `LangChain` you can run the en
 To use this software, you must have Python 3.10 or later installed. Earlier versions of Python will not compile.
 
 ## C++ Compiler
-If you encounter an error while building a wheel during the `pip install` process, you may need to install a C++ compiler on your computer.
+**If you encounter an error while building a wheel during the `pip install` process, you may need to install a C++ compiler on your computer.**
 
 ### For Windows 10/11
 To install a C++ compiler on Windows 10/11, follow these steps:
