@@ -34,7 +34,9 @@ It will create an index containing the local vectorstore. Will take time, depend
 You can ingest as many documents as you want, and all will be accumulated in the local embeddings database. 
 If you want to start from an empty database, delete the `index`.
 
-Note: When you run this for the first time, it will download take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
+Note: When you run this for the first time, it will take time as it has to download the embedding model. In the subsequent runs, no data will leave your local enviroment and can be run without internet connection.
+
+Pretrained models are downloaded and locally cached at: ```~/.cache/huggingface/hub```. This is the default directory given by the shell environment variable TRANSFORMERS_CACHE. On Windows, the default directory is given by ```C:\Users\username\.cache\huggingface\hub```. You can change the shell environment variable to specify a different cache directory. You can find more informations about it on the [Huggingface tranformers installation](https://huggingface.co/docs/transformers/installation#cache-setup) page.
 
 ## Ask questions to your documents, locally!
 In order to ask a question, run a command like:
