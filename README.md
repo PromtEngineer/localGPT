@@ -24,6 +24,9 @@ This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/fil
 Put any and all of your .txt, .pdf, or .csv files into the SOURCE_DOCUMENTS directory
 in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory. 
 
+The current default file types are .txt, .pdf, .csv, and .xlsx, if you want to use any other file type, you will need to convert it to one of the default file types.
+
+
 Run the following command to ingest all the data.
 
 ```shell
@@ -35,9 +38,6 @@ You can ingest as many documents as you want, and all will be accumulated in the
 If you want to start from an empty database, delete the `index`.
 
 Note: When you run this for the first time, it will download take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
-
-## ingesting your own custom dataset
-The current default file types are .txt, .pdf, .csv, and .xlsx, if you want to use any other file type, you will need to convert it to one of the default file types.
 
 
 
