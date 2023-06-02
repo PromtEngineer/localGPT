@@ -1,6 +1,6 @@
 # localGPT
 
-This project was inspired by the original privateGPT (https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT. 
+This project was inspired by the original [privateGPT] (https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT. 
 
 In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. It also has CPU support if you do not have a GPU (see below for instruction). 
 
