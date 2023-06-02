@@ -37,7 +37,7 @@ def load_documents(source_dir: str) -> List[Document]:
 
 
 @click.command()
-@click.option('--device_type', default='cpu', help='device to run on, select gpu or cpu')
+@click.option('--device_type', default='gpu', help='device to run on, select gpu or cpu')
 def main(device_type, ):
     # load the instructorEmbeddings
     if device_type in ['cpu', 'CPU']:
