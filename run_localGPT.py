@@ -53,7 +53,7 @@ def load_model():
  ## for M1/M2 users:
 
 @click.command()
-@click.option('--device_type', default='mps', help='device to run on, select gpu, cpu or mps')
+@click.option('--device_type', default='cuda', help='device to run on, select gpu, cpu or mps')
 def main(device_type, ):
     # load the instructorEmbeddings
     if device_type in ['cpu', 'CPU']:
