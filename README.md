@@ -135,8 +135,8 @@ pip install xformers
  	
 	file_path = "/System/Volumes/Data/Users/USERNAME/anaconda3/envs/LocalGPT/lib/python3.10/site-packages/InstructorEmbedding/instructor.py"
  
- You can open the "instrictor.py" and then edit it using this code:
- # Open the file in VSCode
+ You can open the `instructor.py` and then edit it using this code:
+ #### Open the file in VSCode
 	subprocess.run(["open", "-a", "Visual Studio Code", file_path])
  
  Once you open `instructor.py` with VS Code, replace the code snippet that has `device_type` with the following codes:
