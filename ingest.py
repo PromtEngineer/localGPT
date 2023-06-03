@@ -27,14 +27,27 @@ def load_documents(source_dir: str) -> List[Document]:
     return [load_single_document(f"{source_dir}/{file_path}") for file_path in all_files if file_path[-4:] in ['.txt', '.pdf', '.csv'] ]
 
 
+# @click.command()
+# @click.option('--device_type', default='gpu', help='device to run on, select gpu or cpu')
+# def main(device_type, ):
+#     # load the instructorEmbeddings
+#     if device_type in ['cpu', 'CPU']:
+#         device='cpu'
+#     else:
+#         device='cuda'
+
+
 @click.command()
-@click.option('--device_type', default='gpu', help='device to run on, select gpu or cpu')
+@click.option('--device_type', default='cuda', help='device to run on, select gpu, cpu or mps')
 def main(device_type, ):
     # load the instructorEmbeddings
     if device_type in ['cpu', 'CPU']:
         device='cpu'
+    elif device_type in ['mps', 'MPS']:
+        device='mps'
     else:
         device='cuda'
+        
 
     # Load documents and split in chunks
     print(f"Loading documents from {SOURCE_DIRECTORY}")

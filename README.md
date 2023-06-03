@@ -98,5 +98,60 @@ To install a C++ compiler on Windows 10/11, follow these steps:
 ### NVIDIA Driver's Issues:
 Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-ubuntu-22-04) to install NVIDIA Drivers. 
 
+
+### M1/M2 Macbook users:
+
+1- Follow this [page] (https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
+
+2- By following the page, here is an example of you may initiate in your terminal
+
+% xcode-select --install
+% conda install pytorch torchvision torchaudio -c pytorch-nightly
+% pip install chardet
+% pip install cchardet
+% pip uninstall charset_normalizer
+% pip install charset_normalizer
+% pip install pdfminer.six
+% pip install xformers
+
+3- Create a new "verifymps.py" in the same directory (localGPT) where you have all files and environment.
+
+import torch
+if torch.backends.mps.is_available():
+    mps_device = torch.device("mps")
+    x = torch.ones(1, device=mps_device)
+print (x)
+
+else:
+    print ("MPS device not found.")
+    
+ 4- Find "instructor.py" and open it in VS Code to edit.
+ 
+ The "instructor.py" is probably embeded similar to this: file_path = "/System/Volumes/Data/Users/USERNAME/anaconda3/envs/LocalGPT/lib/python3.10/site-packages/InstructorEmbedding/instructor.py"
+ 
+ You can open the "instrictor.py" and then edit it using this code:
+ # Open the file in VSCode
+subprocess.run(["open", "-a", "Visual Studio Code", file_path])
+ 
+ Once you open "instructor.py" with VS Code, replace the code snippet that has "device_type" with the following codes:
+ 
+         if device is None:
+            device = self._target_device
+
+        # Replace the line: self.to(device)
+	
+        if device in ['cpu', 'CPU']:
+            device = torch.device('cpu')
+
+        elif device in ['mps', 'MPS']:
+            device = torch.device('mps')
+        
+        else:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        self.to(device)
+        
+
+
 # Disclaimer
 This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license. 
