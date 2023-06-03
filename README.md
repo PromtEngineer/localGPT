@@ -2,6 +2,8 @@
 
 This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT. 
 
+For detailed overview of the project, Watch this [Youtube Video](https://youtu.be/MlyoObdIHyo). 
+
 In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. It also has CPU support if you do not have a GPU (see below for instruction). 
 
 Ask questions to your documents without an internet connection, using the power of LLMs. 100% private, no data leaves your execution environment at any point. You can ingest documents and ask questions without an internet connection!
@@ -129,7 +131,9 @@ pip install xformers
     
  4- Find `instructor.py` and open it in VS Code to edit.
  
- The `instructor.py` is probably embeded similar to this: file_path = "/System/Volumes/Data/Users/USERNAME/anaconda3/envs/LocalGPT/lib/python3.10/site-packages/InstructorEmbedding/instructor.py"
+ The `instructor.py` is probably embeded similar to this: 
+ 	
+	file_path = "/System/Volumes/Data/Users/USERNAME/anaconda3/envs/LocalGPT/lib/python3.10/site-packages/InstructorEmbedding/instructor.py"
  
  You can open the "instrictor.py" and then edit it using this code:
  # Open the file in VSCode
