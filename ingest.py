@@ -2,13 +2,12 @@ import os
 import click
 from typing import List
 
-from langchain.document_loaders import TextLoader, PDFMinerLoader, CSVLoader
+from langchain.document_loaders import TextLoader, PDFMinerLoader, CSVLoader, BSHTMLLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain.docstore.document import Document
 from constants import CHROMA_SETTINGS, SOURCE_DIRECTORY, PERSIST_DIRECTORY
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-
 
 def load_single_document(file_path: str) -> Document:
     # Loads a single document from a file path
@@ -18,13 +17,18 @@ def load_single_document(file_path: str) -> Document:
         loader = PDFMinerLoader(file_path)
     elif file_path.endswith(".csv"):
         loader = CSVLoader(file_path)
+    elif file_path.endswith(".html"):
+        print(f"Loading HTML file: {file_path}")
+        loader = BSHTMLLoader(file_path)
+    else:
+        raise ValueError(f'Unsupported file type: {file_path}')
     return loader.load()[0]
 
 
 def load_documents(source_dir: str) -> List[Document]:
     # Loads all documents from source documents directory
     all_files = os.listdir(source_dir)
-    return [load_single_document(f"{source_dir}/{file_path}") for file_path in all_files if file_path[-4:] in ['.txt', '.pdf', '.csv'] ]
+    return [load_single_document(f"{source_dir}/{file_path}") for file_path in all_files if os.path.splitext(file_path)[1].lower() in ['.txt', '.pdf', '.csv','.html'] ]
 
 
 @click.command()
