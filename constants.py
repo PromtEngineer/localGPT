@@ -1,6 +1,8 @@
 import os
+
 # from dotenv import load_dotenv
 from chromadb.config import Settings
+from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader
 
 # load_dotenv()
 ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
@@ -16,3 +18,9 @@ CHROMA_SETTINGS = Settings(
         persist_directory=PERSIST_DIRECTORY,
         anonymized_telemetry=False
 )
+
+DOCUMENT_MAP = {
+    ".txt": TextLoader,
+    ".pdf": PDFMinerLoader,
+    ".csv": CSVLoader,
+}
