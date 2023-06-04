@@ -66,4 +66,3 @@ def main(device_type):
 
 if __name__ == "__main__":
     main()
-    main()
