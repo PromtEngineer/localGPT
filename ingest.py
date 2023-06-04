@@ -8,8 +8,14 @@ from langchain.document_loaders import TextLoader, PDFMinerLoader, CSVLoader
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
-
+import time
 from constants import *  # CHROMA_SETTINGS, SOURCE_DIRECTORY, PERSIST_DIRECTORY
+
+
+def format_time(seconds):
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
 def load_single_document(file_path: str) -> Document:
@@ -34,13 +40,19 @@ def load_documents(source_dir: str) -> List[Document]:
 
 
 @click.command()
-@click.option('--device_type', default='gpu', help='device to run on, select gpu or cpu')
+#@click.option('--device_type', default='gpu', help='device to run on, select gpu or cpu')
+@click.option('--device_type', default='cpu', help='device to run on, select gpu or cpu')
 def main(device_type, ):
     """ load the instructorEmbeddings """
+    # Start the timer
+    start_time = time.time()
+
     if device_type.lower() in ['cpu']:
         device='cpu'
     else:
         device='cuda'
+
+    print(f"Running on: {device.upper()}")
 
     # Load documents and split in chunks
     print(f"Loading documents from {SOURCE_DIRECTORY}")
@@ -58,6 +70,14 @@ def main(device_type, ):
     db.persist()
     db = None
 
+    # Stop the timer
+    end_time = time.time()
+
+    # Calculate the elapsed time
+    elapsed_time = end_time - start_time
+
+    # Format and print the elapsed time
+    print("Done!\nExecution Time:", format_time(elapsed_time))
 
 
 if __name__ == "__main__":

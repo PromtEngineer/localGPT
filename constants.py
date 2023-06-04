@@ -10,7 +10,9 @@ SOURCE_DIRECTORY = os.path.join(ROOT_DIRECTORY, "SOURCE_DOCUMENTS")
 
 PERSIST_DIRECTORY = os.path.join(ROOT_DIRECTORY, "DB")
 
-MODEL_DIRECTORY = os.path.join(ROOT_DIRECTORY, "MODELS")
+MODEL_DIRECTORY = os.path.join("/home/wager/ai/models")
+VICUNA_DIRECTORY = os.path.join(MODEL_DIRECTORY, "vicuna-7B-1.1-HF")    # "TheBloke/vicuna-7B-1.1-HF"
+LOCAL_MODEL_NAME = os.path.join("ggml-vic7b-uncensored-q5_0.bin")
 
 # Define the Chroma settings
 CHROMA_SETTINGS = Settings(
@@ -22,8 +24,8 @@ CHROMA_SETTINGS = Settings(
 if __name__ == '__main__':
     print("ROOT_DIRECTORY:", ROOT_DIRECTORY)
     print("PERSIST_DIRECTORY:", PERSIST_DIRECTORY)
-    print("CHROMA_SETTINGS:", CHROMA_SETTINGS)
     print("MODEL_DIRECTORY:", MODEL_DIRECTORY)
+    print("VICUNA_DIRECTORY:", VICUNA_DIRECTORY)
 
 
 
