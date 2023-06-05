@@ -106,9 +106,9 @@ Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-
 
 ### M1/M2 Macbook users:
 
-1- Follow this [page](https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
+1. Follow this [page](https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
 
-2- By following the page, here is an example of you may initiate in your terminal
+2. By following the page, here is an example of you may initiate in your terminal
 
 ```shell
 xcode-select --install
@@ -122,7 +122,7 @@ pip install xformers
 ```
 
 
-3- Create a new `verifymps.py` in the same directory (localGPT) where you have all files and environment.
+3. Create a new `verifymps.py` in the same directory (localGPT) where you have all files and environment.
 
 	import torch
 	if torch.backends.mps.is_available():
@@ -132,7 +132,7 @@ pip install xformers
 	else:
 	    print ("MPS device not found.")
     
- 4- Find `instructor.py` and open it in VS Code to edit.
+ 4. Find `instructor.py` and open it in VS Code to edit.
  
  The `instructor.py` is probably embeded similar to this: 
  	
