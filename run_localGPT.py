@@ -1,13 +1,14 @@
+import click
 from langchain.chains import RetrievalQA
-# from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.vectorstores import Chroma
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
-from constants import CHROMA_SETTINGS, PERSIST_DIRECTORY
-from transformers import LlamaTokenizer, LlamaForCausalLM, pipeline
-import click
 
-from constants import CHROMA_SETTINGS
+# from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+from langchain.vectorstores import Chroma
+from transformers import LlamaForCausalLM, LlamaTokenizer, pipeline
+
+from constants import CHROMA_SETTINGS, PERSIST_DIRECTORY
+
 
 def load_model():
     '''
@@ -40,34 +41,18 @@ def load_model():
     return local_llm
 
 
-# @click.command()
-# @click.option('--device_type', default='gpu', help='device to run on, select gpu or cpu')
-# def main(device_type, ):
-#     # load the instructorEmbeddings
-#     if device_type in ['cpu', 'CPU']:
-#         device='cpu'
-#     else:
-#         device='cuda'
- 
-    
- ## for M1/M2 users:
-
 @click.command()
-@click.option('--device_type', default='cuda', help='device to run on, select gpu, cpu or mps')
-def main(device_type, ):
-    # load the instructorEmbeddings
-    if device_type in ['cpu', 'CPU']:
-        device='cpu'
-    elif device_type in ['mps', 'MPS']:
-        device='mps'
-    else:
-        device='cuda'
-        
-        
-    print(f"Running on: {device}")
+@click.option(
+    "--device_type",
+    default="cuda",
+    type=click.Choice(["cpu", "cuda", "ipu", "xpu", "mkldnn", "opengl", "opencl", "ideep", "hip", "ve", "fpga", "ort", "xla", "lazy", "vulkan", "mps", "meta", "hpu", "mtia"]),
+    help="Device to run on. (Default is cuda)",
+)
+def main(device_type):
+    print(f"Running on: {device_type}")
         
     embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl",
-                                                model_kwargs={"device": device})
+                                                model_kwargs={"device": device_type})
     # load the vectorstore
     db = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
     retriever = db.as_retriever()
