@@ -7,7 +7,8 @@ from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
-from constants import CHROMA_SETTINGS, DOCUMENT_MAP, PERSIST_DIRECTORY, SOURCE_DIRECTORY
+from constants import (CHROMA_SETTINGS, DOCUMENT_MAP, PERSIST_DIRECTORY,
+                       SOURCE_DIRECTORY)
 
 
 def load_single_document(file_path: str) -> Document:
@@ -21,22 +22,45 @@ def load_single_document(file_path: str) -> Document:
     return loader.load()[0]
 
 
-
 def load_documents(source_dir: str) -> List[Document]:
     # Loads all documents from the source documents directory
     all_files = os.listdir(source_dir)
-    return [
-        load_single_document(os.path.join(source_dir, file_path))
-        for file_path in all_files
-        if os.path.splitext(file_path)[1] in DOCUMENT_MAP.keys()
-    ]
+    docs = []
+    for file_path in all_files:
+        file_extension = os.path.splitext(file_path)[1]
+        source_file_path = os.path.join(source_dir, file_path)
+        if file_extension in DOCUMENT_MAP.keys():
+            docs.append(load_single_document(source_file_path))
+    return docs
 
 
 @click.command()
 @click.option(
     "--device_type",
     default="cuda",
-    type=click.Choice(["cpu", "cuda", "ipu", "xpu", "mkldnn", "opengl", "opencl", "ideep", "hip", "ve", "fpga", "ort", "xla", "lazy", "vulkan", "mps", "meta", "hpu", "mtia"]),
+    type=click.Choice(
+        [
+            "cpu",
+            "cuda",
+            "ipu",
+            "xpu",
+            "mkldnn",
+            "opengl",
+            "opencl",
+            "ideep",
+            "hip",
+            "ve",
+            "fpga",
+            "ort",
+            "xla",
+            "lazy",
+            "vulkan",
+            "mps",
+            "meta",
+            "hpu",
+            "mtia",
+        ]
+    ),
     help="Device to run on. (Default is cuda)",
 )
 def main(device_type):

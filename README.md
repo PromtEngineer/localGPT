@@ -26,6 +26,9 @@ This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/fil
 Put any and all of your .txt, .pdf, or .csv files into the SOURCE_DOCUMENTS directory
 in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory. 
 
+The current default file types are .txt, .pdf, .csv, and .xlsx, if you want to use any other file type, you will need to convert it to one of the default file types.
+
+
 Run the following command to ingest all the data.
 
 ```shell
@@ -48,9 +51,9 @@ It will create an index containing the local vectorstore. Will take time, depend
 You can ingest as many documents as you want, and all will be accumulated in the local embeddings database. 
 If you want to start from an empty database, delete the `index`.
 
-Note: When you run this for the first time, it will take time as it has to download the embedding model. In the subsequent runs, no data will leave your local enviroment and can be run without internet connection.
+Note: When you run this for the first time, it will download take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
 
-Pretrained models are downloaded and locally cached at: ```~/.cache/huggingface/hub```. This is the default directory given by the shell environment variable TRANSFORMERS_CACHE. On Windows, the default directory is given by ```C:\Users\username\.cache\huggingface\hub```. You can change the shell environment variable to specify a different cache directory. You can find more informations about it on the [Huggingface tranformers installation](https://huggingface.co/docs/transformers/installation#cache-setup) page.
+
 
 ## Ask questions to your documents, locally!
 In order to ask a question, run a command like:
