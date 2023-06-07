@@ -6,8 +6,11 @@ from langchain.llms import HuggingFacePipeline
 from constants import CHROMA_SETTINGS, PERSIST_DIRECTORY
 from transformers import LlamaTokenizer, LlamaForCausalLM, pipeline
 import click
+import os
 
 from constants import CHROMA_SETTINGS
+
+#os.environ['CUDA_VISIBLE_DEVICES']='1,2,3'
 
 
 def load_model():
@@ -16,7 +19,21 @@ def load_model():
     If you are running this for the first time, it will download a model for you.
     subsequent runs will use the model from the disk.
     """
-    model_id = "TheBloke/vicuna-7B-1.1-HF"
+    user_input = input("""
+            Choose Model:
+            ---
+            TheBloke/vicuna-7B-1.1-HF,
+            TheBloke/stable-vicuna-13B-HF
+            TheBloke/Wizard-Vicuna-13B-Uncensored-HF
+            (...other model ends with -HF...)
+            ---
+            I choose:
+            """)
+
+    #model_id = "TheBloke/vicuna-7B-1.1-HF"
+    
+    model_id = user_input
+
     tokenizer = LlamaTokenizer.from_pretrained(model_id)
 
     model = LlamaForCausalLM.from_pretrained(model_id,
