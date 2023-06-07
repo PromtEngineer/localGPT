@@ -32,7 +32,19 @@ The current default file types are .txt, .pdf, .csv, and .xlsx, if you want to u
 Run the following command to ingest all the data.
 
 ```shell
-python ingest.py
+python ingest.py  # defaults to cuda
+```
+
+Use the device type argument to specify a given device.
+
+```sh
+python ingest.py --device_type cpu 
+```
+
+Use help for a full list of supported devices.
+
+```sh
+python ingest.py --help
 ```
 
 It will create an index containing the local vectorstore. Will take time, depending on the size of your documents.
