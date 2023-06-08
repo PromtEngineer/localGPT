@@ -1,6 +1,15 @@
 import os
+
 # from dotenv import load_dotenv
 from chromadb.config import Settings
+
+# https://python.langchain.com/en/latest/modules/indexes/document_loaders/examples/excel.html?highlight=xlsx#microsoft-excel
+from langchain.document_loaders import (
+    CSVLoader,
+    PDFMinerLoader,
+    TextLoader,
+    UnstructuredExcelLoader,
+)
 
 # load_dotenv()
 ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
@@ -16,3 +25,12 @@ CHROMA_SETTINGS = Settings(
         persist_directory=PERSIST_DIRECTORY,
         anonymized_telemetry=False
 )
+
+# https://python.langchain.com/en/latest/_modules/langchain/document_loaders/excel.html#UnstructuredExcelLoader
+DOCUMENT_MAP = {
+    ".txt": TextLoader,
+    ".pdf": PDFMinerLoader,
+    ".csv": CSVLoader,
+    ".xls": UnstructuredExcelLoader,
+    ".xlxs": UnstructuredExcelLoader
+}
