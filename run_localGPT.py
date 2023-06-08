@@ -21,20 +21,37 @@ def load_model():
     If you are running this for the first time, it will download a model for you.
     subsequent runs will use the model from the disk.
     """
-    user_input = input("""
-            Choose Model:
-            ---
-            TheBloke/vicuna-7B-1.1-HF,
-            TheBloke/stable-vicuna-13B-HF
-            TheBloke/Wizard-Vicuna-13B-Uncensored-HF
-            (...other model ends with -HF...)
-            ---
-            I choose:
-            """)
+    while True:
+        user_input = input("""
+
+                Type number than hit ENTER to Choose a Model:
+
+                ---
+
+                1 TheBloke/vicuna-7B-1.1-HF [Fastest]
+                2 TheBloke/Wizard-Vicuna-13B-Uncensored-HF
+                3 NousResearch/Nous-Hermes-13b [Recommand]
+                4 TheBloke/guanaco-65B-HF [Biggest]
+                (...or input other pytorch model full-name in format like: TheBloke/vicuna-7B-1.1-HF ...)
+                
+                ---
+                I choose:
+                """)
+        if len(user_input) > 2:
+            break
+        elif int(user_input) > len(model_dict):
+            print('Please type a correct number to choose a model.')
+            continue
 
     #model_id = "TheBloke/vicuna-7B-1.1-HF"
-    
-    model_id = user_input
+    model_dict = {
+        '1': 'TheBloke/vicuna-7B-1.1-HF',
+        '2': 'TheBloke/Wizard-Vicuna-13B-Uncensored-HF',
+        '3': 'NousResearch/Nous-Hermes-13b',
+        '4': 'TheBloke/guanaco-65B-HF',
+    }
+
+    model_id = model_dict[user_input]
 
     tokenizer = LlamaTokenizer.from_pretrained(model_id)
 
