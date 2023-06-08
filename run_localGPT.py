@@ -2,16 +2,13 @@ import click
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
-<<<<<<< HEAD
 from constants import CHROMA_SETTINGS, PERSIST_DIRECTORY
 from transformers import LlamaTokenizer, LlamaForCausalLM, pipeline
 import click
 import os
-=======
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
 from transformers import LlamaForCausalLM, LlamaTokenizer, pipeline
->>>>>>> 8cdeba7f51112aed11959e23c6941eae4308913e
 
 from constants import CHROMA_SETTINGS, PERSIST_DIRECTORY
 
