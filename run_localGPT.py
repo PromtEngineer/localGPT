@@ -50,6 +50,8 @@ def load_model():
         elif int(user_input) > len(model_dict):
             print('Please type a correct number to choose a model.')
             continue
+        else:
+            break
 
     #model_id = "TheBloke/vicuna-7B-1.1-HF"
 
