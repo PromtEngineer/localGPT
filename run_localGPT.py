@@ -21,6 +21,14 @@ def load_model():
     If you are running this for the first time, it will download a model for you.
     subsequent runs will use the model from the disk.
     """
+
+    model_dict = {
+    '1': 'TheBloke/vicuna-7B-1.1-HF',
+    '2': 'TheBloke/Wizard-Vicuna-13B-Uncensored-HF',
+    '3': 'NousResearch/Nous-Hermes-13b',
+    '4': 'TheBloke/guanaco-65B-HF',
+    }
+
     while True:
         user_input = input("""
 
@@ -44,12 +52,6 @@ def load_model():
             continue
 
     #model_id = "TheBloke/vicuna-7B-1.1-HF"
-    model_dict = {
-        '1': 'TheBloke/vicuna-7B-1.1-HF',
-        '2': 'TheBloke/Wizard-Vicuna-13B-Uncensored-HF',
-        '3': 'NousResearch/Nous-Hermes-13b',
-        '4': 'TheBloke/guanaco-65B-HF',
-    }
 
     model_id = model_dict[user_input]
 
