@@ -45,7 +45,7 @@ def load_model():
                 ---
                 I choose:
                 """)
-        if len(user_input) > 2:
+        if '/' in user_input:
             break
         elif int(user_input) > len(model_dict):
             print('Please type a correct number to choose a model.')
@@ -55,7 +55,10 @@ def load_model():
 
     #model_id = "TheBloke/vicuna-7B-1.1-HF"
 
-    model_id = model_dict[user_input]
+    if '/' in user_input:
+        model_id = user_input
+    else:
+        model_id = model_dict[user_input]
 
     tokenizer = LlamaTokenizer.from_pretrained(model_id)
 
