@@ -19,6 +19,8 @@ SOURCE_DIRECTORY = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
 
 PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/DB"
 
+INGEST_THREADS = 8
+
 # Define the Chroma settings
 CHROMA_SETTINGS = Settings(
         chroma_db_impl='duckdb+parquet',
