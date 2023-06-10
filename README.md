@@ -17,6 +17,14 @@ In order to set your environment up to run the code here, first install all requ
 ```shell
 pip install -r requirements.txt
 ```
+Then install AutoGPTQ - if you want to run quantized models for GPU
+```shell
+git clone https://github.com/PanQiWei/AutoGPTQ.git
+cd AutoGPTQ
+git checkout v0.2.2
+pip install .
+```
+For more support on [AutoGPTQ] (https://github.com/PanQiWei/AutoGPTQ).
 
 ## Test dataset
 This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
