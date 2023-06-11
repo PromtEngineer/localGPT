@@ -9,6 +9,7 @@ faiss-cpu
 huggingface_hub
 transformers
 protobuf==3.20.0
+auto-gptq
 
 # Utilities
 urllib3==1.26.6
