@@ -103,11 +103,11 @@ Selecting the right local models and the power of `LangChain` you can run the en
 - You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format.
 
 # How to select different LLM models?
-The following details how you can select a different LLM model to create your response:
+The following will provide instructions on how you can select a different LLM model to create your response:
 1. Open up `run_localGPT.py`
 2. Go to `def main(device_type, show_sources)`
 3. Go to the comment where it says `# load the LLM for generating Natural Language responses`
-4. Below it, it details a bunch of examples on models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin ), and quantized models (ending with GPTQ).
+4. Below it, it details a bunch of examples on models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
 5. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
    * Make sure you have a model_id selected. For example -> `model_id = "TheBloke/guanaco-7B-HF"`
    * If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
