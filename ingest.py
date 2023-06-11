@@ -9,7 +9,7 @@ from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
-from constants import (CHROMA_SETTINGS, DOCUMENT_MAP, INGEST_THREADS, PERSIST_DIRECTORY,
+from constants import (CHROMA_SETTINGS, DOCUMENT_MAP, EMBEDDING_MODEL_NAME, INGEST_THREADS, PERSIST_DIRECTORY,
                        SOURCE_DIRECTORY)
 
 from concurrent.futures import ProcessPoolExecutor
@@ -48,7 +48,8 @@ def load_documents(source_dir: str) -> List[Document]:
         if file_extension in DOCUMENT_MAP.keys():
             paths.append(source_file_path)
 
-    n_workers = min(INGEST_THREADS, len(paths))
+    # Have at least one worker and at most INGEST_THREADS workers
+    n_workers = min(INGEST_THREADS, max(len(paths), 1))
     chunksize = round(len(paths) / n_workers)
     docs = []
     with ProcessPoolExecutor(n_workers) as executor:
@@ -92,7 +93,7 @@ def main(device_type):
 
     # Create embeddings
     embeddings = HuggingFaceInstructEmbeddings(
-        model_name="hkunlp/instructor-large",
+        model_name=EMBEDDING_MODEL_NAME,
         model_kwargs={"device": device_type},
     )
     # change the embedding type here if you are running into issues.
@@ -100,7 +101,7 @@ def main(device_type):
     # If you use HuggingFaceEmbeddings, make sure to also use the same in the
     # run_localGPT.py file.
 
-    # embeddings = HuggingFaceEmbeddings(model_name='all-MiniLM-L6-v2')
+    # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
     db = Chroma.from_documents(
         texts,

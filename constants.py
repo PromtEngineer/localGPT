@@ -19,7 +19,8 @@ SOURCE_DIRECTORY = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
 
 PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/DB"
 
-INGEST_THREADS = 8
+# Can be changed to a specific number
+INGEST_THREADS = os.cpu_count() or 8
 
 # Define the Chroma settings
 CHROMA_SETTINGS = Settings(
@@ -36,3 +37,8 @@ DOCUMENT_MAP = {
     ".xls": UnstructuredExcelLoader,
     ".xlxs": UnstructuredExcelLoader
 }
+
+# Default Instructor Model
+EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"
+# You can also choose a smaller model, don't forget to change HuggingFaceInstructEmbeddings to HuggingFaceEmbeddings in both ingest.py and run_localGPT.py
+# EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
