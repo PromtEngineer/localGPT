@@ -112,15 +112,15 @@ The following details how you can select a different LLM model to create your re
    * Make sure you have a model_id selected. For example -> model_id = "TheBloke/guanaco-7B-HF"
    * If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
    * Any model files that contain .bin extensions will be run with the following code where the '# load the LLM for generating Natural Language responses' comment is found.
-   *    model_id = "TheBloke/guanaco-7B-HF"
-        llm = load_model(device_type, model_id=model_id)
+    model_id = "TheBloke/guanaco-7B-HF"
+    llm = load_model(device_type, model_id=model_id)
 6. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
    * Make sure you have a model_id selected. For example -> model_id = "TheBloke/wizardLM-7B-GPTQ"
    * You will also need its model basename file selected. For example -> model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
    * Any model files that contain no-act-order or .safetensors extensions will be run with the following code where the '# load the LLM for generating Natural Language responses' comment is found.
-   *    model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-        model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-        llm = load_model(device_type, model_id=model_id, model_basename = model_basename)
+    model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
+    model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+    llm = load_model(device_type, model_id=model_id, model_basename = model_basename)
 7. Comment out all other instances of "model_id", "model_basename", and "llm = load_model(args)"
 # System Requirements
 
