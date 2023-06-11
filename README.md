@@ -17,6 +17,14 @@ In order to set your environment up to run the code here, first install all requ
 ```shell
 pip install -r requirements.txt
 ```
+Then install AutoGPTQ - if you want to run quantized models for GPU
+```shell
+git clone https://github.com/PanQiWei/AutoGPTQ.git
+cd AutoGPTQ
+git checkout v0.2.2
+pip install .
+```
+For more support on [AutoGPTQ] (https://github.com/PanQiWei/AutoGPTQ).
 
 ## Test dataset
 This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
@@ -94,6 +102,30 @@ Selecting the right local models and the power of `LangChain` you can run the en
 - `run_localGPT.py` uses a local LLM (Vicuna-7B in this case) to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
 - You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format.
 
+# How to select different LLM models?
+The following will provide instructions on how you can select a different LLM model to create your response:
+1. Open up `run_localGPT.py`
+2. Go to `def main(device_type, show_sources)`
+3. Go to the comment where it says `# load the LLM for generating Natural Language responses`
+4. Below it, it details a bunch of examples on models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
+5. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
+   * Make sure you have a model_id selected. For example -> `model_id = "TheBloke/guanaco-7B-HF"`
+   * If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
+   * Any model files that contain .bin extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
+   *    `model_id = "TheBloke/guanaco-7B-HF"`
+
+        `llm = load_model(device_type, model_id=model_id)`
+6. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
+   * Make sure you have a model_id selected. For example -> model_id = `"TheBloke/wizardLM-7B-GPTQ"`
+   * You will also need its model basename file selected. For example -> `model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
+   * If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and go to "Files and versions" you will notice a model file that ends with a .safetensors extension.
+   * Any model files that contain no-act-order or .safetensors extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
+   *    `model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"`
+
+        `model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"`
+
+        `llm = load_model(device_type, model_id=model_id, model_basename = model_basename)`
+7. Comment out all other instances of `model_id="other model names"`, `model_basename=other base model names`, and `llm = load_model(args*)`
 # System Requirements
 
 ## Python Version
