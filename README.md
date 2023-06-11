@@ -104,27 +104,28 @@ Selecting the right local models and the power of `LangChain` you can run the en
 
 # How to select different LLM models?
 The following details how you can select a different LLM model to create your response:
-1. Open up run_localGPT.py
-2. Go to 'def main(device_type, show_sources)'
-3. Go to the comment where it says '# load the LLM for generating Natural Language responses'
+1. Open up `run_localGPT.py`
+2. Go to `def main(device_type, show_sources)`
+3. Go to the comment where it says `# load the LLM for generating Natural Language responses`
 4. Below it, it details a bunch of examples on models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin ), and quantized models (ending with GPTQ).
 5. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
-   * Make sure you have a model_id selected. For example -> model_id = "TheBloke/guanaco-7B-HF"
+   * Make sure you have a model_id selected. For example -> `model_id = "TheBloke/guanaco-7B-HF"`
    * If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
-   * Any model files that contain .bin extensions will be run with the following code where the '# load the LLM for generating Natural Language responses' comment is found.
+   * Any model files that contain .bin extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
    *    `model_id = "TheBloke/guanaco-7B-HF"`
-   
+
         `llm = load_model(device_type, model_id=model_id)`
 6. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
-   * Make sure you have a model_id selected. For example -> model_id = "TheBloke/wizardLM-7B-GPTQ"
-   * You will also need its model basename file selected. For example -> model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
-   * Any model files that contain no-act-order or .safetensors extensions will be run with the following code where the '# load the LLM for generating Natural Language responses' comment is found.
+   * Make sure you have a model_id selected. For example -> model_id = `"TheBloke/wizardLM-7B-GPTQ"`
+   * You will also need its model basename file selected. For example -> `model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
+   * If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and go to "Files and versions" you will notice a model file that ends with a .safetensors extension.
+   * Any model files that contain no-act-order or .safetensors extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
    *    `model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"`
 
         `model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"`
 
         `llm = load_model(device_type, model_id=model_id, model_basename = model_basename)`
-7. Comment out all other instances of "model_id", "model_basename", and "llm = load_model(args)"
+7. Comment out all other instances of `model_id="other model names"`, `model_basename=other base model names`, and `llm = load_model(args*)`
 # System Requirements
 
 ## Python Version
