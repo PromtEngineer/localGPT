@@ -18,3 +18,6 @@ click
 
 # Excel File Manipulation
 openpyxl
+
+# for EpubLoader
+epub2txt

@@ -10,6 +10,7 @@ from langchain.document_loaders import (
     TextLoader,
     UnstructuredExcelLoader,
 )
+from epub_loader import EpubLoader
 
 # load_dotenv()
 ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
@@ -34,5 +35,6 @@ DOCUMENT_MAP = {
     ".pdf": PDFMinerLoader,
     ".csv": CSVLoader,
     ".xls": UnstructuredExcelLoader,
-    ".xlxs": UnstructuredExcelLoader
+    ".xlxs": UnstructuredExcelLoader,
+    ".epub": EpubLoader,
 }
