@@ -10,7 +10,7 @@ from langchain.vectorstores import Chroma
 from transformers import LlamaForCausalLM, LlamaTokenizer, pipeline
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from auto_gptq import AutoGPTQForCausalLM, BaseQuantizeConfig
-from constants import CHROMA_SETTINGS, PERSIST_DIRECTORY, ROOT_DIRECTORY
+from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
 from transformers import GenerationConfig
 
 
@@ -136,11 +136,11 @@ def main(device_type, show_sources):
     logging.info(f'Display Source Documents set to: {show_sources}')
 
     embeddings = HuggingFaceInstructEmbeddings(
-        model_name="hkunlp/instructor-large", model_kwargs={"device": device_type}
+        model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": device_type}
     )
 
     # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
-    # embeddings = HuggingFaceEmbeddings(model_name='all-MiniLM-L6-v2')
+    # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
     # load the vectorstore
     db = Chroma(
