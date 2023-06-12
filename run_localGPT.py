@@ -14,7 +14,7 @@ from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
 from transformers import GenerationConfig
 
 
-def load_model(device_type, model_id, model_basename=None):
+def load_model(device_type: str, model_id: str, model_basename: str =None):
     """
     Select a model for text generation using the HuggingFace library.
     If you are running this for the first time, it will download a model for you.
@@ -37,7 +37,8 @@ def load_model(device_type, model_id, model_basename=None):
     logging.info('This action can take a few minutes!')
 
     if model_basename is not None:
-        # The code supports all huggingface models that ends with GPTQ and have some variation of .no-act.order or .safetensors in their HF repo.
+        # The code supports all huggingface models that ends with GPTQ and have some variation of .no-act.order or
+        # .safetensors in their HF repo.
         print('Using AutoGPTQForCausalLM for quantized models')
 
         if '.safetensors' in model_basename:
@@ -121,8 +122,27 @@ def load_model(device_type, model_id, model_basename=None):
     ),
     help="Show sources along with answers (Default is Fals)",
 )
-def main(device_type, show_sources):
-    '''
+@click.option(
+    "--model_id",
+    default="TheBloke/WizardLM-7B-uncensored-GPTQ",
+    type=str,
+    help="Model ID to use for text generation. (Default is TheBloke/WizardLM-7B-uncensored-GPTQ)",
+)
+@click.option(
+    "--model_basename",
+    default="WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors",
+    type=str,
+    help="Basename of the model to use for text generation. "
+         "(Default is WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors)",
+)
+@click.option(
+    "--embedding_model",
+    default="hkunlp/instructor-large",
+    type=str,
+    help="Embedding model to use for text generation. (Default is hkunlp/instructor-large)",
+)
+def main(device_type: str, show_sources: str, model_id: str, model_basename: str, embedding_model: str):
+    """
     This function implements the information retreival task.
 
 
@@ -131,13 +151,13 @@ def main(device_type, show_sources):
     3. Loads the local LLM using load_model function - You can now set different LLMs.
     4. Setup the Question Answer retreival chain.
     5. Question answers.
-    '''
+    """
 
     logging.info(f'Running on: {device_type}')
     logging.info(f'Display Source Documents set to: {show_sources}')
 
     embeddings = HuggingFaceInstructEmbeddings(
-        model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": device_type}
+        model_name=embedding_model, model_kwargs={"device": device_type}
     )
 
     # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
@@ -167,8 +187,8 @@ def main(device_type, show_sources):
     # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" # Requires ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
     # model_id = "TheBloke/wizardLM-7B-GPTQ"
     # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
-    model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-    model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+    # model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
+    # model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
     llm = load_model(device_type, model_id=model_id, model_basename = model_basename)
 
     qa = RetrievalQA.from_chain_type(
