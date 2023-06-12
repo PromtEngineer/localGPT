@@ -38,7 +38,7 @@ def load_model(device_type, model_id, model_basename=None):
 
     if model_basename is not None:
         # The code supports all huggingface models that ends with GPTQ and have some variation of .no-act.order or .safetensors in their HF repo.
-        print('Using AutoGPTQForCausalLM for quantized models')
+        logging.info('Using AutoGPTQForCausalLM for quantized models')
 
         if '.safetensors' in model_basename:
             # Remove the ".safetensors" ending if present
@@ -57,7 +57,7 @@ def load_model(device_type, model_id, model_basename=None):
             quantize_config=None
         )
     elif device_type.lower() == 'cuda': # The code supports all huggingface models that ends with -HF or which have a .bin file in their HF repo.
-        print('Using AutoModelForCausalLM for full models')
+        logging.info('Using AutoModelForCausalLM for full models')
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         logging.info('Tokenizer loaded')
 
@@ -71,7 +71,7 @@ def load_model(device_type, model_id, model_basename=None):
         )
         model.tie_weights()
     else:
-        print('Using LlamaTokenizer')
+        logging.info('Using LlamaTokenizer')
         tokenizer = LlamaTokenizer.from_pretrained(model_id)
         model = LlamaForCausalLM.from_pretrained(model_id)
 
