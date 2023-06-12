@@ -82,7 +82,13 @@ def load_documents(source_dir: str) -> List[Document]:
     ),
     help="Device to run on. (Default is cuda)",
 )
-def main(device_type):
+@click.option(
+    "--embedding_model_name",
+    default="hkunlp/instructor-large",
+    type=str,
+    help="The name of the embedding model to use. (Default is 'bert-base-cased')",
+)
+def main(device_type, embedding_model_name: str):
     # Load documents and split in chunks
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
     documents = load_documents(SOURCE_DIRECTORY)
@@ -93,7 +99,7 @@ def main(device_type):
 
     # Create embeddings
     embeddings = HuggingFaceInstructEmbeddings(
-        model_name=EMBEDDING_MODEL_NAME,
+        model_name=embedding_model_name,
         model_kwargs={"device": device_type},
     )
     # change the embedding type here if you are running into issues.
