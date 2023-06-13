@@ -112,14 +112,14 @@ def load_model(device_type, model_id, model_basename=None):
 )
 @click.option(
     "--show_sources",
-    default=True,
+    default=False,
     type=click.Choice(
         [
             False,
             True,
         ]
     ),
-    help="Show sources along with answers (Default is Fals)",
+    help="Show sources along with answers (Default is False)",
 )
 def main(device_type, show_sources):
     '''
