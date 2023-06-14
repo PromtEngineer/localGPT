@@ -1,10 +1,10 @@
 # localGPT
 
-This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT. 
+This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT.
 
-For detailed overview of the project, Watch this [Youtube Video](https://youtu.be/MlyoObdIHyo). 
+For detailed overview of the project, Watch this [Youtube Video](https://youtu.be/MlyoObdIHyo).
 
-In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. It also has CPU support if you do not have a GPU (see below for instruction). 
+In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. It also has CPU support if you do not have a GPU (see below for instruction).
 
 Ask questions to your documents without an internet connection, using the power of LLMs. 100% private, no data leaves your execution environment at any point. You can ingest documents and ask questions without an internet connection!
 
@@ -32,7 +32,7 @@ This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/fil
 ## Instructions for ingesting your own dataset
 
 Put any and all of your .txt, .pdf, or .csv files into the SOURCE_DOCUMENTS directory
-in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory. 
+in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory.
 
 The current default file types are .txt, .pdf, .csv, and .xlsx, if you want to use any other file type, you will need to convert it to one of the default file types.
 
@@ -46,7 +46,7 @@ python ingest.py  # defaults to cuda
 Use the device type argument to specify a given device.
 
 ```sh
-python ingest.py --device_type cpu 
+python ingest.py --device_type cpu
 ```
 
 Use help for a full list of supported devices.
@@ -56,7 +56,7 @@ python ingest.py --help
 ```
 
 It will create an index containing the local vectorstore. Will take time, depending on the size of your documents.
-You can ingest as many documents as you want, and all will be accumulated in the local embeddings database. 
+You can ingest as many documents as you want, and all will be accumulated in the local embeddings database.
 If you want to start from an empty database, delete the `index`.
 
 Note: When you run this for the first time, it will download take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
@@ -64,28 +64,33 @@ Note: When you run this for the first time, it will download take time as it has
 
 
 ## Ask questions to your documents, locally!
-In order to ask a question, run a command like:
-
+In order to ask a question, run the below command:
+the cli provides 5 options to run the script.
+  * --model_id  The huggingface model id Defaults to *TheBloke/WizardLM-7B-uncensored-GPTQ*
+  * --model_basename The huggingface model basename Defaults to *WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors* this is required for quantized models, leave as none for non-quantized models
+  * --embedding_model The embedding model to use. Defaults to *hkunlp/instructor-large* same as the one used in ingest.py
+  * --device_type The device type to use. Defaults to cuda
+  * --show_sources Whether to show the sources of the answer. Defaults to false
 ```shell
 python run_localGPT.py
 ```
 
-And wait for the script to require your input. 
+And wait for the script to require your input.
 
 ```shell
 > Enter a query:
 ```
 
-Hit enter. Wait while the LLM model consumes the prompt and prepares the answer. Once done, it will print the answer and the 4 sources it used as context from your documents; you can then ask another question without re-running the script, just wait for the prompt again. 
+Hit enter. Wait while the LLM model consumes the prompt and prepares the answer. Once done, it will print the answer and the 4 sources it used as context from your documents; you can then ask another question without re-running the script, just wait for the prompt again.
 
 Note: When you run this for the first time, it will need internet connection to download the vicuna-7B model. After that you can turn off your internet connection, and the script inference would still work. No data gets out of your local environment.
 
 Type `exit` to finish the script.
 
 # Run it on CPU
-By default, localGPT will use your GPU to run both the `ingest.py` and `run_localGPT.py` scripts. But if you do not have a GPU and want to run this on CPU, now you can do that (Warning: Its going to be slow!). You will need to use `--device_type cpu`flag with both scripts. 
+By default, localGPT will use your GPU to run both the `ingest.py` and `run_localGPT.py` scripts. But if you do not have a GPU and want to run this on CPU, now you can do that (Warning: Its going to be slow!). You will need to use `--device_type cpu`flag with both scripts.
 
-For Ingestion run the following: 
+For Ingestion run the following:
 ```shell
 python ingest.py --device_type cpu
 ```
@@ -98,14 +103,14 @@ python run_localGPT.py --device_type cpu
 # How does it work?
 Selecting the right local models and the power of `LangChain` you can run the entire pipeline locally, without any data leaving your environment, and with reasonable performance.
 
-- `ingest.py` uses `LangChain` tools to parse the document and create embeddings locally using `InstructorEmbeddings`. It then stores the result in a local vector database using `Chroma` vector store. 
+- `ingest.py` uses `LangChain` tools to parse the document and create embeddings locally using `InstructorEmbeddings`. It then stores the result in a local vector database using `Chroma` vector store.
 - `run_localGPT.py` uses a local LLM (Vicuna-7B in this case) to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
 - You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format.
 
 # How to select different LLM models?
 The following will provide instructions on how you can select a different LLM model to create your response:
 1. Open up `run_localGPT.py`
-2. Go to `def main(device_type, show_sources)`
+2. Go to `def main(device_type, model_id, model_basename):`
 3. Go to the comment where it says `# load the LLM for generating Natural Language responses`
 4. Below it, it details a bunch of examples on models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
 5. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
@@ -145,7 +150,7 @@ To install a C++ compiler on Windows 10/11, follow these steps:
 4. Run the installer and select the "gcc" component.
 
 ### NVIDIA Driver's Issues:
-Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-ubuntu-22-04) to install NVIDIA Drivers. 
+Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-ubuntu-22-04) to install NVIDIA Drivers.
 
 
 ### M1/M2 Macbook users:
@@ -175,39 +180,39 @@ pip install xformers
 	    print (x)
 	else:
 	    print ("MPS device not found.")
-    
+
  4- Find `instructor.py` and open it in VS Code to edit.
- 
- The `instructor.py` is probably embeded similar to this: 
- 	
+
+ The `instructor.py` is probably embeded similar to this:
+
 	file_path = "/System/Volumes/Data/Users/USERNAME/anaconda3/envs/LocalGPT/lib/python3.10/site-packages/InstructorEmbedding/instructor.py"
- 
+
  You can open the `instructor.py` and then edit it using this code:
  #### Open the file in VSCode
 	subprocess.run(["open", "-a", "Visual Studio Code", file_path])
- 
+
  Once you open `instructor.py` with VS Code, replace the code snippet that has `device_type` with the following codes:
- 
+
          if device is None:
             device = self._target_device
 
         # Replace the line: self.to(device)
-	
+
         if device in ['cpu', 'CPU']:
             device = torch.device('cpu')
 
         elif device in ['mps', 'MPS']:
             device = torch.device('mps')
-        
+
         else:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         self.to(device)
-	
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=PromtEngineer/localGPT&type=Date)](https://star-history.com/#PromtEngineer/localGPT&Date)
 
-        
+
 # Disclaimer
-This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license. 
+This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license.
