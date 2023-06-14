@@ -37,7 +37,6 @@ def load_model(device_type: str, model_id: str, model_basename: str = None):
     logging.info('This action can take a few minutes!')
 
     if model_basename is not None and 'gptq' in model_id.lower():
-        print('checking is model is quantized', 'gptq' in model_basename.lower())
         # the additional check is to avoid loading unquantized models when the user provides a model_basename
         # The code supports all huggingface models that ends with GPTQ and have some
         # variation of .no-act.order or
