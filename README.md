@@ -94,7 +94,7 @@ python run_localGPT.py --device_type cpu
 ```
 
 # Run the UI
-1. Start by opening up `run_localGPTAPI.py` in a code editor of your choice.
+1. Start by opening up `run_localGPTAPI.py` in a code editor of your choice. If you are using gpu skip to step 3.
 
 2. If you are running on cpu change `DEVICE_TYPE = 'cuda'` to `DEVICE_TYPE = 'cpu'`.
 
