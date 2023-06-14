@@ -1,20 +1,22 @@
-import os
-from typing import List
 import logging
+import os
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 import click
 from langchain.docstore.document import Document
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
-from constants import (CHROMA_SETTINGS, DOCUMENT_MAP, EMBEDDING_MODEL_NAME, INGEST_THREADS, PERSIST_DIRECTORY,
-                       SOURCE_DIRECTORY)
+from constants import (
+    CHROMA_SETTINGS,
+    DOCUMENT_MAP,
+    EMBEDDING_MODEL_NAME,
+    INGEST_THREADS,
+    PERSIST_DIRECTORY,
+    SOURCE_DIRECTORY,
+)
 
-from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
 
 def load_single_document(file_path: str) -> Document:
     # Loads a single document from a file path
@@ -26,8 +28,8 @@ def load_single_document(file_path: str) -> Document:
         raise ValueError("Document type is undefined")
     return loader.load()[0]
 
-def load_document_batch(filepaths):
 
+def load_document_batch(filepaths):
     logging.info("Loading document batch")
     # create a thread pool
     with ThreadPoolExecutor(len(filepaths)) as exe:
@@ -38,7 +40,8 @@ def load_document_batch(filepaths):
         # return data and file paths
         return (data_list, filepaths)
 
-def load_documents(source_dir: str) -> List[Document]:
+
+def load_documents(source_dir: str) -> list[Document]:
     # Loads all documents from the source documents directory
     all_files = os.listdir(source_dir)
     paths = []
@@ -57,7 +60,7 @@ def load_documents(source_dir: str) -> List[Document]:
         # split the load operations into chunks
         for i in range(0, len(paths), chunksize):
             # select a chunk of filenames
-            filepaths = paths[i:(i + chunksize)]
+            filepaths = paths[i : (i + chunksize)]
             # submit the task
             future = executor.submit(load_document_batch, filepaths)
             futures.append(future)
@@ -76,8 +79,25 @@ def load_documents(source_dir: str) -> List[Document]:
     default="cuda",
     type=click.Choice(
         [
-            "cpu", "cuda", "ipu", "xpu", "mkldnn", "opengl", "opencl", "ideep", "hip", "ve", "fpga", "ort",
-            "xla", "lazy", "vulkan", "mps", "meta", "hpu", "mtia",
+            "cpu",
+            "cuda",
+            "ipu",
+            "xpu",
+            "mkldnn",
+            "opengl",
+            "opencl",
+            "ideep",
+            "hip",
+            "ve",
+            "fpga",
+            "ort",
+            "xla",
+            "lazy",
+            "vulkan",
+            "mps",
+            "meta",
+            "hpu",
+            "mtia",
         ],
     ),
     help="Device to run on. (Default is cuda)",
@@ -114,6 +134,7 @@ def main(device_type):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s',
-                        level=logging.INFO)
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
+    )
     main()

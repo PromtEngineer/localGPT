@@ -1,17 +1,24 @@
+import logging
+
 import click
 import torch
-import logging
+from auto_gptq import AutoGPTQForCausalLM
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.llms import HuggingFacePipeline
+
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
-from transformers import LlamaForCausalLM, LlamaTokenizer, pipeline
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from auto_gptq import AutoGPTQForCausalLM, BaseQuantizeConfig
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    GenerationConfig,
+    LlamaForCausalLM,
+    LlamaTokenizer,
+    pipeline,
+)
+
 from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
-from transformers import GenerationConfig
 
 
 def load_model(device_type, model_id, model_basename=None):
@@ -23,7 +30,7 @@ def load_model(device_type, model_id, model_basename=None):
     Args:
         device_type (str): Type of device to use, e.g., "cuda" for GPU or "cpu" for CPU.
         model_id (str): Identifier of the model to load from HuggingFace's model hub.
-        model_basename (str, optional): Basename of the model if using quantized models. 
+        model_basename (str, optional): Basename of the model if using quantized models.
             Defaults to None.
 
     Returns:
@@ -32,20 +39,21 @@ def load_model(device_type, model_id, model_basename=None):
     Raises:
         ValueError: If an unsupported model or device type is provided.
     """
-    
-    logging.info(f'Loading Model: {model_id}, on: {device_type}')
-    logging.info('This action can take a few minutes!')
+
+    logging.info(f"Loading Model: {model_id}, on: {device_type}")
+    logging.info("This action can take a few minutes!")
 
     if model_basename is not None:
-        # The code supports all huggingface models that ends with GPTQ and have some variation of .no-act.order or .safetensors in their HF repo.
-        logging.info('Using AutoGPTQForCausalLM for quantized models')
+        # The code supports all huggingface models that ends with GPTQ and have some variation
+        # of .no-act.order or .safetensors in their HF repo.
+        logging.info("Using AutoGPTQForCausalLM for quantized models")
 
-        if '.safetensors' in model_basename:
+        if ".safetensors" in model_basename:
             # Remove the ".safetensors" ending if present
-            model_basename = model_basename.replace('.safetensors', "")
+            model_basename = model_basename.replace(".safetensors", "")
 
         tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
-        logging.info('Tokenizer loaded')
+        logging.info("Tokenizer loaded")
 
         model = AutoGPTQForCausalLM.from_quantized(
             model_id,
@@ -54,16 +62,19 @@ def load_model(device_type, model_id, model_basename=None):
             trust_remote_code=True,
             device="cuda:0",
             use_triton=False,
-            quantize_config=None
+            quantize_config=None,
         )
-    elif device_type.lower() == 'cuda': # The code supports all huggingface models that ends with -HF or which have a .bin file in their HF repo.
-        logging.info('Using AutoModelForCausalLM for full models')
+    elif (
+        device_type.lower() == "cuda"
+    ):  # The code supports all huggingface models that ends with -HF or which have a .bin
+        # file in their HF repo.
+        logging.info("Using AutoModelForCausalLM for full models")
         tokenizer = AutoTokenizer.from_pretrained(model_id)
-        logging.info('Tokenizer loaded')
+        logging.info("Tokenizer loaded")
 
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
-            device_map='auto',
+            device_map="auto",
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             trust_remote_code=True,
@@ -71,13 +82,15 @@ def load_model(device_type, model_id, model_basename=None):
         )
         model.tie_weights()
     else:
-        logging.info('Using LlamaTokenizer')
+        logging.info("Using LlamaTokenizer")
         tokenizer = LlamaTokenizer.from_pretrained(model_id)
         model = LlamaForCausalLM.from_pretrained(model_id)
 
     # Load configuration from the model to avoid warnings
     generation_config = GenerationConfig.from_pretrained(model_id)
-    # see here for details: https://huggingface.co/docs/transformers/main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
+    # see here for details:
+    # https://huggingface.co/docs/transformers/
+    # main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
 
     # Create a pipeline for text generation
     pipe = pipeline(
@@ -88,11 +101,11 @@ def load_model(device_type, model_id, model_basename=None):
         temperature=0,
         top_p=0.95,
         repetition_penalty=1.15,
-        generation_config=generation_config
+        generation_config=generation_config,
     )
 
     local_llm = HuggingFacePipeline(pipeline=pipe)
-    logging.info('Local LLM Loaded')
+    logging.info("Local LLM Loaded")
 
     return local_llm
 
@@ -104,8 +117,25 @@ def load_model(device_type, model_id, model_basename=None):
     default="cuda",
     type=click.Choice(
         [
-            "cpu", "cuda", "ipu", "xpu", "mkldnn", "opengl", "opencl", "ideep", "hip", "ve", "fpga", "ort",
-            "xla", "lazy", "vulkan", "mps", "meta", "hpu", "mtia",
+            "cpu",
+            "cuda",
+            "ipu",
+            "xpu",
+            "mkldnn",
+            "opengl",
+            "opencl",
+            "ideep",
+            "hip",
+            "ve",
+            "fpga",
+            "ort",
+            "xla",
+            "lazy",
+            "vulkan",
+            "mps",
+            "meta",
+            "hpu",
+            "mtia",
         ],
     ),
     help="Device to run on. (Default is cuda)",
@@ -122,7 +152,7 @@ def load_model(device_type, model_id, model_basename=None):
     help="Show sources along with answers (Default is False)",
 )
 def main(device_type, show_sources):
-    '''
+    """
     This function implements the information retreival task.
 
 
@@ -131,14 +161,12 @@ def main(device_type, show_sources):
     3. Loads the local LLM using load_model function - You can now set different LLMs.
     4. Setup the Question Answer retreival chain.
     5. Question answers.
-    '''
+    """
 
-    logging.info(f'Running on: {device_type}')
-    logging.info(f'Display Source Documents set to: {show_sources}')
+    logging.info(f"Running on: {device_type}")
+    logging.info(f"Display Source Documents set to: {show_sources}")
 
-    embeddings = HuggingFaceInstructEmbeddings(
-        model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": device_type}
-    )
+    embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": device_type})
 
     # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
@@ -157,23 +185,23 @@ def main(device_type, show_sources):
     # model_id = "TheBloke/vicuna-7B-1.1-HF"
     # model_id = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
     # model_id = "TheBloke/guanaco-7B-HF"
-    # model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM. Using STransformers alongside will 100% create OOM on 24GB cards. 
+    # model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM. Using STransformers
+    # alongside will 100% create OOM on 24GB cards.
     # llm = load_model(device_type, model_id=model_id)
 
     # for GPTQ (quantized) models
     # model_id = "TheBloke/Nous-Hermes-13B-GPTQ"
     # model_basename = "nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
     # model_id = "TheBloke/WizardLM-30B-Uncensored-GPTQ"
-    # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" # Requires ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
+    # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" # Requires
+    # ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
     # model_id = "TheBloke/wizardLM-7B-GPTQ"
     # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
     model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
     model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-    llm = load_model(device_type, model_id=model_id, model_basename = model_basename)
+    llm = load_model(device_type, model_id=model_id, model_basename=model_basename)
 
-    qa = RetrievalQA.from_chain_type(
-        llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True
-    )
+    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
     # Interactive questions and answers
     while True:
         query = input("\nEnter a query: ")
@@ -191,18 +219,15 @@ def main(device_type, show_sources):
 
         if show_sources:  # this is a flag that you can set to disable showing answers.
             # # Print the relevant sources used for the answer
-            print(
-                "----------------------------------SOURCE DOCUMENTS---------------------------"
-            )
+            print("----------------------------------SOURCE DOCUMENTS---------------------------")
             for document in docs:
                 print("\n> " + document.metadata["source"] + ":")
                 print(document.page_content)
-            print(
-                "----------------------------------SOURCE DOCUMENTS---------------------------"
-            )
+            print("----------------------------------SOURCE DOCUMENTS---------------------------")
 
 
 if __name__ == "__main__":
-    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s',
-                        level=logging.INFO)
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
+    )
     main()

@@ -1,10 +1,8 @@
 import csv
 import tempfile
-from typing import Dict, List, Optional
 
 import openpyxl
 from langchain.docstore.document import Document
-from langchain.document_loaders import CSVLoader
 from langchain.document_loaders.base import BaseLoader
 
 
@@ -32,7 +30,7 @@ def xlsx_to_csv(file_path: str, sheet_name: str = None) -> list[str]:
     # Iterate over the worksheets in the workbook
     for ws in wb:
         # Create a new temporary file and write the contents of the worksheet to it
-        with tempfile.NamedTemporaryFile(mode='w+', newline='', suffix='.csv', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w+", newline="", suffix=".csv", delete=False) as f:
             c = csv.writer(f)
             for r in ws.rows:
                 c.writerow([cell.value for cell in r])
@@ -44,8 +42,8 @@ def xlsx_to_csv(file_path: str, sheet_name: str = None) -> list[str]:
 class XLSXLoader(BaseLoader):
     """Loads an XLSX file into a list of documents.
 
-    Each document represents one row of the CSV file converted from the XLSX file. 
-    Every row is converted into a key/value pair and outputted to a new line in the 
+    Each document represents one row of the CSV file converted from the XLSX file.
+    Every row is converted into a key/value pair and outputted to a new line in the
     document's page_content.
 
     The source for each document loaded from csv is set to the value of the
@@ -66,16 +64,16 @@ class XLSXLoader(BaseLoader):
     def __init__(
         self,
         file_path: str,
-        source_column: Optional[str] = None,
-        csv_args: Optional[Dict] = None,
-        encoding: Optional[str] = None,
+        source_column: str | None = None,
+        csv_args: dict | None = None,
+        encoding: str | None = None,
     ):
         self.file_path = file_path
         self.source_column = source_column
         self.encoding = encoding
         self.csv_args = csv_args or {}
 
-    def load(self) -> List[Document]:
+    def load(self) -> list[Document]:
         """Load data into document objects."""
 
         docs = []
@@ -86,15 +84,9 @@ class XLSXLoader(BaseLoader):
                 for i, row in enumerate(csv_reader):
                     content = "\n".join(f"{k.strip()}: {v.strip()}" for k, v in row.items())
                     try:
-                        source = (
-                            row[self.source_column]
-                            if self.source_column is not None
-                            else self.file_path
-                        )
+                        source = row[self.source_column] if self.source_column is not None else self.file_path
                     except KeyError:
-                        raise ValueError(
-                            f"Source column '{self.source_column}' not found in CSV file."
-                        )
+                        raise ValueError(f"Source column '{self.source_column}' not found in CSV file.")
                     metadata = {"source": source, "row": i}
                     doc = Document(page_content=content, metadata=metadata)
                     docs.append(doc)
