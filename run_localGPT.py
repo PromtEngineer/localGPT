@@ -78,7 +78,8 @@ def load_model(device_type: str, model_id: str, model_basename: str =None):
 
     # Load configuration from the model to avoid warnings
     generation_config = GenerationConfig.from_pretrained(model_id)
-    # see here for details: https://huggingface.co/docs/transformers/main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
+    # see here for details: https://huggingface.co/docs/transformers/main_classes/text_generation#transformers
+    # .GenerationConfig.from_pretrained.returns
 
     # Create a pipeline for text generation
     pipe = pipeline(
@@ -163,7 +164,7 @@ def main(device_type: str, show_sources: str, model_id: str, model_basename: str
     # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
-    # load the vectorstore
+    # load the vector store
     db = Chroma(
         persist_directory=PERSIST_DIRECTORY,
         embedding_function=embeddings,
