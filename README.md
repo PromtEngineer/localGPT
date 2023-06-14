@@ -94,9 +94,7 @@ python run_localGPT.py --device_type cpu
 ```
 
 # Run the UI
-The UI is broken into two parts; an API `run_localGPTAPI.py` and an UI '`localGPTUI.py`.
-
-1. Start by opening up `run_localGPTAPI.py`.
+1. Start by opening up `run_localGPTAPI.py` in a code editor of your choice.
 
 2. If you are running on cpu change `DEVICE_TYPE = 'cuda'` to `DEVICE_TYPE = 'cpu'`.
 
@@ -118,13 +116,13 @@ The UI is broken into two parts; an API `run_localGPTAPI.py` and an UI '`localGP
 
 4. Navigate to the `/LOCALGPT` directory.
 
-5. Run the command `python run_localGPT_API.py`.
+5. Run the following command `python run_localGPT_API.py`. The API should being to run.
 
 6. Wait until everything has loaded in. You should see something like `INFO:werkzeug:Press CTRL+C to quit`.
 
 7. Open up a second terminal and activate the same python environment.
 
-8. Navigate to the `/LOCALGPT/localGPTUI` directory
+8. Navigate to the `/LOCALGPT/localGPTUI` directory.
 
 9. Run the command `python localGPTUI.py`.
 
