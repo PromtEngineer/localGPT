@@ -14,7 +14,7 @@ from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
 from transformers import GenerationConfig
 
 
-def load_model(device_type: str, model_id: str, model_basename: str =None):
+def load_model(device_type: str, model_id: str, model_basename: str = None):
     """
     Select a model for text generation using the HuggingFace library.
     If you are running this for the first time, it will download a model for you.
@@ -23,7 +23,7 @@ def load_model(device_type: str, model_id: str, model_basename: str =None):
     Args:
         device_type (str): Type of device to use, e.g., "cuda" for GPU or "cpu" for CPU.
         model_id (str): Identifier of the model to load from HuggingFace's model hub.
-        model_basename (str, optional): Basename of the model if using quantized models. 
+        model_basename (str, optional): Basename of the model if using quantized models.
             Defaults to None.
 
     Returns:
@@ -32,12 +32,15 @@ def load_model(device_type: str, model_id: str, model_basename: str =None):
     Raises:
         ValueError: If an unsupported model or device type is provided.
     """
-    
+
     logging.info(f'Loading Model: {model_id}, on: {device_type}')
     logging.info('This action can take a few minutes!')
 
-    if model_basename is not None:
-        # The code supports all huggingface models that ends with GPTQ and have some variation of .no-act.order or
+    if model_basename is not None and 'gptq' in model_id.lower():
+        print('checking is model is quantized', 'gptq' in model_basename.lower())
+        # the additional check is to avoid loading unquantized models when the user provides a model_basename
+        # The code supports all huggingface models that ends with GPTQ and have some
+        # variation of .no-act.order or
         # .safetensors in their HF repo.
         print('Using AutoGPTQForCausalLM for quantized models')
 
@@ -57,7 +60,8 @@ def load_model(device_type: str, model_id: str, model_basename: str =None):
             use_triton=False,
             quantize_config=None
         )
-    elif device_type.lower() == 'cuda': # The code supports all huggingface models that ends with -HF or which have a .bin file in their HF repo.
+    elif device_type.lower() == 'cuda':  # The code supports all huggingface models that ends with -HF or which have
+        # a .bin file in their HF repo.
         print('Using AutoModelForCausalLM for full models')
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         logging.info('Tokenizer loaded')
@@ -127,20 +131,25 @@ def load_model(device_type: str, model_id: str, model_basename: str =None):
     "--model_id",
     default="TheBloke/WizardLM-7B-uncensored-GPTQ",
     type=str,
-    help="Model ID to use for text generation. (Default is TheBloke/WizardLM-7B-uncensored-GPTQ)",
+    help="This is the full huggingface model_id to use for text generation. "
+         "(Default is TheBloke/WizardLM-7B-uncensored-GPTQ) "
+         "if you provide an unquantized model_id, you must also pass None to model_basename"
 )
 @click.option(
     "--model_basename",
     default="WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors",
     type=str,
     help="Basename of the model to use for text generation. "
-         "(Default is WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors)",
+         "(Default is WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors)"
+         "if you provide an unquantized model_id, you must also pass None to model_basename"
+         "if you provide a quantized model_id, you must also pass the basename of the model"
 )
 @click.option(
     "--embedding_model",
     default="hkunlp/instructor-large",
     type=str,
-    help="Embedding model to use for text generation. (Default is hkunlp/instructor-large)",
+    help="Embedding model to use for text generation. (Default is hkunlp/instructor-large)"
+         "to be safe, use the same embedding model that was used to create the vectorstore."
 )
 def main(device_type: str, show_sources: str, model_id: str, model_basename: str, embedding_model: str):
     """
@@ -174,23 +183,20 @@ def main(device_type: str, show_sources: str, model_id: str, model_basename: str
 
     # load the LLM for generating Natural Language responses
 
-    # for HF models
-    # model_id = "TheBloke/vicuna-7B-1.1-HF"
-    # model_id = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
-    # model_id = "TheBloke/guanaco-7B-HF"
-    # model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM. Using STransformers alongside will 100% create OOM on 24GB cards. 
-    # llm = load_model(device_type, model_id=model_id)
+    # for HF models model_id = "TheBloke/vicuna-7B-1.1-HF" model_id = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
+    # model_id = "TheBloke/guanaco-7B-HF" model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM. Using
+    # STransformers alongside will 100% create OOM on 24GB cards. llm = load_model(device_type, model_id=model_id)
 
-    # for GPTQ (quantized) models
-    # model_id = "TheBloke/Nous-Hermes-13B-GPTQ"
-    # model_basename = "nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
+    # for GPTQ (quantized) models model_id = "TheBloke/Nous-Hermes-13B-GPTQ"
+    # model_basename ="nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
     # model_id = "TheBloke/WizardLM-30B-Uncensored-GPTQ"
-    # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" # Requires ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
+    # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" # Requires ~21GB VRAM. Using STransformers
+    # alongside can potentially create OOM on 24GB cards.
     # model_id = "TheBloke/wizardLM-7B-GPTQ"
     # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
     # model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
     # model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-    llm = load_model(device_type, model_id=model_id, model_basename = model_basename)
+    llm = load_model(device_type, model_id=model_id, model_basename=model_basename)
 
     qa = RetrievalQA.from_chain_type(
         llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True
@@ -227,3 +233,4 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s',
                         level=logging.INFO)
     main()
+
