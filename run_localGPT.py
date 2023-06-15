@@ -117,7 +117,6 @@ def load_model(device_type: str, model_id: str, model_basename: str = None):
 )
 @click.option(
     "--show_sources",
-<<<<<<< HEAD
     default=True,
     type=click.Choice(
         [
@@ -126,11 +125,6 @@ def load_model(device_type: str, model_id: str, model_basename: str = None):
         ]
     ),
     help="Show sources along with answers (Default is Fals)",
-=======
-    "-s",
-    is_flag=True,
-    help="Show sources along with answers (Default is False)",
->>>>>>> 164747066b8c79f1cb57fdd7eb06831a89a27022
 )
 @click.option(
     "--model_id",
@@ -158,7 +152,7 @@ def load_model(device_type: str, model_id: str, model_basename: str = None):
 )
 def main(device_type: str, show_sources: str, model_id: str, model_basename: str, embedding_model: str):
     """
-    This function implements the information retrieval task.
+    This function implements the information retreival task.
 
 
     1. Loads an embedding model, can be HuggingFaceInstructEmbeddings or HuggingFaceEmbeddings
