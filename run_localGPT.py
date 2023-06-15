@@ -143,7 +143,7 @@ def load_model(device_type, model_id, model_basename=None):
 @click.option(
     "--show_sources",
     "-s",
-    is_default=True,
+    is_flag=True,
     help="Show sources along with answers (Default is False)",
 )
 def main(device_type, show_sources):
