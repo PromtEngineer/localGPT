@@ -1,6 +1,5 @@
 from flask import Flask, jsonify, request
 from werkzeug.utils import secure_filename
-import ssl
 import os
 import subprocess
 import shutil
@@ -166,8 +165,6 @@ def delete_source_route():
     os.makedirs(folder_name)
 
     return jsonify({"message": f"Folder '{folder_name}' successfully deleted and recreated."})
-
-
 
 @app.route('/api/save_document', methods=['GET', 'POST'])
 def save_document_route():

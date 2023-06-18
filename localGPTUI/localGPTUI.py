@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request
 from werkzeug.utils import secure_filename
+import tempfile
 
 import os
 import sys
@@ -35,13 +36,12 @@ def home_page():
             for file in files:
                 print(file.filename)
                 filename = secure_filename(file.filename)
-                file_path = os.path.join('temp', filename)  # replace with your preferred path
-                file.save(file_path)
-                with open(file_path, 'rb') as f:
-                    response = requests.post(save_document_url, files={'document': f})
-                    print(response.status_code)  # print HTTP response status code for debugging
-                os.remove(file_path)  # remove the file after sending the request
-                # Make a GET request to the /api/run_ingest endpoint
+                with tempfile.SpooledTemporaryFile() as f:
+                            f.write(file.read())
+                            f.seek(0)
+                            response = requests.post(save_document_url, files={'document': (filename, f)})
+                            print(response.status_code)  # print HTTP response status code for debugging
+            # Make a GET request to the /api/run_ingest endpoint
             response = requests.get(run_ingest_url)
             print(response.status_code)  # print HTTP response status code for debugging
             

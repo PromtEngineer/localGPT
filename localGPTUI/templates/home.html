@@ -13,12 +13,8 @@
         <link rel="stylesheet" href="static\dependencies\bootstrap-5.1.3-dist\css\bootstrap.min.css">
 
         <title>
-            {% block title %}
-            {% endblock %}
+            localGPT
         </title>
-
-        {% block scripts %}
-        {% endblock %}
     </head>
     <script>
 
@@ -43,7 +39,7 @@
             // Submit the form after a short delay to allow the modal to open
             setTimeout(function() {
                 document.getElementById('promptForm').submit();
-            }, 100);
+            }, 5);
         }
 
         function submitForm(action) {
@@ -64,7 +60,7 @@
             if (action == 'add' || action == 'reset') {
                 $('#uploadModal').modal('hide');
             }
-            
+
             form.submit();
         }
     </script>
@@ -283,7 +279,7 @@
                             <form id="promptForm" action="{{ url_for('home_page') }}" method="POST">
                                 <button type="button" class="tutorial_button" data-bs-toggle="modal" data-bs-target="#tutorial_modal">Tutorial</button>
                                 <i class='bx bxs-map'></i>
-                                <input type="text" name="user_prompt" placeholder="Tell a summary of what you know?">
+                                <input type="text" name="user_prompt" id="searchInput" placeholder="Tell a summary of what you know?">
                                 <button type="button" onclick="submitPromptForm()">Search</button>
                             </form>
                             <form id="uploadForm" action="{{ url_for('home_page') }}" method="POST" enctype="multipart/form-data">
@@ -295,6 +291,16 @@
                 </div>
             </div>
         </div>
+
+        <!-- For some reason the script needs to go here to make the the enter key also trigger the generating response modal -->
+        <script>
+            document.getElementById('searchInput').addEventListener('keydown', function(event) {
+            if (event.keyCode === 13) {
+                event.preventDefault(); // Prevent form submission
+                submitPromptForm(); // Call the function to show the modal
+            }
+        });
+        </script>
 
         <!-- Chat Response Modal -->
         <div class="modal fade" id="response_modal" tabindex="-1" aria-labelledby="response_modal" aria-hidden="true">
@@ -407,14 +413,24 @@
                     <div class="modal-body" style="color:#292b2c;">
                         <strong style="margin-left: 5%; text-align: left;">About</strong>
                         <br>
-                        <p style="text-align: justify;margin-left: 5%; margin-right:5%;">
-                            This app empowers you to ask questions to a language model even without an internet connection. 
-                            Based on the renowned privateGPT project, localGPT has been enhanced to provide an indispensable tool for accessing information beyond the training data of traditional language model tools like chatGPT. 
-                            With localGPT, you can effortlessly ingest your own documents into the system. 
-                            Simply provide text, PDF, CSV, or Excel files containing the information you want to inquire about, and the system will swiftly process these documents, creating a comprehensive database for the model to utilize. 
-                            Unlike the resource-intensive retraining process, ingesting the documents requires significantly less compute power.
+                        <p style="text-align: justify; margin-left: 5%; margin-right:5%;">
+                            Introducing a cutting-edge application that empowers users to leverage the capabilities of a language model, even in the absence of an internet connection. 
+                            This advanced tool serves as an indispensable resource for accessing information beyond the confines of traditional language model tools such as chatGPT.
+                            <br><br>
+                            One of the key advantages of this application is the preservation of data control. 
+                            This feature becomes particularly valuable when handling sensitive data that must remain within the confines of an organization or personal documents that warrant utmost confidentiality, eliminating the need to transmit information through third-party channels.
+                            <br><br>
+                            Seamlessly integrating personal documents into the system is effortless, ensuring a smooth user experience. 
+                            Whether in the form of text, PDF, CSV, or Excel files, users can conveniently provide the desired information for inquiry. 
+                            The application swiftly processes these documents, effectively creating a comprehensive database for the model to leverage, enabling accurate and insightful responses.
+                            <br><br>
+                            A notable benefit of this approach lies in its efficient resource utilization. 
+                            Unlike the resource-intensive retraining processes employed by alternative methods, the ingestion of documents within this application demands significantly less compute power. 
+                            This efficiency optimization allows for a streamlined user experience, saving both time and computational resources.
+                            <br><br>
+                            Discover the unparalleled capabilities of this technical marvel, as it enables users to tap into the full potential of language models, all while operating offline. 
+                            Experience a new era of information access, bolstering productivity and expanding possibilities. Embrace this powerful tool and unlock the true potential of your data today.
                         </p>
-                        <br>
                         <strong style="margin-left: 5%; text-align: left;">Upload Documents</strong>
                         <br>
                         <p style="line-height: 1.75;margin-left: 5%; margin-right:5%; text-align: left;">
