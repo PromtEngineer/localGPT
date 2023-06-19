@@ -100,6 +100,45 @@ In order to ask a question, run a command like:
 python run_localGPT.py --device_type cpu
 ```
 
+# Run the UI
+
+1. Start by opening up `run_localGPTAPI.py` in a code editor of your choice. If you are using gpu skip to step 3.
+
+2. If you are running on cpu change `DEVICE_TYPE = 'cuda'` to `DEVICE_TYPE = 'cpu'`.
+
+   - Comment out the following:
+
+   ```shell
+   model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
+   model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id, model_basename = model_basename)
+   ```
+
+   - Uncomment:
+
+   ```shell
+   model_id = "TheBloke/guanaco-7B-HF" # or some other -HF or .bin model
+   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id)
+   ```
+
+   - If you are running gpu there should be nothing to change. Save and close `run_localGPTAPI.py`.
+
+3. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
+
+4. Navigate to the `/LOCALGPT` directory.
+
+5. Run the following command `python run_localGPT_API.py`. The API should being to run.
+
+6. Wait until everything has loaded in. You should see something like `INFO:werkzeug:Press CTRL+C to quit`.
+
+7. Open up a second terminal and activate the same python environment.
+
+8. Navigate to the `/LOCALGPT/localGPTUI` directory.
+
+9. Run the command `python localGPTUI.py`.
+
+10. Open up a web browser and go the address `http://localhost:5111/`.
+
 # How does it work?
 
 Selecting the right local models and the power of `LangChain` you can run the entire pipeline locally, without any data leaving your environment, and with reasonable performance.
