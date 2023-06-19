@@ -1,0 +1,19 @@
+on: [push]
+
+jobs:
+  precommit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - name: Cache Pre-Commit
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pre-commit-pip
+      - name: Install pre-commit
+        run: pip install -q pre-commit
+      - name: Run pre-commit
+        run: pre-commit run --show-diff-on-failure --color=always --all-files
