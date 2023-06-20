@@ -5,7 +5,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 import click
 from langchain.docstore.document import Document
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
 from constants import (
@@ -73,6 +73,19 @@ def load_documents(source_dir: str) -> list[Document]:
     return docs
 
 
+def split_documents(documents: list[Document]) -> tuple[list[Document], list[Document]]:
+    # Splits documents for correct Text Splitter
+    text_docs, python_docs = [], []
+    for doc in documents:
+        file_extension = os.path.splitext(doc.metadata["source"])[1]
+        if file_extension == ".py":
+            python_docs.append(doc)
+        else:
+            text_docs.append(doc)
+
+    return text_docs, python_docs
+
+
 @click.command()
 @click.option(
     "--device_type",
@@ -106,8 +119,13 @@ def main(device_type):
     # Load documents and split in chunks
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
     documents = load_documents(SOURCE_DIRECTORY)
+    text_documents, python_documents = split_documents(documents)
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    texts = text_splitter.split_documents(documents)
+    python_splitter = RecursiveCharacterTextSplitter.from_language(
+        language=Language.PYTHON, chunk_size=1000, chunk_overlap=200
+    )
+    texts = text_splitter.split_documents(text_documents)
+    texts.extend(python_splitter.split_documents(python_documents))
     logging.info(f"Loaded {len(documents)} documents from {SOURCE_DIRECTORY}")
     logging.info(f"Split into {len(texts)} chunks of text")
 
