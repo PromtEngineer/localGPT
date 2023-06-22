@@ -28,7 +28,6 @@ def load_single_document(file_path: str) -> Document:
         raise ValueError("Document type is undefined")
     return loader.load()[0]
 
-
 def load_document_batch(filepaths):
     logging.info("Loading document batch")
     # create a thread pool
@@ -39,7 +38,6 @@ def load_document_batch(filepaths):
         data_list = [future.result() for future in futures]
         # return data and file paths
         return (data_list, filepaths)
-
 
 def load_documents(source_dir: str) -> list[Document]:
     # Loads all documents from the source documents directory
@@ -72,11 +70,8 @@ def load_documents(source_dir: str) -> list[Document]:
 
     return docs
 
-
 if __name__=="__main__":
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
-    )
+    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO)
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
     documents = load_documents(SOURCE_DIRECTORY)
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)

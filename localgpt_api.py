@@ -22,7 +22,6 @@ def delete_source_route():
 
     return jsonify({"message": f"Folder '{folder_name}' successfully deleted and recreated."})
 
-
 @app.route("/api/save_document", methods=["GET", "POST"])
 def save_document_route():
     if "document" not in request.files:
@@ -39,7 +38,6 @@ def save_document_route():
         file.save(file_path)
         return "File saved successfully", 200
 
-
 @app.route("/api/run_ingest", methods=["GET"])
 def run_ingest_route():
     try:
@@ -48,7 +46,6 @@ def run_ingest_route():
         return "Script executed successfully", 200
     except Exception as e:
         return f"Error occurred: {str(e)}", 500
-
 
 @app.route("/api/prompt_route", methods=["GET", "POST"])
 def prompt_route():
@@ -71,7 +68,6 @@ def prompt_route():
         return jsonify(prompt_response_dict), 200
     else:
         return "No user prompt received", 400
-
 
 if __name__ == "__main__":
     app.run(debug=False, port=5110)

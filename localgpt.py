@@ -23,9 +23,7 @@ from transformers import (
     pipeline,
 )
 
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
-)
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO)
 
 ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 SOURCE_DIRECTORY = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
