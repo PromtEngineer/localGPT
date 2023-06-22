@@ -1,9 +1,7 @@
 import os
 import subprocess
 import logging
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
-)
+
 import torch
 from auto_gptq import AutoGPTQForCausalLM
 
@@ -23,6 +21,10 @@ from transformers import (
     LlamaForCausalLM,
     LlamaTokenizer,
     pipeline,
+)
+
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
 )
 
 ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
@@ -49,13 +51,13 @@ EMBEDDINGS = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, mode
 
 class DocumentProcessor:
     def __init__(self):
-        logging.info(f"Initializing localgpt")
+        logging.info("Initializing localgpt")
         self.QA = None
         self.LLM = None
         self.MODEL_LOADED = False
 
     def ingest(self):
-        logging.info(f"Executing ingest.py")
+        logging.info("Executing ingest.py")
         result = subprocess.run(["python", "ingest.py"], capture_output=True)
         if result.returncode != 0:
             return "Script execution failed: {}".format(result.stderr.decode("utf-8")), 500
