@@ -1,15 +1,9 @@
-import os
 import subprocess
 import logging
 
 import torch
 from auto_gptq import AutoGPTQForCausalLM
 
-# from dotenv import load_dotenv
-from chromadb.config import Settings
-
-# https://python.langchain.com/en/latest/modules/indexes/document_loaders/examples/excel.html?highlight=xlsx#microsoft-excel
-from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
@@ -23,27 +17,18 @@ from transformers import (
     pipeline,
 )
 
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO)
-
-ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
-SOURCE_DIRECTORY = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
-PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/DB"
-INGEST_THREADS = os.cpu_count() or 8
-CHROMA_SETTINGS = Settings(
-    chroma_db_impl="duckdb+parquet", persist_directory=PERSIST_DIRECTORY, anonymized_telemetry=False
+from config import (
+    CHROMA_SETTINGS,
+    EMBEDDING_MODEL_NAME,
+    PERSIST_DIRECTORY,
+    EMBEDDING_MODEL_NAME,
+    DEVICE_TYPE,
+    SHOW_SOURCES,
+    MODEL_ID,
+    MODEL_BASENAME
 )
-DOCUMENT_MAP = {
-    ".txt": TextLoader,
-    ".pdf": PDFMinerLoader,
-    ".csv": CSVLoader,
-    ".xls": UnstructuredExcelLoader,
-    ".xlxs": UnstructuredExcelLoader,
-}
-EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"
-DEVICE_TYPE = "cuda"
-SHOW_SOURCES = True
-MODEL_ID = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+
+logging.basicConfig(format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO)
 
 EMBEDDINGS = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": DEVICE_TYPE})
 

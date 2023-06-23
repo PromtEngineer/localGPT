@@ -41,7 +41,7 @@ def save_document_route():
 @app.route("/api/run_ingest", methods=["GET"])
 def run_ingest_route():
     try:
-        localgpt_object.ingest()
+        localgpt_object.ingest(reset_DB=True)
         localgpt_object.load_QA()
         return "Script executed successfully", 200
     except Exception as e:

@@ -1,6 +1,5 @@
 import logging
 import os
-import shutil
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 from langchain.docstore.document import Document
@@ -8,13 +7,14 @@ from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
-from localgpt import (
+from config import (
     CHROMA_SETTINGS,
     DOCUMENT_MAP,
     EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
+    EMBEDDING_MODEL_NAME,
     DEVICE_TYPE
 )
 
@@ -70,20 +70,19 @@ def load_documents(source_dir: str) -> list[Document]:
 
     return docs
 
-if __name__=="__main__":
-    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO)
+def create_db(reset_DB=False):
+    
+    if os.path.exists(PERSIST_DIRECTORY) and not reset_DB:
+        logging.info(f"{PERSIST_DIRECTORY} already exists.")
+        return
+
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
+    
     documents = load_documents(SOURCE_DIRECTORY)
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     texts = text_splitter.split_documents(documents)
     logging.info(f"Loaded {len(documents)} documents from {SOURCE_DIRECTORY}")
     logging.info(f"Split into {len(texts)} chunks of text")
-
-    if os.path.exists(PERSIST_DIRECTORY):
-        try:
-            shutil.rmtree(PERSIST_DIRECTORY)
-        except OSError as e:
-            print(f"Error: {e.filename} - {e.strerror}.")
 
     embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": DEVICE_TYPE})
 
@@ -95,3 +94,7 @@ if __name__=="__main__":
     )
     db.persist()
     db = None
+
+if __name__=="__main__":
+    logging.basicConfig(format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO)
+    create_db()
