@@ -128,7 +128,6 @@ def split_documents(documents: List[Document]) -> List[Document]:
 
     Returns:
         List[Document]: A list of split documents.
-
     """
     logging.info(f"Splitting: {[doc.metadata['source'] for doc in documents]}")
 
@@ -149,6 +148,7 @@ def split_documents(documents: List[Document]) -> List[Document]:
         else:
             text_docs.append(doc)
 
+    # NOTE: Splitters should be abstracted to allow plug n' play
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000, chunk_overlap=200
     )
