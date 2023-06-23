@@ -86,6 +86,7 @@ def main(embedding_model, embedding_type, device_type):
     logging.info(f"Split into {len(texts)} chunks of text")
 
     # Create embeddings
+    # NOTE: Models should be abstracted to allow for plug n' play
     logging.info(f"Split into {len(texts)} chunks of text")
     if embedding_type == "HuggingFaceInstructEmbeddings":
         embeddings = HuggingFaceInstructEmbeddings(
