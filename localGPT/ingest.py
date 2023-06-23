@@ -10,7 +10,6 @@ from langchain.vectorstores import Chroma
 
 from localGPT import (
     CHROMA_SETTINGS,
-    DOCUMENT_MAP,
     EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
     PERSIST_DIRECTORY,

@@ -24,7 +24,7 @@ from transformers import (
 )
 from werkzeug.utils import secure_filename
 
-from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
+from localGPT.constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
 
 DEVICE_TYPE = "cuda"
 SHOW_SOURCES = True
