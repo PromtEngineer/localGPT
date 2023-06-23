@@ -1,8 +1,39 @@
+[tool.poetry.dependencies]
+# Web Tool Kits
+requests = "^2.31.0"
+WTForms = "^3.0.1"
+email-validator = "^2.0.0.post2"
+flask = "^2.3.2"
+Flask-WTF = "^1.1.1"
+
+# Natural Language Processing
+langchain = "^0.0.209"
+chromadb = "^0.3.26"
+llama-cpp-python = "^0.1.65"
+InstructorEmbedding = "^1.0.1"
+sentence-transformers = "^2.2.2"
+faiss-cpu = "^1.7.4"
+huggingface-hub = "^0.15.1"
+transformers = "^4.30.2"
+protobuf = "^3.20.0"
+auto-gptq = "^0.2.2"
+
+# Utilities
+accelerate = "0.20.3"
+bitsandbytes = "0.39.1"
+click = "^8.1.3"
+pdfminer_six = "^20221105"
+python-magic = "^0.4.0"
+
+[tool.poetry.dev-dependencies]
+black = "^23.3.0"
+isort = "^5.12.0"
+mypy = "^1.4.0"
+
 # ==== black ====
 [tool.black]
 line-length = 119
 target-version = ['py311']
-
 
 # ==== isort ====
 [tool.isort]
@@ -13,3 +44,7 @@ known_first_party = [
     "scripts",
     "hooks",
 ]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
