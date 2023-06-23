@@ -9,11 +9,13 @@ from concurrent.futures import (
 from typing import List, Tuple
 
 from langchain.docstore.document import Document
-from langchain.document_loaders import TextLoader
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 
 from localGPT import INGEST_THREADS
-from localGPT.registry import LoaderRegistry
+from localGPT.registry import LoaderRegistry, TextSplitterRegistry
+
+loader_registry = LoaderRegistry()
+splitter_registry = TextSplitterRegistry()
 
 
 def load_single_document(file_path: str) -> Document:
@@ -29,7 +31,6 @@ def load_single_document(file_path: str) -> Document:
     Raises:
         ValueError: If the document type is undefined.
     """
-    loader_registry = LoaderRegistry()
     mime_type = loader_registry.get_mime_type(file_path)
     loader_class = loader_registry.get_loader(mime_type)
     if loader_class:
@@ -80,7 +81,6 @@ def load_documents(source_dir: str) -> List[Document]:
     """
     paths = []
     all_files = os.listdir(source_dir)
-    loader_registry = LoaderRegistry()
 
     logging.info(f"Loading documents: {source_dir}")
     logging.info(f"Loading document files: {all_files}")
@@ -131,31 +131,24 @@ def split_documents(documents: List[Document]) -> List[Document]:
     """
     logging.info(f"Splitting: {[doc.metadata['source'] for doc in documents]}")
 
-    text_docs, python_docs = [], []
-    loader_registry = LoaderRegistry()
-
+    split_documents = []
     for doc in documents:
         logging.info(f"Splitting: {doc.metadata['source']}")
-        mime_type = loader_registry.get_mime_type(doc.metadata["source"])
-        logging.info(f"Splitting: {mime_type}")
-        loader_class = loader_registry.get_loader(mime_type)
+        file_extension = splitter_registry.get_extension(doc)
+        language_str = splitter_registry.get_language(file_extension)
 
-        if isinstance(loader_class, TextLoader):
-            if loader_registry.has_extension(doc, "py"):
-                python_docs.append(doc)
-            else:
-                text_docs.append(doc)
+        # If we have a language for this file extension, use a language-specific splitter
+        if language_str is not None:
+            language = Language(language_str)  # Convert string to Language enum
+            splitter = RecursiveCharacterTextSplitter.from_language(
+                language=language, chunk_size=1000, chunk_overlap=200
+            )
+        # Otherwise, use a default text splitter
         else:
-            text_docs.append(doc)
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000, chunk_overlap=200
+            )
 
-    # NOTE: Splitters should be abstracted to allow plug n' play
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000, chunk_overlap=200
-    )
-    python_splitter = RecursiveCharacterTextSplitter.from_language(
-        language=Language.PYTHON, chunk_size=1000, chunk_overlap=200
-    )
-    text_documents = text_splitter.split_documents(text_docs)
-    python_documents = python_splitter.split_documents(python_docs)
+        split_documents.extend(splitter.split_documents([doc]))
 
-    return text_documents + python_documents
+    return split_documents

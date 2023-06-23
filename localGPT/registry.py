@@ -1,4 +1,5 @@
 # localGPT/registry.py
+import os
 from collections import defaultdict
 from typing import Optional, Text, Type
 
@@ -57,20 +58,6 @@ class LoaderRegistry:
         mime = magic.Magic(mime=True)
         return mime.from_file(file_path)
 
-    @staticmethod
-    def has_extension(document: Document, source: str) -> bool:
-        """
-        Checks if the document has a specific source extension.
-
-        Args:
-            document (Document): The document to check.
-            source (str): The source extension to compare.
-
-        Returns:
-            bool: True if the document has the specified source extension, False otherwise.
-        """
-        return document.metadata["source"].endswith(source)
-
     def register_loader(
         self,
         mime_type: str,
@@ -120,6 +107,22 @@ class TextSplitterRegistry:
         # Register languages for file extensions
         for file_extension, language in LANGUAGE_TYPES:
             self.register_language(file_extension, language)
+
+    @staticmethod
+    def get_extension(document: Document) -> str:
+        """
+        Checks if the document has a specific source extension.
+
+        Args:
+            document (Document): The document to check.
+            source (str): The source extension to compare.
+
+        Returns:
+            bool: True if the document has the specified source extension, False otherwise.
+        """
+        return os.path.splitext(document.metadata["source"])[1][
+            1:
+        ]  # Get file extension without dot
 
     def register_language(
         self,
