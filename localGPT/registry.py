@@ -1,17 +1,15 @@
 from collections import defaultdict
 
 import magic
-from langchain.document_loaders import (
-    CSVLoader,
-    PDFMinerLoader,
-    TextLoader,
-    UnstructuredExcelLoader,
-)
+from localGPT import MIME_TYPES
 
 
 class LoaderRegistry:
     def __init__(self):
         self.loader_map = defaultdict(list)
+
+        for mime_type, loader in MIME_TYPES:
+            self.register_loader(mime_type, loader)
 
     @staticmethod
     def get_mime_type(file_path):
@@ -27,13 +25,3 @@ class LoaderRegistry:
             return loader_classes[0]  # Return the first matching loader class
         else:
             return None
-
-
-# Create an instance of the LoaderRegistry
-loader_registry = LoaderRegistry()
-
-# Register the Loader classes with the LoaderRegistry using MIME types
-loader_registry.register_loader("text/plain", TextLoader)
-loader_registry.register_loader("application/pdf", PDFMinerLoader)
-loader_registry.register_loader("text/csv", CSVLoader)
-loader_registry.register_loader("application/vnd.ms-excel", UnstructuredExcelLoader)
