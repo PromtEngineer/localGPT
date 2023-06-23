@@ -20,6 +20,7 @@ bitsandbytes
 click
 flask
 requests
+python-magic
 
 # Excel File Manipulation
 openpyxl
