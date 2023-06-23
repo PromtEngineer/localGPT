@@ -1,5 +1,5 @@
 """
-localGPT:
+localGPT/__init__.py
 
 ROOT_DIRECTORY: A string variable that stores the absolute path of the current working directory.
 
@@ -25,14 +25,19 @@ from langchain.document_loaders import (
 )
 from langchain.document_loaders.base import BaseLoader
 
-# The absolute path of the current working directory
-ROOT_DIRECTORY: str = os.path.dirname(os.environ["PWD"])
-
-# The folder for storing the source documents
-SOURCE_DIRECTORY: str = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
-
-# The folder for storing the database
-PERSIST_DIRECTORY: str = f"{ROOT_DIRECTORY}/database"
+# NOTE: Handling the default paths this way is not a good idea because
+# this will look for the parent path relative to the package it self.
+# It's probably better to include these paths within the package it self
+# or allow the user to configure or set a path instead.
+#
+# Get the path for this source file
+SOURCE_PATH = os.path.dirname(os.path.realpath(__file__))
+# Get the absolute path of the package root directory
+ROOT_DIRECTORY: str = os.path.abspath(os.path.join(SOURCE_PATH, ".."))
+# Set the default path for storing the source documents
+SOURCE_DIRECTORY: str = os.path.join(ROOT_DIRECTORY, "SOURCE_DOCUMENTS")
+# Set the default path for storing the database
+PERSIST_DIRECTORY: str = os.path.join(ROOT_DIRECTORY, "database")
 
 # The number of CPU threads for ingestion
 # If os.cpu_count() is not available, it defaults to 8
@@ -43,7 +48,9 @@ INGEST_THREADS: int = os.cpu_count() or 8
 # - persist_directory: Directory for persisting the database
 # - anonymized_telemetry: Whether anonymized telemetry is enabled (False)
 CHROMA_SETTINGS: Settings = Settings(
-    chroma_db_impl="duckdb+parquet", persist_directory=PERSIST_DIRECTORY, anonymized_telemetry=False
+    chroma_db_impl="duckdb+parquet",
+    persist_directory=PERSIST_DIRECTORY,
+    anonymized_telemetry=False,
 )
 
 # A tuple of tuples associating MIME types with loader classes
