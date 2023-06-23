@@ -1,22 +1,28 @@
 import logging
 import os
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    as_completed,
+)
 
 import click
 from langchain.docstore.document import Document
 from langchain.document_loaders import TextLoader, UnstructuredExcelLoader
-from langchain.embeddings import HuggingFaceInstructEmbeddings
+from langchain.embeddings import (
+    HuggingFaceEmbeddings,
+    HuggingFaceInstructEmbeddings,
+)
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
-from localGPT.registry import LoaderRegistry
 from localGPT import (
     CHROMA_SETTINGS,
-    EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
 )
+from localGPT.registry import LoaderRegistry
 
 
 def load_single_document(file_path: str) -> Document:
@@ -98,7 +104,6 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
 #   You can also choose a smaller model.
 #   Don't forget to change HuggingFaceInstructEmbeddings
 #   to HuggingFaceEmbeddings in both ingest.py and run.py
-# EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 @click.command()
 @click.option(
     "--embedding_model",
@@ -112,9 +117,19 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
             "sentence-transformers/all-MiniLM-L12-v2",
         ]
     ),
-    help="Instructor Model to generate Embeddings with (default: hkunlp/instructor-large)",
+    help="Instructor Model to generate embeddings with (default: hkunlp/instructor-large)",
 )
-@click.command()
+@click.option(
+    "--embedding_type",
+    default="HuggingFaceInstructEmbeddings",
+    type=click.Choice(
+        [
+            "HuggingFaceEmbeddings",
+            "HuggingFaceInstructEmbeddings",
+        ]
+    ),
+    help="Embedding type to use (default: HuggingFaceInstructEmbeddings)",
+)
 @click.option(
     "--device_type",
     default="cuda",
@@ -141,10 +156,10 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
             "mtia",
         ],
     ),
-    help="Device to run on. (Default is cuda)",
+    help="Device to run on (default: cuda)",
 )
-def main(device_type):
-    # Load documents and split in chunks
+def main(embedding_model, embedding_type, device_type):
+    # Load documents and split them into chunks
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
     documents = load_documents(SOURCE_DIRECTORY)
     text_documents, python_documents = split_documents(documents)
@@ -158,17 +173,17 @@ def main(device_type):
     logging.info(f"Split into {len(texts)} chunks of text")
 
     # Create embeddings
-    embeddings = HuggingFaceInstructEmbeddings(
-        model_name=EMBEDDING_MODEL_NAME,
-        model_kwargs={"device": device_type},
-    )
-    # change the embedding type here if you are running into issues.
-    # These are much smaller embeddings and will work for most appications
-    # If you use HuggingFaceEmbeddings, make sure to also use the same in the
-    # run_localGPT.py file.
+    if embedding_type == "HuggingFaceInstructEmbeddings":
+        embeddings = HuggingFaceInstructEmbeddings(
+            model_name=embedding_model,
+            model_kwargs={"device": device_type},
+        )
+    elif embedding_type == "HuggingFaceEmbeddings":
+        embeddings = HuggingFaceEmbeddings(model_name=embedding_model, model_kwargs={"device": device_type},)
+    else:
+        raise ValueError("Invalid embeddings type provided.")
 
-    # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-
+    # Persist the embeddings to Chroma database
     db = Chroma.from_documents(
         texts,
         embeddings,
