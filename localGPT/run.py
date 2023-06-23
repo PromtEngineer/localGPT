@@ -18,7 +18,7 @@ from transformers import (
     pipeline,
 )
 
-from localGPT.constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
+from localGPT import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
 
 
 def load_model(device_type, model_id, model_basename=None):
