@@ -1,6 +1,10 @@
+# Ignore Database
+/database
+/db
+/DB
+
 # Ignore vscode
 /.vscode
-/DB
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
