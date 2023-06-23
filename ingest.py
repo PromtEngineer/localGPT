@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 from langchain.docstore.document import Document
@@ -17,6 +18,8 @@ from config import (
     EMBEDDING_MODEL_NAME,
     DEVICE_TYPE
 )
+
+reset_DB = float(sys.argv[1])
 
 def load_single_document(file_path: str) -> Document:
     # Loads a single document from a file path
@@ -70,7 +73,7 @@ def load_documents(source_dir: str) -> list[Document]:
 
     return docs
 
-def create_db(reset_DB=False):
+def create_db(reset_DB):
     
     if os.path.exists(PERSIST_DIRECTORY) and not reset_DB:
         logging.info(f"{PERSIST_DIRECTORY} already exists.")

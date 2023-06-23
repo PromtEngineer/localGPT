@@ -39,9 +39,9 @@ class DocumentProcessor:
         self.LLM = None
         self.MODEL_LOADED = False
 
-    def ingest(self):
+    def ingest(self, reset_DB=False):
         logging.info("Executing ingest.py")
-        result = subprocess.run(["python", "ingest.py"], capture_output=True)
+        result = subprocess.run(["python", "ingest.py", reset_DB], capture_output=True)
         if result.returncode != 0:
             return "Script execution failed: {}".format(result.stderr.decode("utf-8")), 500
 

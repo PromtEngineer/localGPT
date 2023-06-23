@@ -16,7 +16,7 @@ while True:
     if query == "exit":
         break
     elif query == "reingest":
-        localgpt_object.ingest()
+        localgpt_object.ingest(reset_DB=True)
         continue
 
     # Get the answer from the chain
