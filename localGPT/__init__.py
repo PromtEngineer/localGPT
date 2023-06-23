@@ -15,20 +15,21 @@ MIME_TYPES: A tuple of tuples that associates MIME types with loader classes. Ea
 """
 
 import os
+
 from chromadb.config import Settings
-from langchain.document_loaders.base import BaseLoader
 from langchain.document_loaders import (
     CSVLoader,
     PDFMinerLoader,
     TextLoader,
     UnstructuredExcelLoader,
 )
+from langchain.document_loaders.base import BaseLoader
 
 # The absolute path of the current working directory
 ROOT_DIRECTORY: str = os.path.dirname(os.environ["PWD"])
 
 # The folder for storing the source documents
-SOURCE_DIRECTORY: str = f"{ROOT_DIRECTORY}/source_directory"
+SOURCE_DIRECTORY: str = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
 
 # The folder for storing the database
 PERSIST_DIRECTORY: str = f"{ROOT_DIRECTORY}/database"
