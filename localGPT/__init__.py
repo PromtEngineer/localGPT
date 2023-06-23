@@ -28,7 +28,7 @@ from langchain.document_loaders import (
 ROOT_DIRECTORY: str = os.path.dirname(os.environ["PWD"])
 
 # The folder for storing the source documents
-SOURCE_DIRECTORY: str = f"{ROOT_DIRECTORY}/documents"
+SOURCE_DIRECTORY: str = f"{ROOT_DIRECTORY}/source_directory"
 
 # The folder for storing the database
 PERSIST_DIRECTORY: str = f"{ROOT_DIRECTORY}/database"
