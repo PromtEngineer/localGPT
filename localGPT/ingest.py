@@ -4,10 +4,12 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 
 import click
 from langchain.docstore.document import Document
+from langchain.document_loaders import TextLoader, UnstructuredExcelLoader
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
+from localGPT.registry import LoaderRegistry
 from localGPT import (
     CHROMA_SETTINGS,
     EMBEDDING_MODEL_NAME,
@@ -19,8 +21,9 @@ from localGPT import (
 
 def load_single_document(file_path: str) -> Document:
     # Loads a single document from a file path
-    file_extension = os.path.splitext(file_path)[1]
-    loader_class = DOCUMENT_MAP.get(file_extension)
+    loader_registry = LoaderRegistry()
+    mime_type = loader_registry.get_mime_type(file_path)
+    loader_class = loader_registry.get_loader(mime_type)
     if loader_class:
         loader = loader_class(file_path)
     else:
@@ -42,12 +45,15 @@ def load_document_batch(filepaths):
 
 def load_documents(source_dir: str) -> list[Document]:
     # Loads all documents from the source documents directory
-    all_files = os.listdir(source_dir)
     paths = []
+    all_files = os.listdir(source_dir)
+    loader_registry = LoaderRegistry()
+
     for file_path in all_files:
-        file_extension = os.path.splitext(file_path)[1]
         source_file_path = os.path.join(source_dir, file_path)
-        if file_extension in DOCUMENT_MAP.keys():
+        mime_type = loader_registry.get_mime_type(file_path)
+        loader_class = loader_registry.get_loader(mime_type)
+        if loader_class:
             paths.append(source_file_path)
 
     # Have at least one worker and at most INGEST_THREADS workers
@@ -75,16 +81,39 @@ def load_documents(source_dir: str) -> list[Document]:
 def split_documents(documents: list[Document]) -> tuple[list[Document], list[Document]]:
     # Splits documents for correct Text Splitter
     text_docs, python_docs = [], []
+    loader_registry = LoaderRegistry()
+
     for doc in documents:
-        file_extension = os.path.splitext(doc.metadata["source"])[1]
-        if file_extension == ".py":
-            python_docs.append(doc)
-        else:
+        mime_type = loader_registry.get_mime_type(doc.metadata["source"])
+        loader_class = loader_registry.get_loader(mime_type)
+        if loader_class == TextLoader:
             text_docs.append(doc)
+        elif loader_class == UnstructuredExcelLoader:
+            python_docs.append(doc)
 
     return text_docs, python_docs
 
 
+# Default Instructor Model
+#   You can also choose a smaller model.
+#   Don't forget to change HuggingFaceInstructEmbeddings
+#   to HuggingFaceEmbeddings in both ingest.py and run.py
+# EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+@click.command()
+@click.option(
+    "--embedding_model",
+    default="hkunlp/instructor-large",
+    type=click.Choice(
+        [
+            "hkunlp/instructor-base",
+            "hkunlp/instructor-large",
+            "hkunlp/instructor-xl",
+            "sentence-transformers/all-MiniLM-L6-v2",
+            "sentence-transformers/all-MiniLM-L12-v2",
+        ]
+    ),
+    help="Instructor Model to generate Embeddings with (default: hkunlp/instructor-large)",
+)
 @click.command()
 @click.option(
     "--device_type",
