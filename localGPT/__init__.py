@@ -13,8 +13,8 @@ CHROMA_SETTINGS: A Settings object from the chromadb.config module. It is initia
 
 MIME_TYPES: A tuple of tuples that associates MIME types with loader classes. Each inner tuple consists of a MIME type string and a loader class. The loader classes are imported from various modules: TextLoader from langchain.document_loaders.base, PDFMinerLoader from langchain.document_loaders, CSVLoader from langchain.document_loaders, and UnstructuredExcelLoader from langchain.document_loaders.
 """
-
 import os
+from typing import Tuple, Type
 
 from chromadb.config import Settings
 from langchain.document_loaders import (
@@ -24,6 +24,7 @@ from langchain.document_loaders import (
     UnstructuredExcelLoader,
 )
 from langchain.document_loaders.base import BaseLoader
+from langchain.text_splitter import Language
 
 # NOTE: Handling the default paths this way is not a good idea because
 # this will look for the parent path relative to the package it self.
@@ -55,9 +56,31 @@ CHROMA_SETTINGS: Settings = Settings(
 
 # A tuple of tuples associating MIME types with loader classes
 # Each inner tuple consists of a MIME type string and a loader class
-MIME_TYPES: tuple[tuple[str, BaseLoader]] = (
+# NOTE: <type>[<type>[], ...] syntax states that you expect a <type>
+# that can contain any number of inner <type>s.
+MIME_TYPES: Tuple[Tuple[str, Type[BaseLoader]], ...] = (
     ("text/plain", TextLoader),
     ("application/pdf", PDFMinerLoader),
     ("text/csv", CSVLoader),
     ("application/vnd.ms-excel", UnstructuredExcelLoader),
+)
+
+# `str` is the file extension and Language is the Enum mapped to it
+LANGUAGE_TYPES: Tuple[Tuple[str, str], ...] = (
+    ("cpp", Language.CPP),  # C++ source files
+    ("go", Language.GO),  # Go source files
+    ("java", Language.JAVA),  # Java source files
+    ("js", Language.JS),  # JavaScript source files
+    ("php", Language.PHP),  # PHP source files
+    ("proto", Language.PROTO),  # Protocol Buffers files
+    ("py", Language.PYTHON),  # Python source files
+    ("rst", Language.RST),  # reStructuredText files
+    ("rb", Language.RUBY),  # Ruby source files
+    ("rs", Language.RUST),  # Rust source files
+    ("scala", Language.SCALA),  # Scala source files
+    ("swift", Language.SWIFT),  # Swift source files
+    ("md", Language.MARKDOWN),  # Markdown files
+    ("tex", Language.LATEX),  # LaTeX files
+    ("html", Language.HTML),  # HTML files
+    ("sol", Language.SOL),  # Solidity files
 )
