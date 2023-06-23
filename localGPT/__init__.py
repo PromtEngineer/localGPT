@@ -2,25 +2,42 @@ import os
 
 # from dotenv import load_dotenv
 from chromadb.config import Settings
+from langchain.document_loaders.base import BaseLoader
+from langchain.document_loaders import (
+    CSVLoader,
+    PDFMinerLoader,
+    TextLoader,
+    UnstructuredExcelLoader,
+)
 
-# load_dotenv()
-ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
+ROOT_DIRECTORY: str = os.path.dirname(os.path.realpath(__file__))
 
 # Define the folder for storing database
-SOURCE_DIRECTORY = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
+SOURCE_DIRECTORY: str = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
 
-PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/DB"
+PERSIST_DIRECTORY: str = f"{ROOT_DIRECTORY}/DB"
 
 # Can be changed to a specific number
-INGEST_THREADS = os.cpu_count() or 8
+INGEST_THREADS: int = os.cpu_count() or 8
 
 # Define the Chroma settings
-CHROMA_SETTINGS = Settings(
+CHROMA_SETTINGS: Settings = Settings(
     chroma_db_impl="duckdb+parquet", persist_directory=PERSIST_DIRECTORY, anonymized_telemetry=False
 )
 
-# Default Instructor Model
-EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"
-# You can also choose a smaller model, don't forget to change HuggingFaceInstructEmbeddings
-# to HuggingFaceEmbeddings in both ingest.py and run_localGPT.py
-# EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+# Register MIME types with Loaders here
+MIME_TYPES: tuple[tuple[str, BaseLoader]] = (
+    ("text/plain", TextLoader),
+    (
+        "application/pdf",
+        PDFMinerLoader,
+    ),
+    (
+        "text/csv",
+        CSVLoader,
+    ),
+    (
+        "application/vnd.ms-excel",
+        UnstructuredExcelLoader,
+    ),
+)
