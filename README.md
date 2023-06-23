@@ -203,6 +203,16 @@ To install a C++ compiler on Windows 10/11, follow these steps:
 
 Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-ubuntu-22-04) to install NVIDIA Drivers.
 
+If pip complains about cuda versions not matching one solution is to use [anaconda](https://docs.anaconda.com/free/anaconda/install/index.html) and something like the following to fix dependency issues:
+
+```
+conda create -n localGPT python=3.10
+conda activate localGPT
+conda install -c nvidia cudatoolkit=11.7
+```
+
+Be sure to initialize conda with `conda init zsh` (or your shell name) if the installer doesn't do it for you.
+
 ### M1/M2 Macbook users:
 
 1- Follow this [page](https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
