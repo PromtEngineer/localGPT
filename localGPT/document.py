@@ -9,11 +9,7 @@ from concurrent.futures import (
 from typing import List, Tuple
 
 from langchain.docstore.document import Document
-from langchain.document_loaders import (
-    PDFMinerLoader,
-    TextLoader,
-    UnstructuredExcelLoader,
-)
+from langchain.document_loaders import TextLoader
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 
 from localGPT import INGEST_THREADS
@@ -146,7 +142,7 @@ def split_documents(documents: List[Document]) -> List[Document]:
         loader_class = loader_registry.get_loader(mime_type)
 
         if isinstance(loader_class, TextLoader):
-            if doc.metadata["source"].endswith(".py"):
+            if loader_registry.has_extension(doc, "py"):
                 python_docs.append(doc)
             else:
                 text_docs.append(doc)

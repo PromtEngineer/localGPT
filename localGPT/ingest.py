@@ -78,6 +78,7 @@ def main(embedding_model, embedding_type, device_type):
 
     # Load documents and split them into chunks
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
+
     documents = load_documents(SOURCE_DIRECTORY)
     texts = split_documents(documents)
 
