@@ -1,17 +1,31 @@
 """
 localGPT/__init__.py
 
-ROOT_DIRECTORY: A string variable that stores the absolute path of the current working directory.
+ROOT_DIRECTORY: A string variable that stores the absolute path of the current
+working directory.
 
-SOURCE_DIRECTORY: A string variable that concatenates the ROOT_DIRECTORY with "/SOURCE_DOCUMENTS". This defines the folder for storing the source documents.
+SOURCE_DIRECTORY: A string variable that concatenates the ROOT_DIRECTORY with
+"/SOURCE_DOCUMENTS". This defines the folder for storing the source documents.
 
-PERSIST_DIRECTORY: A string variable that concatenates the ROOT_DIRECTORY with "/DB". This defines the folder for storing the database.
+PERSIST_DIRECTORY: A string variable that concatenates the ROOT_DIRECTORY
+with "/DB". This defines the folder for storing the database.
 
-INGEST_THREADS: An integer variable that stores the number of CPU threads for ingestion. It uses os.cpu_count() to determine the number of CPU cores, and if the count is not available, it defaults to 8.
+INGEST_THREADS: An integer variable that stores the number of CPU threads for
+ingestion. It uses os.cpu_count() to determine the number of CPU cores, and if
+the count is not available, it defaults to 8.
 
-CHROMA_SETTINGS: A Settings object from the chromadb.config module. It is initialized with three arguments: chroma_db_impl, persist_directory, and anonymized_telemetry. These arguments define the Chroma database implementation (duckdb+parquet), the directory for persisting the database, and whether anonymized telemetry is enabled (False).
+CHROMA_SETTINGS: A Settings object from the chromadb.config module. It is
+initialized with three arguments: chroma_db_impl, persist_directory, and
+anonymized_telemetry. These arguments define the Chroma database implementation
+(duckdb+parquet), the directory for persisting the database, and whether
+anonymized telemetry is enabled (False).
 
-MIME_TYPES: A tuple of tuples that associates MIME types with loader classes. Each inner tuple consists of a MIME type string and a loader class. The loader classes are imported from various modules: TextLoader from langchain.document_loaders.base, PDFMinerLoader from langchain.document_loaders, CSVLoader from langchain.document_loaders, and UnstructuredExcelLoader from langchain.document_loaders.
+MIME_TYPES: A tuple of tuples that associates MIME types with loader classes.
+Each inner tuple consists of a MIME type string and a loader class. The loader
+classes are imported from various modules: TextLoader from
+langchain.document_loaders.base, PDFMinerLoader from langchain.document_loaders,
+CSVLoader from langchain.document_loaders, and UnstructuredExcelLoader from
+langchain.document_loaders.
 """
 import os
 from typing import Tuple, Type
