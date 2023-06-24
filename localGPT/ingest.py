@@ -13,11 +13,23 @@ from localGPT import (
 from localGPT.document import load_documents, split_documents
 
 
-# Default Instructor Model
+@click.command()
+@click.option(
+    "--source_directory",
+    default=SOURCE_DIRECTORY,
+    type=click.STRING,
+    help=f"The path the documents are read from (default: {SOURCE_DIRECTORY})",
+)
+@click.option(
+    "--persist_directory",
+    default=PERSIST_DIRECTORY,
+    type=click.STRING,
+    help=f"The path the embeddings are written to (default: {PERSIST_DIRECTORY})",
+)
+# Default Instruct Model
 #   You can also choose a smaller model.
 #   Don't forget to change HuggingFaceInstructEmbeddings
 #   to HuggingFaceEmbeddings in both ingest.py and run.py
-@click.command()
 @click.option(
     "--embedding_model",
     default="hkunlp/instructor-large",
@@ -30,7 +42,7 @@ from localGPT.document import load_documents, split_documents
             "sentence-transformers/all-MiniLM-L12-v2",
         ]
     ),
-    help="Instructor Model to generate embeddings with (default: hkunlp/instructor-large)",
+    help="Instruct model to generate embeddings (default: hkunlp/instructor-large)",
 )
 @click.option(
     "--embedding_type",
@@ -71,19 +83,25 @@ from localGPT.document import load_documents, split_documents
     ),
     help="Device to run on (default: cuda)",
 )
-def main(embedding_model, embedding_type, device_type):
+def main(
+    source_directory,
+    persist_directory,
+    embedding_model,
+    embedding_type,
+    device_type,
+):
     # Using model and types
     logging.info(f"Using Embedding Model: {embedding_model}")
     logging.info(f"Using Embedding Type: {embedding_type}")
     logging.info(f"Using Device Type: {device_type}")
 
     # Load documents and split them into chunks
-    logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
+    logging.info(f"Loading documents from {source_directory}")
 
-    documents = load_documents(SOURCE_DIRECTORY)
+    documents = load_documents(source_directory)
     texts = split_documents(documents)
 
-    logging.info(f"Loaded {len(documents)} documents from {SOURCE_DIRECTORY}")
+    logging.info(f"Loaded {len(documents)} documents from {source_directory}")
     logging.info(f"Split into {len(texts)} chunks of text")
 
     # Create embeddings
@@ -102,7 +120,7 @@ def main(embedding_model, embedding_type, device_type):
     db = Chroma.from_documents(
         texts,
         embeddings,
-        persist_directory=PERSIST_DIRECTORY,
+        persist_directory=persist_directory,
         client_settings=CHROMA_SETTINGS,
     )
     db.persist()
@@ -110,8 +128,4 @@ def main(embedding_model, embedding_type, device_type):
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s",
-        level=logging.INFO,
-    )
     main()
