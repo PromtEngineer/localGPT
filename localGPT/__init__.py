@@ -1,4 +1,7 @@
 """
+No plan survives contact with the enemy.
+    - Helmuth von Moltke
+
 localGPT/__init__.py
 
 This module contains the initialization code and configuration settings for the 
