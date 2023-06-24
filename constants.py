@@ -37,3 +37,8 @@ EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"
 # You can also choose a smaller model, don't forget to change HuggingFaceInstructEmbeddings
 # to HuggingFaceEmbeddings in both ingest.py and run_localGPT.py
 # EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+
+# JSON configuration
+JSON_CONTENT_KEY = "text"
+JSON_JOIN_CHAR = ","
+JSON_JQ_SCHEMA = "."
