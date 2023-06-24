@@ -27,6 +27,7 @@ langchain.document_loaders.base, PDFMinerLoader from langchain.document_loaders,
 CSVLoader from langchain.document_loaders, and UnstructuredExcelLoader from
 langchain.document_loaders.
 """
+import logging
 import os
 from typing import Tuple, Type
 
@@ -37,6 +38,7 @@ from langchain.document_loaders import (
     TextLoader,
     UnstructuredExcelLoader,
 )
+from langchain.embeddings.base import Embeddings
 from langchain.document_loaders.base import BaseLoader
 from langchain.embeddings import (
     CohereEmbeddings,
@@ -47,19 +49,26 @@ from langchain.embeddings import (
 )
 from langchain.text_splitter import Language
 
+# Set logging configuration
+# NOTE: Can be overriden on a script-by-script basis
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s",
+    level=logging.INFO,
+)
+
 # NOTE: Handling the default paths this way is not a good idea because
 # this will look for the parent path relative to the package it self.
 # It's probably better to include these paths within the package it self
 # or allow the user to configure or set a path instead.
 #
 # Get the path for this source file
-SOURCE_PATH = os.path.dirname(os.path.realpath(__file__))
+SOURCE_PATH: str = os.path.dirname(os.path.realpath(__file__))
 # Get the absolute path of the package root directory
 ROOT_DIRECTORY: str = os.path.abspath(os.path.join(SOURCE_PATH, ".."))
 # Set the default path for storing the source documents
 SOURCE_DIRECTORY: str = os.path.join(ROOT_DIRECTORY, "SOURCE_DOCUMENTS")
 # Set the default path for storing the database
-PERSIST_DIRECTORY: str = os.path.join(ROOT_DIRECTORY, "database")
+PERSIST_DIRECTORY: str = os.path.join(ROOT_DIRECTORY, "DB")
 
 # The number of CPU threads for ingestion
 # If os.cpu_count() is not available, it defaults to 8
@@ -111,7 +120,7 @@ LANGUAGE_TYPES: Tuple[Tuple[str, str], ...] = (
 # e.g. They reference the same class definition
 # It's included as an option and isn't clarified anywhere else and should
 # allow users the ability to use it if explicitly defined for any reason.
-EMBEDDING_TYPES = {
+EMBEDDING_TYPES: dict[str, Type[Embeddings]] = {
     "HuggingFaceInstructEmbeddings": HuggingFaceInstructEmbeddings,
     "HuggingFaceEmbeddings": HuggingFaceEmbeddings,
     "SentenceTransformerEmbeddings": SentenceTransformerEmbeddings,
