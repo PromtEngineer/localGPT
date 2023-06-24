@@ -50,7 +50,8 @@ def load_document_batch(
         filepaths (List[str]): List of file paths to load the documents from.
 
     Returns:
-        Tuple[List[Document], List[str]]: A tuple containing the loaded documents and the corresponding file paths.
+        Tuple[List[Document], List[str]]: A tuple containing the loaded documents and
+        the corresponding file paths.
 
     Raises:
         ValueError: If the document type is undefined.
@@ -137,7 +138,8 @@ def split_documents(documents: List[Document]) -> List[Document]:
         file_extension = splitter_registry.get_extension(doc)
         language_str = splitter_registry.get_language(file_extension)
 
-        # If we have a language for this file extension, use a language-specific splitter
+        # If we have a language for this file extension,
+        # use a language-specific splitter
         if language_str is not None:
             language = Language(language_str)  # Convert string to Language enum
             splitter = RecursiveCharacterTextSplitter.from_language(
