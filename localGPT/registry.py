@@ -10,24 +10,6 @@ from langchain.document_loaders.base import BaseLoader
 from localGPT import LANGUAGE_TYPES, MIME_TYPES
 
 
-# If the need ever arises to handle multiple loader types for variable mime types,
-# a potential solution would be to use a Loader based on priority.
-# Example:
-#   def register_loader(
-#       self,
-#       mime_type: str,
-#       loader_class: Type[BaseLoader],
-#       priority: int = 0,
-#   ) -> None:
-#       self.loader_map[mime_type].append((priority, loader_class))
-#       self.loader_map[mime_type].sort(reverse=True)  # Sort by priority
-#
-#   def get_loader(self, mime_type: str) -> Optional[Type[BaseLoader]]:
-#       loader_classes = self.loader_map.get(mime_type)
-#       if loader_classes:
-#           return loader_classes[0][1]  # Return the loader class with the highest priority
-#       else:
-#           return None
 class LoaderRegistry:
     """
     A registry for loaders based on MIME types.
@@ -37,7 +19,7 @@ class LoaderRegistry:
         """
         Initializes the LoaderRegistry.
         """
-        self.loader_map = defaultdict(list)
+        self.loader_map = defaultdict()
 
         # Register loaders for MIME_TYPES
         # MIME_TYPES: Tuple[Tuple[str, Type[BaseLoader]], ...]
@@ -70,11 +52,11 @@ class LoaderRegistry:
             mime_type (str): The MIME type to register the loader for.
             loader_class (Type[BaseLoader]): The loader class to register.
         """
-        if mime_type in self.loader_map:
+        if mime_type in self.loader_map.keys():
             raise ValueError(
                 f"A loader for MIME type {mime_type} is already registered."
             )
-        self.loader_map[mime_type].append(loader_class)
+        self.loader_map[mime_type] = loader_class
 
     def get_loader(self, mime_type: str) -> Optional[Type[BaseLoader]]:
         """
@@ -86,9 +68,9 @@ class LoaderRegistry:
         Returns:
             Optional[Type[BaseLoader]]: The loader class if found, None otherwise.
         """
-        loader_classes = self.loader_map.get(mime_type)
-        if loader_classes:
-            return loader_classes[0]  # Return the first matching loader class
+        loader_class = self.loader_map.get(mime_type)
+        if loader_class:
+            return loader_class  # Return the first matching loader class
         else:
             return None
 
@@ -118,7 +100,8 @@ class TextSplitterRegistry:
             source (str): The source extension to compare.
 
         Returns:
-            bool: True if the document has the specified source extension, False otherwise.
+            bool: True if the document has the specified source extension,
+            False otherwise.
         """
         return os.path.splitext(document.metadata["source"])[1][
             1:
