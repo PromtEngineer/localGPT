@@ -1,32 +1,26 @@
 """
 localGPT/__init__.py
 
-ROOT_DIRECTORY: A string variable that stores the absolute path of the current
-working directory.
+This module contains the initialization code and configuration settings 
+for the localGPT package.
 
-SOURCE_DIRECTORY: A string variable that concatenates the ROOT_DIRECTORY with
-"/SOURCE_DOCUMENTS". This defines the folder for storing the source documents.
+Constants:
+- ROOT_DIRECTORY: The absolute path of the current working directory.
+- SOURCE_DIRECTORY: The folder path for storing the source documents.
+- PERSIST_DIRECTORY: The folder path for storing the database.
+- INGEST_THREADS: The number of CPU threads for ingestion.
+- CHROMA_SETTINGS: The settings object for the Chroma database.
+- MIME_TYPES: A mapping of MIME types to loader classes.
+- LANGUAGE_TYPES: A mapping of file extensions to the Language enumeration.
+- EMBEDDING_TYPES: A mapping of embedding type names to embedding classes.
 
-PERSIST_DIRECTORY: A string variable that concatenates the ROOT_DIRECTORY
-with "/DB". This defines the folder for storing the database.
+Classes:
+- Language: An enumeration representing programming language types.
 
-INGEST_THREADS: An integer variable that stores the number of CPU threads for
-ingestion. It uses os.cpu_count() to determine the number of CPU cores, and if
-the count is not available, it defaults to 8.
-
-CHROMA_SETTINGS: A Settings object from the chromadb.config module. It is
-initialized with three arguments: chroma_db_impl, persist_directory, and
-anonymized_telemetry. These arguments define the Chroma database implementation
-(duckdb+parquet), the directory for persisting the database, and whether
-anonymized telemetry is enabled (False).
-
-MIME_TYPES: A tuple of tuples that associates MIME types with loader classes.
-Each inner tuple consists of a MIME type string and a loader class. The loader
-classes are imported from various modules: TextLoader from
-langchain.document_loaders.base, PDFMinerLoader from langchain.document_loaders,
-CSVLoader from langchain.document_loaders, and UnstructuredExcelLoader from
-langchain.document_loaders.
+Note: The default paths for SOURCE_DIRECTORY and PERSIST_DIRECTORY are set 
+based on the package structure and can be customized if needed.
 """
+
 import logging
 import os
 from typing import Tuple, Type
@@ -50,17 +44,12 @@ from langchain.embeddings import (
 from langchain.text_splitter import Language
 
 # Set logging configuration
-# NOTE: Can be overriden on a script-by-script basis
+# NOTE: Can be overridden on a script-by-script basis
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s",
     level=logging.INFO,
 )
 
-# NOTE: Handling the default paths this way is not a good idea because
-# this will look for the parent path relative to the package it self.
-# It's probably better to include these paths within the package it self
-# or allow the user to configure or set a path instead.
-#
 # Get the path for this source file
 SOURCE_PATH: str = os.path.dirname(os.path.realpath(__file__))
 # Get the absolute path of the package root directory
@@ -84,10 +73,7 @@ CHROMA_SETTINGS: Settings = Settings(
     anonymized_telemetry=False,
 )
 
-# A tuple of tuples associating MIME types with loader classes
-# Each inner tuple consists of a MIME type string and a loader class
-# NOTE: <type>[<type>[], ...] syntax states that you expect a <type>
-# that can contain any number of inner <type>s.
+# A mapping of MIME types to loader classes
 MIME_TYPES: Tuple[Tuple[str, Type[BaseLoader]], ...] = (
     ("text/plain", TextLoader),
     ("application/pdf", PDFMinerLoader),
@@ -95,7 +81,7 @@ MIME_TYPES: Tuple[Tuple[str, Type[BaseLoader]], ...] = (
     ("application/vnd.ms-excel", UnstructuredExcelLoader),
 )
 
-# `str` is the file extension and Language is the Enum mapped to it
+# A mapping of file extensions to the Language enumeration
 LANGUAGE_TYPES: Tuple[Tuple[str, str], ...] = (
     ("cpp", Language.CPP),  # C++ source files
     ("go", Language.GO),  # Go source files
@@ -115,11 +101,7 @@ LANGUAGE_TYPES: Tuple[Tuple[str, str], ...] = (
     ("sol", Language.SOL),  # Solidity files
 )
 
-
-# NOTE: SentenceTransformerEmbeddings is a pointer to HuggingFaceEmbeddings
-# e.g. They reference the same class definition
-# It's included as an option and isn't clarified anywhere else and should
-# allow users the ability to use it if explicitly defined for any reason.
+# A mapping of embedding type names to embedding classes
 EMBEDDING_TYPES: dict[str, Type[Embeddings]] = {
     "HuggingFaceInstructEmbeddings": HuggingFaceInstructEmbeddings,
     "HuggingFaceEmbeddings": HuggingFaceEmbeddings,
