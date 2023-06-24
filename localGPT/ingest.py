@@ -2,13 +2,14 @@
 import logging
 
 import click
-from langchain.embeddings import (
-    HuggingFaceEmbeddings,
-    HuggingFaceInstructEmbeddings,
-)
 from langchain.vectorstores import Chroma
 
-from localGPT import CHROMA_SETTINGS, PERSIST_DIRECTORY, SOURCE_DIRECTORY
+from localGPT import (
+    CHROMA_SETTINGS,
+    EMBEDDING_TYPES,
+    PERSIST_DIRECTORY,
+    SOURCE_DIRECTORY,
+)
 from localGPT.document import load_documents, split_documents
 
 
@@ -88,18 +89,14 @@ def main(embedding_model, embedding_type, device_type):
     # Create embeddings
     # NOTE: Models should be abstracted to allow for plug n' play
     logging.info(f"Split into {len(texts)} chunks of text")
-    if embedding_type == "HuggingFaceInstructEmbeddings":
-        embeddings = HuggingFaceInstructEmbeddings(
-            model_name=embedding_model,
-            model_kwargs={"device": device_type},
-        )
-    elif embedding_type == "HuggingFaceEmbeddings":
-        embeddings = HuggingFaceEmbeddings(
+    if embedding_type in EMBEDDING_TYPES.keys():
+        EmbeddingClass = EMBEDDING_TYPES[embedding_type]
+        embeddings = EmbeddingClass(
             model_name=embedding_model,
             model_kwargs={"device": device_type},
         )
     else:
-        raise ValueError("Invalid embeddings type provided.")
+        raise ValueError(f"Invalid embeddings type provided: {embedding_type}")
 
     # Persist the embeddings to Chroma database
     db = Chroma.from_documents(

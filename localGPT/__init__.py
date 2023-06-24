@@ -24,6 +24,13 @@ from langchain.document_loaders import (
     UnstructuredExcelLoader,
 )
 from langchain.document_loaders.base import BaseLoader
+from langchain.embeddings import (
+    CohereEmbeddings,
+    HuggingFaceEmbeddings,
+    HuggingFaceInstructEmbeddings,
+    OpenAIEmbeddings,
+    SentenceTransformerEmbeddings,
+)
 from langchain.text_splitter import Language
 
 # NOTE: Handling the default paths this way is not a good idea because
@@ -84,3 +91,17 @@ LANGUAGE_TYPES: Tuple[Tuple[str, str], ...] = (
     ("html", Language.HTML),  # HTML files
     ("sol", Language.SOL),  # Solidity files
 )
+
+
+# NOTE: SentenceTransformerEmbeddings is a pointer to HuggingFaceEmbeddings
+# e.g. They reference the same class definition
+# It's included as an option and isn't clarified anywhere else and should
+# allow users the ability to use it if explicitly defined for any reason.
+EMBEDDING_TYPES = {
+    "HuggingFaceInstructEmbeddings": HuggingFaceInstructEmbeddings,
+    "HuggingFaceEmbeddings": HuggingFaceEmbeddings,
+    "SentenceTransformerEmbeddings": SentenceTransformerEmbeddings,
+    "OpenAIEmbeddings": OpenAIEmbeddings,
+    "CohereEmbeddings": CohereEmbeddings,
+    # Add more embedding types here as needed
+}
