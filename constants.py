@@ -4,7 +4,7 @@ import os
 from chromadb.config import Settings
 
 # https://python.langchain.com/en/latest/modules/indexes/document_loaders/examples/excel.html?highlight=xlsx#microsoft-excel
-from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader
+from langchain.document_loaders import CSVLoader, JSONLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader
 
 # load_dotenv()
 ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
