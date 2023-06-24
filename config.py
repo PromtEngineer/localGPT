@@ -21,14 +21,14 @@ DOCUMENT_MAP = {
     ".xlxs": UnstructuredExcelLoader,
 }
 EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"
-DEVICE_TYPE = "gpu"
+DEVICE_TYPE = "cuda" # "cpu"
 SHOW_SOURCES = True
 
 # select the LLM for generating Natural Language responses
 
 # for HF models
-MODEL_ID = "TheBloke/vicuna-7B-1.1-HF"
-MODEL_BASENAME = None
+# MODEL_ID = "TheBloke/vicuna-7B-1.1-HF"
+# MODEL_BASENAME = None
 
 # MODEL_ID = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
 # MODEL_BASENAME = None
@@ -51,5 +51,5 @@ MODEL_BASENAME = None
 # MODEL_ID = "TheBloke/wizardLM-7B-GPTQ"
 # MODEL_BASENAME = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
 
-# MODEL_ID = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-# MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+MODEL_ID = "TheBloke/WizardLM-7B-uncensored-GPTQ"
+MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"

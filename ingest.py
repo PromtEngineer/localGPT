@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import sys
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
@@ -19,8 +20,6 @@ from config import (
     DEVICE_TYPE
 )
 
-reset_DB = float(sys.argv[1])
-
 def load_single_document(file_path: str) -> Document:
     # Loads a single document from a file path
     file_extension = os.path.splitext(file_path)[1]
@@ -30,6 +29,7 @@ def load_single_document(file_path: str) -> Document:
     else:
         raise ValueError("Document type is undefined")
     return loader.load()[0]
+
 
 def load_document_batch(filepaths):
     logging.info("Loading document batch")
@@ -41,6 +41,7 @@ def load_document_batch(filepaths):
         data_list = [future.result() for future in futures]
         # return data and file paths
         return (data_list, filepaths)
+
 
 def load_documents(source_dir: str) -> list[Document]:
     # Loads all documents from the source documents directory
@@ -73,11 +74,9 @@ def load_documents(source_dir: str) -> list[Document]:
 
     return docs
 
-def create_db(reset_DB):
-    
-    if os.path.exists(PERSIST_DIRECTORY) and not reset_DB:
-        logging.info(f"{PERSIST_DIRECTORY} already exists.")
-        return
+def create_db():
+    if os.path.exists(PERSIST_DIRECTORY):
+        shutil.rmtree(PERSIST_DIRECTORY)
 
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
     

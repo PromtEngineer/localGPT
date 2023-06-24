@@ -41,7 +41,7 @@ def save_document_route():
 @app.route("/api/run_ingest", methods=["GET"])
 def run_ingest_route():
     try:
-        localgpt_object.ingest(reset_DB=True)
+        localgpt_object.ingest()
         localgpt_object.load_QA()
         return "Script executed successfully", 200
     except Exception as e:
@@ -70,4 +70,4 @@ def prompt_route():
         return "No user prompt received", 400
 
 if __name__ == "__main__":
-    app.run(debug=False, port=5110)
+    app.run(debug=False, host='0.0.0.0', port=5110)
