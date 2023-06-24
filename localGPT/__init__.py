@@ -1,8 +1,8 @@
 """
 localGPT/__init__.py
 
-This module contains the initialization code and configuration settings 
-for the localGPT package.
+This module contains the initialization code and configuration settings for the 
+localGPT package.
 
 Constants:
 - ROOT_DIRECTORY: The absolute path of the current working directory.
@@ -13,12 +13,17 @@ Constants:
 - MIME_TYPES: A mapping of MIME types to loader classes.
 - LANGUAGE_TYPES: A mapping of file extensions to the Language enumeration.
 - EMBEDDING_TYPES: A mapping of embedding type names to embedding classes.
+- DEFAULT_DEVICE_TYPE: The default device type for embeddings.
+- DEFAULT_EMBEDDING_MODEL: The default embedding model.
+- DEFAULT_EMBEDDING_TYPE: The default embedding type.
+- DEFAULT_MODEL_ID: The default model identifier.
+- DEFAULT_MODEL_BASE_NAME: The default model weights base name.
 
 Classes:
 - Language: An enumeration representing programming language types.
 
-Note: The default paths for SOURCE_DIRECTORY and PERSIST_DIRECTORY are set 
-based on the package structure and can be customized if needed.
+Note: The default paths for SOURCE_DIRECTORY and PERSIST_DIRECTORY are set based 
+on the package structure and can be customized if needed.
 """
 
 import logging
@@ -32,7 +37,6 @@ from langchain.document_loaders import (
     TextLoader,
     UnstructuredExcelLoader,
 )
-from langchain.embeddings.base import Embeddings
 from langchain.document_loaders.base import BaseLoader
 from langchain.embeddings import (
     CohereEmbeddings,
@@ -41,6 +45,7 @@ from langchain.embeddings import (
     OpenAIEmbeddings,
     SentenceTransformerEmbeddings,
 )
+from langchain.embeddings.base import Embeddings
 from langchain.text_splitter import Language
 
 # Set logging configuration
@@ -62,6 +67,19 @@ PERSIST_DIRECTORY: str = os.path.join(ROOT_DIRECTORY, "DB")
 # The number of CPU threads for ingestion
 # If os.cpu_count() is not available, it defaults to 8
 INGEST_THREADS: int = os.cpu_count() or 8
+
+# The default device type for embeddings
+DEFAULT_DEVICE_TYPE: str = "cuda"
+# The default embedding model
+DEFAULT_EMBEDDING_MODEL: str = "hkunlp/instructor-large"
+# The default embedding type
+DEFAULT_EMBEDDING_TYPE: str = "HuggingFaceInstructEmbeddings"
+# The default model identifier
+DEFAULT_MODEL_ID: str = "TheBloke/WizardLM-7B-uncensored-GPTQ"
+# The default model weights base name
+DEFAULT_MODEL_BASE_NAME: str = (
+    "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+)
 
 # The settings for the Chroma database
 # - chroma_db_impl: Chroma database implementation (duckdb+parquet)
