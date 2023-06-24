@@ -30,6 +30,7 @@ DOCUMENT_MAP = {
     ".csv": CSVLoader,
     ".xls": UnstructuredExcelLoader,
     ".xlxs": UnstructuredExcelLoader,
+    ".json": JSONLoader,
 }
 
 # Default Instructor Model
