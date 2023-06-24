@@ -31,6 +31,10 @@ isort = "^5.12.0"
 flake8 = "^6.0.0"
 mypy = "^1.4.0"
 
+[tool.mypy]
+line-length = 80
+target-version = ['py311']
+
 [tool.black]
 line-length = 80
 target-version = ['py311']
