@@ -6,6 +6,9 @@ from langchain.vectorstores import Chroma
 
 from localGPT import (
     CHROMA_SETTINGS,
+    DEFAULT_DEVICE_TYPE,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_TYPE,
     EMBEDDING_TYPES,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
@@ -32,7 +35,7 @@ from localGPT.document import load_documents, split_documents
 #   to HuggingFaceEmbeddings in both ingest.py and run.py
 @click.option(
     "--embedding_model",
-    default="hkunlp/instructor-large",
+    default=DEFAULT_EMBEDDING_MODEL,
     type=click.Choice(
         [
             "hkunlp/instructor-base",
@@ -46,7 +49,7 @@ from localGPT.document import load_documents, split_documents
 )
 @click.option(
     "--embedding_type",
-    default="HuggingFaceInstructEmbeddings",
+    default=DEFAULT_EMBEDDING_TYPE,
     type=click.Choice(
         [
             "HuggingFaceEmbeddings",
@@ -57,7 +60,7 @@ from localGPT.document import load_documents, split_documents
 )
 @click.option(
     "--device_type",
-    default="cuda",
+    default=DEFAULT_DEVICE_TYPE,
     type=click.Choice(
         [
             "cpu",
