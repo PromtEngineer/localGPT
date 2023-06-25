@@ -3,7 +3,6 @@ import logging
 
 import click
 from langchain.chains import RetrievalQA
-from langchain.embeddings import HuggingFaceInstructEmbeddings
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
@@ -15,6 +14,8 @@ from localGPT import (
     DEFAULT_MODEL_ID,
     DEFAULT_MODEL_BASE_NAME,
     PERSIST_DIRECTORY,
+    DEFAULT_EMBEDDING_TYPE,
+    EMBEDDING_TYPES,
 )
 from localGPT.model import ModelLoader
 
@@ -53,7 +54,7 @@ from localGPT.model import ModelLoader
             "TheBloke/Nous-Hermes-13B-GGML",
         ]
     ),
-    help=f"The models git repository endpoint (default: {DEFAULT_MODEL_ID})",
+    help=f"The model repository (default: {DEFAULT_MODEL_ID})",
 )
 @click.option(
     "--model_basename",
@@ -66,7 +67,7 @@ from localGPT.model import ModelLoader
             "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors",
         ]
     ),
-    help="Embedding type to use (default: HuggingFaceInstructEmbeddings)",
+    help=f"The model safetensors (default: {DEFAULT_MODEL_BASE_NAME})",
 )
 @click.option(
     "--embedding_model",
@@ -80,13 +81,18 @@ from localGPT.model import ModelLoader
             "sentence-transformers/all-MiniLM-L12-v2",
         ]
     ),
-    help="Instruct model to generate embeddings (default: hkunlp/instructor-large)",
+    help=f"The embedding model repository (default: {DEFAULT_EMBEDDING_MODEL})",
 )
 @click.option(
-    "--persist_directory",
-    default=PERSIST_DIRECTORY,
-    type=click.STRING,
-    help=f"The path the embeddings are written to (default: {PERSIST_DIRECTORY})",
+    "--embedding_type",
+    default=DEFAULT_EMBEDDING_TYPE,
+    type=click.Choice(
+        [
+            "HuggingFaceEmbeddings",
+            "HuggingFaceInstructEmbeddings",
+        ]
+    ),
+    help=f"The embedding model type (default: {DEFAULT_EMBEDDING_TYPE})",
 )
 @click.option(
     "--device_type",
@@ -114,44 +120,67 @@ from localGPT.model import ModelLoader
             "mtia",
         ],
     ),
-    help="Device to run on. (Default is cuda)",
+    help="The compute device used by the model (default: cuda)",
+)
+@click.option(
+    "--persist_directory",
+    default=PERSIST_DIRECTORY,
+    type=click.STRING,
+    help=f"The embeddings database path (default: {PERSIST_DIRECTORY})",
 )
 @click.option(
     "--show_sources",
     type=click.BOOL,
     default=False,
-    help="Show sources along with answers (Default is False)",
+    help="Display the documents source text (default: False)",
 )
-def main(model_id, model_basename, embedding_model, device_type, show_sources):
+def main(
+    model_id,
+    model_basename,
+    embedding_model,
+    embedding_type,
+    device_type,
+    persist_directory,
+    show_sources,
+):
     """
     This function implements the information retrieval task.
 
     1. Loads an embedding model, can be HuggingFaceInstructEmbeddings
        or HuggingFaceEmbeddings
-    2. Loads the existing vectorestore that was created by inget.py
+    2. Loads the existing vectorestore that was created by ingest.py
     3. Loads the local LLM using load_model function - You can now set different LLMs.
     4. Setup the Question Answer retreival chain.
     5. Question answers.
     """
 
-    model_loader = ModelLoader(device_type, model_id, model_basename)
-
-    logging.info(f"Running on: {device_type}")
-    logging.info(f"Display Source Documents set to: {show_sources}")
-
-    embeddings = HuggingFaceInstructEmbeddings(
-        model_name=embedding_model, model_kwargs={"device": device_type}
-    )
+    # Create embeddings
+    # NOTE: Models should be abstracted to allow for plug n' play
+    logging.info(f"Loading {embedding_model} using {embedding_type}")
+    if embedding_type in EMBEDDING_TYPES.keys():
+        EmbeddingClass = EMBEDDING_TYPES[embedding_type]
+        embeddings = EmbeddingClass(
+            model_name=embedding_model,
+            model_kwargs={"device": device_type},
+        )
+    else:
+        raise ValueError(f"Invalid embeddings type provided: {embedding_type}")
 
     # load the vectorstore
+    logging.info(f"Emeddings using {persist_directory}")
     db = Chroma(
-        persist_directory=PERSIST_DIRECTORY,
+        persist_directory=persist_directory,
         embedding_function=embeddings,
         client_settings=CHROMA_SETTINGS,
     )
     retriever = db.as_retriever()
+    logging.info("Loaded embeddings successfully.")
 
     # load the LLM for generating Natural Language responses
+    logging.info(
+        f"Loading {model_id} using {model_basename} with {device_type}."
+    )
+    model_loader = ModelLoader(device_type, model_id, model_basename)
     llm = model_loader.load_model()
 
     qa = RetrievalQA.from_chain_type(
@@ -160,7 +189,9 @@ def main(model_id, model_basename, embedding_model, device_type, show_sources):
         retriever=retriever,
         return_source_documents=True,
     )
+
     # Interactive questions and answers
+    logging.info(f"Show Sources: {show_sources}")
     while True:
         query = input("\nEnter a query: ")
         if query.lower() == "exit":
