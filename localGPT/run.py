@@ -19,6 +19,23 @@ from localGPT import (
 from localGPT.model import ModelLoader
 
 
+# NOTE:
+# If the safetensors are required for certain models and
+# can cause failures if not provided, it's important to
+# handle this in the code.
+# One approach could be to still allow the user to specify
+# the safetensors, but provide clear documentation and error
+# messages to guide them.
+# For example, when a user selects a model, we could display
+# a message indicating whether safetensors are required for
+# that model and how to find the correct ones.
+# e.g.
+#   ~/.cache/huggingface/hub
+#   ~/.cache/torch/sentence_transformers
+# If a user tries to load a model without providing the
+# necessary safetensors, we could catch the resulting error
+# and display a helpful message explaining what went wrong
+# and how to fix it.
 @click.command()
 @click.option(
     "--model_id",
