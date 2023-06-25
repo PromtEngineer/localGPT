@@ -30,7 +30,9 @@ Usage:
 """
 
 from typing import List, Optional
-
+from langchain.base_language import BaseLanguageModel
+from langchain.chains.retrieval_qa.base import BaseRetrievalQA
+from langchain.chains import RetrievalQA
 from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
 from langchain.vectorstores import Chroma
@@ -54,12 +56,16 @@ class ChromaDBLoader:
     Args:
         source_directory (str, optional): Directory path for source documents.
             Defaults to SOURCE_DIRECTORY.
+
         persist_directory (str, optional): Directory path for persisting the database.
             Defaults to PERSIST_DIRECTORY.
+
         embedding_model (str, optional): Name of the embedding model.
             Defaults to DEFAULT_EMBEDDING_MODEL.
+
         embedding_type (str, optional): Type of the embedding.
             Defaults to DEFAULT_EMBEDDING_TYPE.
+
         device_type (str, optional): Device type for embeddings.
             Defaults to DEFAULT_DEVICE_TYPE.
     """
@@ -84,6 +90,7 @@ class ChromaDBLoader:
 
         Returns:
             Optional[Embeddings]: Embeddings object for the specified embedding type.
+
         Raises:
             AttributeError: If an unsupported embedding type is provided.
         """
@@ -111,6 +118,23 @@ class ChromaDBLoader:
             client_settings=CHROMA_SETTINGS,
         )
         return database.as_retriever()
+
+    def load_retrieval_qa(self, llm: BaseLanguageModel) -> BaseRetrievalQA:
+        """
+        Loads a retrieval-based question answering model.
+
+        Args:
+            llm (BaseLanguageModel): The language model for answering questions.
+
+        Returns:
+            BaseRetrievalQA: The retrieval-based question answering model.
+        """
+        return RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=self.load_retriever(),
+            return_source_documents=True,
+        )
 
     def persist(self, documents: List[Document]) -> None:
         """
