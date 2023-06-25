@@ -27,8 +27,8 @@ from transformers import (
 
 from localGPT import (
     DEFAULT_DEVICE_TYPE,
-    DEFAULT_MODEL_BASE_NAME,
-    DEFAULT_MODEL_ID,
+    DEFAULT_MODEL_REPOSITORY,
+    DEFAULT_MODEL_SAFETENSORS,
 )
 
 
@@ -49,8 +49,8 @@ class ModelLoader:
     def __init__(
         self,
         device_type: Optional[str],
-        model_id: Optional[str],
-        model_basename: Optional[str],
+        model_repository: Optional[str],
+        model_safetensors: Optional[str],
     ):
         """
         Initializes the ModelLoader with optional device type, model ID, and
@@ -59,13 +59,14 @@ class ModelLoader:
         Args:
         - device_type (str, optional): The device type for model loading.
           Defaults to DEFAULT_DEVICE_TYPE.
-        - model_id (str, optional): The model ID. Defaults to DEFAULT_MODEL_ID.
-        - model_basename (str, optional): The model basename.
-          Defaults to DEFAULT_MODEL_BASE_NAME.
+        - model_repository (str, optional): The model ID.
+          Defaults to DEFAULT_MODEL_REPOSITORY.
+        - model_safetensors (str, optional): The model basename.
+          Defaults to DEFAULT_MODEL_SAFETENSORS.
         """
         self.device_type = device_type or DEFAULT_DEVICE_TYPE
-        self.model_id = model_id or DEFAULT_MODEL_ID
-        self.model_basename = model_basename or DEFAULT_MODEL_BASE_NAME
+        self.model_repository = model_repository or DEFAULT_MODEL_REPOSITORY
+        self.model_safetensors = model_safetensors or DEFAULT_MODEL_SAFETENSORS
 
     def load_quantized_model(self, use_triton: bool = False):
         """
@@ -83,20 +84,21 @@ class ModelLoader:
         # have some variation of .no-act.order or .safetensors in their HF repo.
         logging.info("Using AutoGPTQForCausalLM for quantized models")
 
-        if ".safetensors" in self.model_basename:
+        if self.model_safetensors.endswith(".safetensors"):
             # Remove the ".safetensors" ending if present
             # NOTE: Using replace is not ideal because it can
             # have unintended side effects.
-            self.model_basename = self.model_basename.replace(
-                ".safetensors", ""
-            )
+            split_string = self.model_safetensors.split(".")
+            self.model_safetensors = ".".join(split_string[:-1])
 
-        tokenizer = AutoTokenizer.from_pretrained(self.model_id, use_fast=True)
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model_repository, use_fast=True
+        )
         logging.info("Tokenizer loaded")
 
         model = AutoGPTQForCausalLM.from_quantized(
-            self.model_id,
-            model_basename=self.model_basename,
+            self.model_repository,
+            model_safetensors=self.model_safetensors,
             use_safetensors=True,
             trust_remote_code=True,
             device=f"{self.device_type}:0",
@@ -116,11 +118,11 @@ class ModelLoader:
         # The code supports all huggingface models that ends with -HF
         # or which have a .bin file in their HF repo.
         logging.info("Using AutoModelForCausalLM for full models")
-        tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+        tokenizer = AutoTokenizer.from_pretrained(self.model_repository)
         logging.info("Tokenizer loaded")
 
         model = AutoModelForCausalLM.from_pretrained(
-            self.model_id,
+            self.model_repository,
             device_map="auto",
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
@@ -140,9 +142,13 @@ class ModelLoader:
         - tokenizer: The tokenizer associated with the model.
         """
         logging.info("Using LlamaTokenizer")
-        tokenizer = LlamaTokenizer.from_pretrained(self.model_id)
-        model = LlamaForCausalLM.from_pretrained(self.model_id)
+        tokenizer = LlamaTokenizer.from_pretrained(self.model_repository)
+        model = LlamaForCausalLM.from_pretrained(self.model_repository)
         return model, tokenizer
+
+    def load_ggml_model(self):
+        # TODO
+        pass
 
     @staticmethod
     def create_pipeline(model, tokenizer, generation_config):
@@ -176,7 +182,7 @@ class ModelLoader:
         Returns:
         - local_llm: The loaded local language model (LLM).
         """
-        if self.model_basename is not None:
+        if self.model_safetensors is not None:
             model, tokenizer = self.load_quantized_model()
         elif self.device_type.lower() == DEFAULT_DEVICE_TYPE:
             model, tokenizer = self.load_full_model()
@@ -184,7 +190,9 @@ class ModelLoader:
             model, tokenizer = self.load_llama_model()
 
         # Load configuration from the model to avoid warnings
-        generation_config = GenerationConfig.from_pretrained(self.model_id)
+        generation_config = GenerationConfig.from_pretrained(
+            self.model_repository
+        )
         # see here for details:
         # https://huggingface.co/docs/transformers/
         # main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
