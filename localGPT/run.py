@@ -6,6 +6,11 @@ import click
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 from localGPT import (
+    CHOICE_DEVICE_TYPES,
+    CHOICE_EMBEDDING_MODELS,
+    CHOICE_EMBEDDING_TYPES,
+    CHOICE_MODEL_REPOSITORIES,
+    CHOICE_MODEL_SAFETENSORS,
     DEFAULT_DEVICE_TYPE,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_TYPE,
@@ -38,85 +43,31 @@ from localGPT.database import ChromaDBLoader
 @click.option(
     "--model_repository",
     default=DEFAULT_MODEL_REPOSITORY,
-    type=click.Choice(
-        [
-            "TheBloke/vicuna-7B-1.1-HF",
-            "TheBloke/vicuna-7B-1.1-GPTQ-4bit-128g",
-            "TheBloke/vicuna-7B-1.1-GGML",
-            "TheBloke/wizardLM-7B-HF",
-            "TheBloke/WizardLM-7B-V1.0-Uncensored-GPTQ",
-            "TheBloke/WizardLM-7B-V1.0-Uncensored-GGML",
-            "NousResearch/Nous-Hermes-13b",
-            "TheBloke/Nous-Hermes-13B-GPTQ",
-            "TheBloke/Nous-Hermes-13B-GGML",
-        ]
-    ),
+    type=click.Choice(CHOICE_MODEL_REPOSITORIES),
     help=f"The model repository (default: {DEFAULT_MODEL_REPOSITORY})",
 )
 @click.option(
     "--model_safetensors",
     default=DEFAULT_MODEL_SAFETENSORS,
-    type=click.Choice(
-        [
-            "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors",
-            "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors",
-            "nous-hermes-13b-GPTQ-4bit-128g.no-act.order.safetensors",
-            "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors",
-        ]
-    ),
+    type=click.Choice(CHOICE_MODEL_SAFETENSORS),
     help=f"The model safetensors (default: {DEFAULT_MODEL_SAFETENSORS})",
 )
 @click.option(
     "--embedding_model",
     default=DEFAULT_EMBEDDING_MODEL,
-    type=click.Choice(
-        [
-            "hkunlp/instructor-base",
-            "hkunlp/instructor-large",
-            "hkunlp/instructor-xl",
-            "sentence-transformers/all-MiniLM-L6-v2",
-            "sentence-transformers/all-MiniLM-L12-v2",
-        ]
-    ),
+    type=click.Choice(CHOICE_EMBEDDING_MODELS),
     help=f"The embedding model repository (default: {DEFAULT_EMBEDDING_MODEL})",
 )
 @click.option(
     "--embedding_type",
     default=DEFAULT_EMBEDDING_TYPE,
-    type=click.Choice(
-        [
-            "HuggingFaceEmbeddings",
-            "HuggingFaceInstructEmbeddings",
-        ]
-    ),
+    type=click.Choice(CHOICE_EMBEDDING_TYPES),
     help=f"The embedding model type (default: {DEFAULT_EMBEDDING_TYPE})",
 )
 @click.option(
     "--device_type",
     default=DEFAULT_DEVICE_TYPE,
-    type=click.Choice(
-        [
-            "cpu",
-            "cuda",
-            "ipu",
-            "xpu",
-            "mkldnn",
-            "opengl",
-            "opencl",
-            "ideep",
-            "hip",
-            "ve",
-            "fpga",
-            "ort",
-            "xla",
-            "lazy",
-            "vulkan",
-            "mps",
-            "meta",
-            "hpu",
-            "mtia",
-        ],
-    ),
+    type=click.Choice(CHOICE_DEVICE_TYPES),
     help="The compute device used by the model (default: cuda)",
 )
 @click.option(
@@ -160,18 +111,14 @@ def main(
         device_type=device_type,
     )
 
-    # load the vectorstore
-    retriever = db_loader.load_retriever()
-
     # load the LLM for generating Natural Language responses
     model_loader = ModelLoader(device_type, model_repository, model_safetensors)
     llm = model_loader.load_model()
-
     # Setup the Question Answer retrieval chain.
     qa = db_loader.load_retrieval_qa(llm)
-
     # Interactive questions and answers
     logging.info(f"Show Sources: {show_sources}")
+
     while True:
         query = input("\nEnter a query: ")
         if query.lower() == "exit":

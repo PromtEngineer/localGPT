@@ -41,12 +41,12 @@ import logging
 import click
 
 from localGPT import (
+    CHOICE_DEVICE_TYPES,
+    CHOICE_EMBEDDING_MODELS,
+    CHOICE_EMBEDDING_TYPES,
     DEFAULT_DEVICE_TYPE,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_TYPE,
-    DEVICE_TYPE_CHOICES,
-    EMBEDDING_MODEL_CHOICES,
-    EMBEDDING_TYPE_CHOICES,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
 )
@@ -70,19 +70,19 @@ from localGPT.document import load_documents, split_documents
 @click.option(
     "--embedding_model",
     default=DEFAULT_EMBEDDING_MODEL,
-    type=click.Choice(EMBEDDING_MODEL_CHOICES),
+    type=click.Choice(CHOICE_EMBEDDING_MODELS),
     help="Instruct model to generate embeddings (default: hkunlp/instructor-large)",
 )
 @click.option(
     "--embedding_type",
     default=DEFAULT_EMBEDDING_TYPE,
-    type=click.Choice(EMBEDDING_TYPE_CHOICES),
+    type=click.Choice(CHOICE_EMBEDDING_TYPES),
     help="Embedding type to use (default: HuggingFaceInstructEmbeddings)",
 )
 @click.option(
     "--device_type",
     default=DEFAULT_DEVICE_TYPE,
-    type=click.Choice(DEVICE_TYPE_CHOICES),
+    type=click.Choice(CHOICE_DEVICE_TYPES),
     help="Device to run on (default: cuda)",
 )
 def main(

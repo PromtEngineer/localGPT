@@ -31,7 +31,7 @@ set based on the package structure and can be customized if needed.
 
 import logging
 import os
-from typing import Tuple, Type
+from typing import Tuple, Type, List
 
 from chromadb.config import Settings
 from langchain.document_loaders import (
@@ -142,3 +142,57 @@ EMBEDDING_TYPES: dict[str, Type[Embeddings]] = {
     "CohereEmbeddings": CohereEmbeddings,
     # Add more embedding types here as needed
 }
+
+CHOICE_EMBEDDING_TYPES: List[str] = [
+    "HuggingFaceEmbeddings",
+    "HuggingFaceInstructEmbeddings",
+]
+
+CHOICE_EMBEDDING_MODELS: List[str] = [
+    "hkunlp/instructor-base",
+    "hkunlp/instructor-large",
+    "hkunlp/instructor-xl",
+    "sentence-transformers/all-MiniLM-L6-v2",
+    "sentence-transformers/all-MiniLM-L12-v2",
+]
+
+CHOICE_MODEL_REPOSITORIES: List[str] = [
+    "TheBloke/vicuna-7B-1.1-HF",
+    "TheBloke/vicuna-7B-1.1-GPTQ-4bit-128g",
+    "TheBloke/vicuna-7B-1.1-GGML",
+    "TheBloke/wizardLM-7B-HF",
+    "TheBloke/WizardLM-7B-V1.0-Uncensored-GPTQ",
+    "TheBloke/WizardLM-7B-V1.0-Uncensored-GGML",
+    "NousResearch/Nous-Hermes-13b",
+    "TheBloke/Nous-Hermes-13B-GPTQ",
+    "TheBloke/Nous-Hermes-13B-GGML",
+]
+
+CHOICE_MODEL_SAFETENSORS: List[str] = [
+    "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors",
+    "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors",
+    "nous-hermes-13b-GPTQ-4bit-128g.no-act.order.safetensors",
+    "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors",
+]
+
+CHOICE_DEVICE_TYPES: List[str] = [
+    "cpu",
+    "cuda",
+    "ipu",
+    "xpu",
+    "mkldnn",
+    "opengl",
+    "opencl",
+    "ideep",
+    "hip",
+    "ve",
+    "fpga",
+    "ort",
+    "xla",
+    "lazy",
+    "vulkan",
+    "mps",
+    "meta",
+    "hpu",
+    "mtia",
+]
