@@ -78,7 +78,7 @@ DEFAULT_EMBEDDING_MODEL: str = "hkunlp/instructor-large"
 # The default embedding type
 DEFAULT_EMBEDDING_TYPE: str = "HuggingFaceInstructEmbeddings"
 # The default model identifier
-DEFAULT_MODEL_ID: str = "TheBloke/WizardLM-7B-uncensored-GPTQ"
+DEFAULT_MODEL_ID: str = "TheBloke/WizardLM-7B-V1.0-Uncensored-GGML"
 # The default model weights base name
 DEFAULT_MODEL_BASE_NAME: str = (
     "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
