@@ -33,6 +33,35 @@ For more support on [AutoGPTQ] (https://github.com/PanQiWei/AutoGPTQ).
 
 This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
 
+## Edit config.py
+
+Open up config.py and edit the following based on your computer specifications.
+If you are using an Nvidia GPU, set `DEVICE_TYPE = "cuda"`.
+If you are running from CPU, set `DEVICE_TYPE = "cpu"`. (Warning: Its going to be slow!)
+
+To reset your vector database (document knowledge base) when you ingest documents from `/SOURCE_DOCUMENTS` set `RESET_DB=True`.
+To add documents to your vector database and not delete existing ingested knowledge set `RESET_DB=False`.
+
+To change your vector database location set it from `PERSIST_DIRECTORY`.
+
+To change your models from AutoGPTQ to normal HF models. (This is only recommended if you are running from CPU).
+
+   - Comment out the following:
+
+   ```shell
+   MODEL_ID = "TheBloke/WizardLM-7B-uncensored-GPTQ"
+   MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id, model_basename = model_basename)
+   ```
+
+   - Uncomment:
+
+   ```shell
+   MODEL_ID = "TheBloke/guanaco-7B-HF" # or some other -HF or .bin model
+   MODEL_BASENAME = None
+   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id)
+   ```
+
 ## Instructions for ingesting your own dataset
 
 Put any and all of your .txt, .pdf, or .csv files into the SOURCE_DOCUMENTS directory
@@ -43,24 +72,12 @@ The current default file types are .txt, .pdf, .csv, and .xlsx, if you want to u
 Run the following command to ingest all the data.
 
 ```shell
-python ingest.py  # defaults to cuda
-```
-
-Use the device type argument to specify a given device.
-
-```sh
-python ingest.py --device_type cpu
-```
-
-Use help for a full list of supported devices.
-
-```sh
-python ingest.py --help
+python ingest.py  # defaults to cuda, change the device type in "config.py".
 ```
 
 It will create an index containing the local vectorstore. Will take time, depending on the size of your documents.
 You can ingest as many documents as you want, and all will be accumulated in the local embeddings database.
-If you want to start from an empty database, delete the `index`.
+If you want to start from an empty database, delete the `index` or set `RESET_DB=True` in `config.py`.
 
 Note: When you run this for the first time, it will download take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
 
@@ -69,7 +86,7 @@ Note: When you run this for the first time, it will download take time as it has
 In order to ask a question, run a command like:
 
 ```shell
-python run_localGPT.py
+python localgpt_cli.py
 ```
 
 And wait for the script to require your input.
@@ -82,101 +99,63 @@ Hit enter. Wait while the LLM model consumes the prompt and prepares the answer.
 
 Note: When you run this for the first time, it will need internet connection to download the vicuna-7B model. After that you can turn off your internet connection, and the script inference would still work. No data gets out of your local environment.
 
+To add more documents to the database, put the additional documents into the `/SOURCE_DOCUMENTS` folder and type `reingest`.
+
 Type `exit` to finish the script.
-
-# Run it on CPU
-
-By default, localGPT will use your GPU to run both the `ingest.py` and `run_localGPT.py` scripts. But if you do not have a GPU and want to run this on CPU, now you can do that (Warning: Its going to be slow!). You will need to use `--device_type cpu`flag with both scripts.
-
-For Ingestion run the following:
-
-```shell
-python ingest.py --device_type cpu
-```
-
-In order to ask a question, run a command like:
-
-```shell
-python run_localGPT.py --device_type cpu
-```
 
 # Run the UI
 
-1. Start by opening up `run_localGPTAPI.py` in a code editor of your choice. If you are using gpu skip to step 3.
+1. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
 
-2. If you are running on cpu change `DEVICE_TYPE = 'cuda'` to `DEVICE_TYPE = 'cpu'`.
+2. Navigate to the `/LOCALGPT` directory.
 
-   - Comment out the following:
+3. Run the following command `python localgpt_api.py`.
 
-   ```shell
-   model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-   model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id, model_basename = model_basename)
-   ```
+4. Wait until everything has loaded in. You should see something like `INFO:werkzeug:Press CTRL+C to quit`.
 
-   - Uncomment:
+5. Open up a second terminal and activate the same python environment.
 
-   ```shell
-   model_id = "TheBloke/guanaco-7B-HF" # or some other -HF or .bin model
-   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id)
-   ```
+8. Navigate to the `/LOCALGPT/UI` directory.
 
-   - If you are running gpu there should be nothing to change. Save and close `run_localGPTAPI.py`.
-
-3. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
-
-4. Navigate to the `/LOCALGPT` directory.
-
-5. Run the following command `python run_localGPT_API.py`. The API should being to run.
-
-6. Wait until everything has loaded in. You should see something like `INFO:werkzeug:Press CTRL+C to quit`.
-
-7. Open up a second terminal and activate the same python environment.
-
-8. Navigate to the `/LOCALGPT/localGPTUI` directory.
-
-9. Run the command `python localGPTUI.py`.
+9. Run the command `python app.py`.
 
 10. Open up a web browser and go the address `http://localhost:5111/`.
+    
+11. To stop everything exit out of your terminals.
 
 # How does it work?
 
 Selecting the right local models and the power of `LangChain` you can run the entire pipeline locally, without any data leaving your environment, and with reasonable performance.
 
 - `ingest.py` uses `LangChain` tools to parse the document and create embeddings locally using `InstructorEmbeddings`. It then stores the result in a local vector database using `Chroma` vector store.
-- `run_localGPT.py` uses a local LLM (Vicuna-7B in this case) to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
-- You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format.
+- `localgpt.py` uses a local LLM to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
+- You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format or AutoGPTQ format.
 
 # How to select different LLM models?
 
 The following will provide instructions on how you can select a different LLM model to create your response:
 
-1. Open up `run_localGPT.py`
-2. Go to `def main(device_type, show_sources)`
-3. Go to the comment where it says `# load the LLM for generating Natural Language responses`
-4. Below it, it details a bunch of examples on models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
-5. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
+1. Open up `config.py`
+2. Go to the comment where it says `# load the LLM for generating Natural Language responses`
+3. Below it, it details a bunch of examples on models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
+4. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
 
    - Make sure you have a model_id selected. For example -> `model_id = "TheBloke/guanaco-7B-HF"`
    - If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
    - Any model files that contain .bin extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
-   - `model_id = "TheBloke/guanaco-7B-HF"`
+   - `MODEL_ID = "TheBloke/guanaco-7B-HF"`
+   - `MODEL_BASENAME = None`
 
-     `llm = load_model(device_type, model_id=model_id)`
-
-6. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
+5. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
 
    - Make sure you have a model_id selected. For example -> model_id = `"TheBloke/wizardLM-7B-GPTQ"`
    - You will also need its model basename file selected. For example -> `model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
    - If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and go to "Files and versions" you will notice a model file that ends with a .safetensors extension.
    - Any model files that contain no-act-order or .safetensors extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
-   - `model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"`
+   - `MODEL_ID = "TheBloke/WizardLM-7B-uncensored-GPTQ"`
+   - `MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"`
 
-     `model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"`
-
-     `llm = load_model(device_type, model_id=model_id, model_basename = model_basename)`
-
-7. Comment out all other instances of `model_id="other model names"`, `model_basename=other base model names`, and `llm = load_model(args*)`
+6. Comment out all other instances of `MODEL_ID="other model names"`, `MODEL_BASENAME=other base model names`
 
 # System Requirements
 
@@ -266,4 +245,4 @@ Once you open `instructor.py` with VS Code, replace the code snippet that has `d
 
 # Disclaimer
 
-This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license.
+This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Most models are based on the Llama model so that has the original Llama license.
