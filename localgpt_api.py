@@ -70,4 +70,4 @@ def prompt_route():
         return "No user prompt received", 400
 
 if __name__ == "__main__":
-    app.run(debug=False, host='0.0.0.0', port=5110)
+    app.run(debug=False, port=5110)

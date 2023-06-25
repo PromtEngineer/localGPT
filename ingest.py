@@ -15,6 +15,7 @@ from config import (
     EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
     PERSIST_DIRECTORY,
+    RESET_DB,
     SOURCE_DIRECTORY,
     EMBEDDING_MODEL_NAME,
     DEVICE_TYPE
@@ -76,8 +77,13 @@ def load_documents(source_dir: str) -> list[Document]:
 
 def create_db():
     if os.path.exists(PERSIST_DIRECTORY):
-        shutil.rmtree(PERSIST_DIRECTORY)
-
+        print(type(RESET_DB))
+        if RESET_DB: 
+            logging.info(f"DB Already Exists - Removing it") 
+            shutil.rmtree(PERSIST_DIRECTORY) 
+        else: 
+            logging.info(f"DB Already Exists - Using the existing DB")
+    
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
     
     documents = load_documents(SOURCE_DIRECTORY)

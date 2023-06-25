@@ -23,7 +23,6 @@ from config import (
     PERSIST_DIRECTORY,
     EMBEDDING_MODEL_NAME,
     DEVICE_TYPE,
-    SHOW_SOURCES,
     MODEL_ID,
     MODEL_BASENAME
 )
@@ -39,9 +38,9 @@ class DocumentProcessor:
         self.LLM = None
         self.MODEL_LOADED = False
 
-    def ingest(self, reset_DB=False):
+    def ingest(self):
         logging.info("Executing ingest.py")
-        result = subprocess.run(["python", "ingest.py", reset_DB], capture_output=True)
+        result = subprocess.run(["python", "ingest.py"], capture_output=True)
         if result.returncode != 0:
             return "Script execution failed: {}".format(result.stderr.decode("utf-8")), 500
 
@@ -138,5 +137,5 @@ class DocumentProcessor:
         )
         retriever = db.as_retriever()
         self.QA = RetrievalQA.from_chain_type(
-            llm=self.LLM, chain_type="stuff", retriever=retriever, return_source_documents=SHOW_SOURCES
+            llm=self.LLM, chain_type="stuff", retriever=retriever, return_source_documents=True
         )
