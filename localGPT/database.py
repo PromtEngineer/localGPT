@@ -146,8 +146,8 @@ class ChromaDBLoader:
         """
         # Persist the embeddings to Chroma database
         database = Chroma.from_documents(
-            documents,
-            self.load_embedding_function(),
+            documents=documents,
+            embedding=self.load_embedding_function(),
             persist_directory=self.persist_directory,
             client_settings=CHROMA_SETTINGS,
         )
