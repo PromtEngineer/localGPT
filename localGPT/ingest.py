@@ -2,17 +2,15 @@
 import logging
 
 import click
-from langchain.vectorstores import Chroma
 
 from localGPT import (
-    CHROMA_SETTINGS,
     DEFAULT_DEVICE_TYPE,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_TYPE,
-    EMBEDDING_TYPES,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
 )
+from localGPT.database import ChromaDBLoader
 from localGPT.document import load_documents, split_documents
 
 
@@ -29,10 +27,6 @@ from localGPT.document import load_documents, split_documents
     type=click.STRING,
     help=f"The path the embeddings are written to (default: {PERSIST_DIRECTORY})",
 )
-# Default Instruct Model
-#   You can also choose a smaller model.
-#   Don't forget to change HuggingFaceInstructEmbeddings
-#   to HuggingFaceEmbeddings in both ingest.py and run.py
 @click.option(
     "--embedding_model",
     default=DEFAULT_EMBEDDING_MODEL,
@@ -107,27 +101,18 @@ def main(
     logging.info(f"Loaded {len(documents)} documents from {source_directory}")
     logging.info(f"Split into {len(texts)} chunks of text")
 
-    # Create embeddings
-    # NOTE: Models should be abstracted to allow for plug n' play
-    logging.info(f"Split into {len(texts)} chunks of text")
-    if embedding_type in EMBEDDING_TYPES.keys():
-        EmbeddingClass = EMBEDDING_TYPES[embedding_type]
-        embeddings = EmbeddingClass(
-            model_name=embedding_model,
-            model_kwargs={"device": device_type},
-        )
-    else:
-        raise ValueError(f"Invalid embeddings type provided: {embedding_type}")
+    # Create ChromaDBLoader instance
+    db_loader = ChromaDBLoader(
+        source_directory=source_directory,
+        persist_directory=persist_directory,
+        embedding_model=embedding_model,
+        embedding_type=embedding_type,
+        device_type=device_type,
+    )
 
     # Persist the embeddings to Chroma database
-    db = Chroma.from_documents(
-        texts,
-        embeddings,
-        persist_directory=persist_directory,
-        client_settings=CHROMA_SETTINGS,
-    )
-    db.persist()
-    db = None
+    db_loader.persist(texts)
+    logging.info("Embeddings persisted to Chroma database.")
 
 
 if __name__ == "__main__":
