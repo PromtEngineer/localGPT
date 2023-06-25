@@ -54,7 +54,6 @@ To change your models from AutoGPTQ to normal HF models. (This is only recommend
    ```shell
    MODEL_ID = "TheBloke/WizardLM-7B-uncensored-GPTQ"
    MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id, model_basename = model_basename)
    ```
 
    - Uncomment:
@@ -62,7 +61,6 @@ To change your models from AutoGPTQ to normal HF models. (This is only recommend
    ```shell
    MODEL_ID = "TheBloke/guanaco-7B-HF" # or some other -HF or .bin model
    MODEL_BASENAME = None
-   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id)
    ```
 
 ## Instructions for ingesting your own dataset
