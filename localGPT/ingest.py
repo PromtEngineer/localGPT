@@ -1,4 +1,41 @@
-# localGPT/ingest.py
+"""
+localGPT/ingest.py
+
+This script provides functionality for ingesting documents, 
+generating embeddings, and persisting them to the Chroma database.
+
+Usage:
+    $ python ingest.py [OPTIONS]
+
+Options:
+    --source_directory TEXT       The path where the documents are read from
+                                  (default: SOURCE_DIRECTORY)
+    --persist_directory TEXT      The path where the embeddings are written to
+                                  (default: PERSIST_DIRECTORY)
+    --embedding_model TEXT        The embedding model to use for generating embeddings
+                                  (default: DEFAULT_EMBEDDING_MODEL)
+    --embedding_type TEXT         The type of embeddings to use
+                                  (default: DEFAULT_EMBEDDING_TYPE)
+    --device_type TEXT            The device type to run on
+                                  (default: DEFAULT_DEVICE_TYPE)
+
+The script uses the provided options to load documents from the source 
+directory, split them into chunks, generate embeddings using the specified 
+embedding model and type, and persist the embeddings to the Chroma 
+database located in the persist directory.
+
+The default values for the options are set based on the configuration in 
+the localGPT package.
+
+You can specify different values for the options by providing the corresponding 
+command-line arguments.
+
+Example usage:
+    $ python ingest.py \
+            --source_directory path/to/documents \
+            --persist_directory path/to/embeddings
+"""
+
 import logging
 
 import click
