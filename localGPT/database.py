@@ -1,15 +1,16 @@
 # localGPT/database.py
-from typing import Optional, List
+from typing import List, Optional
+
+from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
 from langchain.vectorstores import Chroma
-from langchain.docstore.document import Document
 from langchain.vectorstores.base import VectorStoreRetriever
 
 from localGPT import (
     CHROMA_SETTINGS,
     DEFAULT_DEVICE_TYPE,
-    DEFAULT_EMBEDDING_TYPE,
     DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_TYPE,
     EMBEDDING_TYPES,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
@@ -40,7 +41,7 @@ class ChromaDBLoader:
             )
         else:
             raise AttributeError(
-                f"Invalid embeddings type provided: {self.embedding_type}"
+                f"Unsupported embeddings type provided: {self.embedding_type}"
             )
 
     def load_retriever(self) -> VectorStoreRetriever:
