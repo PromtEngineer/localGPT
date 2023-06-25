@@ -2,22 +2,19 @@
 import logging
 
 import click
-from langchain.chains import RetrievalQA
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.vectorstores import Chroma
 
 from localGPT import (
-    CHROMA_SETTINGS,
     DEFAULT_DEVICE_TYPE,
     DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_MODEL_ID,
-    DEFAULT_MODEL_BASE_NAME,
-    PERSIST_DIRECTORY,
     DEFAULT_EMBEDDING_TYPE,
-    EMBEDDING_TYPES,
+    DEFAULT_MODEL_REPOSITORY,
+    DEFAULT_MODEL_SAFETENSORS,
+    PERSIST_DIRECTORY,
 )
 from localGPT.model import ModelLoader
+from localGPT.database import ChromaDBLoader
 
 
 # NOTE:
@@ -39,8 +36,8 @@ from localGPT.model import ModelLoader
 # and how to fix it.
 @click.command()
 @click.option(
-    "--model_id",
-    default=DEFAULT_MODEL_ID,
+    "--model_repository",
+    default=DEFAULT_MODEL_REPOSITORY,
     type=click.Choice(
         [
             "TheBloke/vicuna-7B-1.1-HF",
@@ -54,11 +51,11 @@ from localGPT.model import ModelLoader
             "TheBloke/Nous-Hermes-13B-GGML",
         ]
     ),
-    help=f"The model repository (default: {DEFAULT_MODEL_ID})",
+    help=f"The model repository (default: {DEFAULT_MODEL_REPOSITORY})",
 )
 @click.option(
-    "--model_basename",
-    default=DEFAULT_MODEL_BASE_NAME,
+    "--model_safetensors",
+    default=DEFAULT_MODEL_SAFETENSORS,
     type=click.Choice(
         [
             "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors",
@@ -67,7 +64,7 @@ from localGPT.model import ModelLoader
             "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors",
         ]
     ),
-    help=f"The model safetensors (default: {DEFAULT_MODEL_BASE_NAME})",
+    help=f"The model safetensors (default: {DEFAULT_MODEL_SAFETENSORS})",
 )
 @click.option(
     "--embedding_model",
@@ -135,8 +132,8 @@ from localGPT.model import ModelLoader
     help="Display the documents source text (default: False)",
 )
 def main(
-    model_id,
-    model_basename,
+    model_repository,
+    model_safetensors,
     embedding_model,
     embedding_type,
     device_type,
@@ -154,41 +151,24 @@ def main(
     5. Question answers.
     """
 
-    # Create embeddings
-    # NOTE: Models should be abstracted to allow for plug n' play
-    logging.info(f"Loading {embedding_model} using {embedding_type}")
-    if embedding_type in EMBEDDING_TYPES.keys():
-        EmbeddingClass = EMBEDDING_TYPES[embedding_type]
-        embeddings = EmbeddingClass(
-            model_name=embedding_model,
-            model_kwargs={"device": device_type},
-        )
-    else:
-        raise ValueError(f"Invalid embeddings type provided: {embedding_type}")
+    # Create ChromaDBLoader instance
+    db_loader = ChromaDBLoader(
+        source_directory=None,
+        persist_directory=persist_directory,
+        embedding_model=embedding_model,
+        embedding_type=embedding_type,
+        device_type=device_type,
+    )
 
     # load the vectorstore
-    logging.info(f"Emeddings using {persist_directory}")
-    db = Chroma(
-        persist_directory=persist_directory,
-        embedding_function=embeddings,
-        client_settings=CHROMA_SETTINGS,
-    )
-    retriever = db.as_retriever()
-    logging.info("Loaded embeddings successfully.")
+    retriever = db_loader.load_retriever()
 
     # load the LLM for generating Natural Language responses
-    logging.info(
-        f"Loading {model_id} using {model_basename} with {device_type}."
-    )
-    model_loader = ModelLoader(device_type, model_id, model_basename)
+    model_loader = ModelLoader(device_type, model_repository, model_safetensors)
     llm = model_loader.load_model()
 
-    qa = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        return_source_documents=True,
-    )
+    # Setup the Question Answer retrieval chain.
+    qa = db_loader.load_retrieval_qa(llm)
 
     # Interactive questions and answers
     logging.info(f"Show Sources: {show_sources}")
@@ -209,13 +189,13 @@ def main(
         if show_sources:
             # Print the relevant sources used for the answer
             print(
-                "----------------------------SOURCE-DOCUMENTS----------------------------"
+                "--------------------START-SOURCE-DOCUMENT--------------------"
             )
             for document in docs:
                 print("\n> " + document.metadata["source"] + ":")
                 print(document.page_content)
             print(
-                "----------------------------SOURCE-DOCUMENTS----------------------------"
+                "----------------------END-SOURCE-DOCUMENT--------------------"
             )
 
 
