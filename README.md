@@ -36,10 +36,13 @@ This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/fil
 ## Edit config.py
 
 Open up config.py and edit the following based on your computer specifications.
+
 If you are using an Nvidia GPU, set `DEVICE_TYPE = "cuda"`.
+
 If you are running from CPU, set `DEVICE_TYPE = "cpu"`. (Warning: Its going to be slow!)
 
 To reset your vector database (document knowledge base) when you ingest documents from `/SOURCE_DOCUMENTS` set `RESET_DB=True`.
+
 To add documents to your vector database and not delete existing ingested knowledge set `RESET_DB=False`.
 
 To change your vector database location set it from `PERSIST_DIRECTORY`.
