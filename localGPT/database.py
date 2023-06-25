@@ -30,9 +30,10 @@ Usage:
 """
 
 from typing import List, Optional
+
 from langchain.base_language import BaseLanguageModel
-from langchain.chains.retrieval_qa.base import BaseRetrievalQA
 from langchain.chains import RetrievalQA
+from langchain.chains.retrieval_qa.base import BaseRetrievalQA
 from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
 from langchain.vectorstores import Chroma
