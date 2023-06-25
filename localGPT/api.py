@@ -12,7 +12,8 @@ from langchain.embeddings import HuggingFaceInstructEmbeddings
 # from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.llms import HuggingFacePipeline
 
-# from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
+# from langchain.callbacks.streaming_stdout import
+# StreamingStdOutCallbackHandler.
 from langchain.vectorstores import Chroma
 from transformers import (
     AutoModelForCausalLM,
@@ -31,9 +32,13 @@ SHOW_SOURCES = True
 logging.info(f"Running on: {DEVICE_TYPE}")
 logging.info(f"Display Source Documents set to: {SHOW_SOURCES}")
 
-EMBEDDINGS = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": DEVICE_TYPE})
+EMBEDDINGS = HuggingFaceInstructEmbeddings(
+    model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": DEVICE_TYPE}
+)
 
-# uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
+# uncomment the following line if you used HuggingFaceEmbeddings in the
+# ingest.py.
+#
 # EMBEDDINGS = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 if os.path.exists(PERSIST_DIRECTORY):
     try:
@@ -63,17 +68,23 @@ RETRIEVER = DB.as_retriever()
 def load_model(device_type, model_id, model_basename=None):
     """
     Select a model for text generation using the HuggingFace library.
-    If you are running this for the first time, it will download a model for you.
+    If you are running this for the first time, it will download a model
+    for you.
+
     subsequent runs will use the model from the disk.
 
     Args:
-        device_type (str): Type of device to use, e.g., "cuda" for GPU or "cpu" for CPU.
-        model_id (str): Identifier of the model to load from HuggingFace's model hub.
-        model_basename (str, optional): Basename of the model if using quantized models.
+        device_type (str): Type of device to use, e.g., "cuda" for GPU or "cpu"
+        for CPU.
+        model_id (str): Identifier of the model to load from HuggingFace's
+        model hub.
+        model_basename (str, optional): Basename of the model if using
+        quantized models.
             Defaults to None.
 
     Returns:
-        HuggingFacePipeline: A pipeline object for text generation using the loaded model.
+        HuggingFacePipeline: A pipeline object for text generation using the
+        loaded model.
 
     Raises:
         ValueError: If an unsupported model or device type is provided.
@@ -84,7 +95,8 @@ def load_model(device_type, model_id, model_basename=None):
 
     if model_basename is not None:
         # The code supports all huggingface models that ends with GPTQ
-        # and have some variation of .no-act.order or .safetensors in their HF repo.
+        # and have some variation of .no-act.order or .safetensors in their HF
+        # repo.
         print("Using AutoGPTQForCausalLM for quantized models")
 
         if ".safetensors" in model_basename:
@@ -105,13 +117,18 @@ def load_model(device_type, model_id, model_basename=None):
         )
     elif (
         device_type.lower() == "cuda"
-    ):  # The code supports all huggingface models that ends with -HF or which have a .bin file in their HF repo.
+    ):  # The code supports all huggingface models that ends with -HF or which
+        # have a .bin file in their HF repo.
         print("Using AutoModelForCausalLM for full models")
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         logging.info("Tokenizer loaded")
 
         model = AutoModelForCausalLM.from_pretrained(
-            model_id, device_map="auto", torch_dtype=torch.float16, low_cpu_mem_usage=True, trust_remote_code=True
+            model_id,
+            device_map="auto",
+            torch_dtype=torch.float16,
+            low_cpu_mem_usage=True,
+            trust_remote_code=True,
         )
         model.tie_weights()
     else:
@@ -155,15 +172,23 @@ def load_model(device_type, model_id, model_basename=None):
 # model_basename = "nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
 # model_id = "TheBloke/WizardLM-30B-Uncensored-GPTQ"
 # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors"
-# Requires ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
+# Requires ~21GB VRAM. Using STransformers alongside can potentially create OOM
+# on 24GB cards.
 # model_id = "TheBloke/wizardLM-7B-GPTQ"
 # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
 model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id, model_basename=model_basename)
+model_basename = (
+    "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+)
+LLM = load_model(
+    device_type=DEVICE_TYPE, model_id=model_id, model_basename=model_basename
+)
 
 QA = RetrievalQA.from_chain_type(
-    llm=LLM, chain_type="stuff", retriever=RETRIEVER, return_source_documents=SHOW_SOURCES
+    llm=LLM,
+    chain_type="stuff",
+    retriever=RETRIEVER,
+    return_source_documents=SHOW_SOURCES,
 )
 
 app = Flask(__name__)
@@ -178,7 +203,11 @@ def delete_source_route():
 
     os.makedirs(folder_name)
 
-    return jsonify({"message": f"Folder '{folder_name}' successfully deleted and recreated."})
+    return jsonify(
+        {
+            "message": f"Folder '{folder_name}' successfully deleted and recreated."
+        }
+    )
 
 
 @app.route("/api/save_document", methods=["GET", "POST"])
@@ -214,7 +243,12 @@ def run_ingest_route():
 
         result = subprocess.run(["python", "ingest.py"], capture_output=True)
         if result.returncode != 0:
-            return "Script execution failed: {}".format(result.stderr.decode("utf-8")), 500
+            return (
+                "Script execution failed: {}".format(
+                    result.stderr.decode("utf-8")
+                ),
+                500,
+            )
         # load the vectorstore
         DB = Chroma(
             persist_directory=PERSIST_DIRECTORY,
@@ -224,9 +258,17 @@ def run_ingest_route():
         RETRIEVER = DB.as_retriever()
 
         QA = RetrievalQA.from_chain_type(
-            llm=LLM, chain_type="stuff", retriever=RETRIEVER, return_source_documents=SHOW_SOURCES
+            llm=LLM,
+            chain_type="stuff",
+            retriever=RETRIEVER,
+            return_source_documents=SHOW_SOURCES,
         )
-        return "Script executed successfully: {}".format(result.stdout.decode("utf-8")), 200
+        return (
+            "Script executed successfully: {}".format(
+                result.stdout.decode("utf-8")
+            ),
+            200,
+        )
     except Exception as e:
         return f"Error occurred: {str(e)}", 500
 
@@ -249,7 +291,10 @@ def prompt_route():
         prompt_response_dict["Sources"] = []
         for document in docs:
             prompt_response_dict["Sources"].append(
-                (os.path.basename(str(document.metadata["source"])), str(document.page_content))
+                (
+                    os.path.basename(str(document.metadata["source"])),
+                    str(document.page_content),
+                )
             )
 
         return jsonify(prompt_response_dict), 200
@@ -259,6 +304,7 @@ def prompt_route():
 
 if __name__ == "__main__":
     logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
+        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s",
+        level=logging.INFO,
     )
     app.run(debug=False, port=5110)
