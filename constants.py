@@ -4,7 +4,7 @@ import os
 from chromadb.config import Settings
 
 # https://python.langchain.com/en/latest/modules/indexes/document_loaders/examples/excel.html?highlight=xlsx#microsoft-excel
-from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader
+from langchain.document_loaders import CSVLoader, JSONLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader
 
 # load_dotenv()
 ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
@@ -30,6 +30,7 @@ DOCUMENT_MAP = {
     ".csv": CSVLoader,
     ".xls": UnstructuredExcelLoader,
     ".xlxs": UnstructuredExcelLoader,
+    ".json": JSONLoader,
 }
 
 # Default Instructor Model
@@ -37,3 +38,8 @@ EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"
 # You can also choose a smaller model, don't forget to change HuggingFaceInstructEmbeddings
 # to HuggingFaceEmbeddings in both ingest.py and run_localGPT.py
 # EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+
+# JSON configuration
+JSON_CONTENT_KEY = "text"
+JSON_JOIN_CHAR = ","
+JSON_JQ_SCHEMA = "."

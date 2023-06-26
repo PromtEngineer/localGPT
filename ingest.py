@@ -13,21 +13,56 @@ from constants import (
     DOCUMENT_MAP,
     EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
+    JSON_CONTENT_KEY,
+    JSON_JOIN_CHAR,
+    JSON_JQ_SCHEMA,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
 )
 
-
+def metadata_func(record: dict, metadata: dict) -> dict:
+    """
+    Use all non JSON_CONTENT_KEY values as metadata.
+    Join simple list values with JSON_JOIN_CHAR for conversion to string.
+    """
+    for key in record.keys():
+        if key != JSON_CONTENT_KEY:
+            value = record.get(key)
+            if type(value) == list:
+                out = []
+                for item in value:
+                    if type(item) == str:
+                        out.extend(item)
+                    else:
+                        out.extend(str(item))
+                value = JSON_JOIN_CHAR.join(out)
+                if type(value) == str:
+                    metadata[key] = value
+                else:
+                    logging.warning(
+                        f"key: '{key}' value: '{record.get(key)}' cannot convert to string. Data dropped on floor!"
+                    )
+            else:
+                metadata[key] = value
+    return metadata
+    
 def load_single_document(file_path: str) -> Document:
     # Loads a single document from a file path
     file_extension = os.path.splitext(file_path)[1]
     loader_class = DOCUMENT_MAP.get(file_extension)
     if loader_class:
-        loader = loader_class(file_path)
+        if file_extension == ".json":
+            loader = loader_class(
+                file_path=file_path,
+                jq_schema=JSON_JQ_SCHEMA,
+                content_key=JSON_CONTENT_KEY,
+                metadata_func=metadata_func,
+            )
+        else:
+            loader = loader_class(file_path)
     else:
         raise ValueError("Document type is undefined")
     return loader.load()[0]
-
 
 def load_document_batch(filepaths):
     logging.info("Loading document batch")
