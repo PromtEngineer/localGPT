@@ -102,7 +102,7 @@ python run_localGPT.py --device_type cpu
 
 # Run the UI
 
-1. Start by opening up `run_localGPTAPI.py` in a code editor of your choice. If you are using gpu skip to step 3.
+1. Start by opening up `run_localGPT_API.py` in a code editor of your choice. If you are using gpu skip to step 3.
 
 2. If you are running on cpu change `DEVICE_TYPE = 'cuda'` to `DEVICE_TYPE = 'cpu'`.
 
@@ -121,7 +121,7 @@ python run_localGPT.py --device_type cpu
    LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id)
    ```
 
-   - If you are running gpu there should be nothing to change. Save and close `run_localGPTAPI.py`.
+   - If you are running gpu there should be nothing to change. Save and close `run_localGPT_API.py`.
 
 3. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
 
