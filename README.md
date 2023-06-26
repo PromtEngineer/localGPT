@@ -27,7 +27,7 @@ git checkout v0.2.2
 pip install .
 ```
 
-For more support on [AutoGPTQ] (https://github.com/PanQiWei/AutoGPTQ).
+For more support on [AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ).
 
 ## Test dataset
 
@@ -81,41 +81,66 @@ Note: If you want to start with an empty database, you can delete the existing `
 
 Please ensure that you replace the placeholders with the actual paths and values specific to your setup.
 
-## Ask questions to your documents, locally!
+## Ask Questions to Your Documents Locally
 
-In order to ask a question, run a command like:
+You can use the `localGPT` package's CLI tool to ask questions and retrieve answers from your documents locally. Follow the instructions below to run the script and interactively ask questions:
 
-```shell
-python run_localGPT.py
-```
-
-And wait for the script to require your input.
+1. Open a terminal or command prompt.
+2. Navigate to the directory where the `localGPT` package is located.
+3. To ingest your dataset, run the following command:
 
 ```shell
-> Enter a query:
+python -m localGPT.ingest
 ```
 
-Hit enter. Wait while the LLM model consumes the prompt and prepares the answer. Once done, it will print the answer and the 4 sources it used as context from your documents; you can then ask another question without re-running the script, just wait for the prompt again.
+4. Wait for the ingestion process to complete. The script will load the documents, generate embeddings, and persist them to the Chroma database.
+   - The time required for ingestion depends on the size of your documents.
 
-Note: When you run this for the first time, it will need internet connection to download the vicuna-7B model. After that you can turn off your internet connection, and the script inference would still work. No data gets out of your local environment.
-
-Type `exit` to finish the script.
-
-# Run it on CPU
-
-By default, localGPT will use your GPU to run both the `ingest.py` and `run_localGPT.py` scripts. But if you do not have a GPU and want to run this on CPU, now you can do that (Warning: Its going to be slow!). You will need to use `--device_type cpu`flag with both scripts.
-
-For Ingestion run the following:
+5. Once the ingestion process is complete, you can run the question-answering script. Run the following command:
 
 ```shell
-python ingest.py --device_type cpu
+python -m localGPT.run
 ```
 
-In order to ask a question, run a command like:
+6. Wait for the script to require your input.
+   - The script will display the prompt: `> Enter a query:`
+   - You can enter your question or query at this prompt.
+   - Hit Enter to submit the query.
+
+7. The script will process the query using the Question-Answer retrieval chain and provide an answer.
+   - The answer will be displayed below the query prompt.
+   - The script will also display the sources used as context from your documents (if enabled).
+
+8. You can ask another question without re-running the script.
+   - Simply wait for the prompt to appear again after the previous answer.
+   - Enter your next question and hit Enter to get the answer.
+
+9. To exit the script, enter `exit` when prompted for a query.
+
+### Notes:
+- The first time you run the ingestion script, it may require an internet connection to download the necessary model files.
+   - After the initial download, the script can be run offline without an internet connection.
+- By default, the script uses the GPU (`cuda`) for running the retrieval chain.
+   - If you want to run the script on CPU, you can specify the `--device_type cpu` flag when running both the ingestion and question-answering scripts.
+- If you want to display the source text of the documents used for the answer, you can enable the `--show_sources` option when running the question-answering script.
+
+### Example Commands:
+
+- To run the ingestion script on CPU:
 
 ```shell
-python run_localGPT.py --device_type cpu
+python -m localGPT.ingest --device_type cpu
 ```
+
+- To run the question-answering script on CPU:
+
+```shell
+python -m localGPT.run --device_type cpu
+```
+
+These instructions provide an overview of how to use the `localGPT` package's CLI tool to ask questions and retrieve answers from your documents locally. You can follow these steps to interactively ask questions and obtain answers without having to re-run the script each time.
+
+Please make sure to update the paths and default values in the instructions as needed.
 
 # Run the UI
 
