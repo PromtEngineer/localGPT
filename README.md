@@ -137,8 +137,6 @@ python -m localGPT.run --model_repository <model_repository> --model_safetensors
    - Simply wait for the prompt to appear again after the previous answer.
    - Enter your next question and hit Enter to get the answer
 
-.
-
 9. To exit the script, enter `exit` when prompted for a query.
 
 ### Notes:
