@@ -1,9 +1,45 @@
-# localGPT/run.py
+"""
+localGPT/run.py
+
+This script implements the information retrieval task using 
+a Question-Answer retrieval chain.
+
+The steps involved are as follows:
+1. Load an embedding model, which can be 
+   HuggingFaceInstructEmbeddings or HuggingFaceEmbeddings.
+2. Load the existing vector store that was created by ingest.py.
+3. Load the local LLM using the load_model function.
+4. Set up the Question-Answer retrieval chain.
+5. Prompt the user for questions and provide answers based on the 
+   retrieval chain.
+
+Usage:
+    python run.py [OPTIONS]
+
+Options:
+    --model_repository TEXT      The model repository.
+                                 Default: TheBloke/WizardLM-7B-V1.0-Uncensored-GGML
+    --model_safetensors TEXT     The model safetensors.
+                                 Default: 
+                                 WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors
+    --embedding_model TEXT       The embedding model repository.
+                                 Default: hkunlp/instructor-large
+    --embedding_type TEXT        The embedding model type.
+                                 Default: HuggingFaceInstructEmbeddings
+    --device_type TEXT           The compute device used by the model.
+                                 Choices: cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, 
+                                          ideep, hip, ve, fpga, ort, xla, lazy, vulkan,
+                                          mps, meta, hpu, mtia
+                                 Default: cuda
+    --persist_directory TEXT     The embeddings database path.
+                                 Default: DB
+    --show_sources / --no_show_sources
+                                 Display the documents' source text.
+                                 Default: False
+"""
+
 import logging
-
 import click
-
-# from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 from localGPT import (
     CHOICE_DEVICE_TYPES,
@@ -20,6 +56,8 @@ from localGPT import (
 )
 from localGPT.model import ModelLoader
 from localGPT.database import ChromaDBLoader
+
+# from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 
 @click.command()
@@ -75,16 +113,8 @@ def main(
     show_sources,
 ):
     """
-    This function implements the information retrieval task.
-
-    1. Loads an embedding model, can be HuggingFaceInstructEmbeddings
-       or HuggingFaceEmbeddings
-    2. Loads the existing vectorestore that was created by ingest.py
-    3. Loads the local LLM using load_model function - You can now set different LLMs.
-    4. Setup the Question Answer retreival chain.
-    5. Question answers.
+    Execute the information retrieval task using a Question-Answer retrieval chain.
     """
-
     # Create ChromaDBLoader instance
     db_loader = ChromaDBLoader(
         source_directory=None,
@@ -94,11 +124,13 @@ def main(
         device_type=device_type,
     )
 
-    # load the LLM for generating Natural Language responses
+    # Load the LLM for generating Natural Language responses
     model_loader = ModelLoader(device_type, model_repository, model_safetensors)
     llm = model_loader.load_model()
-    # Setup the Question Answer retrieval chain.
+
+    # Setup the Question-Answer retrieval chain
     qa = db_loader.load_retrieval_qa(llm)
+
     # Interactive questions and answers
     logging.info(f"Show Sources: {show_sources}")
 
@@ -106,6 +138,7 @@ def main(
         query = input("\nEnter a query: ")
         if query.lower() == "exit":
             break
+
         # Get the answer from the chain
         res = qa(query)
         answer, docs = res["result"], res["source_documents"]
@@ -118,15 +151,11 @@ def main(
 
         if show_sources:
             # Print the relevant sources used for the answer
-            print(
-                "--------------------START-SOURCE-DOCUMENT--------------------"
-            )
+            print("----START-SOURCE-DOCUMENT----")
             for document in docs:
-                print("\n> " + document.metadata["source"] + ":")
+                print(f"\n> {document.metadata['source']}:")
                 print(document.page_content)
-            print(
-                "----------------------END-SOURCE-DOCUMENT--------------------"
-            )
+            print("----END-SOURCE-DOCUMENT----")
 
 
 if __name__ == "__main__":
