@@ -33,36 +33,53 @@ For more support on [AutoGPTQ] (https://github.com/PanQiWei/AutoGPTQ).
 
 This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
 
-## Instructions for ingesting your own dataset
+## Instructions for Ingesting Your Own Dataset
 
-Put any and all of your .txt, .pdf, or .csv files into the SOURCE_DOCUMENTS directory
-in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory.
+The following instructions will guide you through the process of ingesting your own dataset using the `localGPT` tool.
 
-The current default file types are .txt, .pdf, .csv, and .xlsx, if you want to use any other file type, you will need to convert it to one of the default file types.
+### Dataset Preparation
 
-Run the following command to ingest all the data.
+1. Ensure that your dataset is stored in the `SOURCE_DOCUMENTS` directory.
+   - The default location for the `SOURCE_DOCUMENTS` directory is based on the package structure but can be customized if needed.
+   - Supported document types include `.txt`, `.pdf`, `.py`, and `.csv`.
+   - Additional file types can be supported by extending the embedding types, models, or sources.
+
+### Ingestion Command
+
+To ingest your dataset and generate embeddings, use the following command:
 
 ```shell
-python ingest.py  # defaults to cuda
+python -m localGPT.ingest --source_directory <source_directory> --persist_directory <persist_directory> --embedding_model <embedding_model> --embedding_type <embedding_type> --device_type <device_type>
 ```
 
-Use the device type argument to specify a given device.
+Replace the following placeholders:
+- `<source_directory>`: The path to the directory containing your source documents.
+- `<persist_directory>`: The path to the directory where the embeddings will be written.
+- `<embedding_model>`: The desired embedding model to use for generating embeddings.
+- `<embedding_type>`: The type of embeddings to use.
+- `<device_type>`: The device type to run the embeddings on.
 
-```sh
-python ingest.py --device_type cpu
+For example, to ingest documents from the `data/documents` directory using the `hkunlp/instructor-large` embedding model and `HuggingFaceInstructEmbeddings` embedding type, and running on the `cuda` device, you would run the following command:
+
+```shell
+python -m localGPT.ingest --source_directory data/documents --persist_directory data/embeddings --embedding_model hkunlp/instructor-large --embedding_type HuggingFaceInstructEmbeddings --device_type cuda
 ```
 
-Use help for a full list of supported devices.
+### Data Ingestion Process
 
-```sh
-python ingest.py --help
-```
+Running the ingestion command will load the documents from the specified source directory, split them into chunks, generate embeddings using the selected embedding model and type, and persist the embeddings to the Chroma database.
 
-It will create an index containing the local vectorstore. Will take time, depending on the size of your documents.
-You can ingest as many documents as you want, and all will be accumulated in the local embeddings database.
-If you want to start from an empty database, delete the `index`.
+- The number of documents loaded and the chunks created will be logged during the process.
+- The time required for ingestion depends on the size of your documents.
+- All ingested documents will be accumulated in the local embeddings database.
 
-Note: When you run this for the first time, it will download take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
+### Initial Setup
+
+The first time you run the ingestion process, it may require downloading the required embedding model, which could take some time. However, subsequent runs will not require an internet connection as the data remains within your local environment.
+
+Note: If you want to start with an empty database, you can delete the existing `index` file located in the persist directory.
+
+Please ensure that you replace the placeholders with the actual paths and values specific to your setup.
 
 ## Ask questions to your documents, locally!
 
