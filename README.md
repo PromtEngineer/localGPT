@@ -31,7 +31,7 @@ For more support on [AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ).
 
 ## Test dataset
 
-This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
+This repo uses a [Constitution of USA](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
 
 ## Instructions for Ingesting Your Own Dataset
 
@@ -102,6 +102,28 @@ python -m localGPT.ingest
 python -m localGPT.run
 ```
 
+   `localGPT.run` supports the following options:
+
+```shell
+python -m localGPT.run --model_repository <model_repository> --model_safetensors <model_safetensors> --embedding_model <embedding_model> --embedding_type <embedding_type> --device_type <device_type> --persist_directory <persist_directory> --show_sources
+```
+
+   Replace the following placeholders:
+   - `<model_repository>`: The desired model repository.
+   - `<model_safetensors>`: The desired model safetensors. This is only applicable for GPTQ models, not GGML models.
+   - `<embedding_model>`: The embedding model repository used during ingestion.
+   - `<embedding_type>`: The embedding model type used during ingestion.
+   - `<device_type>`: The device type used during ingestion.
+   - `<persist_directory>`: The directory where the embeddings are persisted.
+
+   For example, to run the question-answering script using the `TheBloke/WizardLM-7B-uncensored-GPTQ` model repository, `WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors` model safetensors, `hkunlp/instructor-large` embedding model, `HuggingFaceInstructEmbeddings` embedding type, `cuda` device type, and displaying the sources, you would run the following command:
+
+   ```shell
+   python -m localGPT.run --model_repository TheBloke/WizardLM-7B-uncensored-GPTQ --model_safetensors WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors --embedding_model hkunlp/instructor-large --embedding_type HuggingFaceInstructEmbeddings --device_type cuda --persist_directory data/embeddings --show_sources
+   ```
+
+   Note that the `--model_safetensors` option is only applicable for GPTQ models and should not be used with GGML models.
+
 6. Wait for the script to require your input.
    - The script will display the prompt: `> Enter a query:`
    - You can enter your question or query at this prompt.
@@ -113,7 +135,9 @@ python -m localGPT.run
 
 8. You can ask another question without re-running the script.
    - Simply wait for the prompt to appear again after the previous answer.
-   - Enter your next question and hit Enter to get the answer.
+   - Enter your next question and hit Enter to get the answer
+
+.
 
 9. To exit the script, enter `exit` when prompted for a query.
 
