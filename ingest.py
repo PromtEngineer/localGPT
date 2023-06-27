@@ -33,17 +33,13 @@ def metadata_func(record: dict, metadata: dict) -> dict:
                 for item in value:
                     if type(item) == str:
                         out.extend(item)
-                    else:
-                        out.extend(str(item))
                 value = JSON_JOIN_CHAR.join(out)
-                if type(value) == str:
-                    metadata[key] = value
-                else:
-                    logging.warning(
-                        f"key: '{key}' value: '{record.get(key)}' cannot convert to string. Data dropped on floor!"
-                    )
-            else:
+            if type(value) == str:
                 metadata[key] = value
+            else:
+                logging.warning(
+                    f"key: '{key}' value: '{record.get(key)}' cannot convert to string. Data dropped on floor!"
+                )
     return metadata
     
 def load_single_document(file_path: str) -> Document:
