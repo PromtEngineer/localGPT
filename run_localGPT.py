@@ -40,7 +40,7 @@ def load_model(device_type, model_id, model_basename=None):
         ValueError: If an unsupported model or device type is provided.
     """
     if device_type.lower() in ["cpu", "mps"]:
-        model_basename=None
+        model_basename = None
 
     logging.info(f"Loading Model: {model_id}, on: {device_type}")
     logging.info("This action can take a few minutes!")
@@ -180,7 +180,7 @@ def main(device_type, show_sources):
 
     # for HF models
     model_id = "TheBloke/vicuna-7B-1.1-HF"
-    model_basename=None
+    model_basename = None
     # model_id = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
     # model_id = "TheBloke/guanaco-7B-HF"
     # model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM. Using STransformers
