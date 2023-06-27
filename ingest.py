@@ -20,6 +20,7 @@ from constants import (
     SOURCE_DIRECTORY,
 )
 
+
 def metadata_func(record: dict, metadata: dict) -> dict:
     """
     Use all non JSON_CONTENT_KEY values as metadata.
@@ -41,7 +42,8 @@ def metadata_func(record: dict, metadata: dict) -> dict:
                     f"key: '{key}' value: '{record.get(key)}' cannot convert to string. Data dropped on floor!"
                 )
     return metadata
-    
+
+
 def load_single_document(file_path: str) -> Document:
     # Loads a single document from a file path
     file_extension = os.path.splitext(file_path)[1]
@@ -59,6 +61,7 @@ def load_single_document(file_path: str) -> Document:
     else:
         raise ValueError("Document type is undefined")
     return loader.load()[0]
+
 
 def load_document_batch(filepaths):
     logging.info("Loading document batch")

@@ -20,6 +20,8 @@ from transformers import (
 
 from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
 
+TRUST_REMOTE_CODE = False
+
 
 def load_model(device_type, model_id, model_basename=None):
     """
@@ -46,7 +48,7 @@ def load_model(device_type, model_id, model_basename=None):
     if model_basename is not None:
         # The code supports all huggingface models that ends with GPTQ and have some variation
         # of .no-act.order or .safetensors in their HF repo.
-        logging.info("Using AutoGPTQForCausalLM for quantized models")
+        logging.info("Using AutoGPTQForCausalLM for quantized models with")
 
         if ".safetensors" in model_basename:
             # Remove the ".safetensors" ending if present
@@ -59,7 +61,7 @@ def load_model(device_type, model_id, model_basename=None):
             model_id,
             model_basename=model_basename,
             use_safetensors=True,
-            trust_remote_code=True,
+            trust_remote_code=TRUST_REMOTE_CODE,
             device="cuda:0",
             use_triton=False,
             quantize_config=None,
@@ -192,8 +194,13 @@ def main(device_type, show_sources):
     # ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
     # model_id = "TheBloke/wizardLM-7B-GPTQ"
     # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
-    model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-    model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+
+    # model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
+    # model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+
+    model_id = "TheBloke/orca_mini_13B-GPTQ"
+    model_basename = "orca-mini-13b-GPTQ-4bit-128g.no-act.order"
+
     llm = load_model(device_type, model_id=model_id, model_basename=model_basename)
 
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
