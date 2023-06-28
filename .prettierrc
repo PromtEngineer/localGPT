@@ -1,10 +1,10 @@
 {
     "singleQuote": true,
     "trailingComma": "none",
-    "printWidth": 80,
+    "printWidth": 120,
     "pluginSearchDirs": ["."],
     "proseWrap": "always",
-    "tabWidth": 4,
+    "tabWidth": 2,
     "useTabs": false,
     "bracketSpacing": true,
     "bracketSameLine": false,

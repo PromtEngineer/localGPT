@@ -32,16 +32,16 @@ flake8 = "^6.0.0"
 mypy = "^1.4.0"
 
 [tool.mypy]
-line-length = 80
+line-length = 120
 target-version = ['py311']
 
 [tool.black]
-line-length = 80
+line-length = 120
 target-version = ['py311']
 
 [tool.isort]
 profile = "black"
-line_length = 80
+line_length = 120
 known_first_party = [
     "tests",
     "scripts",
