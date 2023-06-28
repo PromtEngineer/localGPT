@@ -2,7 +2,6 @@
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from typing import List, Tuple
 
 from langchain.docstore.document import Document
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
@@ -37,8 +36,8 @@ def load_single_document(file_path: str) -> Document:
 
 
 def load_document_batch(
-    filepaths: List[str],
-) -> Tuple[List[Document], List[str]]:
+    filepaths: list[str],
+) -> tuple[list[Document], list[str]]:
     """
     Loads a batch of documents from the given file paths.
 
@@ -63,7 +62,7 @@ def load_document_batch(
         return (data_list, filepaths)
 
 
-def load_documents(source_dir: str) -> List[Document]:
+def load_documents(source_dir: str) -> list[Document]:
     """
     Loads all documents from the specified source documents directory.
 
@@ -116,7 +115,7 @@ def load_documents(source_dir: str) -> List[Document]:
     return docs
 
 
-def split_documents(documents: List[Document]) -> List[Document]:
+def split_documents(documents: list[Document]) -> list[Document]:
     """
     Splits the given documents based on their type for the correct Text Splitter.
 

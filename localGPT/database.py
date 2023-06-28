@@ -29,8 +29,6 @@ Usage:
     loader.persist(documents)
 """
 
-from typing import List, Optional
-
 from langchain.base_language import BaseLanguageModel
 from langchain.chains import RetrievalQA
 from langchain.chains.retrieval_qa.base import BaseRetrievalQA
@@ -73,11 +71,11 @@ class ChromaDBLoader:
 
     def __init__(
         self,
-        source_directory: Optional[str],
-        persist_directory: Optional[str],
-        embedding_model: Optional[str],
-        embedding_type: Optional[str],
-        device_type: Optional[str],
+        source_directory: str | None,
+        persist_directory: str | None,
+        embedding_model: str | None,
+        embedding_type: str | None,
+        device_type: str | None,
     ):
         self.source_directory = source_directory or SOURCE_DIRECTORY
         self.persist_directory = persist_directory or PERSIST_DIRECTORY
@@ -85,7 +83,7 @@ class ChromaDBLoader:
         self.embedding_type = embedding_type or DEFAULT_EMBEDDING_TYPE
         self.device_type = device_type or DEFAULT_DEVICE_TYPE
 
-    def load_embedding_function(self) -> Optional[Embeddings]:
+    def load_embedding_function(self) -> Embeddings | None:
         """
         Load the embedding function based on the specified embedding type.
 
@@ -135,7 +133,7 @@ class ChromaDBLoader:
             return_source_documents=True,
         )
 
-    def persist(self, documents: List[Document]) -> None:
+    def persist(self, documents: list[Document]) -> None:
         """
         Persist the documents and their embeddings to the Chroma database.
 

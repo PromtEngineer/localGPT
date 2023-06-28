@@ -11,7 +11,6 @@ Note: The module relies on imports from localGPT and other external libraries.
 """
 
 import logging
-from typing import Optional
 
 import torch
 from auto_gptq import AutoGPTQForCausalLM
@@ -45,11 +44,11 @@ class ModelLoader:
 
     def __init__(
         self,
-        device_type: Optional[str],
-        model_type: Optional[str],
-        model_repository: Optional[str],
-        model_safetensors: Optional[str],
-        use_triton: Optional[bool],
+        device_type: str | None,
+        model_type: str | None,
+        model_repository: str | None,
+        model_safetensors: str | None,
+        use_triton: bool | None,
     ):
         """
         Initializes the ModelLoader with optional device type, model ID, and

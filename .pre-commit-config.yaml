@@ -38,11 +38,13 @@ repos:
     rev: 5.12.0
     hooks:
       - id: isort
+        args: ['--profile', 'black']
 
   - repo: https://github.com/PyCQA/flake8
     rev: 6.0.0
     hooks:
       - id: flake8
+        args: ['--extend-ignore=E203,E501', '--max-line-length=120', '--config=setup.cfg']
 
 ci:
   autoupdate_schedule: weekly

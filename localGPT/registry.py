@@ -1,7 +1,6 @@
 # localGPT/registry.py
 import os
 from collections import defaultdict
-from typing import Optional, Text, Type
 
 import magic
 from langchain.docstore.document import Document
@@ -27,7 +26,7 @@ class LoaderRegistry:
             self.register_loader(mime_type, loader)
 
     @staticmethod
-    def get_mime_type(file_path: str) -> Text:
+    def get_mime_type(file_path: str) -> str:
         """
         Returns the MIME type of a file based on its path.
 
@@ -43,7 +42,7 @@ class LoaderRegistry:
     def register_loader(
         self,
         mime_type: str,
-        loader_class: Type[BaseLoader],
+        loader_class: type[BaseLoader],
     ) -> None:
         """
         Registers a loader for a specific MIME type.
@@ -56,7 +55,7 @@ class LoaderRegistry:
             raise ValueError(f"A loader for MIME type {mime_type} is already registered.")
         self.loader_map[mime_type] = loader_class
 
-    def get_loader(self, mime_type: str) -> Optional[Type[BaseLoader]]:
+    def get_loader(self, mime_type: str) -> type[BaseLoader] | None:
         """
         Returns the loader class for a specific MIME type.
 
@@ -120,7 +119,7 @@ class TextSplitterRegistry:
     def get_language(
         self,
         file_extension: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Returns the language for a specific file extension.
 

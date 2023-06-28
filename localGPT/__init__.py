@@ -31,7 +31,6 @@ set based on the package structure and can be customized if needed.
 
 import logging
 import os
-from typing import List, Optional, Tuple, Type
 
 from chromadb.config import Settings
 from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader
@@ -106,7 +105,7 @@ DEFAULT_MODEL_REPOSITORY: str = "TheBloke/vicuna-7B-1.1-HF"
 # The default class to use
 DEFAULT_MODEL_TYPE: str = "huggingface"
 # The default model weights base name
-DEFAULT_MODEL_SAFETENSORS: Optional[str] = "model.safetensors"
+DEFAULT_MODEL_SAFETENSORS: str | None = "model.safetensors"
 
 # The settings for the Chroma database
 # - chroma_db_impl: Chroma database implementation (duckdb+parquet)
@@ -119,7 +118,7 @@ CHROMA_SETTINGS: Settings = Settings(
 )
 
 # A mapping of MIME types to loader classes
-MIME_TYPES: Tuple[Tuple[str, Type[BaseLoader]], ...] = (
+MIME_TYPES: tuple[tuple[str, type[BaseLoader]], ...] = (
     ("text/plain", TextLoader),
     ("application/pdf", PDFMinerLoader),
     ("text/csv", CSVLoader),
@@ -127,7 +126,7 @@ MIME_TYPES: Tuple[Tuple[str, Type[BaseLoader]], ...] = (
 )
 
 # A mapping of file extensions to the Language enumeration
-LANGUAGE_TYPES: Tuple[Tuple[str, str], ...] = (
+LANGUAGE_TYPES: tuple[tuple[str, str], ...] = (
     ("cpp", Language.CPP),  # C++ source files
     ("go", Language.GO),  # Go source files
     ("java", Language.JAVA),  # Java source files
@@ -147,7 +146,7 @@ LANGUAGE_TYPES: Tuple[Tuple[str, str], ...] = (
 )
 
 # A mapping of embedding type names to embedding classes
-EMBEDDING_TYPES: dict[str, Type[Embeddings]] = {
+EMBEDDING_TYPES: dict[str, type[Embeddings]] = {
     "HuggingFaceInstructEmbeddings": HuggingFaceInstructEmbeddings,
     "HuggingFaceEmbeddings": HuggingFaceEmbeddings,
     "SentenceTransformerEmbeddings": SentenceTransformerEmbeddings,
@@ -156,12 +155,12 @@ EMBEDDING_TYPES: dict[str, Type[Embeddings]] = {
     # Add more embedding types here as needed
 }
 
-CHOICE_EMBEDDING_TYPES: List[str] = [
+CHOICE_EMBEDDING_TYPES: list[str] = [
     "HuggingFaceEmbeddings",
     "HuggingFaceInstructEmbeddings",
 ]
 
-CHOICE_EMBEDDING_MODELS: List[str] = [
+CHOICE_EMBEDDING_MODELS: list[str] = [
     "hkunlp/instructor-base",
     "hkunlp/instructor-large",
     "hkunlp/instructor-xl",
@@ -169,14 +168,14 @@ CHOICE_EMBEDDING_MODELS: List[str] = [
     "sentence-transformers/all-MiniLM-L12-v2",
 ]
 
-CHOICE_MODEL_TYPES: List[str] = [
+CHOICE_MODEL_TYPES: list[str] = [
     "huggingface",
     "llama",
     "ggml",
     "gptq",
 ]
 
-CHOICE_MODEL_REPOSITORIES: List[str] = [
+CHOICE_MODEL_REPOSITORIES: list[str] = [
     "TheBloke/vicuna-7B-1.1-HF",
     "TheBloke/vicuna-7B-1.1-GPTQ-4bit-128g",
     "TheBloke/vicuna-7B-1.1-GGML",
@@ -188,7 +187,7 @@ CHOICE_MODEL_REPOSITORIES: List[str] = [
     "TheBloke/Nous-Hermes-13B-GGML",
 ]
 
-CHOICE_MODEL_SAFETENSORS: List[str] = [
+CHOICE_MODEL_SAFETENSORS: list[str] = [
     "model.safetensors",
     "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors",
     "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors",
@@ -196,7 +195,7 @@ CHOICE_MODEL_SAFETENSORS: List[str] = [
     "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors",
 ]
 
-CHOICE_DEVICE_TYPES: List[str] = [
+CHOICE_DEVICE_TYPES: list[str] = [
     "cpu",
     "cuda",
     "ipu",
