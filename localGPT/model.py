@@ -68,13 +68,70 @@ class ModelLoader:
         - model_safetensors (str, optional): The model basename.
           Defaults to DEFAULT_MODEL_SAFETENSORS.
         """
-        self.device_type = device_type or DEFAULT_DEVICE_TYPE
-        self.model_type = model_type or DEFAULT_MODEL_TYPE
+        self.device_type = (device_type or DEFAULT_DEVICE_TYPE).lower()
+        self.model_type = (model_type or DEFAULT_MODEL_TYPE).lower()
         self.model_repository = model_repository or DEFAULT_MODEL_REPOSITORY
         self.model_safetensors = model_safetensors or DEFAULT_MODEL_SAFETENSORS
         self.use_triton = use_triton or False
 
-    def load_quantized_model(self):
+    def load_huggingface_model(self):
+        """
+        Loads a full model for text generation.
+
+        Returns:
+        - model: The loaded full model.
+        - tokenizer: The tokenizer associated with the model.
+        """
+        # The code supports all huggingface models that ends with -HF
+        # or which have a .bin file in their HF repo.
+        logging.info("Using AutoModelForCausalLM for full models")
+
+        config = AutoConfig.from_pretrained(self.model_repository)
+        logging.info(f"Configuration loaded for {self.model_repository}")
+
+        tokenizer = AutoTokenizer.from_pretrained(self.model_repository)
+        logging.info(f"Tokenizer loaded for {self.model_repository}")
+
+        model = AutoModelForCausalLM.from_pretrained(
+            config=config,
+            resume_download=True,
+            trust_remote_code=False,
+            output_loading_info=True,
+        )
+        logging.info(f"Model loaded for {self.model_repository}")
+
+        model.tie_weights()
+        logging.warn(
+            "Model Weights Tied: "
+            "Effectiveness depends on specific type of model."
+        )
+
+        return model, tokenizer
+
+    def load_huggingface_llama_model(self):
+        """
+        Loads a Llama model for text generation.
+
+        Returns:
+        - model: The loaded Llama model.
+        - tokenizer: The tokenizer associated with the model.
+        """
+        logging.info("Using LlamaTokenizer")
+        # vocab_file (str) — Path to the vocabulary file.
+        # NOTE: Path to the tokenizer
+        tokenizer = LlamaTokenizer.from_pretrained(self.model_repository)
+        logging.info(f"Tokenizer loaded for {self.model_repository}")
+        # NOTE: Path to the pytorch bin
+        model = LlamaForCausalLM.from_pretrained(self.model_repository)
+        logging.info(f"Model loaded for {self.model_repository}")
+        return model, tokenizer
+
+    def load_ggml_model(self):
+        # TODO: Implement supporting 4, 5, and 8, -bit quant model support
+        # NOTE: This method potentially supersedes `load_gptq_model`
+        pass
+
+    def load_gptq_model(self):
         """
         Loads a quantized model for text generation.
 
@@ -85,6 +142,7 @@ class ModelLoader:
         # NOTE: The code supports all huggingface models that ends with GPTQ and
         # have some variation of .no-act.order or .safetensors in their HF repo.
         logging.info("Using AutoGPTQForCausalLM for quantized models")
+        logging.warn("GGML models may supersede GPTQ models in future releases")
 
         if not torch.cuda.is_available():
             raise NotImplementedError(
@@ -116,61 +174,6 @@ class ModelLoader:
         logging.info(f"Model loaded for {self.model_repository}")
 
         return model, tokenizer
-
-    def load_full_model(self):
-        """
-        Loads a full model for text generation.
-
-        Returns:
-        - model: The loaded full model.
-        - tokenizer: The tokenizer associated with the model.
-        """
-        # The code supports all huggingface models that ends with -HF
-        # or which have a .bin file in their HF repo.
-        logging.info("Using AutoModelForCausalLM for full models")
-
-        config = AutoConfig.from_pretrained(self.model_repository)
-        logging.info(f"Configuration loaded for {self.model_repository}")
-
-        tokenizer = AutoTokenizer.from_pretrained(self.model_repository)
-        logging.info(f"Tokenizer loaded for {self.model_repository}")
-
-        model = AutoModelForCausalLM.from_pretrained(
-            config=config,
-            resume_download=True,
-            trust_remote_code=False,
-            output_loading_info=True,
-        )
-        logging.info(f"Model loaded for {self.model_repository}")
-
-        model.tie_weights()
-        logging.warn(
-            f"Model Weights Tied: Effectiveness depends on specific type of model."
-        )
-
-        return model, tokenizer
-
-    def load_hf_llama_model(self):
-        """
-        Loads a Llama model for text generation.
-
-        Returns:
-        - model: The loaded Llama model.
-        - tokenizer: The tokenizer associated with the model.
-        """
-        logging.info("Using LlamaTokenizer")
-        # vocab_file (str) — Path to the vocabulary file.
-        # NOTE: Path to the tokenizer
-        tokenizer = LlamaTokenizer.from_pretrained(self.model_repository)
-        logging.info(f"Tokenizer loaded for {self.model_repository}")
-        # NOTE: Path to the pytorch bin
-        model = LlamaForCausalLM.from_pretrained(self.model_repository)
-        logging.info(f"Model loaded for {self.model_repository}")
-        return model, tokenizer
-
-    def load_ggml_model(self):
-        # TODO
-        pass
 
     @staticmethod
     def create_pipeline(model, tokenizer, generation_config):
@@ -204,15 +207,24 @@ class ModelLoader:
         Returns:
         - local_llm: The loaded local language model (LLM).
         """
-        if self.model_type.lower() == "gptq":
-            model, tokenizer = self.load_quantized_model()
-        elif self.model_type.lower() == "huggingface":
-            model, tokenizer = self.load_full_model()
-        elif self.model_type.lower() == "llama":
-            model, tokenizer = self.load_hf_llama_model()
+        if self.model_type.lower() == "huggingface":
+            model, tokenizer = self.load_huggingface_model()
+        elif self.model_type.lower() == "huggingface-llama":
+            model, tokenizer = self.load_huggingface_llama_model()
+        elif self.model_type.lower() == "gptq":
+            model, tokenizer = self.load_gptq_model()
+        elif self.model_type.lower() == "ggml":
+            raise NotImplementedError(
+                "GGML support is in research and development"
+            )
         else:
             raise AttributeError(
-                "Unsupported model type given. Expected one of: gptq, huggingface, or hf-llama"
+                "Unsupported model type given. "
+                "Expected one of: "
+                "huggingface, "
+                "huggingface-llama, "
+                "ggml, "
+                "gptq"
             )
 
         # Load configuration from the model to avoid warnings

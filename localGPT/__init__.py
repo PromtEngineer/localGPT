@@ -31,7 +31,7 @@ set based on the package structure and can be customized if needed.
 
 import logging
 import os
-from typing import Tuple, Type, List
+from typing import List, Optional, Tuple, Type
 
 from chromadb.config import Settings
 from langchain.document_loaders import (
@@ -107,11 +107,11 @@ DEFAULT_EMBEDDING_MODEL: str = "hkunlp/instructor-large"
 # The default embedding type
 DEFAULT_EMBEDDING_TYPE: str = "HuggingFaceInstructEmbeddings"
 # The default model git repository
-DEFAULT_MODEL_REPOSITORY: str = "TheBloke/WizardLM-7B-V1.0-Uncensored-GGML"
+DEFAULT_MODEL_REPOSITORY: str = "TheBloke/vicuna-7B-1.1-HF"
+# The default class to use
+DEFAULT_MODEL_TYPE: str = "huggingface"
 # The default model weights base name
-DEFAULT_MODEL_SAFETENSORS: str = (
-    "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-)
+DEFAULT_MODEL_SAFETENSORS: Optional[str] = "model.safetensors"
 
 # The settings for the Chroma database
 # - chroma_db_impl: Chroma database implementation (duckdb+parquet)
@@ -174,6 +174,13 @@ CHOICE_EMBEDDING_MODELS: List[str] = [
     "sentence-transformers/all-MiniLM-L12-v2",
 ]
 
+CHOICE_MODEL_TYPES: List[str] = [
+    "huggingface",
+    "llama",
+    "ggml",
+    "gptq",
+]
+
 CHOICE_MODEL_REPOSITORIES: List[str] = [
     "TheBloke/vicuna-7B-1.1-HF",
     "TheBloke/vicuna-7B-1.1-GPTQ-4bit-128g",
@@ -187,6 +194,7 @@ CHOICE_MODEL_REPOSITORIES: List[str] = [
 ]
 
 CHOICE_MODEL_SAFETENSORS: List[str] = [
+    "model.safetensors",
     "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors",
     "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors",
     "nous-hermes-13b-GPTQ-4bit-128g.no-act.order.safetensors",

@@ -39,6 +39,7 @@ Options:
 """
 
 import logging
+
 import click
 
 from localGPT import (
@@ -47,20 +48,28 @@ from localGPT import (
     CHOICE_EMBEDDING_TYPES,
     CHOICE_MODEL_REPOSITORIES,
     CHOICE_MODEL_SAFETENSORS,
+    CHOICE_MODEL_TYPES,
     DEFAULT_DEVICE_TYPE,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_TYPE,
     DEFAULT_MODEL_REPOSITORY,
     DEFAULT_MODEL_SAFETENSORS,
+    DEFAULT_MODEL_TYPE,
     PERSIST_DIRECTORY,
 )
-from localGPT.model import ModelLoader
 from localGPT.database import ChromaDBLoader
+from localGPT.model import ModelLoader
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 
 @click.command()
+@click.option(
+    "--model_repository",
+    default=DEFAULT_MODEL_TYPE,
+    type=click.Choice(CHOICE_MODEL_TYPES),
+    help=f"The model repository (default: {DEFAULT_MODEL_TYPE})",
+)
 @click.option(
     "--model_repository",
     default=DEFAULT_MODEL_REPOSITORY,
