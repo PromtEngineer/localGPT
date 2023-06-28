@@ -30,6 +30,7 @@ from localGPT import (
     DEFAULT_DEVICE_TYPE,
     DEFAULT_MODEL_REPOSITORY,
     DEFAULT_MODEL_SAFETENSORS,
+    DEFAULT_MODEL_TYPE,
 )
 
 
@@ -50,8 +51,10 @@ class ModelLoader:
     def __init__(
         self,
         device_type: Optional[str],
+        model_type: Optional[str],
         model_repository: Optional[str],
         model_safetensors: Optional[str],
+        use_triton: Optional[bool],
     ):
         """
         Initializes the ModelLoader with optional device type, model ID, and
@@ -66,16 +69,14 @@ class ModelLoader:
           Defaults to DEFAULT_MODEL_SAFETENSORS.
         """
         self.device_type = device_type or DEFAULT_DEVICE_TYPE
+        self.model_type = model_type or DEFAULT_MODEL_TYPE
         self.model_repository = model_repository or DEFAULT_MODEL_REPOSITORY
         self.model_safetensors = model_safetensors or DEFAULT_MODEL_SAFETENSORS
+        self.use_triton = use_triton or False
 
-    def load_quantized_model(self, use_triton: bool = False):
+    def load_quantized_model(self):
         """
         Loads a quantized model for text generation.
-
-        Args:
-        - use_triton (bool, optional): Whether to use Triton for model loading.
-          Defaults to False.
 
         Returns:
         - model: The loaded quantized model.
@@ -85,27 +86,35 @@ class ModelLoader:
         # have some variation of .no-act.order or .safetensors in their HF repo.
         logging.info("Using AutoGPTQForCausalLM for quantized models")
 
+        if not torch.cuda.is_available():
+            raise NotImplementedError(
+                "Only CUDA based devices are officially supported"
+            )
+
         if self.model_safetensors.endswith(".safetensors"):
-            # Remove the ".safetensors" ending if present
-            # NOTE: Using replace is not ideal because it can
-            # have unintended side effects.
             split_string = self.model_safetensors.split(".")
             self.model_safetensors = ".".join(split_string[:-1])
+            logging.info(f"Stripped {self.model_safetensors}. Moving on.")
 
         tokenizer = AutoTokenizer.from_pretrained(
             self.model_repository, use_fast=True
         )
-        logging.info("Tokenizer loaded")
+        logging.info(f"Tokenizer loaded for {self.model_repository}")
 
         model = AutoGPTQForCausalLM.from_quantized(
             self.model_repository,
-            model_safetensors=self.model_safetensors,
-            use_safetensors=True,
-            trust_remote_code=True,
+            device_map="auto",
+            # NOTE: # Uncomment if you encounter Out of Memory Errors
+            # max_memory={0: "15GB"},
             device=f"{self.device_type}:0",
-            use_triton=use_triton,
-            quantize_config=None,
+            low_cpu_mem_usage=True,
+            use_triton=self.use_triton,
+            use_safetensors=True,
+            use_cuda_fp16=True,
+            model_safetensors=self.model_safetensors,
         )
+        logging.info(f"Model loaded for {self.model_repository}")
+
         return model, tokenizer
 
     def load_full_model(self):
@@ -119,10 +128,13 @@ class ModelLoader:
         # The code supports all huggingface models that ends with -HF
         # or which have a .bin file in their HF repo.
         logging.info("Using AutoModelForCausalLM for full models")
+
         config = AutoConfig.from_pretrained(self.model_repository)
         logging.info(f"Configuration loaded for {self.model_repository}")
+
         tokenizer = AutoTokenizer.from_pretrained(self.model_repository)
         logging.info(f"Tokenizer loaded for {self.model_repository}")
+
         model = AutoModelForCausalLM.from_pretrained(
             config=config,
             resume_download=True,
@@ -130,13 +142,15 @@ class ModelLoader:
             output_loading_info=True,
         )
         logging.info(f"Model loaded for {self.model_repository}")
+
         model.tie_weights()
         logging.warn(
             f"Model Weights Tied: Effectiveness depends on specific type of model."
         )
+
         return model, tokenizer
 
-    def load_llama_model(self):
+    def load_hf_llama_model(self):
         """
         Loads a Llama model for text generation.
 
@@ -145,8 +159,13 @@ class ModelLoader:
         - tokenizer: The tokenizer associated with the model.
         """
         logging.info("Using LlamaTokenizer")
+        # vocab_file (str) — Path to the vocabulary file.
+        # NOTE: Path to the tokenizer
         tokenizer = LlamaTokenizer.from_pretrained(self.model_repository)
+        logging.info(f"Tokenizer loaded for {self.model_repository}")
+        # NOTE: Path to the pytorch bin
         model = LlamaForCausalLM.from_pretrained(self.model_repository)
+        logging.info(f"Model loaded for {self.model_repository}")
         return model, tokenizer
 
     def load_ggml_model(self):
@@ -185,20 +204,23 @@ class ModelLoader:
         Returns:
         - local_llm: The loaded local language model (LLM).
         """
-        if self.model_safetensors is not None:
+        if self.model_type.lower() == "gptq":
             model, tokenizer = self.load_quantized_model()
-        elif self.device_type.lower() == DEFAULT_DEVICE_TYPE:
+        elif self.model_type.lower() == "huggingface":
             model, tokenizer = self.load_full_model()
+        elif self.model_type.lower() == "llama":
+            model, tokenizer = self.load_hf_llama_model()
         else:
-            model, tokenizer = self.load_llama_model()
+            raise AttributeError(
+                "Unsupported model type given. Expected one of: gptq, huggingface, or hf-llama"
+            )
 
         # Load configuration from the model to avoid warnings
         generation_config = GenerationConfig.from_pretrained(
             self.model_repository
         )
         # see here for details:
-        # https://huggingface.co/docs/transformers/
-        # main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
+        # https://huggingface.co/docs/transformers/main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
 
         # Create a pipeline for text generation
         local_llm = self.create_pipeline(model, tokenizer, generation_config)
