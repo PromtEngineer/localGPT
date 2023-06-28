@@ -14,4 +14,4 @@ pin: True
 label_prs: update
 
 requirements:
-  - "requirements.txt"
+  - 'requirements.txt'

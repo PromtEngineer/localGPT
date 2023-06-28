@@ -16,10 +16,10 @@ repos:
       - id: detect-private-key
 
   - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: "v3.0.0-alpha.9-for-vscode"
+    rev: 'v3.0.0-alpha.9-for-vscode'
     hooks:
       - id: prettier
-        args: ["--tab-width", "2"]
+        args: ['--tab-width', '2']
         exclude: localGPTUI/static/dependencies/
 
   - repo: https://github.com/asottile/pyupgrade
