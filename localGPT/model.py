@@ -17,6 +17,7 @@ import torch
 from auto_gptq import AutoGPTQForCausalLM
 from langchain.llms import HuggingFacePipeline
 from transformers import (
+    AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
     GenerationConfig,
@@ -118,19 +119,21 @@ class ModelLoader:
         # The code supports all huggingface models that ends with -HF
         # or which have a .bin file in their HF repo.
         logging.info("Using AutoModelForCausalLM for full models")
+        config = AutoConfig.from_pretrained(self.model_repository)
+        logging.info(f"Configuration loaded for {self.model_repository}")
         tokenizer = AutoTokenizer.from_pretrained(self.model_repository)
-        logging.info("Tokenizer loaded")
-
+        logging.info(f"Tokenizer loaded for {self.model_repository}")
         model = AutoModelForCausalLM.from_pretrained(
-            self.model_repository,
-            device_map="auto",
-            torch_dtype=torch.float16,
-            low_cpu_mem_usage=True,
-            trust_remote_code=True,
-            # NOTE: Uncomment if you encounter out of memory errors
-            # max_memory={0: "15GB"}
+            config=config,
+            resume_download=True,
+            trust_remote_code=False,
+            output_loading_info=True,
         )
+        logging.info(f"Model loaded for {self.model_repository}")
         model.tie_weights()
+        logging.warn(
+            f"Model Weights Tied: Effectiveness depends on specific type of model."
+        )
         return model, tokenizer
 
     def load_llama_model(self):
