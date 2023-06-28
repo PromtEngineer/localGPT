@@ -112,7 +112,14 @@ from localGPT.model import ModelLoader
     default=False,
     help="Display the documents source text (default: False)",
 )
+@click.option(
+    "--use_triton",
+    type=click.BOOL,
+    default=False,
+    help="Use AMD triton for CUDA backend (default: False)",
+)
 def main(
+    model_type,
     model_repository,
     model_safetensors,
     embedding_model,
@@ -120,6 +127,7 @@ def main(
     device_type,
     persist_directory,
     show_sources,
+    use_triton,
 ):
     """
     Execute the information retrieval task using a Question-Answer retrieval chain.
@@ -134,7 +142,7 @@ def main(
     )
 
     # Load the LLM for generating Natural Language responses
-    model_loader = ModelLoader(device_type, model_repository, model_safetensors)
+    model_loader = ModelLoader(device_type, model_type, model_repository, model_safetensors, use_triton)
     llm = model_loader.load_model()
 
     # Setup the Question-Answer retrieval chain
