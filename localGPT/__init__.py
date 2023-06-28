@@ -34,12 +34,7 @@ import os
 from typing import List, Optional, Tuple, Type
 
 from chromadb.config import Settings
-from langchain.document_loaders import (
-    CSVLoader,
-    PDFMinerLoader,
-    TextLoader,
-    UnstructuredExcelLoader,
-)
+from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader
 from langchain.document_loaders.base import BaseLoader
 from langchain.embeddings import (
     CohereEmbeddings,

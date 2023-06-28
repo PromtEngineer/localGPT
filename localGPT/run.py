@@ -1,16 +1,16 @@
 """
 localGPT/run.py
 
-This script implements the information retrieval task using 
+This script implements the information retrieval task using
 a Question-Answer retrieval chain.
 
 The steps involved are as follows:
-1. Load an embedding model, which can be 
+1. Load an embedding model, which can be
    HuggingFaceInstructEmbeddings or HuggingFaceEmbeddings.
 2. Load the existing vector store that was created by ingest.py.
 3. Load the local LLM using the load_model function.
 4. Set up the Question-Answer retrieval chain.
-5. Prompt the user for questions and provide answers based on the 
+5. Prompt the user for questions and provide answers based on the
    retrieval chain.
 
 Usage:
@@ -20,14 +20,14 @@ Options:
     --model_repository TEXT      The model repository.
                                  Default: TheBloke/WizardLM-7B-V1.0-Uncensored-GGML
     --model_safetensors TEXT     The model safetensors.
-                                 Default: 
+                                 Default:
                                  WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors
     --embedding_model TEXT       The embedding model repository.
                                  Default: hkunlp/instructor-large
     --embedding_type TEXT        The embedding model type.
                                  Default: HuggingFaceInstructEmbeddings
     --device_type TEXT           The compute device used by the model.
-                                 Choices: cpu, cuda, ipu, xpu, mkldnn, opengl, opencl, 
+                                 Choices: cpu, cuda, ipu, xpu, mkldnn, opengl, opencl,
                                           ideep, hip, ve, fpga, ort, xla, lazy, vulkan,
                                           mps, meta, hpu, mtia
                                  Default: cuda

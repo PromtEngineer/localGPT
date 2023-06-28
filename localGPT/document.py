@@ -1,11 +1,7 @@
 # localGPT/document.py
 import logging
 import os
-from concurrent.futures import (
-    ProcessPoolExecutor,
-    ThreadPoolExecutor,
-    as_completed,
-)
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from typing import List, Tuple
 
 from langchain.docstore.document import Document

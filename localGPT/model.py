@@ -1,7 +1,7 @@
 """
 localGPT/model.py
 
-This module contains the ModelLoader class for loading models and creating 
+This module contains the ModelLoader class for loading models and creating
 pipelines for text generation.
 
 Classes:
