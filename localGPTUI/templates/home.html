@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <!-- Required meta tags -->
@@ -9,57 +9,52 @@
     <link rel="icon" type="image" href="static\social_icons\favicon.png" />
     <script src="static\dependencies\jquery\3.6.0\jquery.min.js"></script>
     <script src="static\dependencies\bootstrap-5.1.3-dist\js\bootstrap.min.js"></script>
-    <link
-      rel="stylesheet"
-      href="static\dependencies\bootstrap-5.1.3-dist\css\bootstrap.min.css"
-    />
+    <link rel="stylesheet" href="static\dependencies\bootstrap-5.1.3-dist\css\bootstrap.min.css" />
 
     <title>localGPT</title>
   </head>
   <script>
     function openFileSelection() {
-      const fileInput = document.getElementById("fileInput");
-      fileInput.accept = ".csv, .pdf, .txt, .doc";
+      const fileInput = document.getElementById('fileInput');
+      fileInput.accept = '.csv, .pdf, .txt, .doc';
       fileInput.click();
-      fileInput.addEventListener("change", handleFileSelection);
+      fileInput.addEventListener('change', handleFileSelection);
     }
 
     function handleFileSelection(event) {
       // You can perform some checks on the files here if you want
       // Open the modal after file selection
-      const uploadModal = new bootstrap.Modal(
-        document.getElementById("uploadModal"),
-      );
+      const uploadModal = new bootstrap.Modal(document.getElementById('uploadModal'));
       uploadModal.show();
     }
 
     function submitPromptForm() {
       // Show the modal
-      $("#responseModal").modal("show");
+      $('#responseModal').modal('show');
 
       // Submit the form after a short delay to allow the modal to open
       setTimeout(function () {
-        document.getElementById("promptForm").submit();
+        document.getElementById('promptForm').submit();
       }, 5);
     }
 
     function submitForm(action) {
-      var form = document.getElementById("uploadForm");
+      var form = document.getElementById('uploadForm');
 
-      var input = document.createElement("input");
-      input.type = "hidden";
-      input.name = "action";
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'action';
       input.value = action;
 
       form.appendChild(input);
 
       // After the form is submitted, close the current modal and open the new one.
-      $("#uploadModal").on("hidden.bs.modal", function () {
-        $("#ingesting-modal").modal("show");
+      $('#uploadModal').on('hidden.bs.modal', function () {
+        $('#ingesting-modal').modal('show');
       });
 
-      if (action == "add" || action == "reset") {
-        $("#uploadModal").modal("hide");
+      if (action == 'add' || action == 'reset') {
+        $('#uploadModal').modal('hide');
       }
 
       form.submit();
@@ -68,7 +63,7 @@
   {% if show_response_modal %}
   <script>
     $(document).ready(function () {
-      $("#response_modal").modal("show");
+      $('#response_modal').modal('show');
     });
   </script>
   {% endif %}
@@ -82,9 +77,7 @@
     }
 
     .search {
-      box-shadow:
-        inset 0 1px 1px rgba(0, 0, 0, 0.075),
-        0 0 8px rgba(255, 0, 0, 0.6);
+      box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075), 0 0 8px rgba(255, 0, 0, 0.6);
       background-color: #fff;
       padding: 4px;
       border-radius: 5px;
@@ -213,9 +206,7 @@
 
     .form-control:focus {
       border-color: #bc13cf;
-      box-shadow:
-        inset 0 1px 1px rgba(0, 0, 0, 0.075),
-        0 0 8px rgba(255, 0, 0, 0.6);
+      box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075), 0 0 8px rgba(255, 0, 0, 0.6);
     }
 
     @media (max-width: 800px) {
@@ -277,50 +268,17 @@
         <div class="row">
           <div class="col-md-12">
             <div class="search-2">
-              <form
-                id="promptForm"
-                action="{{ url_for('home_page') }}"
-                method="POST"
-              >
-                <button
-                  type="button"
-                  class="tutorial_button"
-                  data-bs-toggle="modal"
-                  data-bs-target="#tutorial_modal"
-                >
+              <form id="promptForm" action="{{ url_for('home_page') }}" method="POST">
+                <button type="button" class="tutorial_button" data-bs-toggle="modal" data-bs-target="#tutorial_modal">
                   Tutorial
                 </button>
                 <i class="bx bxs-map"></i>
-                <input
-                  type="text"
-                  name="user_prompt"
-                  id="searchInput"
-                  placeholder="Tell a summary of what you know?"
-                />
-                <button type="button" onclick="submitPromptForm()">
-                  Search
-                </button>
+                <input type="text" name="user_prompt" id="searchInput" placeholder="Tell a summary of what you know?" />
+                <button type="button" onclick="submitPromptForm()">Search</button>
               </form>
-              <form
-                id="uploadForm"
-                action="{{ url_for('home_page') }}"
-                method="POST"
-                enctype="multipart/form-data"
-              >
-                <input
-                  type="file"
-                  name="documents"
-                  id="fileInput"
-                  style="display: none"
-                  multiple
-                />
-                <button
-                  type="button"
-                  class="upload_button"
-                  onclick="openFileSelection()"
-                >
-                  Upload
-                </button>
+              <form id="uploadForm" action="{{ url_for('home_page') }}" method="POST" enctype="multipart/form-data">
+                <input type="file" name="documents" id="fileInput" style="display: none" multiple />
+                <button type="button" class="upload_button" onclick="openFileSelection()">Upload</button>
               </form>
             </div>
           </div>
@@ -330,34 +288,20 @@
 
     <!-- For some reason the script needs to go here to make the the enter key also trigger the generating response modal -->
     <script>
-      document
-        .getElementById("searchInput")
-        .addEventListener("keydown", function (event) {
-          if (event.keyCode === 13) {
-            event.preventDefault(); // Prevent form submission
-            submitPromptForm(); // Call the function to show the modal
-          }
-        });
+      document.getElementById('searchInput').addEventListener('keydown', function (event) {
+        if (event.keyCode === 13) {
+          event.preventDefault(); // Prevent form submission
+          submitPromptForm(); // Call the function to show the modal
+        }
+      });
     </script>
 
     <!-- Chat Response Modal -->
-    <div
-      class="modal fade"
-      id="response_modal"
-      tabindex="-1"
-      aria-labelledby="response_modal"
-      aria-hidden="true"
-    >
+    <div class="modal fade" id="response_modal" tabindex="-1" aria-labelledby="response_modal" aria-hidden="true">
       <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header text-center">
-            <h5
-              class="modal-title w-100"
-              id="response_modal"
-              style="color: #292b2c"
-            >
-              Response
-            </h5>
+            <h5 class="modal-title w-100" id="response_modal" style="color: #292b2c">Response</h5>
           </div>
           <div class="modal-body text-center" style="color: #292b2c">
             <strong>Search</strong>
@@ -366,22 +310,13 @@
 
             <strong>Answer</strong>
             <br />
-            <p style="margin-left: 5%; margin-right: 5%">
-              {{response_dict['Answer']}}
-            </p>
+            <p style="margin-left: 5%; margin-right: 5%">{{response_dict['Answer']}}</p>
 
             <strong>Sources</strong>
-            <div
-              class="accordion"
-              id="accordionExample"
-              style="margin-top: 10px"
-            >
+            <div class="accordion" id="accordionExample" style="margin-top: 10px">
               {% for item in response_dict['Sources'] %}
               <div class="accordion-item">
-                <h2
-                  class="accordion-header text-center"
-                  id="heading{{ loop.index0 }}"
-                >
+                <h2 class="accordion-header text-center" id="heading{{ loop.index0 }}">
                   <button
                     class="accordion-button d-block text-center"
                     type="button"
@@ -400,14 +335,7 @@
                   aria-labelledby="heading{{ loop.index0 }}"
                   data-bs-parent="#accordionExample"
                 >
-                  <div
-                    class="accordion-body"
-                    style="
-                      text-align: justify;
-                      margin-left: 5%;
-                      margin-right: 5%;
-                    "
-                  >
+                  <div class="accordion-body" style="text-align: justify; margin-left: 5%; margin-right: 5%">
                     {{ item[1] }}
                     <!-- Content -->
                   </div>
@@ -417,13 +345,7 @@
             </div>
           </div>
           <div class="modal-footer">
-            <button
-              type="button"
-              class="default_button"
-              data-bs-dismiss="modal"
-            >
-              Close
-            </button>
+            <button type="button" class="default_button" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
       </div>
@@ -442,12 +364,7 @@
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header justify-content-center">
-            <h5
-              class="modal-title justify-content-center"
-              id="responseModalLabel"
-            >
-              Generating Response
-            </h5>
+            <h5 class="modal-title justify-content-center" id="responseModalLabel">Generating Response</h5>
           </div>
           <div class="modal-body text-center">
             <p>Please wait...</p>
@@ -457,37 +374,24 @@
     </div>
 
     <!-- Upload Confirmation Modal -->
-    <div
-      class="modal fade"
-      id="uploadModal"
-      tabindex="-1"
-      aria-labelledby="uploadModalLabel"
-      aria-hidden="true"
-    >
+    <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
       <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header justify-content-center">
-            <h5
-              class="modal-title justify-content-center"
-              id="uploadModalLabel"
-            >
-              File Upload Confirmation
-            </h5>
+            <h5 class="modal-title justify-content-center" id="uploadModalLabel">File Upload Confirmation</h5>
           </div>
           <div class="modal-body margin-left: 5%; text-align: left;">
             <ul>
               <li>
                 Click
-                <span style="background-color: red; color: white">Add</span> if
-                you want to add the documents selected to your pre-existing
-                knowledge base.
+                <span style="background-color: red; color: white">Add</span> if you want to add the documents selected
+                to your pre-existing knowledge base.
               </li>
               <br />
               <li>
                 Click
                 <span style="background-color: red; color: white">Reset</span>
-                if you want to reset your knowledge base, and then use your new
-                documents as your new knowledge base.
+                if you want to reset your knowledge base, and then use your new documents as your new knowledge base.
               </li>
               <br />
               <li>
@@ -516,9 +420,7 @@
             >
               Reset
             </button>
-            <button type="button" class="cancel_button" data-bs-dismiss="modal">
-              Cancel
-            </button>
+            <button type="button" class="cancel_button" data-bs-dismiss="modal">Cancel</button>
           </div>
         </div>
       </div>
@@ -546,148 +448,88 @@
     </div>
 
     <!-- Tutorial Modal -->
-    <div
-      class="modal fade"
-      id="tutorial_modal"
-      tabindex="-1"
-      aria-labelledby="tutorial_modal"
-      aria-hidden="true"
-    >
+    <div class="modal fade" id="tutorial_modal" tabindex="-1" aria-labelledby="tutorial_modal" aria-hidden="true">
       <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header text-center">
-            <h5
-              class="modal-title w-100"
-              id="tutorial_modal"
-              style="color: #292b2c"
-            >
-              Tutorial
-            </h5>
+            <h5 class="modal-title w-100" id="tutorial_modal" style="color: #292b2c">Tutorial</h5>
           </div>
           <div class="modal-body" style="color: #292b2c">
             <strong style="margin-left: 5%; text-align: left">About</strong>
             <br />
             <p style="text-align: justify; margin-left: 5%; margin-right: 5%">
-              Introducing a cutting-edge application that empowers users to
-              leverage the capabilities of a language model, even in the absence
-              of an internet connection. This advanced tool serves as an
-              indispensable resource for accessing information beyond the
-              confines of traditional language model tools such as chatGPT.
+              Introducing a cutting-edge application that empowers users to leverage the capabilities of a language
+              model, even in the absence of an internet connection. This advanced tool serves as an indispensable
+              resource for accessing information beyond the confines of traditional language model tools such as
+              chatGPT.
               <br /><br />
-              One of the key advantages of this application is the preservation
-              of data control. This feature becomes particularly valuable when
-              handling sensitive data that must remain within the confines of an
-              organization or personal documents that warrant utmost
-              confidentiality, eliminating the need to transmit information
+              One of the key advantages of this application is the preservation of data control. This feature becomes
+              particularly valuable when handling sensitive data that must remain within the confines of an organization
+              or personal documents that warrant utmost confidentiality, eliminating the need to transmit information
               through third-party channels.
               <br /><br />
-              Seamlessly integrating personal documents into the system is
-              effortless, ensuring a smooth user experience. Whether in the form
-              of text, PDF, CSV, or Excel files, users can conveniently provide
-              the desired information for inquiry. The application swiftly
-              processes these documents, effectively creating a comprehensive
-              database for the model to leverage, enabling accurate and
-              insightful responses.
+              Seamlessly integrating personal documents into the system is effortless, ensuring a smooth user
+              experience. Whether in the form of text, PDF, CSV, or Excel files, users can conveniently provide the
+              desired information for inquiry. The application swiftly processes these documents, effectively creating a
+              comprehensive database for the model to leverage, enabling accurate and insightful responses.
               <br /><br />
-              A notable benefit of this approach lies in its efficient resource
-              utilization. Unlike the resource-intensive retraining processes
-              employed by alternative methods, the ingestion of documents within
-              this application demands significantly less compute power. This
-              efficiency optimization allows for a streamlined user experience,
-              saving both time and computational resources.
+              A notable benefit of this approach lies in its efficient resource utilization. Unlike the
+              resource-intensive retraining processes employed by alternative methods, the ingestion of documents within
+              this application demands significantly less compute power. This efficiency optimization allows for a
+              streamlined user experience, saving both time and computational resources.
               <br /><br />
-              Discover the unparalleled capabilities of this technical marvel,
-              as it enables users to tap into the full potential of language
-              models, all while operating offline. Experience a new era of
-              information access, bolstering productivity and expanding
-              possibilities. Embrace this powerful tool and unlock the true
+              Discover the unparalleled capabilities of this technical marvel, as it enables users to tap into the full
+              potential of language models, all while operating offline. Experience a new era of information access,
+              bolstering productivity and expanding possibilities. Embrace this powerful tool and unlock the true
               potential of your data today.
             </p>
-            <strong style="margin-left: 5%; text-align: left"
-              >Upload Documents</strong
-            >
+            <strong style="margin-left: 5%; text-align: left">Upload Documents</strong>
             <br />
-            <p
-              style="
-                line-height: 1.75;
-                margin-left: 5%;
-                margin-right: 5%;
-                text-align: left;
-              "
-            >
-              1. To upload documents for the app to ingest as its new knowledge
-              base click the
+            <p style="line-height: 1.75; margin-left: 5%; margin-right: 5%; text-align: left">
+              1. To upload documents for the app to ingest as its new knowledge base click the
               <span style="background-color: red; color: white">Upload</span>
               button.
               <br />
-              2. Select the documents you want to serve as your new knowledge
-              base to converse with.
+              2. Select the documents you want to serve as your new knowledge base to converse with.
               <br />
               3. Then you will be prompted with a confirmation to either
-              <span style="background-color: red; color: white">Add</span> the
-              documents to your knowledge base,
+              <span style="background-color: red; color: white">Add</span> the documents to your knowledge base,
               <span style="background-color: red; color: white">Reset</span>
               your knowledge base with the documents you just selected, or
               <span style="background-color: gray; color: white">Cancel</span>
               the upload.
               <br />
-              4. There will be a short wait time as the documents get ingested
-              into the vector database as your new knowledge base.
+              4. There will be a short wait time as the documents get ingested into the vector database as your new
+              knowledge base.
             </p>
-            <a
-              href="static/document_examples/constitution.pdf"
-              style="margin-left: 5%"
-              download
-            >
-              <button class="default_button" style="width: auto">
-                Example Constitution
-              </button>
+            <a href="static/document_examples/constitution.pdf" style="margin-left: 5%" download>
+              <button class="default_button" style="width: auto">Example Constitution</button>
             </a>
             <a href="static/document_examples/news_articles.zip" download>
-              <button class="default_button" style="width: auto">
-                Example News Articles
-              </button>
+              <button class="default_button" style="width: auto">Example News Articles</button>
             </a>
 
             <br />
             <br />
             <strong style="margin-left: 5%; text-align: left">Searching</strong>
-            <p
-              style="
-                line-height: 1.75;
-                margin-left: 5%;
-                margin-right: 5%;
-                text-align: left;
-              "
-            >
-              1. In order to ask a question, type a question into the search bar
-              like:
+            <p style="line-height: 1.75; margin-left: 5%; margin-right: 5%; text-align: left">
+              1. In order to ask a question, type a question into the search bar like:
               <br />
               2.
-              <span style="background-color: gray; color: white"
-                >Give me a summary of the documents</span
-              >
+              <span style="background-color: gray; color: white">Give me a summary of the documents</span>
               <br />
               3. Hit enter on your keyboard or click
               <span style="background-color: red; color: white">Search</span>
               <br />
-              4. Wait while the LLM model consumes the prompt and prepares the
-              answer.
+              4. Wait while the LLM model consumes the prompt and prepares the answer.
               <br />
-              5. Once done, it will print the answer and the 4 sources it used
-              as context from your documents; you can then ask another question
-              without re-running the script, just wait for the prompt again.
+              5. Once done, it will print the answer and the 4 sources it used as context from your documents; you can
+              then ask another question without re-running the script, just wait for the prompt again.
             </p>
             <br />
           </div>
           <div class="modal-footer justify-content-center">
-            <button
-              type="button"
-              class="default_button"
-              data-bs-dismiss="modal"
-            >
-              Close
-            </button>
+            <button type="button" class="default_button" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
       </div>
