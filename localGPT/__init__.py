@@ -4,7 +4,7 @@
 
 localGPT/__init__.py
 
-This module contains the initialization code and configuration 
+This module contains the initialization code and configuration
 settings for the localGPT package.
 
 Constants:
@@ -25,7 +25,7 @@ Constants:
 Classes:
 - Language: An enumeration representing programming language types.
 
-Note: The default paths for SOURCE_DIRECTORY and PERSIST_DIRECTORY are 
+Note: The default paths for SOURCE_DIRECTORY and PERSIST_DIRECTORY are
 set based on the package structure and can be customized if needed.
 """
 

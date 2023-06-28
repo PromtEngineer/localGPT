@@ -53,9 +53,7 @@ class LoaderRegistry:
             loader_class (Type[BaseLoader]): The loader class to register.
         """
         if mime_type in self.loader_map.keys():
-            raise ValueError(
-                f"A loader for MIME type {mime_type} is already registered."
-            )
+            raise ValueError(f"A loader for MIME type {mime_type} is already registered.")
         self.loader_map[mime_type] = loader_class
 
     def get_loader(self, mime_type: str) -> Optional[Type[BaseLoader]]:
@@ -103,9 +101,7 @@ class TextSplitterRegistry:
             bool: True if the document has the specified source extension,
             False otherwise.
         """
-        return os.path.splitext(document.metadata["source"])[1][
-            1:
-        ]  # Get file extension without dot
+        return os.path.splitext(document.metadata["source"])[1][1:]  # Get file extension without dot
 
     def register_language(
         self,

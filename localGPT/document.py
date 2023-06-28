@@ -147,9 +147,7 @@ def split_documents(documents: List[Document]) -> List[Document]:
             )
         # Otherwise, use a default text splitter
         else:
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000, chunk_overlap=200
-            )
+            splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 
         split_documents.extend(splitter.split_documents([doc]))
 

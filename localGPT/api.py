@@ -25,21 +25,19 @@ from transformers import (
 )
 from werkzeug.utils import secure_filename
 
-from localGPT import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
+from localGPT import CHROMA_SETTINGS, DEFAULT_EMBEDDING_MODEL, PERSIST_DIRECTORY
 
 DEVICE_TYPE = "cuda"
 SHOW_SOURCES = True
 logging.info(f"Running on: {DEVICE_TYPE}")
 logging.info(f"Display Source Documents set to: {SHOW_SOURCES}")
 
-EMBEDDINGS = HuggingFaceInstructEmbeddings(
-    model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": DEVICE_TYPE}
-)
+EMBEDDINGS = HuggingFaceInstructEmbeddings(model_name=DEFAULT_EMBEDDING_MODEL, model_kwargs={"device": DEVICE_TYPE})
 
 # uncomment the following line if you used HuggingFaceEmbeddings in the
 # ingest.py.
 #
-# EMBEDDINGS = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
+# EMBEDDINGS = HuggingFaceEmbeddings(model_name=DEFAULT_EMBEDDING_MODEL)
 if os.path.exists(PERSIST_DIRECTORY):
     try:
         shutil.rmtree(PERSIST_DIRECTORY)
@@ -115,9 +113,7 @@ def load_model(device_type, model_id, model_basename=None):
             use_triton=False,
             quantize_config=None,
         )
-    elif (
-        device_type.lower() == "cuda"
-    ):  # The code supports all huggingface models that ends with -HF or which
+    elif device_type.lower() == "cuda":  # The code supports all huggingface models that ends with -HF or which
         # have a .bin file in their HF repo.
         print("Using AutoModelForCausalLM for full models")
         tokenizer = AutoTokenizer.from_pretrained(model_id)
@@ -177,12 +173,8 @@ def load_model(device_type, model_id, model_basename=None):
 # model_id = "TheBloke/wizardLM-7B-GPTQ"
 # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
 model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-model_basename = (
-    "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-)
-LLM = load_model(
-    device_type=DEVICE_TYPE, model_id=model_id, model_basename=model_basename
-)
+model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id, model_basename=model_basename)
 
 QA = RetrievalQA.from_chain_type(
     llm=LLM,
@@ -203,11 +195,7 @@ def delete_source_route():
 
     os.makedirs(folder_name)
 
-    return jsonify(
-        {
-            "message": f"Folder '{folder_name}' successfully deleted and recreated."
-        }
-    )
+    return jsonify({"message": f"Folder '{folder_name}' successfully deleted and recreated."})
 
 
 @app.route("/api/save_document", methods=["GET", "POST"])
@@ -244,9 +232,7 @@ def run_ingest_route():
         result = subprocess.run(["python", "ingest.py"], capture_output=True)
         if result.returncode != 0:
             return (
-                "Script execution failed: {}".format(
-                    result.stderr.decode("utf-8")
-                ),
+                "Script execution failed: {}".format(result.stderr.decode("utf-8")),
                 500,
             )
         # load the vectorstore
@@ -264,9 +250,7 @@ def run_ingest_route():
             return_source_documents=SHOW_SOURCES,
         )
         return (
-            "Script executed successfully: {}".format(
-                result.stdout.decode("utf-8")
-            ),
+            "Script executed successfully: {}".format(result.stdout.decode("utf-8")),
             200,
         )
     except Exception as e:

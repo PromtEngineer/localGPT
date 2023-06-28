@@ -101,10 +101,7 @@ class ModelLoader:
         logging.info(f"Model loaded for {self.model_repository}")
 
         model.tie_weights()
-        logging.warn(
-            "Model Weights Tied: "
-            "Effectiveness depends on specific type of model."
-        )
+        logging.warn("Model Weights Tied: " "Effectiveness depends on specific type of model.")
 
         return model, tokenizer
 
@@ -145,18 +142,14 @@ class ModelLoader:
         logging.warn("GGML models may supersede GPTQ models in future releases")
 
         if not torch.cuda.is_available():
-            raise NotImplementedError(
-                "Only CUDA based devices are officially supported"
-            )
+            raise NotImplementedError("Only CUDA based devices are officially supported")
 
         if self.model_safetensors.endswith(".safetensors"):
             split_string = self.model_safetensors.split(".")
             self.model_safetensors = ".".join(split_string[:-1])
             logging.info(f"Stripped {self.model_safetensors}. Moving on.")
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            self.model_repository, use_fast=True
-        )
+        tokenizer = AutoTokenizer.from_pretrained(self.model_repository, use_fast=True)
         logging.info(f"Tokenizer loaded for {self.model_repository}")
 
         model = AutoGPTQForCausalLM.from_quantized(
@@ -207,6 +200,7 @@ class ModelLoader:
         Returns:
         - local_llm: The loaded local language model (LLM).
         """
+        # NOTE: This should be replaced with mapping for smooth extensibility
         if self.model_type.lower() == "huggingface":
             model, tokenizer = self.load_huggingface_model()
         elif self.model_type.lower() == "huggingface-llama":
@@ -214,9 +208,7 @@ class ModelLoader:
         elif self.model_type.lower() == "gptq":
             model, tokenizer = self.load_gptq_model()
         elif self.model_type.lower() == "ggml":
-            raise NotImplementedError(
-                "GGML support is in research and development"
-            )
+            raise NotImplementedError("GGML support is in research and development")
         else:
             raise AttributeError(
                 "Unsupported model type given. "
@@ -228,9 +220,7 @@ class ModelLoader:
             )
 
         # Load configuration from the model to avoid warnings
-        generation_config = GenerationConfig.from_pretrained(
-            self.model_repository
-        )
+        generation_config = GenerationConfig.from_pretrained(self.model_repository)
         # see here for details:
         # https://huggingface.co/docs/transformers/main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
 

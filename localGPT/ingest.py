@@ -1,7 +1,7 @@
 """
 localGPT/ingest.py
 
-This script provides functionality for ingesting documents, 
+This script provides functionality for ingesting documents,
 generating embeddings, and persisting them to the Chroma database.
 
 Usage:
@@ -19,15 +19,15 @@ Options:
     --device_type TEXT            The device type to run on
                                   (default: DEFAULT_DEVICE_TYPE)
 
-The script uses the provided options to load documents from the source 
-directory, split them into chunks, generate embeddings using the specified 
-embedding model and type, and persist the embeddings to the Chroma 
+The script uses the provided options to load documents from the source
+directory, split them into chunks, generate embeddings using the specified
+embedding model and type, and persist the embeddings to the Chroma
 database located in the persist directory.
 
-The default values for the options are set based on the configuration in 
+The default values for the options are set based on the configuration in
 the localGPT package.
 
-You can specify different values for the options by providing the corresponding 
+You can specify different values for the options by providing the corresponding
 command-line arguments.
 
 Example usage:

@@ -1,14 +1,14 @@
 """
 localGPT/database.py
 
-This module provides functionality for loading and persisting 
+This module provides functionality for loading and persisting
 documents to the Chroma database.
 
 Classes:
 - ChromaDBLoader: A class for loading and persisting documents to the Chroma database.
 
-The ChromaDBLoader class handles loading documents, generating 
-embeddings using different embedding models, and persisting the 
+The ChromaDBLoader class handles loading documents, generating
+embeddings using different embedding models, and persisting the
 documents along with their embeddings to the Chroma database.
 
 Usage:
@@ -102,9 +102,7 @@ class ChromaDBLoader:
                 model_kwargs={"device": self.device_type},
             )
         else:
-            raise AttributeError(
-                f"Unsupported embeddings type provided: {self.embedding_type}"
-            )
+            raise AttributeError(f"Unsupported embeddings type provided: {self.embedding_type}")
 
     def load_retriever(self) -> VectorStoreRetriever:
         """
