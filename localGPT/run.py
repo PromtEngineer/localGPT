@@ -65,10 +65,10 @@ from localGPT.model import ModelLoader
 
 @click.command()
 @click.option(
-    "--model_repository",
+    "--model_type",
     default=DEFAULT_MODEL_TYPE,
     type=click.Choice(CHOICE_MODEL_TYPES),
-    help=f"The model repository (default: {DEFAULT_MODEL_TYPE})",
+    help=f"The model type (default: {DEFAULT_MODEL_TYPE})",
 )
 @click.option(
     "--model_repository",
