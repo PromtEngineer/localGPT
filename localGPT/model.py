@@ -87,14 +87,20 @@ class ModelLoader:
         logging.info(f"Tokenizer loaded for {self.model_repository}")
 
         model = AutoModelForCausalLM.from_pretrained(
+            self.model_repository,
             config=config,
             resume_download=True,
             trust_remote_code=False,
-            output_loading_info=True,
+            # NOTE: According to the Hugging Face documentation, `output_loading_info` is
+            # for when you want to return a tuple with the pretrained model and a dictionary
+            # containing the loading information.
+            # output_loading_info=True,
         )
         logging.info(f"Model loaded for {self.model_repository}")
 
-        model.tie_weights()
+        if not isinstance(model, tuple):
+            model.tie_weights()
+
         logging.warn("Model Weights Tied: " "Effectiveness depends on specific type of model.")
 
         return model, tokenizer
