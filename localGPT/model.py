@@ -11,10 +11,12 @@ Note: The module relies on imports from localGPT and other external libraries.
 """
 
 import logging
+import sys
 
 import torch
 from auto_gptq import AutoGPTQForCausalLM
 from langchain.llms import HuggingFacePipeline
+from torch.cuda import OutOfMemoryError
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -76,8 +78,6 @@ class ModelLoader:
         - model: The loaded full model.
         - tokenizer: The tokenizer associated with the model.
         """
-        # The code supports all huggingface models that ends with -HF
-        # or which have a .bin file in their HF repo.
         logging.info("Using AutoModelForCausalLM for full models")
 
         config = AutoConfig.from_pretrained(self.model_repository)
@@ -86,22 +86,34 @@ class ModelLoader:
         tokenizer = AutoTokenizer.from_pretrained(self.model_repository)
         logging.info(f"Tokenizer loaded for {self.model_repository}")
 
-        model = AutoModelForCausalLM.from_pretrained(
-            self.model_repository,
-            config=config,
-            resume_download=True,
-            trust_remote_code=False,
+        kwargs: dict[str, object] = {
+            "low_cpu_mem_usage": True,
+            "resume_download": True,
+            "trust_remote_code": False,
+            # NOTE: Uncomment this line if you encounter CUDA out of memory errors
+            # "max_memory": {0: "7GB"},
             # NOTE: According to the Hugging Face documentation, `output_loading_info` is
             # for when you want to return a tuple with the pretrained model and a dictionary
             # containing the loading information.
-            # output_loading_info=True,
-        )
+            # "output_loading_info": True,
+        }
+
+        if self.device_type != "cpu":
+            kwargs["device_map"] = self.device_type
+            kwargs["torch_dtype"] = torch.float16
+
+        try:
+            model = AutoModelForCausalLM.from_pretrained(self.model_repository, config=config, **kwargs)
+        except (OutOfMemoryError,) as e:
+            logging.error("Encountered CUDA out of memory error while loading the model.")
+            logging.error(str(e))
+            sys.exit(1)
+
         logging.info(f"Model loaded for {self.model_repository}")
 
         if not isinstance(model, tuple):
             model.tie_weights()
-
-        logging.warn("Model Weights Tied: " "Effectiveness depends on specific type of model.")
+            logging.warning("Model Weights Tied: Effectiveness depends on the specific type of model.")
 
         return model, tokenizer
 
