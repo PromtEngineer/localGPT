@@ -12,6 +12,7 @@ Note: The module relies on imports from localGPT and other external libraries.
 
 import logging
 import sys
+from typing import Any
 
 import torch
 from auto_gptq import AutoGPTQForCausalLM
@@ -27,7 +28,12 @@ from transformers import (
     pipeline,
 )
 
-from localGPT import DEFAULT_DEVICE_TYPE, DEFAULT_MODEL_REPOSITORY, DEFAULT_MODEL_SAFETENSORS, DEFAULT_MODEL_TYPE
+from localGPT import (
+    DEFAULT_DEVICE_TYPE,
+    DEFAULT_MODEL_REPOSITORY,
+    DEFAULT_MODEL_SAFETENSORS,
+    DEFAULT_MODEL_TYPE,
+)
 
 
 class ModelLoader:
@@ -86,7 +92,7 @@ class ModelLoader:
         tokenizer = AutoTokenizer.from_pretrained(self.model_repository)
         logging.info(f"Tokenizer loaded for {self.model_repository}")
 
-        kwargs: dict[str, object] = {
+        kwargs: dict[str, Any] = {
             "low_cpu_mem_usage": True,
             "resume_download": True,
             "trust_remote_code": False,
@@ -100,6 +106,7 @@ class ModelLoader:
 
         if self.device_type != "cpu":
             kwargs["device_map"] = self.device_type
+            # NOTE: This loads at half precision: 32 / 2 = 16
             kwargs["torch_dtype"] = torch.float16
 
         try:
@@ -151,10 +158,7 @@ class ModelLoader:
         # NOTE: The code supports all huggingface models that ends with GPTQ and
         # have some variation of .no-act.order or .safetensors in their HF repo.
         logging.info("Using AutoGPTQForCausalLM for quantized models")
-        logging.warn("GGML models may supersede GPTQ models in future releases")
-
-        if not torch.cuda.is_available():
-            raise NotImplementedError("Only CUDA based devices are officially supported")
+        logging.warning("GGML models may supersede GPTQ models in future releases")
 
         if self.model_safetensors.endswith(".safetensors"):
             split_string = self.model_safetensors.split(".")
@@ -164,18 +168,27 @@ class ModelLoader:
         tokenizer = AutoTokenizer.from_pretrained(self.model_repository, use_fast=True)
         logging.info(f"Tokenizer loaded for {self.model_repository}")
 
-        model = AutoGPTQForCausalLM.from_quantized(
-            self.model_repository,
-            device_map="auto",
-            # NOTE: # Uncomment if you encounter Out of Memory Errors
-            # max_memory={0: "15GB"},
-            device=f"{self.device_type}:0",
-            low_cpu_mem_usage=True,
-            use_triton=self.use_triton,
-            use_safetensors=True,
-            use_cuda_fp16=True,
-            model_safetensors=self.model_safetensors,
-        )
+        kwargs: dict[str, Any] = {
+            "low_cpu_mem_usage": True,
+            "resume_download": True,
+            "trust_remote_code": False,
+            "use_safetensors": True,
+            "device_map": "auto",
+            "model_safetensors": self.model_safetensors,
+            # NOTE: Uncomment this line if you encounter CUDA out of memory errors
+            # "max_memory": {0: "7GB"},
+            # NOTE: According to the Hugging Face documentation, `output_loading_info` is
+            # for when you want to return a tuple with the pretrained model and a dictionary
+            # containing the loading information.
+            # "output_loading_info": True,
+        }
+
+        if self.device_type != "cpu":
+            kwargs["use_cuda_fp16"] = True
+            kwargs["use_triton"] = self.use_triton
+            kwargs["device"] = f"{self.device_type}:0"
+
+        model = AutoGPTQForCausalLM.from_quantized(self.model_repository, **kwargs)
         logging.info(f"Model loaded for {self.model_repository}")
 
         return model, tokenizer

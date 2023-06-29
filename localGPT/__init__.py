@@ -33,7 +33,12 @@ import logging
 import os
 
 from chromadb.config import Settings
-from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader
+from langchain.document_loaders import (
+    CSVLoader,
+    PDFMinerLoader,
+    TextLoader,
+    UnstructuredExcelLoader,
+)
 from langchain.document_loaders.base import BaseLoader
 from langchain.embeddings import (
     CohereEmbeddings,
@@ -170,9 +175,9 @@ CHOICE_EMBEDDING_MODELS: list[str] = [
 
 CHOICE_MODEL_TYPES: list[str] = [
     "huggingface",
-    "llama",
-    "ggml",
+    "huggingface-llama",
     "gptq",
+    "ggml",
 ]
 
 CHOICE_MODEL_REPOSITORIES: list[str] = [
