@@ -196,7 +196,7 @@ Please make sure to update the paths and default values in the instructions as n
 
 # Run the UI
 
-1. Start by opening up `run_localGPTAPI.py` in a code editor of your choice. If you are using gpu skip to step 3.
+1. Start by opening up `run_localGPT_API.py` in a code editor of your choice. If you are using gpu skip to step 3.
 
 2. If you are running on cpu change `DEVICE_TYPE = 'cuda'` to `DEVICE_TYPE = 'cpu'`.
 
@@ -215,7 +215,7 @@ Please make sure to update the paths and default values in the instructions as n
    LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id)
    ```
 
-   - If you are running gpu there should be nothing to change. Save and close `run_localGPTAPI.py`.
+   - If you are running gpu there should be nothing to change. Save and close `run_localGPT_API.py`.
 
 3. Open up a terminal and activate your python environment that contains the dependencies installed from
    requirements.txt.
@@ -319,7 +319,7 @@ Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-
 (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support
 using a simple Python script as mentioned in the provided link.
 
-2- By following the page, here is an example of you may initiate in your terminal
+2- By following the page, here is an example of what you may initiate in your terminal
 
 ```shell
 xcode-select --install
@@ -332,45 +332,10 @@ pip install pdfminer.six
 pip install xformers
 ```
 
-3- Create a new `verifymps.py` in the same directory (localGPT) where you have all files and environment.
-
-    import torch
-    if torch.backends.mps.is_available():
-        mps_device = torch.device("mps")
-        x = torch.ones(1, device=mps_device)
-        print (x)
-    else:
-        print ("MPS device not found.")
-
-4- Find `instructor.py` and open it in VS Code to edit.
-
-The `instructor.py` is probably embeded similar to this:
-
-    file_path = "/System/Volumes/Data/Users/USERNAME/anaconda3/envs/LocalGPT/lib/python3.10/site-packages/InstructorEmbedding/instructor.py"
-
-You can open the `instructor.py` and then edit it using this code:
-
-#### Open the file in VSCode
-
-    subprocess.run(["open", "-a", "Visual Studio Code", file_path])
-
-Once you open `instructor.py` with VS Code, replace the code snippet that has `device_type` with the following codes:
-
-         if device is None:
-            device = self._target_device
-
-        # Replace the line: self.to(device)
-
-        if device in ['cpu', 'CPU']:
-            device = torch.device('cpu')
-
-        elif device in ['mps', 'MPS']:
-            device = torch.device('mps')
-
-        else:
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        self.to(device)
+3- Please keep in mind that the quantized models are not yet supported by Apple Silicon (M1/M2) by auto-gptq library
+that is being used for loading quantized models,
+[see here](https://github.com/PanQiWei/AutoGPTQ/issues/133#issuecomment-1575002893). Therefore, you will not be able to
+run quantized models on M1/M2.
 
 ## Star History
 

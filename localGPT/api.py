@@ -46,7 +46,12 @@ if os.path.exists(PERSIST_DIRECTORY):
 else:
     print("The directory does not exist")
 
-result = subprocess.run(["python", "ingest.py"], capture_output=True)
+run_langest_commands = ["python", "ingest.py"]
+if DEVICE_TYPE == "cpu":
+    run_langest_commands.append("--device_type")
+    run_langest_commands.append(DEVICE_TYPE)
+
+result = subprocess.run(run_langest_commands, capture_output=True)
 if result.returncode != 0:
     raise FileNotFoundError(
         "No files were found inside SOURCE_DOCUMENTS, please put a starter file inside before starting the API!"
@@ -229,7 +234,12 @@ def run_ingest_route():
         else:
             print("The directory does not exist")
 
-        result = subprocess.run(["python", "ingest.py"], capture_output=True)
+        run_langest_commands = ["python", "ingest.py"]
+        if DEVICE_TYPE == "cpu":
+            run_langest_commands.append("--device_type")
+            run_langest_commands.append(DEVICE_TYPE)
+
+        result = subprocess.run(run_langest_commands, capture_output=True)
         if result.returncode != 0:
             return (
                 "Script execution failed: {}".format(result.stderr.decode("utf-8")),
