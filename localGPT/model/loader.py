@@ -17,6 +17,7 @@ from typing import Any
 import torch
 from auto_gptq import AutoGPTQForCausalLM
 from langchain.llms import HuggingFacePipeline
+from llama_cpp import Llama
 from torch.cuda import OutOfMemoryError
 from transformers import (
     AutoConfig,
@@ -28,7 +29,12 @@ from transformers import (
     pipeline,
 )
 
-from localGPT import DEFAULT_DEVICE_TYPE, DEFAULT_MODEL_REPOSITORY, DEFAULT_MODEL_SAFETENSORS, DEFAULT_MODEL_TYPE
+from localGPT import (
+    DEFAULT_DEVICE_TYPE,
+    DEFAULT_MODEL_REPOSITORY,
+    DEFAULT_MODEL_SAFETENSORS,
+    DEFAULT_MODEL_TYPE,
+)
 
 
 class ModelLoader:
@@ -205,7 +211,7 @@ class ModelLoader:
             "text-generation",
             model=model,
             tokenizer=tokenizer,
-            max_length=2048,
+            max_length=512,
             temperature=0,
             top_p=0.95,
             repetition_penalty=1.15,
