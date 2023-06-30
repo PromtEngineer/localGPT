@@ -29,12 +29,7 @@ from transformers import (
     pipeline,
 )
 
-from localGPT import (
-    DEFAULT_DEVICE_TYPE,
-    DEFAULT_MODEL_REPOSITORY,
-    DEFAULT_MODEL_SAFETENSORS,
-    DEFAULT_MODEL_TYPE,
-)
+from localGPT import DEFAULT_DEVICE_TYPE, DEFAULT_MODEL_REPOSITORY, DEFAULT_MODEL_SAFETENSORS, DEFAULT_MODEL_TYPE
 
 
 class ModelLoader:

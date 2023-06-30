@@ -50,8 +50,7 @@ from localGPT import (
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
 )
-from localGPT.database import ChromaDBLoader
-from localGPT.document import load_documents, split_documents
+from localGPT.database import ChromaDBLoader, load_documents, split_documents
 
 
 @click.command()
@@ -113,6 +112,7 @@ def main(
         embedding_model=embedding_model,
         embedding_type=embedding_type,
         device_type=device_type,
+        settings=None,
     )
 
     # Persist the embeddings to Chroma database

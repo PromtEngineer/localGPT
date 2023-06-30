@@ -32,7 +32,6 @@ set based on the package structure and can be customized if needed.
 import logging
 import os
 
-from chromadb.config import Settings
 from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader
 from langchain.document_loaders.base import BaseLoader
 from langchain.embeddings import (
@@ -106,16 +105,6 @@ DEFAULT_MODEL_REPOSITORY: str = "TheBloke/vicuna-7B-1.1-HF"
 DEFAULT_MODEL_TYPE: str = "huggingface"
 # The default model weights base name
 DEFAULT_MODEL_SAFETENSORS: str | None = "model.safetensors"
-
-# The settings for the Chroma database
-# - chroma_db_impl: Chroma database implementation (duckdb+parquet)
-# - persist_directory: Directory for persisting the database
-# - anonymized_telemetry: Whether anonymized telemetry is enabled (False)
-CHROMA_SETTINGS: Settings = Settings(
-    chroma_db_impl="duckdb+parquet",
-    persist_directory=PERSIST_DIRECTORY,
-    anonymized_telemetry=False,
-)
 
 # A mapping of MIME types to loader classes
 MIME_TYPES: tuple[tuple[str, type[BaseLoader]], ...] = (

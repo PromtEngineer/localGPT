@@ -1,11 +1,7 @@
 # localGPT/database/document.py
 import logging
 import os
-from concurrent.futures import (
-    ProcessPoolExecutor,
-    ThreadPoolExecutor,
-    as_completed,
-)
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 from langchain.docstore.document import Document
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter

@@ -139,6 +139,7 @@ def main(
         embedding_model=embedding_model,
         embedding_type=embedding_type,
         device_type=device_type,
+        settings=None,
     )
 
     # Load the LLM for generating Natural Language responses
