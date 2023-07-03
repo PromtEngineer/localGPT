@@ -17,7 +17,6 @@ from constants import (
     SOURCE_DIRECTORY,
 )
 
-
 def load_single_document(file_path: str) -> Document:
     # Loads a single document from a file path
     file_extension = os.path.splitext(file_path)[1]
@@ -27,7 +26,6 @@ def load_single_document(file_path: str) -> Document:
     else:
         raise ValueError("Document type is undefined")
     return loader.load()[0]
-
 
 def load_document_batch(filepaths):
     logging.info("Loading document batch")
@@ -39,7 +37,6 @@ def load_document_batch(filepaths):
         data_list = [future.result() for future in futures]
         # return data and file paths
         return (data_list, filepaths)
-
 
 def load_documents(source_dir: str) -> list[Document]:
     # Loads all documents from the source documents directory
@@ -72,7 +69,6 @@ def load_documents(source_dir: str) -> list[Document]:
 
     return docs
 
-
 def split_documents(documents: list[Document]) -> tuple[list[Document], list[Document]]:
     # Splits documents for correct Text Splitter
     text_docs, python_docs = [], []
@@ -85,11 +81,11 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
 
     return text_docs, python_docs
 
-
 @click.command()
 @click.option(
     "--device_type",
-    default="cuda",
+    #default="cuda",
+    default="cpu",
     type=click.Choice(
         [
             "cpu",
