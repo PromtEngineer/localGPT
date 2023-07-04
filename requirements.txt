@@ -1,7 +1,7 @@
 # Natural Language Processing
 langchain==0.0.191
 chromadb==0.3.22
-llama-cpp-python==0.1.48
+llama-cpp-python==0.1.66
 pdfminer.six==20221105
 InstructorEmbedding
 sentence-transformers

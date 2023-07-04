@@ -100,6 +100,41 @@ In order to ask a question, run a command like:
 python run_localGPT.py --device_type cpu
 ```
 
+# Run quantized for M1/M2:
+
+GGML quantized models for Apple Silicon (M1/M2) are supported through the llama-cpp library, [example](https://huggingface.co/TheBloke/Wizard-Vicuna-13B-Uncensored-GGML). GPTQ quantized models that leverage auto-gptq will not work, [see here](https://github.com/PanQiWei/AutoGPTQ/issues/133#issuecomment-1575002893). GGML models will work for CPU or MPS.
+
+## Troubleshooting
+
+**Install MPS:**  
+1- Follow this [page](https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
+
+2- By following the page, here is an example of what you may initiate in your terminal
+
+```shell
+xcode-select --install
+conda install pytorch torchvision torchaudio -c pytorch-nightly
+pip install chardet
+pip install cchardet
+pip uninstall charset_normalizer
+pip install charset_normalizer
+pip install pdfminer.six
+pip install xformers
+```
+
+**Upgrade packages:**  
+Your langchain or llama-cpp version could be outdated. Upgrade your packages by running install again.
+
+```shell
+pip install -r requirements.txt
+```
+
+If you are still getting errors, try installing the latest llama-cpp-python with these flags, and [see thread](https://github.com/abetlen/llama-cpp-python/issues/317#issuecomment-1587962205).
+
+```shell
+CMAKE_ARGS="-DLLAMA_METAL=on" FORCE_CMAKE=1 pip install -U llama-cpp-python --no-cache-dir
+```
+
 # Run the UI
 
 1. Start by opening up `run_localGPT_API.py` in a code editor of your choice. If you are using gpu skip to step 3.
@@ -158,7 +193,7 @@ The following will provide instructions on how you can select a different LLM mo
 5. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
 
    - Make sure you have a model_id selected. For example -> `model_id = "TheBloke/guanaco-7B-HF"`
-   - If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
+   - If you go to its HuggingFace [repo](https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
    - Any model files that contain .bin extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
    - `model_id = "TheBloke/guanaco-7B-HF"`
 
@@ -168,7 +203,7 @@ The following will provide instructions on how you can select a different LLM mo
 
    - Make sure you have a model_id selected. For example -> model_id = `"TheBloke/wizardLM-7B-GPTQ"`
    - You will also need its model basename file selected. For example -> `model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
-   - If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and go to "Files and versions" you will notice a model file that ends with a .safetensors extension.
+   - If you go to its HuggingFace [repo](https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and go to "Files and versions" you will notice a model file that ends with a .safetensors extension.
    - Any model files that contain no-act-order or .safetensors extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
    - `model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"`
 
@@ -202,27 +237,6 @@ To install a C++ compiler on Windows 10/11, follow these steps:
 ### NVIDIA Driver's Issues:
 
 Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-ubuntu-22-04) to install NVIDIA Drivers.
-
-### M1/M2 Macbook users:
-
-1- Follow this [page](https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
-
-2- By following the page, here is an example of what you may initiate in your terminal
-
-```shell
-xcode-select --install
-conda install pytorch torchvision torchaudio -c pytorch-nightly
-pip install chardet
-pip install cchardet
-pip uninstall charset_normalizer
-pip install charset_normalizer
-pip install pdfminer.six
-pip install xformers
-```
-
-3- Please keep in mind that the quantized models are not yet supported by Apple Silicon (M1/M2) by auto-gptq library that is being used for loading quantized models, [see here](https://github.com/PanQiWei/AutoGPTQ/issues/133#issuecomment-1575002893). Therefore, you will not be able to run quantized models on M1/M2.
-
-
 
 ## Star History
 
