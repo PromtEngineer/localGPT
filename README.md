@@ -193,7 +193,7 @@ The following will provide instructions on how you can select a different LLM mo
 5. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
 
    - Make sure you have a model_id selected. For example -> `model_id = "TheBloke/guanaco-7B-HF"`
-   - If you go to its HuggingFace [Site] (https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
+   - If you go to its HuggingFace [repo](https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
    - Any model files that contain .bin extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
    - `model_id = "TheBloke/guanaco-7B-HF"`
 
