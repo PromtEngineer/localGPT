@@ -2,6 +2,8 @@
 /database
 /db
 /DB
+/SOURCE_DOCUMENTS
+!/SOURCE_DOCUMENTS/constitution.pdf
 
 # Ignore vscode
 /.vscode
