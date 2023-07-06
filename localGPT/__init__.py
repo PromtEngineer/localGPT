@@ -151,9 +151,10 @@ GGML_N_CTX: int = 2048
 GGML_MAX_TOKENS: int = 512
 GGML_TEMPERATURE: float = 0.8
 GGML_TOP_P: float = 0.95
-GGML_N_BATCH: int = 512
+GGML_N_THREADS: int | None = CPU_COUNT
 
 # The default llama.cpp GPU settings
+GGML_N_BATCH: int = 512
 GGML_N_GPU_LAYERS: int = 0
 GGML_LOW_VRAM: bool = False
 

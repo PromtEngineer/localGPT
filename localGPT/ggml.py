@@ -20,6 +20,11 @@ from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.llms import LlamaCpp
 from langchain.memory import ConversationBufferMemory
 
+try:
+    from prompt_toolkit import prompt as input
+except ModuleNotFoundError:
+    pass
+
 from localGPT import (
     CHOICE_HF_EMBEDDINGS_REPO_IDS,
     CHOICE_LC_EMBEDDINGS_CLASSES,
@@ -30,6 +35,7 @@ from localGPT import (
     GGML_N_BATCH,
     GGML_N_CTX,
     GGML_N_GPU_LAYERS,
+    GGML_N_THREADS,
     GGML_REPO_ID,
     GGML_TEMPERATURE,
     GGML_TOP_P,
@@ -74,6 +80,12 @@ from localGPT.database.chroma import ChromaDBLoader
     type=click.INT,
     default=GGML_N_CTX,
     help=f"Maximum context size. Default is {GGML_N_CTX}.",
+)
+@click.option(
+    "--n_threads",
+    type=click.INT,
+    default=GGML_N_THREADS,
+    help=f"Number of batches to use. Default is {GGML_N_THREADS}.",
 )
 @click.option(
     "--n_batch",
@@ -152,6 +164,7 @@ def main(
     filename,
     n_ctx,
     n_batch,
+    n_threads,
     n_gpu_layers,
     f16_kv,
     low_vram,
@@ -217,11 +230,12 @@ def main(
         max_tokens=max_tokens,
         temperature=temperature,
         top_p=top_p,
+        n_threads=n_threads,
         n_batch=n_batch,
         n_gpt_layers=n_gpu_layers,
         f16_kv=f16_kv,
         low_vram=low_vram,
-        stop=[".", "\n", "[DONE]"],
+        # stop=["[DONE]", ".", "!", "?"],
         echo=True,
         verbose=False,
     )
@@ -267,14 +281,21 @@ def main(
         retrieval_qa = db_loader.load_conversational_qa(llm)
         while True:
             try:
-                query = input("query> ")
+                query = input("question> ")
             except (EOFError, KeyboardInterrupt):
+                print()
                 sys.exit(0)
 
-            print("Thinking...")
+            print("answer>", end="")
+            sys.stdout.flush()
 
             try:
-                result = retrieval_qa({"question": query, "chat_history": chat_history})
+                result = retrieval_qa(
+                    {
+                        "question": query,
+                        "chat_history": chat_history,
+                    },
+                )
                 print()
             except TypeError as e:
                 logging.error(e)

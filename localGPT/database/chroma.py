@@ -149,7 +149,11 @@ class ChromaDBLoader:
             return_source_documents=True,
         )
 
-    def load_conversational_qa(self, llm: BaseLanguageModel) -> BaseConversationalRetrievalChain:
+    def load_conversational_qa(
+        self,
+        llm: BaseLanguageModel,
+        condense_llm: BaseLanguageModel | None = None,
+    ) -> BaseConversationalRetrievalChain:
         memory = ConversationBufferMemory(
             memory_key="chat_history",
             return_messages=True,
@@ -158,6 +162,7 @@ class ChromaDBLoader:
             llm=llm,
             retriever=self.load_retriever(),
             memory=memory,
+            # condense_question_llm=condense_llm,
             # return_source_documents=True,
         )
 
