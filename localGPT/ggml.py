@@ -191,11 +191,14 @@ def main(
         print("Use either --prompt or --chat, but not both. See --help for more information.")
         sys.exit(1)
 
-    cache_dir = os.path.join(PATH_HOME, ".cache", "huggingface", "hub")
-
-    logging.info(f"Downloading model from {repo_id}")
     try:
-        model_path = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=cache_dir)
+        logging.info(f"Using model from {repo_id}")
+        cache_dir = os.path.join(PATH_HOME, ".cache", "huggingface", "hub")
+        model_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            cache_dir=cache_dir,
+        )
     except Exception as e:
         logging.error(f"Error downloading model: {e}")
         sys.exit(1)
@@ -232,8 +235,6 @@ def main(
         settings=None,
     )
 
-    retrieval_qa = db_loader.load_retrieval_qa(llm)
-
     try:
         if prompt:
             """
@@ -243,7 +244,8 @@ def main(
                 prompt (str): The query string.
             """
             logging.info("----START-MODEL-GENERATION----")
-            source = retrieval_qa({"query": prompt})
+            retrieval_qa = db_loader.load_retrieval_qa(llm)
+            result = retrieval_qa({"query": prompt})
             print()
             logging.info("----END-MODEL-GENERATION----")
             if show_sources:
@@ -251,7 +253,7 @@ def main(
                 Print the relevant sources used for the answer.
                 """
                 logging.info("----START-SOURCE-DOCUMENT----")
-                for document in source["source_documents"]:
+                for document in result["source_documents"]:
                     print(document.metadata["source"])
                     print(document.page_content)
                 logging.info("----END-SOURCE-DOCUMENT----")
@@ -260,7 +262,30 @@ def main(
             Enter a chat loop with the model.
             """
             logging.info("Starting QA loop...")
-            pass
+            chat_history = []
+            retrieval_qa = db_loader.load_conversational_qa(llm)
+            while True:
+                try:
+                    query = input("query> ")
+                except (EOFError, KeyboardInterrupt):
+                    sys.exit(0)
+
+                print("Thinking...")
+
+                result = retrieval_qa({"question": query, "chat_history": chat_history})
+
+                chat_history.append((query, result["answer"]))
+
+                if show_sources:
+                    """
+                    Print the relevant sources used for the answer.
+                    """
+                    logging.info("----START-SOURCE-DOCUMENT----")
+                    for document in result["source_documents"]:
+                        print(document.metadata["source"])
+                        print(document.page_content)
+                    logging.info("----END-SOURCE-DOCUMENT----")
+
     except Exception as e:
         logging.error(f"Error generating response: {e}")
         sys.exit(1)
