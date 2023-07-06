@@ -1,22 +1,23 @@
 """
 localGPT/ggml.py
 
-Docs:
-    https://python.langchain.com/docs/modules/chains/popular/vector_db_qa.html
-    https://python.langchain.com/docs/modules/chains/popular/chat_vector_db
+This script provides functionality for interacting with the LlamaCpp model and performing document retrieval and question answering tasks.
+
+Documentation:
+- LlamaCpp: https://python.langchain.com/docs/modules/model_io/models/llms/integrations/llamacpp.html
+- Prompt ChromaDBLoader: https://python.langchain.com/docs/modules/chains/popular/vector_db_qa.html
+- Chat ChromaDBLoader: https://python.langchain.com/docs/modules/chains/popular/chat_vector_db
 """
+
 import os
 import sys
-from typing import List
 
 import click
 from huggingface_hub import hf_hub_download
 from langchain import LLMChain, PromptTemplate
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.chat_models import ChatOpenAI
 from langchain.llms import LlamaCpp
-from llama_cpp import ChatCompletionMessage, Llama
 
 from localGPT import (
     CHOICE_HF_EMBEDDINGS_REPO_IDS,
@@ -59,13 +60,13 @@ from localGPT.database.chroma import ChromaDBLoader
     "--prompt",
     type=click.STRING,
     default=str(),
-    help="Query the model with a string. Default is ''",
+    help="Query the model with a string. Default is an empty string.",
 )
 @click.option(
     "--chat",
     type=click.BOOL,
     default=bool(),
-    help="Chat-like query loop with the model. Default is False",
+    help="Enable chat-like query loop with the model. Default is False.",
 )
 @click.option(
     "--n_ctx",
@@ -89,7 +90,7 @@ from localGPT.database.chroma import ChromaDBLoader
     "--low_vram",
     type=click.BOOL,
     default=GGML_LOW_VRAM,
-    help="Set to True if GPU device has low VRAM. Default is False.",
+    help="Set to True if the GPU device has low VRAM. Default is False.",
 )
 @click.option(
     "--max_tokens",
@@ -113,31 +114,31 @@ from localGPT.database.chroma import ChromaDBLoader
     "--embeddings_repo_id",
     default=HF_EMBEDDINGS_REPO_ID,
     type=click.Choice(CHOICE_HF_EMBEDDINGS_REPO_IDS),
-    help=f"The embedding model repository (default: {HF_EMBEDDINGS_REPO_ID})",
+    help=f"The embedding model repository to use. default: {HF_EMBEDDINGS_REPO_ID})",
 )
 @click.option(
     "--embeddings_class",
     default=LC_EMBEDDINGS_CLASS,
     type=click.Choice(CHOICE_LC_EMBEDDINGS_CLASSES),
-    help=f"The embedding model type (default: {LC_EMBEDDINGS_CLASS})",
+    help=f"The embedding model class to use. (default: {LC_EMBEDDINGS_CLASS})",
 )
 @click.option(
     "--embeddings_device_type",
     default=TORCH_DEVICE_TYPE,
     type=click.Choice(CHOICE_PT_DEVICE_TYPES),
-    help=f"The compute device used by the model (default: {TORCH_DEVICE_TYPE})",
+    help=f"The compute device used by the embedding model. (default: {TORCH_DEVICE_TYPE})",
 )
 @click.option(
     "--path_database",
     default=PATH_DATABASE,
     type=click.STRING,
-    help=f"The embeddings database path (default: {PATH_DATABASE})",
+    help=f"The path where the embeddings database is located. (default: {PATH_DATABASE})",
 )
 @click.option(
     "--show_sources",
     type=click.BOOL,
     default=SHOW_DOCUMENT_SOURCE,
-    help="Display the documents source text (default: False)",
+    help="Display the source text of the retrieved documents. Default is False.",
 )
 def main(
     repo_id,
@@ -157,34 +158,46 @@ def main(
     embeddings_class,
     show_sources,
 ):
+    """
+    Run LlamaCpp model for document retrieval and question answering.
+
+    Args:
+        repo_id (str): The repository to download the model from.
+        filename (str): The filename of the model from the given repository.
+        n_ctx (int): Maximum context size.
+        n_batch (int): Number of batches to use.
+        n_gpu_layers (int): Number of GPU layers to use.
+        low_vram (bool): Set to True if the GPU device has low VRAM.
+        max_tokens (int): The maximum number of tokens to generate.
+        temperature (float): The temperature to use for sampling.
+        top_p (float): The top-p value to use for sampling.
+        prompt (str): Query the model with a string.
+        chat (bool): Enable chat-like query loop with the model.
+        path_database (str): The path where the embeddings database is located.
+        embeddings_device_type (str): The compute device used by the embedding model.
+        embeddings_repo_id (str): The embedding model repository to use.
+        embeddings_class (str): The embedding model class to use.
+        show_sources (bool): Display the source text of the retrieved documents.
+    """
     if not (bool(prompt) ^ bool(chat)):
-        print(
-            "Use either --prompt or --chat, but not both.",
-            "See --help for more information.",
-            sep="\n",
-        )
-        exit(1)
+        print("Use either --prompt or --chat, but not both. See --help for more information.")
+        sys.exit(1)
 
     cache_dir = os.path.join(PATH_HOME, ".cache", "huggingface", "hub")
 
-    logging.info(f"Using {repo_id} to load {filename}")
-
+    logging.info(f"Downloading model from {repo_id}")
     try:
-        model_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            cache_dir=cache_dir,
-        )
+        model_path = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=cache_dir)
     except Exception as e:
         logging.error(f"Error downloading model: {e}")
         sys.exit(1)
 
-    logging.info(f"Using {model_path} to load {repo_id} into memory")
+    logging.info(f"Loading {repo_id} into memory from {model_path}")
 
     # Callbacks support token-wise streaming
     callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
-    # Make sure the model path is correct for your system!
+    # Initialize LlamaCpp
     llm = LlamaCpp(
         model_path=model_path,
         callback_manager=callback_manager,
@@ -214,18 +227,28 @@ def main(
 
     try:
         if prompt:
+            """
+            Query the model with a string and print the response.
+
+            Args:
+                prompt (str): The query string.
+            """
             logging.info("----START-MODEL-GENERATION----")
             source = retrieval_qa({"query": prompt})
             print()
             logging.info("----END-MODEL-GENERATION----")
             if show_sources:
-                # Print the relevant sources used for the answer
+                """
+                Print the relevant sources used for the answer.
+                """
                 logging.info("----START-SOURCE-DOCUMENT----")
                 logging.info(source["result"])
                 logging.info("----END-SOURCE-DOCUMENT----")
         elif chat:
+            """
+            Enter a chat loop with the model.
+            """
             logging.info("Starting QA loop...")
-            # Enter a chat loop
             pass
     except Exception as e:
         logging.error(f"Error generating response: {e}")
