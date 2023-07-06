@@ -159,9 +159,9 @@ GGML_N_GPU_LAYERS: int = 0
 GGML_LOW_VRAM: bool = False
 
 # The default llama.cpp model git repository
-GGML_REPO_ID: str = "TheBloke/orca_mini_7B-GGML"
+GGML_REPO_ID: str = "TheBloke/vicuna-7B-v1.3-GGML"
 # The default llama.cpp model filename from the given git repository
-GGML_FILENAME: str = "orca-mini-7b.ggmlv3.q5_1.bin"
+GGML_FILENAME: str = "vicuna-7b-v1.3.ggmlv3.q4_1.bin"
 
 # A mapping of langchain embeddings classes
 MAP_LC_EMBEDDINGS_CLASSES: dict[str, type[Embeddings]] = {
