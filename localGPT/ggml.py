@@ -18,6 +18,7 @@ from langchain import LLMChain, PromptTemplate
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.llms import LlamaCpp
+from langchain.memory import ConversationBufferMemory
 
 from localGPT import (
     CHOICE_HF_EMBEDDINGS_REPO_IDS,
@@ -87,6 +88,12 @@ from localGPT.database.chroma import ChromaDBLoader
     help="Number of GPU layers to use. Default is 0.",
 )
 @click.option(
+    "--f16_kv",
+    type=click.BOOL,
+    default=bool(),
+    help="Use half-precision for key/value cache. Default is False.",
+)
+@click.option(
     "--low_vram",
     type=click.BOOL,
     default=GGML_LOW_VRAM,
@@ -146,6 +153,7 @@ def main(
     n_ctx,
     n_batch,
     n_gpu_layers,
+    f16_kv,
     low_vram,
     max_tokens,
     temperature,
@@ -207,8 +215,9 @@ def main(
         top_p=top_p,
         n_batch=n_batch,
         n_gpt_layers=n_gpu_layers,
+        f16_kv=f16_kv,
         low_vram=low_vram,
-        stop=["[DONE]\n", ".\n", "\n"],
+        stop=[".", "\n", "[DONE]"],
         echo=True,
         verbose=False,
     )
@@ -242,7 +251,9 @@ def main(
                 Print the relevant sources used for the answer.
                 """
                 logging.info("----START-SOURCE-DOCUMENT----")
-                logging.info(source["result"])
+                for document in source["source_documents"]:
+                    print(document.metadata["source"])
+                    print(document.page_content)
                 logging.info("----END-SOURCE-DOCUMENT----")
         elif chat:
             """
