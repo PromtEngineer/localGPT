@@ -17,21 +17,21 @@ Usage:
     python run.py [OPTIONS]
 
 Options:
-    --model_repository TEXT      The model repository.
+    --repo_id TEXT      The model repository.
                                  Default: TheBloke/WizardLM-7B-V1.0-Uncensored-GGML
-    --model_safetensors TEXT     The model safetensors.
+    --safetensors TEXT     The model safetensors.
                                  Default:
                                  WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors
-    --embedding_model TEXT       The embedding model repository.
+    --embeddings_repo_id TEXT       The embedding model repository.
                                  Default: hkunlp/instructor-large
-    --embedding_type TEXT        The embedding model type.
+    --embeddings_class TEXT        The embedding model type.
                                  Default: HuggingFaceInstructEmbeddings
-    --device_type TEXT           The compute device used by the model.
+    --torch_device_type TEXT           The compute device used by the model.
                                  Choices: cpu, cuda, ipu, xpu, mkldnn, opengl, opencl,
                                           ideep, hip, ve, fpga, ort, xla, lazy, vulkan,
                                           mps, meta, hpu, mtia
                                  Default: cuda
-    --persist_directory TEXT     The embeddings database path.
+    --path_database TEXT     The embeddings database path.
                                  Default: DB
     --show_sources / --no_show_sources
                                  Display the documents' source text.
@@ -43,19 +43,18 @@ import logging
 import click
 
 from localGPT import (
-    CHOICE_DEVICE_TYPES,
-    CHOICE_EMBEDDING_MODELS,
-    CHOICE_EMBEDDING_TYPES,
-    CHOICE_MODEL_REPOSITORIES,
-    CHOICE_MODEL_SAFETENSORS,
-    CHOICE_MODEL_TYPES,
-    DEFAULT_DEVICE_TYPE,
-    DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_EMBEDDING_TYPE,
-    DEFAULT_MODEL_REPOSITORY,
-    DEFAULT_MODEL_SAFETENSORS,
-    DEFAULT_MODEL_TYPE,
-    PERSIST_DIRECTORY,
+    CHOICE_HF_EMBEDDINGS_REPO_IDS,
+    CHOICE_HF_MODEL_SAFETENSORS,
+    CHOICE_LC_EMBEDDINGS_CLASSES,
+    CHOICE_LC_MODEL_CLASSES,
+    CHOICE_PT_DEVICE_TYPES,
+    HF_EMBEDDINGS_REPO_ID,
+    HF_MODEL_REPO_ID,
+    HF_MODEL_SAFETENSORS,
+    LC_EMBEDDINGS_CLASS,
+    LC_MODEL_CLASS,
+    PATH_DATABASE,
+    TORCH_DEVICE_TYPE,
 )
 from localGPT.database.chroma import ChromaDBLoader
 from localGPT.model.loader import ModelLoader
@@ -65,85 +64,93 @@ from localGPT.model.loader import ModelLoader
 
 @click.command()
 @click.option(
-    "--model_type",
-    default=DEFAULT_MODEL_TYPE,
-    type=click.Choice(CHOICE_MODEL_TYPES),
-    help=f"The model type (default: {DEFAULT_MODEL_TYPE})",
+    "--repo_id",
+    default=HF_MODEL_REPO_ID,
+    type=click.STRING,
+    help=f"The model repository (default: {HF_MODEL_REPO_ID})",
 )
 @click.option(
-    "--model_repository",
-    default=DEFAULT_MODEL_REPOSITORY,
-    type=click.Choice(CHOICE_MODEL_REPOSITORIES),
-    help=f"The model repository (default: {DEFAULT_MODEL_REPOSITORY})",
+    "--model_class",
+    default=LC_MODEL_CLASS,
+    type=click.Choice(CHOICE_LC_MODEL_CLASSES),
+    help=f"The model type (default: {LC_MODEL_CLASS})",
 )
 @click.option(
-    "--model_safetensors",
-    default=DEFAULT_MODEL_SAFETENSORS,
-    type=click.Choice(CHOICE_MODEL_SAFETENSORS),
-    help=f"The model safetensors (default: {DEFAULT_MODEL_SAFETENSORS})",
+    "--safetensors",
+    default=HF_MODEL_SAFETENSORS,
+    type=click.Choice(CHOICE_HF_MODEL_SAFETENSORS),
+    help=f"The model safetensors (default: {HF_MODEL_SAFETENSORS})",
 )
 @click.option(
-    "--embedding_model",
-    default=DEFAULT_EMBEDDING_MODEL,
-    type=click.Choice(CHOICE_EMBEDDING_MODELS),
-    help=f"The embedding model repository (default: {DEFAULT_EMBEDDING_MODEL})",
+    "--embeddings_repo_id",
+    default=HF_EMBEDDINGS_REPO_ID,
+    type=click.Choice(CHOICE_HF_EMBEDDINGS_REPO_IDS),
+    help=f"The embedding model repository (default: {HF_EMBEDDINGS_REPO_ID})",
 )
 @click.option(
-    "--embedding_type",
-    default=DEFAULT_EMBEDDING_TYPE,
-    type=click.Choice(CHOICE_EMBEDDING_TYPES),
-    help=f"The embedding model type (default: {DEFAULT_EMBEDDING_TYPE})",
+    "--embeddings_class",
+    default=LC_EMBEDDINGS_CLASS,
+    type=click.Choice(CHOICE_LC_EMBEDDINGS_CLASSES),
+    help=f"The embedding model type (default: {LC_EMBEDDINGS_CLASS})",
 )
 @click.option(
-    "--device_type",
-    default=DEFAULT_DEVICE_TYPE,
-    type=click.Choice(CHOICE_DEVICE_TYPES),
+    "--torch_device_type",
+    default=TORCH_DEVICE_TYPE,
+    type=click.Choice(CHOICE_PT_DEVICE_TYPES),
     help="The compute device used by the model (default: cuda)",
 )
 @click.option(
-    "--persist_directory",
-    default=PERSIST_DIRECTORY,
+    "--path_database",
+    default=PATH_DATABASE,
     type=click.STRING,
-    help=f"The embeddings database path (default: {PERSIST_DIRECTORY})",
+    help=f"The embeddings database path (default: {PATH_DATABASE})",
 )
 @click.option(
     "--show_sources",
     type=click.BOOL,
-    default=False,
+    default=bool(),
     help="Display the documents source text (default: False)",
 )
 @click.option(
     "--use_triton",
     type=click.BOOL,
-    default=False,
+    default=bool(),
     help="Use AMD triton for CUDA backend (default: False)",
 )
 def main(
-    model_type,
-    model_repository,
-    model_safetensors,
-    embedding_model,
-    embedding_type,
-    device_type,
-    persist_directory,
+    model_class,
+    repo_id,
+    safetensors,
+    embeddings_repo_id,
+    embeddings_class,
+    torch_device_type,
+    path_database,
     show_sources,
     use_triton,
 ):
     """
     Execute the information retrieval task using a Question-Answer retrieval chain.
     """
+
     # Create ChromaDBLoader instance
     db_loader = ChromaDBLoader(
-        source_directory=None,
-        persist_directory=persist_directory,
-        embedding_model=embedding_model,
-        embedding_type=embedding_type,
-        device_type=device_type,
+        path_documents=None,
+        path_database=path_database,
+        repo_id=embeddings_repo_id,
+        embeddings_class=embeddings_class,
+        device_type=torch_device_type,
         settings=None,
     )
 
     # Load the LLM for generating Natural Language responses
-    model_loader = ModelLoader(device_type, model_type, model_repository, model_safetensors, use_triton)
+    model_loader = ModelLoader(
+        repo_id=repo_id,
+        model_class=model_class,
+        safetensors=safetensors,
+        device_type=torch_device_type,
+        use_triton=use_triton,
+    )
+
     llm = model_loader.load_model()
 
     # Setup the Question-Answer retrieval chain

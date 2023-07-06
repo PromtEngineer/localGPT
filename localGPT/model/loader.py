@@ -29,7 +29,7 @@ from transformers import (
     pipeline,
 )
 
-from localGPT import DEFAULT_DEVICE_TYPE, DEFAULT_MODEL_REPOSITORY, DEFAULT_MODEL_SAFETENSORS, DEFAULT_MODEL_TYPE
+from localGPT import HF_MODEL_REPO_ID, HF_MODEL_SAFETENSORS, LC_MODEL_CLASS, TORCH_DEVICE_TYPE
 
 
 class ModelLoader:
@@ -48,10 +48,10 @@ class ModelLoader:
 
     def __init__(
         self,
+        repo_id: str | None,
+        model_class: str | None,
+        safetensors: str | None,
         device_type: str | None,
-        model_type: str | None,
-        model_repository: str | None,
-        model_safetensors: str | None,
         use_triton: bool | None,
     ):
         """
@@ -60,16 +60,16 @@ class ModelLoader:
 
         Args:
         - device_type (str, optional): The device type for model loading.
-          Defaults to DEFAULT_DEVICE_TYPE.
-        - model_repository (str, optional): The model ID.
-          Defaults to DEFAULT_MODEL_REPOSITORY.
-        - model_safetensors (str, optional): The model basename.
-          Defaults to DEFAULT_MODEL_SAFETENSORS.
+          Defaults to TORCH_DEVICE_TYPE.
+        - repo_id (str, optional): The model ID.
+          Defaults to HF_MODEL_REPO_ID.
+        - safetensors (str, optional): The model basename.
+          Defaults to HF_MODEL_SAFETENSORS.
         """
-        self.device_type = (device_type or DEFAULT_DEVICE_TYPE).lower()
-        self.model_type = (model_type or DEFAULT_MODEL_TYPE).lower()
-        self.model_repository = model_repository or DEFAULT_MODEL_REPOSITORY
-        self.model_safetensors = model_safetensors or DEFAULT_MODEL_SAFETENSORS
+        self.device_type = (device_type or TORCH_DEVICE_TYPE).lower()
+        self.model_class = (model_class or LC_MODEL_CLASS).lower()
+        self.repo_id = repo_id or HF_MODEL_REPO_ID
+        self.safetensors = safetensors or HF_MODEL_SAFETENSORS
         self.use_triton = use_triton or False
 
     def load_huggingface_model(self):
@@ -82,11 +82,11 @@ class ModelLoader:
         """
         logging.info("Using AutoModelForCausalLM for full models")
 
-        config = AutoConfig.from_pretrained(self.model_repository)
-        logging.info(f"Configuration loaded for {self.model_repository}")
+        config = AutoConfig.from_pretrained(self.repo_id)
+        logging.info(f"Configuration loaded for {self.repo_id}")
 
-        tokenizer = AutoTokenizer.from_pretrained(self.model_repository)
-        logging.info(f"Tokenizer loaded for {self.model_repository}")
+        tokenizer = AutoTokenizer.from_pretrained(self.repo_id)
+        logging.info(f"Tokenizer loaded for {self.repo_id}")
 
         kwargs: dict[str, Any] = {
             "low_cpu_mem_usage": True,
@@ -106,13 +106,13 @@ class ModelLoader:
             kwargs["torch_dtype"] = torch.float16
 
         try:
-            model = AutoModelForCausalLM.from_pretrained(self.model_repository, config=config, **kwargs)
+            model = AutoModelForCausalLM.from_pretrained(self.repo_id, config=config, **kwargs)
         except (OutOfMemoryError,) as e:
             logging.error("Encountered CUDA out of memory error while loading the model.")
             logging.error(str(e))
             sys.exit(1)
 
-        logging.info(f"Model loaded for {self.model_repository}")
+        logging.info(f"Model loaded for {self.repo_id}")
 
         if not isinstance(model, tuple):
             model.tie_weights()
@@ -131,17 +131,12 @@ class ModelLoader:
         logging.info("Using LlamaTokenizer")
         # vocab_file (str) — Path to the vocabulary file.
         # NOTE: Path to the tokenizer
-        tokenizer = LlamaTokenizer.from_pretrained(self.model_repository)
-        logging.info(f"Tokenizer loaded for {self.model_repository}")
+        tokenizer = LlamaTokenizer.from_pretrained(self.repo_id)
+        logging.info(f"Tokenizer loaded for {self.repo_id}")
         # NOTE: Path to the pytorch bin
-        model = LlamaForCausalLM.from_pretrained(self.model_repository)
-        logging.info(f"Model loaded for {self.model_repository}")
+        model = LlamaForCausalLM.from_pretrained(self.repo_id)
+        logging.info(f"Model loaded for {self.repo_id}")
         return model, tokenizer
-
-    def load_ggml_model(self):
-        # TODO: Implement supporting 4, 5, and 8, -bit quant model support
-        # NOTE: This method potentially supersedes `load_gptq_model`
-        pass
 
     def load_gptq_model(self):
         """
@@ -156,13 +151,13 @@ class ModelLoader:
         logging.info("Using AutoGPTQForCausalLM for quantized models")
         logging.warning("GGML models may supersede GPTQ models in future releases")
 
-        if self.model_safetensors.endswith(".safetensors"):
-            split_string = self.model_safetensors.split(".")
-            self.model_safetensors = ".".join(split_string[:-1])
-            logging.info(f"Stripped {self.model_safetensors}. Moving on.")
+        if self.safetensors.endswith(".safetensors"):
+            split_string = self.safetensors.split(".")
+            self.safetensors = ".".join(split_string[:-1])
+            logging.info(f"Stripped {self.safetensors}. Moving on.")
 
-        tokenizer = AutoTokenizer.from_pretrained(self.model_repository, use_fast=True)
-        logging.info(f"Tokenizer loaded for {self.model_repository}")
+        tokenizer = AutoTokenizer.from_pretrained(self.repo_id, use_fast=True)
+        logging.info(f"Tokenizer loaded for {self.repo_id}")
 
         kwargs: dict[str, Any] = {
             "low_cpu_mem_usage": True,
@@ -170,7 +165,7 @@ class ModelLoader:
             "trust_remote_code": False,
             "use_safetensors": True,
             "device_map": "auto",
-            "model_safetensors": self.model_safetensors,
+            "safetensors": self.safetensors,
             # NOTE: Uncomment this line if you encounter CUDA out of memory errors
             # "max_memory": {0: "7GB"},
             # NOTE: According to the Hugging Face documentation, `output_loading_info` is
@@ -184,8 +179,8 @@ class ModelLoader:
             kwargs["use_triton"] = self.use_triton
             kwargs["device"] = f"{self.device_type}:0"
 
-        model = AutoGPTQForCausalLM.from_quantized(self.model_repository, **kwargs)
-        logging.info(f"Model loaded for {self.model_repository}")
+        model = AutoGPTQForCausalLM.from_quantized(self.repo_id, **kwargs)
+        logging.info(f"Model loaded for {self.repo_id}")
 
         return model, tokenizer
 
@@ -222,13 +217,13 @@ class ModelLoader:
         - local_llm: The loaded local language model (LLM).
         """
         # NOTE: This should be replaced with mapping for smooth extensibility
-        if self.model_type.lower() == "huggingface":
+        if self.model_class.lower() == "huggingface":
             model, tokenizer = self.load_huggingface_model()
-        elif self.model_type.lower() == "huggingface-llama":
+        elif self.model_class.lower() == "huggingface-llama":
             model, tokenizer = self.load_huggingface_llama_model()
-        elif self.model_type.lower() == "gptq":
+        elif self.model_class.lower() == "gptq":
             model, tokenizer = self.load_gptq_model()
-        elif self.model_type.lower() == "ggml":
+        elif self.model_class.lower() == "ggml":
             raise NotImplementedError("GGML support is in research and development")
         else:
             raise AttributeError(
@@ -241,7 +236,7 @@ class ModelLoader:
             )
 
         # Load configuration from the model to avoid warnings
-        generation_config = GenerationConfig.from_pretrained(self.model_repository)
+        generation_config = GenerationConfig.from_pretrained(self.repo_id)
         # see here for details:
         # https://huggingface.co/docs/transformers/main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
 
