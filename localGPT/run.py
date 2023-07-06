@@ -57,8 +57,8 @@ from localGPT import (
     DEFAULT_MODEL_TYPE,
     PERSIST_DIRECTORY,
 )
-from localGPT.database import ChromaDBLoader
-from localGPT.model import ModelLoader
+from localGPT.database.chroma import ChromaDBLoader
+from localGPT.model.loader import ModelLoader
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 

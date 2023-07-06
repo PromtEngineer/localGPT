@@ -14,10 +14,10 @@ documents along with their embeddings to the Chroma database.
 Usage:
     # Example usage of ChromaDBLoader
     loader = ChromaDBLoader(
-        source_directory="path/to/source",
-        persist_directory="path/to/database",
-        embedding_model="huggingface/model",
-        embedding_type="HuggingFaceInstructEmbeddings",
+        path_documents="path/to/source",
+        path_database="path/to/database",
+        repo_id="huggingface/model",
+        embeddings_class="HuggingFaceInstructEmbeddings",
         device_type="cuda",
     )
 
@@ -39,12 +39,12 @@ from langchain.vectorstores import Chroma
 from langchain.vectorstores.base import VectorStoreRetriever
 
 from localGPT import (
-    DEFAULT_DEVICE_TYPE,
-    DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_EMBEDDING_TYPE,
-    EMBEDDING_TYPES,
-    PERSIST_DIRECTORY,
-    SOURCE_DIRECTORY,
+    HF_EMBEDDINGS_REPO_ID,
+    LC_EMBEDDINGS_CLASS,
+    MAP_LC_EMBEDDINGS_CLASSES,
+    PATH_DATABASE,
+    PATH_DOCUMENTS,
+    TORCH_DEVICE_TYPE,
 )
 
 
@@ -53,44 +53,47 @@ class ChromaDBLoader:
     ChromaDBLoader class handles loading and persisting documents to Chroma database.
 
     Args:
-        source_directory (str, optional): Directory path for source documents.
+        path_documents (str, optional): Directory path for source documents.
             Defaults to SOURCE_DIRECTORY.
 
-        persist_directory (str, optional): Directory path for persisting the database.
+        path_database (str, optional): Directory path for persisting the database.
             Defaults to PERSIST_DIRECTORY.
 
-        embedding_model (str, optional): Name of the embedding model.
-            Defaults to DEFAULT_EMBEDDING_MODEL.
+        repo_id (str, optional): Name of the embedding model.
+            Defaults to EMBEDDING_MODEL.
 
-        embedding_type (str, optional): Type of the embedding.
-            Defaults to DEFAULT_EMBEDDING_TYPE.
+        embeddings_class (str, optional): Type of the embedding.
+            Defaults to EMBEDDING_TYPE.
 
         device_type (str, optional): Device type for embeddings.
-            Defaults to DEFAULT_DEVICE_TYPE.
+            Defaults to DEVICE_TYPE.
+
+    Docs:
+        https://python.langchain.com/docs/modules/chains/popular/vector_db_qa.html
     """
 
     def __init__(
         self,
-        source_directory: str | None,
-        persist_directory: str | None,
-        embedding_model: str | None,
-        embedding_type: str | None,
+        path_documents: str | None,
+        path_database: str | None,
+        repo_id: str | None,
+        embeddings_class: str | None,
         device_type: str | None,
         settings: Settings | None,
     ):
-        self.source_directory = source_directory or SOURCE_DIRECTORY
-        self.persist_directory = persist_directory or PERSIST_DIRECTORY
-        self.embedding_model = embedding_model or DEFAULT_EMBEDDING_MODEL
-        self.embedding_type = embedding_type or DEFAULT_EMBEDDING_TYPE
-        self.device_type = device_type or DEFAULT_DEVICE_TYPE
+        self.path_documents = path_documents or PATH_DOCUMENTS
+        self.path_database = path_database or PATH_DATABASE
+        self.repo_id = repo_id or HF_EMBEDDINGS_REPO_ID
+        self.embeddings_class = embeddings_class or LC_EMBEDDINGS_CLASS
+        self.device_type = device_type or TORCH_DEVICE_TYPE
 
         # The settings for the Chroma database
         # - chroma_db_impl: Chroma database implementation (duckdb+parquet)
-        # - persist_directory: Directory for persisting the database
+        # - path_database: Directory for persisting the database
         # - anonymized_telemetry: Whether anonymized telemetry is enabled (False)
         self.settings: Settings = settings or Settings(
             chroma_db_impl="duckdb+parquet",
-            persist_directory=self.persist_directory,
+            persist_directory=self.path_database,
             anonymized_telemetry=False,
         )
 
@@ -104,14 +107,14 @@ class ChromaDBLoader:
         Raises:
             AttributeError: If an unsupported embedding type is provided.
         """
-        if self.embedding_type in EMBEDDING_TYPES.keys():
-            embedding_class = EMBEDDING_TYPES[self.embedding_type]
+        if self.embeddings_class in MAP_LC_EMBEDDINGS_CLASSES.keys():
+            embedding_class = MAP_LC_EMBEDDINGS_CLASSES[self.embeddings_class]
             return embedding_class(
-                model_name=self.embedding_model,
+                model_name=self.repo_id,
                 model_kwargs={"device": self.device_type},
             )
         else:
-            raise AttributeError(f"Unsupported embeddings type provided: {self.embedding_type}")
+            raise AttributeError(f"Unsupported embeddings type provided: {self.embeddings_class}")
 
     def load_retriever(self) -> VectorStoreRetriever:
         """
@@ -121,7 +124,7 @@ class ChromaDBLoader:
             VectorStoreRetriever: VectorStoreRetriever object.
         """
         database = Chroma(
-            persist_directory=self.persist_directory,
+            persist_directory=self.path_database,
             embedding_function=self.load_embedding_function(),
             client_settings=self.settings,
         )
@@ -155,7 +158,7 @@ class ChromaDBLoader:
         database = Chroma.from_documents(
             documents=documents,
             embedding=self.load_embedding_function(),
-            persist_directory=self.persist_directory,
+            persist_directory=self.path_database,
             client_settings=self.settings,
         )
         database.persist()

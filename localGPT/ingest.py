@@ -8,16 +8,16 @@ Usage:
     $ python ingest.py [OPTIONS]
 
 Options:
-    --source_directory TEXT       The path where the documents are read from
-                                  (default: SOURCE_DIRECTORY)
-    --persist_directory TEXT      The path where the embeddings are written to
-                                  (default: PERSIST_DIRECTORY)
-    --embedding_model TEXT        The embedding model to use for generating embeddings
-                                  (default: DEFAULT_EMBEDDING_MODEL)
-    --embedding_type TEXT         The type of embeddings to use
-                                  (default: DEFAULT_EMBEDDING_TYPE)
+    --path_documents TEXT       The path where the documents are read from
+                                  (default: PATH_DOCUMENTS)
+    --path_database TEXT      The path where the embeddings are written to
+                                  (default: PATH_DATABASE)
+    --repo_id TEXT        The embedding model to use for generating embeddings
+                                  (default: HF_EMBEDDINGS_REPO_ID)
+    --embeddings_class TEXT         The type of embeddings to use
+                                  (default: LC_EMBEDDINGS_CLASS)
     --device_type TEXT            The device type to run on
-                                  (default: DEFAULT_DEVICE_TYPE)
+                                  (default: TORCH_DEVICE_TYPE)
 
 The script uses the provided options to load documents from the source
 directory, split them into chunks, generate embeddings using the specified
@@ -32,8 +32,8 @@ command-line arguments.
 
 Example usage:
     $ python ingest.py \
-            --source_directory path/to/documents \
-            --persist_directory path/to/embeddings
+            --path_documents path/to/documents \
+            --path_database path/to/embeddings
 """
 
 import logging
@@ -41,76 +41,94 @@ import logging
 import click
 
 from localGPT import (
-    CHOICE_DEVICE_TYPES,
-    CHOICE_EMBEDDING_MODELS,
-    CHOICE_EMBEDDING_TYPES,
-    DEFAULT_DEVICE_TYPE,
-    DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_EMBEDDING_TYPE,
-    PERSIST_DIRECTORY,
-    SOURCE_DIRECTORY,
+    CHOICE_LC_EMBEDDINGS_CLASSES,
+    CHOICE_PT_DEVICE_TYPES,
+    HF_EMBEDDINGS_REPO_ID,
+    LC_EMBEDDINGS_CLASS,
+    PATH_DATABASE,
+    PATH_DOCUMENTS,
+    TORCH_DEVICE_TYPE,
 )
-from localGPT.database import ChromaDBLoader, load_documents, split_documents
+from localGPT.database.chroma import ChromaDBLoader
+from localGPT.database.document import load_documents, split_documents
 
 
 @click.command()
 @click.option(
-    "--source_directory",
-    default=SOURCE_DIRECTORY,
+    "--path_documents",
+    default=PATH_DOCUMENTS,
     type=click.STRING,
-    help=f"The path the documents are read from (default: {SOURCE_DIRECTORY})",
+    help=f"The path the documents are read from (default: {PATH_DOCUMENTS})",
 )
 @click.option(
-    "--persist_directory",
-    default=PERSIST_DIRECTORY,
+    "--path_database",
+    default=PATH_DATABASE,
     type=click.STRING,
-    help=f"The path the embeddings are written to (default: {PERSIST_DIRECTORY})",
+    help=f"The path the embeddings are written to (default: {PATH_DATABASE})",
 )
 @click.option(
-    "--embedding_model",
-    default=DEFAULT_EMBEDDING_MODEL,
-    type=click.Choice(CHOICE_EMBEDDING_MODELS),
-    help="Instruct model to generate embeddings (default: hkunlp/instructor-large)",
+    "--repo_id",
+    default=HF_EMBEDDINGS_REPO_ID,
+    type=click.STRING,
+    help="The embeddings model repository id (default: hkunlp/instructor-large)",
 )
 @click.option(
-    "--embedding_type",
-    default=DEFAULT_EMBEDDING_TYPE,
-    type=click.Choice(CHOICE_EMBEDDING_TYPES),
-    help="Embedding type to use (default: HuggingFaceInstructEmbeddings)",
+    "--embeddings_class",
+    default=LC_EMBEDDINGS_CLASS,
+    type=click.Choice(CHOICE_LC_EMBEDDINGS_CLASSES),
+    help="LangChain embeddings class to use for the model (default: HuggingFaceInstructEmbeddings)",
 )
 @click.option(
     "--device_type",
-    default=DEFAULT_DEVICE_TYPE,
-    type=click.Choice(CHOICE_DEVICE_TYPES),
+    default=TORCH_DEVICE_TYPE,
+    type=click.Choice(CHOICE_PT_DEVICE_TYPES),
     help="Device to run on (default: cuda)",
 )
 def main(
-    source_directory,
-    persist_directory,
-    embedding_model,
-    embedding_type,
+    path_documents,
+    path_database,
+    repo_id,
+    embeddings_class,
     device_type,
 ):
+    """
+    Ingest documents, generate embeddings, and persist them to the Chroma database.
+
+    The script loads documents from the source directory, splits them into chunks,
+    generates embeddings using the specified embedding model and type, and persists
+    the embeddings to the Chroma database.
+
+    Args:
+        path_documents (str): The path where the documents are read from.
+        path_database (str): The path where the embeddings are written to.
+        repo_id (str): The embedding model to use for generating embeddings.
+        embeddings_class (str): The type of embeddings to use for the model.
+        device_type (str): The device type to run the embeddings on.
+
+    Returns:
+        None
+    """
+
     # Using model and types
-    logging.info(f"Using Embedding Model: {embedding_model}")
-    logging.info(f"Using Embedding Type: {embedding_type}")
+    logging.info(f"Using Embedding Model: {repo_id}")
+    logging.info(f"Using Embedding Type: {embeddings_class}")
     logging.info(f"Using Device Type: {device_type}")
 
     # Load documents and split them into chunks
-    logging.info(f"Loading documents from {source_directory}")
+    logging.info(f"Loading documents from {path_documents}")
 
-    documents = load_documents(source_directory)
+    documents = load_documents(path_documents)
     texts = split_documents(documents)
 
-    logging.info(f"Loaded {len(documents)} documents from {source_directory}")
+    logging.info(f"Loaded {len(documents)} documents from {path_documents}")
     logging.info(f"Split into {len(texts)} chunks of text")
 
     # Create ChromaDBLoader instance
     db_loader = ChromaDBLoader(
-        source_directory=source_directory,
-        persist_directory=persist_directory,
-        embedding_model=embedding_model,
-        embedding_type=embedding_type,
+        path_documents=path_documents,
+        path_database=path_database,
+        repo_id=repo_id,
+        embeddings_class=embeddings_class,
         device_type=device_type,
         settings=None,
     )

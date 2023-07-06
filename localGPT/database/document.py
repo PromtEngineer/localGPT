@@ -1,4 +1,9 @@
-# localGPT/database/document.py
+"""
+localGPT/database/document.py
+
+Docs:
+    https://python.langchain.com/docs/modules/chains/popular/vector_db_qa.html
+"""
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
@@ -6,7 +11,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 from langchain.docstore.document import Document
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 
-from localGPT import INGEST_THREADS
+from localGPT import CPU_COUNT
 from localGPT.database.registry import LoaderRegistry, TextSplitterRegistry
 
 loader_registry = LoaderRegistry()
@@ -92,8 +97,8 @@ def load_documents(source_dir: str) -> list[Document]:
             logging.info(f"Loading {source_file_path}")
             paths.append(source_file_path)
 
-    # Have at least one worker and at most INGEST_THREADS workers
-    n_workers = min(INGEST_THREADS, max(len(paths), 1))
+    # Have at least one worker and at most CPU_COUNT workers
+    n_workers = min(CPU_COUNT, max(len(paths), 1))
     chunk_size = round(len(paths) / n_workers)
     docs = []
 

@@ -6,7 +6,7 @@ import magic
 from langchain.docstore.document import Document
 from langchain.document_loaders.base import BaseLoader
 
-from localGPT import LANGUAGE_TYPES, MIME_TYPES
+from localGPT import MAP_LC_LANGUAGE_TYPES, MAP_LC_MIME_TYPES
 
 
 class LoaderRegistry:
@@ -22,7 +22,7 @@ class LoaderRegistry:
 
         # Register loaders for MIME_TYPES
         # MIME_TYPES: Tuple[Tuple[str, Type[BaseLoader]], ...]
-        for mime_type, loader in MIME_TYPES:
+        for mime_type, loader in MAP_LC_MIME_TYPES:
             self.register_loader(mime_type, loader)
 
     @staticmethod
@@ -84,7 +84,7 @@ class TextSplitterRegistry:
         self.language_map = defaultdict()
 
         # Register languages for file extensions
-        for file_extension, language in LANGUAGE_TYPES:
+        for file_extension, language in MAP_LC_LANGUAGE_TYPES:
             self.register_language(file_extension, language)
 
     @staticmethod
