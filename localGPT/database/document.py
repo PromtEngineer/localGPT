@@ -81,21 +81,20 @@ def load_documents(source_dir: str) -> list[Document]:
         ValueError: If the document type is undefined.
     """
     paths = []
-    all_files = os.listdir(source_dir)
 
     logging.info(f"Loading documents: {source_dir}")
-    logging.info(f"Loading document files: {all_files}")
 
-    for file_path in all_files:
-        source_file_path = os.path.join(source_dir, file_path)
-        mime_type = loader_registry.get_mime_type(source_file_path)
-        loader_class = loader_registry.get_loader(mime_type)
+    for dirpath, dirnames, filenames in os.walk(source_dir):
+        for file_path in filenames:
+            source_file_path = os.path.join(dirpath, file_path)
+            mime_type = loader_registry.get_mime_type(source_file_path)
+            loader_class = loader_registry.get_loader(mime_type)
 
-        logging.info(f"Detected {mime_type} for {file_path}")
+            logging.info(f"Detected {mime_type} for {file_path}")
 
-        if loader_class:
-            logging.info(f"Loading {source_file_path}")
-            paths.append(source_file_path)
+            if loader_class:
+                logging.info(f"Loading {source_file_path}")
+                paths.append(source_file_path)
 
     # Have at least one worker and at most CPU_COUNT workers
     n_workers = min(CPU_COUNT, max(len(paths), 1))
