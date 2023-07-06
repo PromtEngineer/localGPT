@@ -31,10 +31,11 @@ Usage:
 
 from chromadb.config import Settings
 from langchain.base_language import BaseLanguageModel
-from langchain.chains import RetrievalQA
+from langchain.chains import ConversationalRetrievalChain, RetrievalQA
 from langchain.chains.retrieval_qa.base import BaseRetrievalQA
 from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
+from langchain.memory import ConversationBufferMemory
 from langchain.vectorstores import Chroma
 from langchain.vectorstores.base import VectorStoreRetriever
 
@@ -144,6 +145,18 @@ class ChromaDBLoader:
             llm=llm,
             chain_type="stuff",
             retriever=self.load_retriever(),
+            return_source_documents=True,
+        )
+
+    def load_conversational_qa(self, llm: BaseLanguageModel) -> BaseRetrievalQA:
+        memory = ConversationBufferMemory(
+            memory_key="chat_history",
+            return_messages=True,
+        )
+        return ConversationalRetrievalChain.from_llm(
+            llm,
+            self.load_retriever(),
+            memory=memory,
             return_source_documents=True,
         )
 
