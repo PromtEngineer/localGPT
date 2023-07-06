@@ -22,7 +22,7 @@ from langchain.memory import ConversationBufferMemory
 
 try:
     from prompt_toolkit import prompt as input
-except ModuleNotFoundError:
+except (ModuleNotFoundError, ImportError):
     pass
 
 from localGPT import (
