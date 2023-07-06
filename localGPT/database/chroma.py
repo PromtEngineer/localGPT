@@ -32,6 +32,7 @@ Usage:
 from chromadb.config import Settings
 from langchain.base_language import BaseLanguageModel
 from langchain.chains import ConversationalRetrievalChain, RetrievalQA
+from langchain.chains.conversational_retrieval.base import BaseConversationalRetrievalChain
 from langchain.chains.retrieval_qa.base import BaseRetrievalQA
 from langchain.docstore.document import Document
 from langchain.embeddings.base import Embeddings
@@ -148,16 +149,16 @@ class ChromaDBLoader:
             return_source_documents=True,
         )
 
-    def load_conversational_qa(self, llm: BaseLanguageModel) -> BaseRetrievalQA:
+    def load_conversational_qa(self, llm: BaseLanguageModel) -> BaseConversationalRetrievalChain:
         memory = ConversationBufferMemory(
             memory_key="chat_history",
             return_messages=True,
         )
         return ConversationalRetrievalChain.from_llm(
-            llm,
-            self.load_retriever(),
+            llm=llm,
+            retriever=self.load_retriever(),
             memory=memory,
-            return_source_documents=True,
+            # return_source_documents=True,
         )
 
     def persist(self, documents: list[Document]) -> None:

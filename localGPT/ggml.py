@@ -198,6 +198,7 @@ def main(
             repo_id=repo_id,
             filename=filename,
             cache_dir=cache_dir,
+            resume_download=True,
         )
     except Exception as e:
         logging.error(f"Error downloading model: {e}")
@@ -235,19 +236,52 @@ def main(
         settings=None,
     )
 
-    try:
-        if prompt:
-            """
-            Query the model with a string and print the response.
+    if prompt:
+        """
+        Query the model with a string and print the response.
 
-            Args:
-                prompt (str): The query string.
+        Args:
+            prompt (str): The query string.
+        """
+        logging.info("----START-MODEL-GENERATION----")
+        retrieval_qa = db_loader.load_retrieval_qa(llm)
+        result = retrieval_qa({"query": prompt})
+        print()
+        logging.info("----END-MODEL-GENERATION----")
+        if show_sources:
             """
-            logging.info("----START-MODEL-GENERATION----")
-            retrieval_qa = db_loader.load_retrieval_qa(llm)
-            result = retrieval_qa({"query": prompt})
-            print()
-            logging.info("----END-MODEL-GENERATION----")
+            Print the relevant sources used for the answer.
+            """
+            logging.info("----START-SOURCE-DOCUMENT----")
+            for document in result["source_documents"]:
+                print(document.metadata["source"])
+                print(document.page_content)
+            logging.info("----END-SOURCE-DOCUMENT----")
+
+    elif chat:
+        """
+        Enter a chat loop with the model.
+        """
+        logging.info("Starting QA loop...")
+        chat_history = []
+        retrieval_qa = db_loader.load_conversational_qa(llm)
+        while True:
+            try:
+                query = input("query> ")
+            except (EOFError, KeyboardInterrupt):
+                sys.exit(0)
+
+            print("Thinking...")
+
+            try:
+                result = retrieval_qa({"question": query, "chat_history": chat_history})
+                print()
+            except TypeError as e:
+                logging.error(e)
+                exit(1)
+
+            chat_history.append((query, result["answer"]))
+
             if show_sources:
                 """
                 Print the relevant sources used for the answer.
@@ -257,38 +291,6 @@ def main(
                     print(document.metadata["source"])
                     print(document.page_content)
                 logging.info("----END-SOURCE-DOCUMENT----")
-        elif chat:
-            """
-            Enter a chat loop with the model.
-            """
-            logging.info("Starting QA loop...")
-            chat_history = []
-            retrieval_qa = db_loader.load_conversational_qa(llm)
-            while True:
-                try:
-                    query = input("query> ")
-                except (EOFError, KeyboardInterrupt):
-                    sys.exit(0)
-
-                print("Thinking...")
-
-                result = retrieval_qa({"question": query, "chat_history": chat_history})
-
-                chat_history.append((query, result["answer"]))
-
-                if show_sources:
-                    """
-                    Print the relevant sources used for the answer.
-                    """
-                    logging.info("----START-SOURCE-DOCUMENT----")
-                    for document in result["source_documents"]:
-                        print(document.metadata["source"])
-                        print(document.page_content)
-                    logging.info("----END-SOURCE-DOCUMENT----")
-
-    except Exception as e:
-        logging.error(f"Error generating response: {e}")
-        sys.exit(1)
 
 
 if __name__ == "__main__":
