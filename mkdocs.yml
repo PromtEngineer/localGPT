@@ -1,0 +1,27 @@
+site_name: localGPT
+repo_url: https://github.com/PromtEngineer/localGPT
+repo_name: 'localGPT'
+edit_uri: blob/main/docs/
+
+theme:
+    name: "material"
+    locale: en
+    static_templates:
+        - sitemap.html
+    include_sidebar: false
+
+plugins:
+  - mkdocstrings
+  - search
+
+watch:
+  - localGPT
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
