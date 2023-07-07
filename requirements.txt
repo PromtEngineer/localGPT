@@ -22,8 +22,8 @@ click
 flask
 requests
 python-magic
-mkdocs 
-mkdocstrings 
+mkdocs
+mkdocstrings
 mkdocs-material
 
 # Excel File Manipulation

@@ -14,11 +14,9 @@ import sys
 
 import click
 from huggingface_hub import hf_hub_download
-from langchain import LLMChain, PromptTemplate
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.llms import LlamaCpp
-from langchain.memory import ConversationBufferMemory
 
 try:
     from prompt_toolkit import prompt as input
@@ -66,7 +64,7 @@ from localGPT.database.chroma import ChromaDBLoader
 @click.option(
     "--prompt",
     type=click.STRING,
-    default=str(),
+    default="",
     help="Query the model with a string. Default is an empty string.",
 )
 @click.option(

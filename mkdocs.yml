@@ -4,11 +4,11 @@ repo_name: 'localGPT'
 edit_uri: blob/main/docs/
 
 theme:
-    name: "material"
-    locale: en
-    static_templates:
-        - sitemap.html
-    include_sidebar: false
+  name: 'material'
+  locale: en
+  static_templates:
+    - sitemap.html
+  include_sidebar: false
 
 plugins:
   - mkdocstrings

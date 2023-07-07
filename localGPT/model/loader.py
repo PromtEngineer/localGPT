@@ -17,7 +17,6 @@ from typing import Any
 import torch
 from auto_gptq import AutoGPTQForCausalLM
 from langchain.llms import HuggingFacePipeline
-from llama_cpp import Llama
 from torch.cuda import OutOfMemoryError
 from transformers import (
     AutoConfig,
