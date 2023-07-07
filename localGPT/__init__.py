@@ -118,10 +118,7 @@ PATH_DOCUMENTS: str = os.path.join(PATH_ROOT, "SOURCE_DOCUMENTS")
 PATH_DATABASE: str = os.path.join(PATH_ROOT, "DB")
 
 # The number of CPU threads for ingestion
-# os.cpu_count() returns total number of cores for cpu.
-# getaffinity returns number of available cores for current Process ID.
-# https://docs.python.org/3/library/os.html?highlight=cpu_count#os.sched_getaffinity
-CPU_COUNT: int = len(os.sched_getaffinity(0)) or 2
+CPU_COUNT: int = os.cpu_count() or 2
 
 # The default pytorch device type to compute with
 TORCH_DEVICE_TYPE: str = "cuda"
