@@ -1,4 +1,4 @@
-# localGPT Usage Guide
+# Usage Guide
 
 This guide provides instructions on how to use localGPT via the Command Line Interface (CLI). The Web UI is not covered
 in this guide.
