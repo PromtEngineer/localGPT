@@ -1,3 +1,0 @@
-# Install Dependencies
-
-## Details
