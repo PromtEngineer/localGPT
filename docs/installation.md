@@ -141,7 +141,7 @@ To install with AMD:
 CMAKE_ARGS="-DGGML_OPENCL_PLATFORM=AMD -DGGML_OPENCL_DEVICE=1" FORCE_CMAKE=1 pip install llama-cpp-python
 ```
 
-Detailed MacOS Metal GPU install documentation is available at [docs/install/macos.md](docs/install/macos.md).
+Detailed MacOS Metal GPU install documentation is available at [docs/install/macos.md](https://llama-cpp-python.readthedocs.io/en/latest/install/macos/).
 
 ## Additional Dependencies
 
