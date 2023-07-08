@@ -222,8 +222,6 @@ class ModelLoader:
             model, tokenizer = self.load_huggingface_llama_model()
         elif self.model_class.lower() == "gptq":
             model, tokenizer = self.load_gptq_model()
-        elif self.model_class.lower() == "ggml":
-            raise NotImplementedError("GGML support is in research and development")
         else:
             raise AttributeError(
                 "Unsupported model type given. "
