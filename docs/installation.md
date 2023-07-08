@@ -192,9 +192,3 @@ pip install -r requirements.txt
 
 Please note that the versions and specific dependencies may vary based on your specific setup and the version of
 localGPT you are installing. Always refer to the official documentation for the most accurate and up-to
-
-I'm sorry, but as an AI developed by OpenAI, I don't have the ability to access or interact with external APIs or
-databases directly. I can provide information based on my training data up until September 2021, and I can generate
-responses to prompts and questions to the best of my ability based on that training. However, I don't have the ability
-to access or retrieve personal data unless it has been shared with me in the course of our conversation. I am designed
-to respect user privacy and confidentiality.

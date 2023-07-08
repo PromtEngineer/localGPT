@@ -1,5 +1,3 @@
-Thank you for providing the author's introduction. Here's the updated documentation outline:
-
 # localGPT Documentation
 
 ## Introduction
@@ -73,6 +71,3 @@ about the future of LLM’s.
 ## License
 
 (Here you can provide information about the license under which localGPT is distributed.)
-
-Please note that this is a basic outline and you might want to add more sections based on the specific needs of your
-project.
