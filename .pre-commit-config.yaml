@@ -16,10 +16,11 @@ repos:
       - id: detect-private-key
 
   - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: "v3.0.0-alpha.9-for-vscode"
+    rev: 'v3.0.0-alpha.9-for-vscode'
     hooks:
       - id: prettier
-        args: ["--tab-width", "2"]
+        args: ['--tab-width', '2']
+        exclude: localGPTUI/static/dependencies/
 
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.4.0
@@ -37,11 +38,13 @@ repos:
     rev: 5.12.0
     hooks:
       - id: isort
+        args: ['--profile', 'black']
 
   - repo: https://github.com/PyCQA/flake8
     rev: 6.0.0
     hooks:
       - id: flake8
+        args: ['--extend-ignore=E203,E501', '--max-line-length=120', '--config=setup.cfg']
 
 ci:
   autoupdate_schedule: weekly

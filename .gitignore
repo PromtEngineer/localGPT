@@ -1,6 +1,12 @@
+# Ignore Database
+/database
+/db
+/DB
+/SOURCE_DOCUMENTS
+!/SOURCE_DOCUMENTS/constitution.pdf
+
 # Ignore vscode
 /.vscode
-/DB
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
