@@ -1,4 +1,4 @@
-# localGPT Installation Guide
+# Installation Guide
 
 This guide provides instructions on how to install and set up localGPT, including its dependencies LangChain and
 llama-cpp-python.
@@ -191,4 +191,5 @@ pip install -r requirements.txt
 ```
 
 Please note that the versions and specific dependencies may vary based on your specific setup and the version of
-localGPT you are installing. Always refer to the official documentation for the most accurate and up-to
+localGPT you are installing. Always refer to the official documentation for the most accurate and up-to-date
+information.

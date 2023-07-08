@@ -1,4 +1,4 @@
-# localGPT
+# Original README
 
 This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT). Most of the description
 here is inspired by the original privateGPT.

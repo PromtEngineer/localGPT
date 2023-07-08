@@ -1,4 +1,4 @@
-# localGPT Documentation
+# localGPT
 
 ## Introduction
 
