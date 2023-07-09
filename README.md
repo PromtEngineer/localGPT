@@ -12,6 +12,18 @@ Built with [LangChain](https://github.com/hwchase17/langchain) and [Vicuna-7B](h
 
 # Environment Setup
 
+Install conda
+
+```shell
+conda create -n localGPT
+```
+
+Activate 
+
+```shell
+conda activate localGPT
+```
+
 In order to set your environment up to run the code here, first install all requirements:
 
 ```shell
@@ -42,8 +54,10 @@ The current default file types are .txt, .pdf, .csv, and .xlsx, if you want to u
 
 Run the following command to ingest all the data.
 
+`defaults to cuda`
+
 ```shell
-python ingest.py  # defaults to cuda
+python ingest.py 
 ```
 
 Use the device type argument to specify a given device.
@@ -245,3 +259,41 @@ Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-
 # Disclaimer
 
 This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license.
+
+
+
+# Common Errors
+
+ - [Torch not compatible with cuda enabled](https://github.com/pytorch/pytorch/issues/30664)
+
+   -  Get cuda version
+
+      ```shell
+      nvcc --version
+      ```
+      ```shell
+      nvidia-smi
+      ```
+   - Try Install pytorch fepending on your cuda version
+      ```shell
+         conda install -c pytorch torchvision cudatoolkit=10.1 pytorch
+      ```
+   - If doesn't work try re installing 
+      ```shell
+         pip uninstall torch
+         pip cache purge
+         pip install torch -f https://download.pytorch.org/whl/torch_stable.html
+      ```
+- [ERROR: pip's dependency resolver does not currently take into account all the packages that are installed](https://stackoverflow.com/questions/72672196/error-pips-dependency-resolver-does-not-currently-take-into-account-all-the-pa/76604141#76604141)
+   ```shell
+      pip install h5py
+      pip install typing-extensions
+      pip install wheel
+   ```
+- [Failed to import transformers](https://github.com/huggingface/transformers/issues/11262)
+   - Try  re-install
+      ```shell
+         conda uninstall tokenizers, transformers
+         pip install transformers
+      ```
+
