@@ -25,6 +25,7 @@ CHROMA_SETTINGS = Settings(
 # https://python.langchain.com/en/latest/_modules/langchain/document_loaders/excel.html#UnstructuredExcelLoader
 DOCUMENT_MAP = {
     ".txt": TextLoader,
+    ".md": TextLoader,
     ".py": TextLoader,
     ".pdf": PDFMinerLoader,
     ".csv": CSVLoader,
