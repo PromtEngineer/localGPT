@@ -7,9 +7,12 @@ from huggingface_hub import hf_hub_download
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline, LlamaCpp
+from langchain.vectorstores.utils import DistanceStrategy
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.vectorstores import Chroma
+#from langchain.vectorstores import Chroma
+from langchain.vectorstores import SingleStoreDB
+
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -19,7 +22,8 @@ from transformers import (
     pipeline,
 )
 
-from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
+#from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
+from constants import EMBEDDING_MODEL_NAME
 
 
 def load_model(device_type, model_id, model_basename=None):
@@ -67,7 +71,7 @@ def load_model(device_type, model_id, model_basename=None):
                 # Remove the ".safetensors" ending if present
                 model_basename = model_basename.replace(".safetensors", "")
 
-            tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
+            tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True, use_auth_token=True)
             logging.info("Tokenizer loaded")
 
             model = AutoGPTQForCausalLM.from_quantized(
@@ -78,6 +82,7 @@ def load_model(device_type, model_id, model_basename=None):
                 device="cuda:0",
                 use_triton=False,
                 quantize_config=None,
+                use_auth_token=True,
             )
     elif (
         device_type.lower() == "cuda"
@@ -93,16 +98,18 @@ def load_model(device_type, model_id, model_basename=None):
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             trust_remote_code=True,
-            # max_memory={0: "15GB"} # Uncomment this line with you encounter CUDA out of memory errors
+            use_auth_token=True,
+            #max_memory={0: "15GB"} # Uncomment this line with you encounter CUDA out of memory errors
+            #offload_folder="offload"
         )
         model.tie_weights()
     else:
         logging.info("Using LlamaTokenizer")
-        tokenizer = LlamaTokenizer.from_pretrained(model_id)
-        model = LlamaForCausalLM.from_pretrained(model_id)
+        tokenizer = LlamaTokenizer.from_pretrained(model_id, use_auth_token=True)
+        model = LlamaForCausalLM.from_pretrained(model_id, use_auth_token=True)
 
     # Load configuration from the model to avoid warnings
-    generation_config = GenerationConfig.from_pretrained(model_id)
+    generation_config = GenerationConfig.from_pretrained(model_id, use_auth_token=True)
     # see here for details:
     # https://huggingface.co/docs/transformers/
     # main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
@@ -112,6 +119,7 @@ def load_model(device_type, model_id, model_basename=None):
         "text-generation",
         model=model,
         tokenizer=tokenizer,
+        #max_length=4096,
         max_length=2048,
         temperature=0,
         top_p=0.95,
@@ -167,7 +175,7 @@ def main(device_type, show_sources):
 
 
     1. Loads an embedding model, can be HuggingFaceInstructEmbeddings or HuggingFaceEmbeddings
-    2. Loads the existing vectorestore that was created by inget.py
+    2. Loads the existing vectorestore that was created by ingest.py
     3. Loads the local LLM using load_model function - You can now set different LLMs.
     4. Setup the Question Answer retreival chain.
     5. Question answers.
@@ -182,19 +190,33 @@ def main(device_type, show_sources):
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
     # load the vectorstore
-    db = Chroma(
-        persist_directory=PERSIST_DIRECTORY,
-        embedding_function=embeddings,
-        client_settings=CHROMA_SETTINGS,
+    #db = Chroma(
+    #    persist_directory=PERSIST_DIRECTORY,
+    #    embedding_function=embeddings,
+    #    client_settings=CHROMA_SETTINGS,
+    #)
+
+    db = SingleStoreDB(
+        embedding=embeddings,
+        distance_strategy=DistanceStrategy.DOT_PRODUCT,
+        host="svc-a197f7b6-4ad0-43ab-88e0-73a0dd372080-dml.aws-ohio-1.svc.singlestore.com",
+        port=3306,
+        user="admin",
+        password="password",
+        database="localgpt",
+        table_name="localgpt",
+        pool_size=10,
+        timeout=60,
     )
     retriever = db.as_retriever()
 
     # load the LLM for generating Natural Language responses
 
     # for HF models
+    # model_id = "meta-llama/Llama-2-7b-chat-hf"
     model_id = "TheBloke/vicuna-7B-1.1-HF"
-    model_basename = None
     # model_id = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
+    model_basename = None
     # model_id = "TheBloke/guanaco-7B-HF"
     # model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM. Using STransformers
     # alongside will 100% create OOM on 24GB cards.
@@ -237,7 +259,8 @@ def main(device_type, show_sources):
         print("\n> Answer:")
         print(answer)
 
-        if show_sources:  # this is a flag that you can set to disable showing answers.
+        #if show_sources:  # this is a flag that you can set to disable showing answers.
+        if True:  # this is a flag that you can set to disable showing answers.
             # # Print the relevant sources used for the answer
             print("----------------------------------SOURCE DOCUMENTS---------------------------")
             for document in docs:

@@ -6,10 +6,11 @@ import click
 from langchain.docstore.document import Document
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
-from langchain.vectorstores import Chroma
+from langchain.vectorstores import SingleStoreDB
+#from langchain.vectorstores import Chroma
 
 from constants import (
-    CHROMA_SETTINGS,
+    #CHROMA_SETTINGS,
     DOCUMENT_MAP,
     EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
@@ -75,15 +76,15 @@ def load_documents(source_dir: str) -> list[Document]:
 
 def split_documents(documents: list[Document]) -> tuple[list[Document], list[Document]]:
     # Splits documents for correct Text Splitter
-    text_docs, python_docs = [], []
+    text_docs, go_docs = [], []
     for doc in documents:
         file_extension = os.path.splitext(doc.metadata["source"])[1]
-        if file_extension == ".py":
-            python_docs.append(doc)
+        if file_extension == ".go":
+            go_docs.append(doc)
         else:
             text_docs.append(doc)
 
-    return text_docs, python_docs
+    return text_docs, go_docs
 
 
 @click.command()
@@ -119,13 +120,13 @@ def main(device_type):
     # Load documents and split in chunks
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
     documents = load_documents(SOURCE_DIRECTORY)
-    text_documents, python_documents = split_documents(documents)
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    python_splitter = RecursiveCharacterTextSplitter.from_language(
-        language=Language.PYTHON, chunk_size=1000, chunk_overlap=200
+    text_documents, go_documents = split_documents(documents)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1024, chunk_overlap=256)
+    go_splitter = RecursiveCharacterTextSplitter.from_language(
+        language=Language.GO, chunk_size=1024, chunk_overlap=256
     )
     texts = text_splitter.split_documents(text_documents)
-    texts.extend(python_splitter.split_documents(python_documents))
+    texts.extend(go_splitter.split_documents(go_documents))
     logging.info(f"Loaded {len(documents)} documents from {SOURCE_DIRECTORY}")
     logging.info(f"Split into {len(texts)} chunks of text")
 
@@ -141,14 +142,19 @@ def main(device_type):
 
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
-    db = Chroma.from_documents(
+    # Setup connection url as environment variable
+    os.environ["SINGLESTOREDB_URL"] = "admin:password@svc-a197f7b6-4ad0-43ab-88e0-73a0dd372080-dml.aws-ohio-1.svc.singlestore.com:3306/localgpt?connect_timeout=60"
+
+    #db = Chroma.from_documents(
+    db = SingleStoreDB.from_documents(
         texts,
         embeddings,
-        persist_directory=PERSIST_DIRECTORY,
-        client_settings=CHROMA_SETTINGS,
+    #    persist_directory=PERSIST_DIRECTORY,
+    #    client_settings=CHROMA_SETTINGS,
+        table_name="localgpt",
     )
-    db.persist()
-    db = None
+    #db.persist()
+    #db = None
 
 
 if __name__ == "__main__":

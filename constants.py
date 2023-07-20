@@ -26,7 +26,7 @@ CHROMA_SETTINGS = Settings(
 DOCUMENT_MAP = {
     ".txt": TextLoader,
     ".md": TextLoader,
-    ".py": TextLoader,
+    ".go": TextLoader,
     ".pdf": PDFMinerLoader,
     ".csv": CSVLoader,
     ".xls": UnstructuredExcelLoader,
@@ -36,7 +36,8 @@ DOCUMENT_MAP = {
 }
 
 # Default Instructor Model
+# EMBEDDING_MODEL_NAME = "hkunlp/instructor-xl"
 EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"
 # You can also choose a smaller model, don't forget to change HuggingFaceInstructEmbeddings
 # to HuggingFaceEmbeddings in both ingest.py and run_localGPT.py
-# EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+# EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"

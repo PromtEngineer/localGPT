@@ -1,5 +1,5 @@
 # Natural Language Processing
-langchain==0.0.191
+langchain==0.0.237
 chromadb==0.3.22
 llama-cpp-python==0.1.66
 pdfminer.six==20221105
@@ -13,6 +13,7 @@ protobuf==3.20.0; sys_platform == 'darwin' and platform_machine != 'arm64'
 protobuf==3.20.3; sys_platform == 'darwin' and platform_machine == 'arm64'
 auto-gptq
 docx2txt
+singlestoredb
 
 # Utilities
 urllib3==1.26.6
