@@ -35,7 +35,7 @@ def load_document_batch(filepaths):
     # create a thread pool
     with ThreadPoolExecutor(len(filepaths)) as exe:
         # load files
-        futures = [exe.submit(load_single_document, name) for name in filepaths]
+        futures = [exe.submit(load_single_document, name) for name in filepaths if ".png" not in name]
         # collect data
         data_list = [future.result() for future in futures]
         # return data and file paths
