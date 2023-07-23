@@ -7,6 +7,8 @@ from huggingface_hub import hf_hub_download
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline, LlamaCpp
+from langchain.callbacks.manager import CallbackManager
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
@@ -61,7 +63,17 @@ def load_model(device_type, model_id, model_basename=None):
         else:
             # The code supports all huggingface models that ends with GPTQ and have some variation
             # of .no-act.order or .safetensors in their HF repo.
-            logging.info("Using AutoGPTQForCausalLM for quantized models")
+            logging.info("Using GGML for quantized models")
+            n_gpu_layers = 40  # Change this value based on your model and your GPU VRAM pool.
+            n_batch = 512  # Should be between 1 and n_ctx, consider the amount of VRAM in your GPU.
+            callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
+            return LlamaCpp(
+                model_path="./ggml-model-q4_0.bin",
+                n_gpu_layers=n_gpu_layers,
+                n_batch=n_batch,
+                verbose=True,
+                callback_manager=callback_manager
+            )
 
             if ".safetensors" in model_basename:
                 # Remove the ".safetensors" ending if present
@@ -219,7 +231,7 @@ def main(device_type, show_sources):
     # model_id = "TheBloke/orca_mini_3B-GGML"
     # model_basename = "orca-mini-3b.ggmlv3.q4_0.bin"
 
-    model_id="TheBloke/Llama-2-7B-Chat-GGML"
+    model_id = "TheBloke/Llama-2-7B-Chat-GGML"
     model_basename = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 
     llm = load_model(device_type, model_id=model_id, model_basename=model_basename)
