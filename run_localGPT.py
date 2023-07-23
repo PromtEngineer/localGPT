@@ -173,7 +173,13 @@ def load_model(device_type, model_id, model_basename=None):
     default="gptq_model-4bit-128g.safetensors",
     help="The model file within the model branch",
 )
-def main(device_type, show_sources, model_id, model_basename):
+@click.option(
+    "--save_file_path",
+    "-s",
+    default=None,
+    help="Save input and output to the specified file path. Will NOT save as default.",
+)
+def main(device_type, show_sources, model_id, model_basename, save_file_path):
     """
     This function implements the information retrieval task.
 
@@ -219,10 +225,20 @@ def main(device_type, show_sources, model_id, model_basename):
         answer, docs = res["result"], res["source_documents"]
 
         # Print the result
-        print("\n\n> Question:")
-        print(query)
-        print("\n> Answer:")
-        print(answer)
+        content = f"""
+        ### Question: {query} \n
+        ### Answer: {answer} \n
+        *** \n
+        """
+        print(content)
+
+        if save_file_path is not None:
+            f = open(save_file_path, "a")
+            f.write(content)
+            f.close()
+            print("content saved to: " + save_file_path)
+        else:
+            print("save_file_path is not set. Will not save content.")
 
         if show_sources:  # this is a flag that you can set to disable showing answers.
             # # Print the relevant sources used for the answer
