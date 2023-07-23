@@ -43,7 +43,11 @@ def load_document_batch(filepaths):
 
 def load_documents(source_dir: str) -> list[Document]:
     # Loads all documents from the source documents directory
-    all_files = os.listdir(source_dir)
+    all_files = []
+    for root, dirs, files in os.walk(source_dir):
+        for file in files:
+            all_files.append(os.path.join(root, file))
+            
     paths = []
     for file_path in all_files:
         file_extension = os.path.splitext(file_path)[1]
