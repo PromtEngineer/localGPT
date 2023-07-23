@@ -67,8 +67,9 @@ def load_model(device_type, model_id, model_basename=None):
             n_gpu_layers = 40  # Change this value based on your model and your GPU VRAM pool.
             n_batch = 512  # Should be between 1 and n_ctx, consider the amount of VRAM in your GPU.
             callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
+            model_path = hf_hub_download(repo_id=model_id, filename=model_basename)
             return LlamaCpp(
-                model_path="./ggml-model-q4_0.bin",
+                model_path=model_path,
                 n_gpu_layers=n_gpu_layers,
                 n_batch=n_batch,
                 verbose=True,
