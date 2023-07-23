@@ -46,8 +46,8 @@ def load_documents(source_dir: str) -> list[Document]:
     all_files = []
     for root, dirs, files in os.walk(source_dir):
         for file in files:
-            all_files.append(os.path.join(root, file))
-            
+            all_files.append(os.path.join(root, file))  # append the file name with full path to the list
+
     paths = []
     for file_path in all_files:
         file_extension = os.path.splitext(file_path)[1]
