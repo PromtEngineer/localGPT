@@ -7,6 +7,7 @@ from langchain.docstore.document import Document
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
+import glob
 
 from constants import (
     CHROMA_SETTINGS,
@@ -42,14 +43,14 @@ def load_document_batch(filepaths):
 
 
 def load_documents(source_dir: str) -> list[Document]:
-    # Loads all documents from the source documents directory
-    all_files = os.listdir(source_dir)
+    # Loads all documents from the source documents directory recursively
     paths = []
-    for file_path in all_files:
-        file_extension = os.path.splitext(file_path)[1]
-        source_file_path = os.path.join(source_dir, file_path)
-        if file_extension in DOCUMENT_MAP.keys():
-            paths.append(source_file_path)
+    for dirpath, dirs, files in os.walk(source_dir): 
+        for filename in files:
+            fname = os.path.join(dirpath,filename)
+            print(fname)
+            paths.append(fname)
+    print("Source file paths: " + str(paths))
 
     # Have at least one worker and at most INGEST_THREADS workers
     n_workers = min(INGEST_THREADS, max(len(paths), 1))
@@ -115,10 +116,17 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
     ),
     help="Device to run on. (Default is cuda)",
 )
-def main(device_type):
+@click.option(
+    "--input_folder",
+    default=SOURCE_DIRECTORY,
+    help="Device to run on. (Default is cuda)",
+)
+def main(device_type, input_folder=SOURCE_DIRECTORY):
+    print(str(input_folder))
+
     # Load documents and split in chunks
-    logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
-    documents = load_documents(SOURCE_DIRECTORY)
+    logging.info(f"Loading documents from {input_folder}")
+    documents = load_documents(input_folder)
     text_documents, python_documents = split_documents(documents)
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     python_splitter = RecursiveCharacterTextSplitter.from_language(
@@ -126,7 +134,7 @@ def main(device_type):
     )
     texts = text_splitter.split_documents(text_documents)
     texts.extend(python_splitter.split_documents(python_documents))
-    logging.info(f"Loaded {len(documents)} documents from {SOURCE_DIRECTORY}")
+    logging.info(f"Loaded {len(documents)} documents from {input_folder}")
     logging.info(f"Split into {len(texts)} chunks of text")
 
     # Create embeddings
