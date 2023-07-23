@@ -117,16 +117,19 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
     help="Device to run on. (Default is cuda)",
 )
 @click.option(
-    "--input_folder",
+    "--source_dir",
     default=SOURCE_DIRECTORY,
-    help="Device to run on. (Default is cuda)",
+    help="Source directory containing file to embed. Default: constants.SOURCE_DIRECTORY",
 )
-def main(device_type, input_folder=SOURCE_DIRECTORY):
-    print(str(input_folder))
-
+@click.option(
+    "--embedding_model_name",
+    default=EMBEDDING_MODEL_NAME,
+    help="Name of the embedding model. Default: constants.EMBEDDING_MODEL_NAME",
+)
+def main(device_type, source_dir, embedding_model_name):
     # Load documents and split in chunks
-    logging.info(f"Loading documents from {input_folder}")
-    documents = load_documents(input_folder)
+    logging.info(f"Loading documents from {source_dir}")
+    documents = load_documents(source_dir)
     text_documents, python_documents = split_documents(documents)
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     python_splitter = RecursiveCharacterTextSplitter.from_language(
@@ -134,12 +137,12 @@ def main(device_type, input_folder=SOURCE_DIRECTORY):
     )
     texts = text_splitter.split_documents(text_documents)
     texts.extend(python_splitter.split_documents(python_documents))
-    logging.info(f"Loaded {len(documents)} documents from {input_folder}")
+    logging.info(f"Loaded {len(documents)} documents from {source_dir}")
     logging.info(f"Split into {len(texts)} chunks of text")
 
     # Create embeddings
     embeddings = HuggingFaceInstructEmbeddings(
-        model_name=EMBEDDING_MODEL_NAME,
+        model_name=embedding_model_name,
         model_kwargs={"device": device_type},
     )
     # change the embedding type here if you are running into issues.
