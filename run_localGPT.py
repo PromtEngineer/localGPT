@@ -161,7 +161,25 @@ def load_model(device_type, model_id, model_basename=None):
     is_flag=True,
     help="Show sources along with answers (Default is False)",
 )
-def main(device_type, show_sources):
+@click.option(
+    "--model_id",
+    "-m",
+    default="TheBloke/llama2_7b_chat_uncensored-GPTQ",
+    help="Huggingface: <repo name>/<branch name>",
+)
+@click.option(
+    "--model_basename",
+    "-b",
+    default="gptq_model-4bit-128g.safetensors",
+    help="The model file within the model branch",
+)
+@click.option(
+    "--save_file_path",
+    "-s",
+    default=None,
+    help="Save input and output to the specified file path. Will NOT save as default.",
+)
+def main(device_type, show_sources, model_id, model_basename, save_file_path):
     """
     This function implements the information retrieval task.
 
@@ -175,6 +193,8 @@ def main(device_type, show_sources):
 
     logging.info(f"Running on: {device_type}")
     logging.info(f"Display Source Documents set to: {show_sources}")
+    logging.info(f"model_id: {model_id}")
+    logging.info(f"model_basename: {model_basename}")
 
     embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": device_type})
 
@@ -189,39 +209,9 @@ def main(device_type, show_sources):
     )
     retriever = db.as_retriever()
 
-    # load the LLM for generating Natural Language responses
-
-    # for HF models
-    # model_id = "TheBloke/vicuna-7B-1.1-HF"
-    # model_basename = None
-    # model_id = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
-    # model_id = "TheBloke/guanaco-7B-HF"
-    # model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM. Using STransformers
-    # alongside will 100% create OOM on 24GB cards.
-    # llm = load_model(device_type, model_id=model_id)
-
-    # for GPTQ (quantized) models
-    # model_id = "TheBloke/Nous-Hermes-13B-GPTQ"
-    # model_basename = "nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
-    # model_id = "TheBloke/WizardLM-30B-Uncensored-GPTQ"
-    # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" # Requires
-    # ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
-    # model_id = "TheBloke/wizardLM-7B-GPTQ"
-    # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
-    # model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-    # model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-
-    # for GGML (quantized cpu+gpu+mps) models - check if they support llama.cpp
-    # model_id = "TheBloke/wizard-vicuna-13B-GGML"
-    # model_basename = "wizard-vicuna-13B.ggmlv3.q4_0.bin"
-    # model_basename = "wizard-vicuna-13B.ggmlv3.q6_K.bin"
-    # model_basename = "wizard-vicuna-13B.ggmlv3.q2_K.bin"
-    # model_id = "TheBloke/orca_mini_3B-GGML"
-    # model_basename = "orca-mini-3b.ggmlv3.q4_0.bin"
-
-    model_id="TheBloke/Llama-2-7B-Chat-GGML"
-    model_basename = "llama-2-7b-chat.ggmlv3.q4_0.bin"
-
+    if model_basename == "":
+        model_basename = None
+    
     llm = load_model(device_type, model_id=model_id, model_basename=model_basename)
 
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
@@ -235,10 +225,20 @@ def main(device_type, show_sources):
         answer, docs = res["result"], res["source_documents"]
 
         # Print the result
-        print("\n\n> Question:")
-        print(query)
-        print("\n> Answer:")
-        print(answer)
+        content = f"""
+        ### Question: {query} \n
+        ### Answer: {answer} \n
+        *** \n
+        """
+        print(content)
+
+        if save_file_path is not None:
+            f = open(save_file_path, "a")
+            f.write(content)
+            f.close()
+            print("content saved to: " + save_file_path)
+        else:
+            print("save_file_path is not set. Will not save content.")
 
         if show_sources:  # this is a flag that you can set to disable showing answers.
             # # Print the relevant sources used for the answer
