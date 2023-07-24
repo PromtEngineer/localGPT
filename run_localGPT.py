@@ -56,7 +56,7 @@ def load_model(device_type, model_id, model_basename=None):
                 "max_tokens": 4096,
                 "temperature": 0,
                 "repeat_penalty": 1.15,
-                callback_manager: callback_manager
+                "callback_manager": callback_manager
             }
             if device_type.lower() == "mps":
                 kwargs["n_gpu_layers"] = 1000
