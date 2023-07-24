@@ -39,7 +39,7 @@ git checkout v0.2.2
 pip install .
 ```
 
-For more support on [AutoGPTQ] (https://github.com/PanQiWei/AutoGPTQ).
+For more support on [AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ).
 
 ## Test dataset
 
