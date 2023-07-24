@@ -62,7 +62,14 @@ def load_model(device_type, model_id, model_basename=None):
                 kwargs["n_gpu_layers"] = 1000
             if device_type.lower() == "cuda":
                 kwargs["n_batch"] = 4096
-            return LlamaCpp(**kwargs)
+            return LlamaCpp(
+                n_ctx=4096,
+                model_path=model_path,
+                n_gpu_layers=n_gpu_layers,
+                n_batch=n_batch,
+                verbose=True,
+                callback_manager=callback_manager
+            )
 
         else:
             # The code supports all huggingface models that ends with GPTQ and have some variation
