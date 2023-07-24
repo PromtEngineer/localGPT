@@ -8,7 +8,6 @@ from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline, LlamaCpp
 from langchain.callbacks.manager import CallbackManager
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
@@ -49,14 +48,12 @@ def load_model(device_type, model_id, model_basename=None):
         if ".ggml" in model_basename:
             logging.info("Using Llamacpp for GGML quantized models")
             model_path = hf_hub_download(repo_id=model_id, filename=model_basename)
-            callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
             kwargs = {
                 "model_path": model_path,
                 "n_ctx": 4096,
                 "max_tokens": 4096,
                 "temperature": 0,
                 "repeat_penalty": 1.15,
-                "callback_manager": callback_manager
             }
             if device_type.lower() == "mps":
                 kwargs["n_gpu_layers"] = 1000
@@ -68,18 +65,7 @@ def load_model(device_type, model_id, model_basename=None):
         else:
             # The code supports all huggingface models that ends with GPTQ and have some variation
             # of .no-act.order or .safetensors in their HF repo.
-            logging.info("Using GGML for quantized models")
-            n_gpu_layers = 1000  # Change this value based on your model and your GPU VRAM pool.
-            n_batch = 4096  # Should be between 1 and n_ctx, consider the amount of VRAM in your GPU.
-            model_path = hf_hub_download(repo_id=model_id, filename=model_basename)
-            return LlamaCpp(
-                n_ctx=4096,
-                model_path=model_path,
-                n_gpu_layers=n_gpu_layers,
-                n_batch=n_batch,
-                verbose=True,
-                callback_manager=callback_manager
-            )
+            logging.info("Using AutoGPTQForCausalLM for quantized models")
 
             if ".safetensors" in model_basename:
                 # Remove the ".safetensors" ending if present
