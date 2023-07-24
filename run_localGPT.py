@@ -9,7 +9,6 @@ from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline, LlamaCpp
 from langchain.callbacks.manager import CallbackManager
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from functools import partial
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
@@ -61,7 +60,7 @@ def load_model(device_type, model_id, model_basename=None):
                 kwargs["n_gpu_layers"] = 1000
             if device_type.lower() == "cuda":
                 kwargs["n_batch"] = 4096
-            return partial(LlamaCpp, **kwargs)
+            return LlamaCpp(**kwargs)
 
         else:
             # The code supports all huggingface models that ends with GPTQ and have some variation
