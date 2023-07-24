@@ -7,7 +7,6 @@ from huggingface_hub import hf_hub_download
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline, LlamaCpp
-from langchain.callbacks.manager import CallbackManager
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
@@ -48,18 +47,17 @@ def load_model(device_type, model_id, model_basename=None):
         if ".ggml" in model_basename:
             logging.info("Using Llamacpp for GGML quantized models")
             model_path = hf_hub_download(repo_id=model_id, filename=model_basename)
+            max_ctx_size = 2048
             kwargs = {
                 "model_path": model_path,
-                "n_ctx": 4096,
-                "max_tokens": 4096,
-                "temperature": 0,
-                "repeat_penalty": 1.15,
+                "n_ctx": max_ctx_size,
+                "max_tokens": max_ctx_size,
             }
             if device_type.lower() == "mps":
                 kwargs["n_gpu_layers"] = 1000
             if device_type.lower() == "cuda":
                 kwargs["n_gpu_layers"] = 1000
-                kwargs["n_batch"] = 4096
+                kwargs["n_batch"] = max_ctx_size
             return LlamaCpp(**kwargs)
 
         else:
