@@ -65,8 +65,8 @@ def load_model(device_type, model_id, model_basename=None):
             return LlamaCpp(
                 n_ctx=4096,
                 model_path=model_path,
-                n_gpu_layers=n_gpu_layers,
-                n_batch=n_batch,
+                n_gpu_layers=1000,
+                n_batch=4096,
                 verbose=True,
                 callback_manager=callback_manager
             )
