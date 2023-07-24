@@ -49,12 +49,14 @@ def load_model(device_type, model_id, model_basename=None):
         if ".ggml" in model_basename:
             logging.info("Using Llamacpp for GGML quantized models")
             model_path = hf_hub_download(repo_id=model_id, filename=model_basename)
+            callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
             kwargs = {
                 "model_path": model_path,
                 "n_ctx": 4096,
                 "max_tokens": 4096,
                 "temperature": 0,
-                "repeat_penalty": 1.15
+                "repeat_penalty": 1.15,
+                callback_manager: callback_manager
             }
             if device_type.lower() == "mps":
                 kwargs["n_gpu_layers"] = 1000
@@ -68,7 +70,6 @@ def load_model(device_type, model_id, model_basename=None):
             logging.info("Using GGML for quantized models")
             n_gpu_layers = 1000  # Change this value based on your model and your GPU VRAM pool.
             n_batch = 4096  # Should be between 1 and n_ctx, consider the amount of VRAM in your GPU.
-            callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
             model_path = hf_hub_download(repo_id=model_id, filename=model_basename)
             return LlamaCpp(
                 n_ctx=4096,
