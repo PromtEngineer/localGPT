@@ -18,7 +18,7 @@ Install conda
 conda create -n localGPT
 ```
 
-Activate 
+Activate
 
 ```shell
 conda activate localGPT
@@ -29,17 +29,6 @@ In order to set your environment up to run the code here, first install all requ
 ```shell
 pip install -r requirements.txt
 ```
-
-Then install AutoGPTQ - if you want to run quantized models for GPU
-
-```shell
-git clone https://github.com/PanQiWei/AutoGPTQ.git
-cd AutoGPTQ
-git checkout v0.2.2
-pip install .
-```
-
-For more support on [AutoGPTQ] (https://github.com/PanQiWei/AutoGPTQ).
 
 ## Test dataset
 
@@ -57,7 +46,7 @@ Run the following command to ingest all the data.
 `defaults to cuda`
 
 ```shell
-python ingest.py 
+python ingest.py
 ```
 
 Use the device type argument to specify a given device.
@@ -120,7 +109,7 @@ GGML quantized models for Apple Silicon (M1/M2) are supported through the llama-
 
 ## Troubleshooting
 
-**Install MPS:**  
+**Install MPS:**
 1- Follow this [page](https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
 
 2- By following the page, here is an example of what you may initiate in your terminal
@@ -136,7 +125,7 @@ pip install pdfminer.six
 pip install xformers
 ```
 
-**Upgrade packages:**  
+**Upgrade packages:**
 Your langchain or llama-cpp version could be outdated. Upgrade your packages by running install again.
 
 ```shell
@@ -278,7 +267,7 @@ This is a test project to validate the feasibility of a fully local solution for
       ```shell
          conda install -c pytorch torchvision cudatoolkit=10.1 pytorch
       ```
-   - If doesn't work try re installing 
+   - If doesn't work, try reinstalling
       ```shell
          pip uninstall torch
          pip cache purge

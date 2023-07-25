@@ -11,7 +11,7 @@ transformers
 protobuf==3.20.0; sys_platform != 'darwin'
 protobuf==3.20.0; sys_platform == 'darwin' and platform_machine != 'arm64'
 protobuf==3.20.3; sys_platform == 'darwin' and platform_machine == 'arm64'
-auto-gptq
+auto-gptq==0.2.2
 docx2txt
 
 # Utilities
