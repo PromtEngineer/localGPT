@@ -3,6 +3,7 @@ import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 import click
+import torch
 from langchain.docstore.document import Document
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
@@ -89,7 +90,7 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
 @click.command()
 @click.option(
     "--device_type",
-    default="cuda",
+    default="cuda" if torch.cuda.is_available() else "cpu",
     type=click.Choice(
         [
             "cpu",
