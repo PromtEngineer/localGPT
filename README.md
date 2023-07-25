@@ -274,7 +274,7 @@ This is a test project to validate the feasibility of a fully local solution for
       ```shell
       nvidia-smi
       ```
-   - Try Install pytorch fepending on your cuda version
+   - Try Install pytorch depending on your cuda version
       ```shell
          conda install -c pytorch torchvision cudatoolkit=10.1 pytorch
       ```
