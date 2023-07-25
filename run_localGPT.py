@@ -129,7 +129,7 @@ def load_model(device_type, model_id, model_basename=None):
 @click.command()
 @click.option(
     "--device_type",
-    default="cuda",
+    default="cuda" if torch.cuda.is_available() else "cpu",
     type=click.Choice(
         [
             "cpu",
@@ -219,7 +219,7 @@ def main(device_type, show_sources):
     # model_id = "TheBloke/orca_mini_3B-GGML"
     # model_basename = "orca-mini-3b.ggmlv3.q4_0.bin"
 
-    model_id="TheBloke/Llama-2-7B-Chat-GGML"
+    model_id = "TheBloke/Llama-2-7B-Chat-GGML"
     model_basename = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 
     llm = load_model(device_type, model_id=model_id, model_basename=model_basename)
