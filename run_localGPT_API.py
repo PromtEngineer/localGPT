@@ -65,7 +65,7 @@ RETRIEVER = DB.as_retriever()
 
 
 # load the LLM for generating Natural Language responses
-def load_model(device_type, model_id, model_basename=None):
+def load_model(device_type: str, model_id: str, model_basename: str=None) -> HuggingFacePipeline:
     """
     Select a model for text generation using the HuggingFace library.
     If you are running this for the first time, it will download a model for you.

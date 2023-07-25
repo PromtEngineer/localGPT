@@ -22,7 +22,7 @@ from transformers import (
 from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
 
 
-def load_model(device_type, model_id, model_basename=None):
+def load_model(device_type: str, model_id: str, model_basename: str=None):
     """
     Select a model for text generation using the HuggingFace library.
     If you are running this for the first time, it will download a model for you.
@@ -161,7 +161,7 @@ def load_model(device_type, model_id, model_basename=None):
     is_flag=True,
     help="Show sources along with answers (Default is False)",
 )
-def main(device_type, show_sources):
+def main(device_type: str, show_sources: bool):
     """
     This function implements the information retrieval task.
 
