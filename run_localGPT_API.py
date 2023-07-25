@@ -43,7 +43,11 @@ if os.path.exists(PERSIST_DIRECTORY):
 else:
     print("The directory does not exist")
 
-run_langest_commands = ["python", "ingest.py"]
+if shutil.which("python"):
+    run_langest_commands = ["python", "ingest.py"]
+else:
+    run_langest_commands = ["python3", "ingest.py"]
+
 if DEVICE_TYPE == "cpu":
     run_langest_commands.append("--device_type")
     run_langest_commands.append(DEVICE_TYPE)
@@ -221,7 +225,7 @@ def run_ingest_route():
         if DEVICE_TYPE == "cpu":
             run_langest_commands.append("--device_type")
             run_langest_commands.append(DEVICE_TYPE)
-            
+
         result = subprocess.run(run_langest_commands, capture_output=True)
         if result.returncode != 0:
             return "Script execution failed: {}".format(result.stderr.decode("utf-8")), 500
