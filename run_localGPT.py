@@ -131,7 +131,7 @@ def load_model(device_type, model_id, model_basename=None):
 @click.command()
 @click.option(
     "--device_type",
-    default="cuda",
+    default="cuda" if torch.cuda.is_available() else "cpu",
     type=click.Choice(
         [
             "cpu",
