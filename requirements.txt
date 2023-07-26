@@ -17,7 +17,8 @@ docx2txt
 # Utilities
 urllib3==1.26.6
 accelerate
-bitsandbytes
+bitsandbytes ; sys_platform != 'win32'
+bitsandbytes-windows ; sys_platform == 'win32'
 click
 flask
 requests
