@@ -270,44 +270,20 @@ This is a test project to validate the feasibility of a fully local solution for
 
 # Common Errors
 
-- [Torch not compatible with cuda enabled](https://github.com/pytorch/pytorch/issues/30664)
+ - [Torch not compatible with CUDA enabled](https://github.com/pytorch/pytorch/issues/30664)
 
-  - Get cuda version
-
-    ```shell
-    nvcc --version
-    ```
-
-    ```shell
-    nvidia-smi
-    ```
-
-  - Try Install pytorch fepending on your cuda version
-    ```shell
-       conda install -c pytorch torchvision cudatoolkit=10.1 pytorch
-    ```
-  - If doesn't work try re installing
-    ```shell
-       pip uninstall torch
-       pip cache purge
-       pip install torch -f https://download.pytorch.org/whl/torch_stable.html
-    ```
-
- - [Torch not compatible with cuda enabled](https://github.com/pytorch/pytorch/issues/30664)
-
-   -  Get cuda version
-
+   -  Get CUDA version
       ```shell
       nvcc --version
       ```
       ```shell
       nvidia-smi
       ```
-   - Try Install pytorch fepending on your cuda version
+   - Try installing PyTorch depending on your CUDA version
       ```shell
          conda install -c pytorch torchvision cudatoolkit=10.1 pytorch
       ```
-   - If doesn't work, try reinstalling
+   - If it doesn't work, try reinstalling
       ```shell
          pip uninstall torch
          pip cache purge
