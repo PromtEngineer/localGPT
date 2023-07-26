@@ -30,6 +30,7 @@ In order to set your environment up to run the code here, first install all requ
 pip install -r requirements.txt
 ```
 
+
 If you want to use BLAS or Metal with [llama-cpp](<(https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal)>) you can set appropriate flags:
 
 ```shell
@@ -46,7 +47,7 @@ git checkout v0.2.2
 pip install .
 ```
 
-For more support on [AutoGPTQ] (https://github.com/PanQiWei/AutoGPTQ).
+For more support on [AutoGPTQ](https://github.com/PanQiWei/AutoGPTQ).
 
 ## Test dataset
 
@@ -127,7 +128,7 @@ GGML quantized models for Apple Silicon (M1/M2) are supported through the llama-
 
 ## Troubleshooting
 
-**Install MPS:**  
+**Install MPS:**
 1- Follow this [page](https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
 
 2- By following the page, here is an example of what you may initiate in your terminal
@@ -143,7 +144,7 @@ pip install pdfminer.six
 pip install xformers
 ```
 
-**Upgrade packages:**  
+**Upgrade packages:**
 Your langchain or llama-cpp version could be outdated. Upgrade your packages by running install again.
 
 ```shell
@@ -291,6 +292,27 @@ This is a test project to validate the feasibility of a fully local solution for
        pip cache purge
        pip install torch -f https://download.pytorch.org/whl/torch_stable.html
     ```
+
+ - [Torch not compatible with cuda enabled](https://github.com/pytorch/pytorch/issues/30664)
+
+   -  Get cuda version
+
+      ```shell
+      nvcc --version
+      ```
+      ```shell
+      nvidia-smi
+      ```
+   - Try Install pytorch fepending on your cuda version
+      ```shell
+         conda install -c pytorch torchvision cudatoolkit=10.1 pytorch
+      ```
+   - If doesn't work, try reinstalling
+      ```shell
+         pip uninstall torch
+         pip cache purge
+         pip install torch -f https://download.pytorch.org/whl/torch_stable.html
+      ```
 
 - [ERROR: pip's dependency resolver does not currently take into account all the packages that are installed](https://stackoverflow.com/questions/72672196/error-pips-dependency-resolver-does-not-currently-take-into-account-all-the-pa/76604141#76604141)
   ```shell
