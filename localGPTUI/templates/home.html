@@ -73,15 +73,35 @@
   </script>
   {% endif %}
   <style>
+
+    @import url('https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap');
+
     body {
-      background-image: linear-gradient(to right top, #d91b23, #124feb);
+      background-image: linear-gradient(90deg, #09203f, #0057ff);
       height: 100vh;
       display: flex;
       justify-content: center;
       align-items: center;
     }
 
+    .container{
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      max-width: 1000px;
+      margin: 0 auto;
+    } 
+
+    .titlegpt{
+       font-size: 9vw;
+       color: white;
+       font-family: 'Play', sans-serif;
+    } 
+
     .search {
+      width: 100%;
       box-shadow:
         inset 0 1px 1px rgba(0, 0, 0, 0.075),
         0 0 8px rgba(255, 0, 0, 0.6);
@@ -91,7 +111,7 @@
     }
 
     ::placeholder {
-      color: #eee;
+      color: rgb(110, 104, 104);
       opacity: 1;
     }
 
@@ -128,14 +148,14 @@
       top: 0px;
       border: none;
       height: 45px;
-      background-color: red;
+      background-color: #ff0059;
       color: #fff;
       width: 90px;
       border-radius: 4px;
     }
 
     .search-2 button:hover {
-      background: #d2042d;
+      background: #ff0059;
       color: #ffffff;
       transition: all 0.2s ease;
       cursor: pointer;
@@ -147,7 +167,7 @@
       top: 0px;
       border: none;
       height: 45px;
-      background-color: red;
+      background-color: #ff0059;
       color: #fff;
       width: 90px;
       border-radius: 4px;
@@ -172,21 +192,21 @@
     .default_button {
       border: none;
       height: 45px;
-      background-color: red;
+      background-color: #ff0059;
       color: #fff;
       width: 90px;
       border-radius: 4px;
     }
 
     .default_button:hover {
-      background: #d2042d;
+      background: #ff0059;
       color: #ffffff;
       transition: all 0.2s ease;
       cursor: pointer;
     }
 
     .upload_button:hover {
-      background: #d2042d;
+      background: #ff0059;
       color: #ffffff;
       transition: all 0.2s ease;
       cursor: pointer;
@@ -198,14 +218,14 @@
       top: 0px;
       border: none;
       height: 45px;
-      background-color: red;
+      background-color: #ff0059;
       color: #fff;
       width: 90px;
       border-radius: 4px;
     }
 
     .tutorial_button:hover {
-      background: #d2042d;
+      background: #ff0059;
       color: #ffffff;
       transition: all 0.2s ease;
       cursor: pointer;
@@ -261,18 +281,19 @@
 
     .accordion-button:focus {
       z-index: 3;
-      border-color: #b51b54;
+      border-color: #ff0059;
       box-shadow: 0 0 0 0.25rem rgba(153, 50, 168, 0.25);
     }
 
     .accordion-button:not(.collapsed) {
-      color: #eb3477;
+      color:#ff0059;
       background-color: #f5b3cb;
       box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.125);
     }
   </style>
   <body>
     <div class="container">
+      <div class="titlegpt">LocalGPT</div>
       <div class="search">
         <div class="row">
           <div class="col-md-12">
@@ -295,7 +316,7 @@
                   type="text"
                   name="user_prompt"
                   id="searchInput"
-                  placeholder="Tell a summary of what you know?"
+                  placeholder="Tell a summary of what you want to know?"
                 />
                 <button type="button" onclick="submitPromptForm()">
                   Search
@@ -478,14 +499,14 @@
             <ul>
               <li>
                 Click
-                <span style="background-color: red; color: white">Add</span> if
+                <span style="background-color: #ff0059; color: white">Add</span> if
                 you want to add the documents selected to your pre-existing
                 knowledge base.
               </li>
               <br />
               <li>
                 Click
-                <span style="background-color: red; color: white">Reset</span>
+                <span style="background-color: #ff0059; color: white">Reset</span>
                 if you want to reset your knowledge base, and then use your new
                 documents as your new knowledge base.
               </li>
@@ -617,16 +638,16 @@
             >
               1. To upload documents for the app to ingest as its new knowledge
               base click the
-              <span style="background-color: red; color: white">Upload</span>
+              <span style="background-color: #ff0059; color: white">Upload</span>
               button.
               <br />
               2. Select the documents you want to serve as your new knowledge
               base to converse with.
               <br />
               3. Then you will be prompted with a confirmation to either
-              <span style="background-color: red; color: white">Add</span> the
+              <span style="background-color: #ff0059; color: white">Add</span> the
               documents to your knowledge base,
-              <span style="background-color: red; color: white">Reset</span>
+              <span style="background-color: #ff0059; color: white">Reset</span>
               your knowledge base with the documents you just selected, or
               <span style="background-color: gray; color: white">Cancel</span>
               the upload.
@@ -669,7 +690,7 @@
               >
               <br />
               3. Hit enter on your keyboard or click
-              <span style="background-color: red; color: white">Search</span>
+              <span style="background-color: #ff0059; color: white">Search</span>
               <br />
               4. Wait while the LLM model consumes the prompt and prepares the
               answer.
