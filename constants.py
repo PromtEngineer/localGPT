@@ -30,7 +30,7 @@ DOCUMENT_MAP = {
     ".pdf": PDFMinerLoader,
     ".csv": CSVLoader,
     ".xls": UnstructuredExcelLoader,
-    ".xlxs": UnstructuredExcelLoader,
+    ".xlsx": UnstructuredExcelLoader,
     ".docx": Docx2txtLoader,
     ".doc": Docx2txtLoader,
 }
