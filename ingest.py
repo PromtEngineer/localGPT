@@ -1,7 +1,7 @@
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-
+from tqdm import tqdm
 import click
 import torch
 from langchain.docstore.document import Document
@@ -66,10 +66,13 @@ def load_documents(source_dir: str) -> list[Document]:
             future = executor.submit(load_document_batch, filepaths)
             futures.append(future)
         # process all results
-        for future in as_completed(futures):
-            # open the file and load the data
-            contents, _ = future.result()
-            docs.extend(contents)
+         # Add tqdm to show progress bar
+        with tqdm(total=len(futures)) as pbar:
+            for future in as_completed(futures):
+                # open the file and load the data
+                contents, _ = future.result()
+                docs.extend(contents)
+                pbar.update(1)  # Update the progress bar after each task completion
 
     return docs
 
@@ -139,7 +142,6 @@ def main(device_type):
     # These are much smaller embeddings and will work for most appications
     # If you use HuggingFaceEmbeddings, make sure to also use the same in the
     # run_localGPT.py file.
-
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
     db = Chroma.from_documents(
