@@ -3,9 +3,10 @@ import logging
 import click
 import torch
 from auto_gptq import AutoGPTQForCausalLM
+from huggingface_hub import hf_hub_download
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.llms import HuggingFacePipeline
+from langchain.llms import HuggingFacePipeline, LlamaCpp
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
@@ -39,33 +40,45 @@ def load_model(device_type, model_id, model_basename=None):
     Raises:
         ValueError: If an unsupported model or device type is provided.
     """
-    if device_type.lower() in ["cpu", "mps"]:
-        model_basename = None
-
     logging.info(f"Loading Model: {model_id}, on: {device_type}")
     logging.info("This action can take a few minutes!")
 
     if model_basename is not None:
-        # The code supports all huggingface models that ends with GPTQ and have some variation
-        # of .no-act.order or .safetensors in their HF repo.
-        logging.info("Using AutoGPTQForCausalLM for quantized models")
+        if device_type.lower() in ["cpu", "mps"]:
+            logging.info("Using Llamacpp for quantized models")
+            model_path = hf_hub_download(repo_id=model_id, filename=model_basename)
+            if device_type.lower() == "mps":
+                return LlamaCpp(
+                    model_path=model_path,
+                    n_ctx=2048,
+                    max_tokens=2048,
+                    temperature=0,
+                    repeat_penalty=1.15,
+                    n_gpu_layers=1000,
+                )
+            return LlamaCpp(model_path=model_path, n_ctx=2048, max_tokens=2048, temperature=0, repeat_penalty=1.15)
 
-        if ".safetensors" in model_basename:
-            # Remove the ".safetensors" ending if present
-            model_basename = model_basename.replace(".safetensors", "")
+        else:
+            # The code supports all huggingface models that ends with GPTQ and have some variation
+            # of .no-act.order or .safetensors in their HF repo.
+            logging.info("Using AutoGPTQForCausalLM for quantized models")
 
-        tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
-        logging.info("Tokenizer loaded")
+            if ".safetensors" in model_basename:
+                # Remove the ".safetensors" ending if present
+                model_basename = model_basename.replace(".safetensors", "")
 
-        model = AutoGPTQForCausalLM.from_quantized(
-            model_id,
-            model_basename=model_basename,
-            use_safetensors=True,
-            trust_remote_code=True,
-            device="cuda:0",
-            use_triton=False,
-            quantize_config=None,
-        )
+            tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
+            logging.info("Tokenizer loaded")
+
+            model = AutoGPTQForCausalLM.from_quantized(
+                model_id,
+                model_basename=model_basename,
+                use_safetensors=True,
+                trust_remote_code=True,
+                device="cuda:0",
+                use_triton=False,
+                quantize_config=None,
+            )
     elif (
         device_type.lower() == "cuda"
     ):  # The code supports all huggingface models that ends with -HF or which have a .bin
