@@ -43,6 +43,7 @@ if os.path.exists(PERSIST_DIRECTORY):
 else:
     print("The directory does not exist")
 
+"""
 run_langest_commands = ["python", "ingest.py"]
 if DEVICE_TYPE == "cpu":
     run_langest_commands.append("--device_type")
@@ -53,7 +54,7 @@ if result.returncode != 0:
     raise FileNotFoundError(
         "No files were found inside SOURCE_DOCUMENTS, please put a starter file inside before starting the API!"
     )
-
+"""
 # load the vectorstore
 DB = Chroma(
     persist_directory=PERSIST_DIRECTORY,
@@ -151,6 +152,7 @@ def load_model(device_type, model_id, model_basename=None):
 # model_id = "TheBloke/vicuna-7B-1.1-HF"
 # model_id = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
 # model_id = "TheBloke/guanaco-7B-HF"
+# model_id = "TheBloke/Wizard-Vicuna-13B-Uncensored-HF"
 # model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM.
 # Using STransformers alongside will 100% create OOM on 24GB cards.
 # LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id)
@@ -161,10 +163,10 @@ def load_model(device_type, model_id, model_basename=None):
 # model_id = "TheBloke/WizardLM-30B-Uncensored-GPTQ"
 # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors"
 # Requires ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
-# model_id = "TheBloke/wizardLM-7B-GPTQ"
+model_id = "TheBloke/wizardLM-7B-GPTQ"
 # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
-model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+# model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
+# model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
 LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id, model_basename=model_basename)
 
 QA = RetrievalQA.from_chain_type(

@@ -179,10 +179,11 @@ def main(device_type, show_sources):
     # load the LLM for generating Natural Language responses
 
     # for HF models
-    model_id = "TheBloke/vicuna-7B-1.1-HF"
-    model_basename = None
+    # model_id = "TheBloke/vicuna-7B-1.1-HF"
+    # model_basename = None
     # model_id = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
     # model_id = "TheBloke/guanaco-7B-HF"
+    # model_id = "TheBloke/Wizard-Vicuna-13B-Uncensored-HF"
     # model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM. Using STransformers
     # alongside will 100% create OOM on 24GB cards.
     # llm = load_model(device_type, model_id=model_id)
@@ -190,14 +191,18 @@ def main(device_type, show_sources):
     # for GPTQ (quantized) models
     # model_id = "TheBloke/Nous-Hermes-13B-GPTQ"
     # model_basename = "nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
-    # model_id = "TheBloke/WizardLM-30B-Uncensored-GPTQ"
-    # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" # Requires
-    # ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
-    # model_id = "TheBloke/wizardLM-7B-GPTQ"
-    # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
+    # model_id = "TheBloke/stable-vicuna-13B-GPTQ"
+    # model_basename = "stable-vicuna-13B-GPTQ-4bit.compat.no-act-order.safetensors"
     # model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
     # model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-
+    # model_id = "TheBloke/Wizard-Vicuna-13B-Uncensored-GPTQ"
+    # model_basename = "Wizard-Vicuna-13B-Uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+    # model_id = "TheBloke/falcon-7b-instruct-GPTQ"
+    # model_basename = "gptq_model-4bit-64g.safetensors"
+    model_id = "TheBloke/guanaco-7B-GPTQ"
+    model_basename = "Guanaco-7B-GPTQ-4bit-128g.no-act.order.safetensors"
+    # model_id = "TheBloke/orca_mini_v2_13b-GPTQ"
+    # model_basename = "orca_mini_v2_13b-GPTQ-4bit-128g.no-act.order.safetensors"
     llm = load_model(device_type, model_id=model_id, model_basename=model_basename)
 
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
