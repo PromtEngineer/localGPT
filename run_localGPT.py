@@ -95,7 +95,7 @@ def load_model(device_type, model_id, model_basename=None):
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             trust_remote_code=True,
-            # max_memory={0: "15GB"} # Uncomment this line with you encounter CUDA out of memory errors
+            # max_memory={0: "15GB"} # Uncomment this line when you encounter CUDA out of memory errors
         )
         model.tie_weights()
     else:
@@ -127,7 +127,7 @@ def load_model(device_type, model_id, model_basename=None):
     return local_llm
 
 
-# chose device typ to run on as well as to show source documents.
+# choose device type to run on as well as to show source documents.
 @click.command()
 @click.option(
     "--device_type",
@@ -183,7 +183,7 @@ def main(device_type, show_sources):
     # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
-    # load the vectorstore
+    # load the vector store
     db = Chroma(
         persist_directory=PERSIST_DIRECTORY,
         embedding_function=embeddings,
