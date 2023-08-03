@@ -136,7 +136,7 @@ def main(device_type):
         model_kwargs={"device": device_type},
     )
     # change the embedding type here if you are running into issues.
-    # These are much smaller embeddings and will work for most appications
+    # These are much smaller embeddings and will work for most applications
     # If you use HuggingFaceEmbeddings, make sure to also use the same in the
     # run_localGPT.py file.
 
