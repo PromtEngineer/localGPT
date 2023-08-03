@@ -169,9 +169,9 @@ def main(device_type, show_sources):
 
 
     1. Loads an embedding model, can be HuggingFaceInstructEmbeddings or HuggingFaceEmbeddings
-    2. Loads the existing vectorestore that was created by inget.py
+    2. Loads the existing vector store that was created by ingest.py
     3. Loads the local LLM using load_model function - You can now set different LLMs.
-    4. Setup the Question Answer retreival chain.
+    4. Set up the Question Answer retrieval chain.
     5. Question answers.
     """
 
