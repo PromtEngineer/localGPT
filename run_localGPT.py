@@ -21,7 +21,7 @@ from transformers import (
     pipeline,
 )
 
-from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY
+from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
 
 
 def load_model(device_type, model_id, model_basename=None):
@@ -192,39 +192,7 @@ def main(device_type, show_sources):
         client_settings=CHROMA_SETTINGS,
     )
     retriever = db.as_retriever()
-
-    # load the LLM for generating Natural Language responses
-
-    # for HF models
-    # model_id = "TheBloke/vicuna-7B-1.1-HF"
-    # model_basename = None
-    # model_id = "TheBloke/Wizard-Vicuna-7B-Uncensored-HF"
-    # model_id = "TheBloke/guanaco-7B-HF"
-    # model_id = 'NousResearch/Nous-Hermes-13b' # Requires ~ 23GB VRAM. Using STransformers
-    # alongside will 100% create OOM on 24GB cards.
-    # llm = load_model(device_type, model_id=model_id)
-
-    # for GPTQ (quantized) models
-    # model_id = "TheBloke/Nous-Hermes-13B-GPTQ"
-    # model_basename = "nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
-    # model_id = "TheBloke/WizardLM-30B-Uncensored-GPTQ"
-    # model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" # Requires
-    # ~21GB VRAM. Using STransformers alongside can potentially create OOM on 24GB cards.
-    # model_id = "TheBloke/wizardLM-7B-GPTQ"
-    # model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
-    # model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-    # model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-
-    # for GGML (quantized cpu+gpu+mps) models - check if they support llama.cpp
-    # model_id = "TheBloke/wizard-vicuna-13B-GGML"
-    # model_basename = "wizard-vicuna-13B.ggmlv3.q4_0.bin"
-    # model_basename = "wizard-vicuna-13B.ggmlv3.q6_K.bin"
-    # model_basename = "wizard-vicuna-13B.ggmlv3.q2_K.bin"
-    # model_id = "TheBloke/orca_mini_3B-GGML"
-    # model_basename = "orca-mini-3b.ggmlv3.q4_0.bin"
-
-    model_id = "TheBloke/Llama-2-7B-Chat-GGML"
-    model_basename = "llama-2-7b-chat.ggmlv3.q4_0.bin"
+    
 
     template = """Use the following pieces of context to answer the question at the end. If you don't know the answer,\
 just say that you don't know, don't try to make up an answer.
@@ -238,7 +206,7 @@ Helpful Answer:"""
     prompt = PromptTemplate(input_variables=["history", "context", "question"], template=template)
     memory = ConversationBufferMemory(input_key="question", memory_key="history")
 
-    llm = load_model(device_type, model_id=model_id, model_basename=model_basename)
+    llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME)
 
     qa = RetrievalQA.from_chain_type(
         llm=llm,
