@@ -1,5 +1,5 @@
 import logging
-
+import configparser
 import click
 import torch
 from auto_gptq import AutoGPTQForCausalLM
@@ -223,8 +223,11 @@ def main(device_type, show_sources):
     # model_id = "TheBloke/orca_mini_3B-GGML"
     # model_basename = "orca-mini-3b.ggmlv3.q4_0.bin"
 
-    model_id = "TheBloke/Llama-2-7B-Chat-GGML"
-    model_basename = "llama-2-7b-chat.ggmlv3.q4_0.bin"
+    modelConfig = configparser.ConfigParser()
+    modelConfig.read('./conf/models.conf')
+
+    model_id = modelConfig["DEFAULT"]["model_id"]
+    model_basename = modelConfig["DEFAULT"]["model_basename"]
 
     template = """Use the following pieces of context to answer the question at the end. If you don't know the answer,\
 just say that you don't know, don't try to make up an answer.
