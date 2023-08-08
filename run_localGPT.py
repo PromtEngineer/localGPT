@@ -1,5 +1,6 @@
-import logging
 import configparser
+import logging
+
 import click
 import torch
 from auto_gptq import AutoGPTQForCausalLM
@@ -224,7 +225,7 @@ def main(device_type, show_sources):
     # model_basename = "orca-mini-3b.ggmlv3.q4_0.bin"
 
     modelConfig = configparser.ConfigParser()
-    modelConfig.read('./conf/models.conf')
+    modelConfig.read("./conf/models.conf")
 
     model_id = modelConfig["DEFAULT"]["model_id"]
     model_basename = modelConfig["DEFAULT"]["model_basename"]
