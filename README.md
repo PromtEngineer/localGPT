@@ -2,13 +2,16 @@
 
 This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT.
 
-For detailed overview of the project, Watch this [Youtube Video](https://youtu.be/MlyoObdIHyo).
+For detailed overview of the project, Watch these videos
+- [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo).
+- [Llama-2 with LocalGPT](https://youtu.be/lbFmceo4D5E)
+- [Adding Chat History](https://youtu.be/d7otIM_MCZs)
 
 In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. It also has CPU support if you do not have a GPU (see below for instruction).
 
 Ask questions to your documents without an internet connection, using the power of LLMs. 100% private, no data leaves your execution environment at any point. You can ingest documents and ask questions without an internet connection!
 
-Built with [LangChain](https://github.com/hwchase17/langchain) and [Vicuna-7B](https://huggingface.co/TheBloke/vicuna-7B-1.1-HF) and [InstructorEmbeddings](https://instructor-embedding.github.io/)
+Built with [LangChain](https://github.com/hwchase17/langchain) and [Vicuna-7B](https://huggingface.co/TheBloke/vicuna-7B-1.1-HF) (+ alot more!) and [InstructorEmbeddings](https://instructor-embedding.github.io/)
 
 # Environment Setup
 
@@ -148,26 +151,12 @@ CMAKE_ARGS="-DLLAMA_METAL=on" FORCE_CMAKE=1 pip install -U llama-cpp-python --no
 
 # Run the UI
 
-1. Start by opening up `run_localGPT_API.py` in a code editor of your choice. If you are using gpu skip to step 3.
-
-2. If you are running on cpu change `DEVICE_TYPE = 'cuda'` to `DEVICE_TYPE = 'cpu'`.
-
-   - Comment out the following:
+1. Open `constants.py` in an editor of your choice and depending on choice add the LLM you want to use. By default, the following model will be used:
 
    ```shell
-   model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"
-   model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
-   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id, model_basename = model_basename)
+   MODEL_ID = "TheBloke/Llama-2-7B-Chat-GGML"
+   MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
    ```
-
-   - Uncomment:
-
-   ```shell
-   model_id = "TheBloke/guanaco-7B-HF" # or some other -HF or .bin model
-   LLM = load_model(device_type=DEVICE_TYPE, model_id=model_id)
-   ```
-
-   - If you are running gpu there should be nothing to change. Save and close `run_localGPT_API.py`.
 
 3. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
 
@@ -190,39 +179,35 @@ CMAKE_ARGS="-DLLAMA_METAL=on" FORCE_CMAKE=1 pip install -U llama-cpp-python --no
 Selecting the right local models and the power of `LangChain` you can run the entire pipeline locally, without any data leaving your environment, and with reasonable performance.
 
 - `ingest.py` uses `LangChain` tools to parse the document and create embeddings locally using `InstructorEmbeddings`. It then stores the result in a local vector database using `Chroma` vector store.
-- `run_localGPT.py` uses a local LLM (Vicuna-7B in this case) to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
+- `run_localGPT.py` uses a local LLM to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
 - You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format.
 
 # How to select different LLM models?
 
 The following will provide instructions on how you can select a different LLM model to create your response:
 
-1. Open up `run_localGPT.py`
-2. Go to `def main(device_type, show_sources)`
-3. Go to the comment where it says `# load the LLM for generating Natural Language responses`
-4. Below it, it details a bunch of examples on models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
-5. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
+1. Open up `constants.py` in the editor of your choice.
+2. Change the `MODEL_ID` and `MODEL_BASENAME`. If you are using a quantized model (`GGML`, `GPTQ`), you will need to provide `MODEL_BASENAME`. For unquatized models, set `MODEL_BASENAME` to `NONE`
+5. There are a number of example models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
+6. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
 
-   - Make sure you have a model_id selected. For example -> `model_id = "TheBloke/guanaco-7B-HF"`
+   - Make sure you have a model_id selected. For example -> `MODEL_ID = "TheBloke/guanaco-7B-HF"`
    - If you go to its HuggingFace [repo](https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
    - Any model files that contain .bin extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
-   - `model_id = "TheBloke/guanaco-7B-HF"`
+   - `MODEL_ID = "TheBloke/guanaco-7B-HF"`
 
-     `llm = load_model(device_type, model_id=model_id)`
-
-6. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
+7. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
 
    - Make sure you have a model_id selected. For example -> model_id = `"TheBloke/wizardLM-7B-GPTQ"`
    - You will also need its model basename file selected. For example -> `model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
    - If you go to its HuggingFace [repo](https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and go to "Files and versions" you will notice a model file that ends with a .safetensors extension.
    - Any model files that contain no-act-order or .safetensors extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
-   - `model_id = "TheBloke/WizardLM-7B-uncensored-GPTQ"`
+   - `MODEL_ID = "TheBloke/WizardLM-7B-uncensored-GPTQ"`
 
-     `model_basename = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"`
+     `MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"`
 
-     `llm = load_model(device_type, model_id=model_id, model_basename = model_basename)`
 
-7. Comment out all other instances of `model_id="other model names"`, `model_basename=other base model names`, and `llm = load_model(args*)`
+8. Comment out all other instances of `MODEL_ID="other model names"`, `MODEL_BASENAME=other base model names`, and `llm = load_model(args*)`
 
 # System Requirements
 
