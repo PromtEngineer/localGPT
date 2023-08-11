@@ -23,5 +23,9 @@ click
 flask
 requests
 
+# Streamlit related
+streamlit
+Streamlit-extras
+
 # Excel File Manipulation
 openpyxl

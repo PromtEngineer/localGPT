@@ -195,13 +195,13 @@ def main(device_type, show_sources):
     
 
     template = """Use the following pieces of context to answer the question at the end. If you don't know the answer,\
-just say that you don't know, don't try to make up an answer.
+    just say that you don't know, don't try to make up an answer.
 
-{context}
+    {context}
 
-{history}
-Question: {question}
-Helpful Answer:"""
+    {history}
+    Question: {question}
+    Helpful Answer:"""
 
     prompt = PromptTemplate(input_variables=["history", "context", "question"], template=template)
     memory = ConversationBufferMemory(input_key="question", memory_key="history")
