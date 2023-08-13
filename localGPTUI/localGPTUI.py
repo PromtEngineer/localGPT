@@ -16,8 +16,8 @@ app.secret_key = "LeafmanZSecretKey"
 # PAGES #
 @app.route("/", methods=["GET", "POST"])
 def home_page():
-    if request.method == "POST":
-        if "user_prompt" in request.form:
+    if "user_prompt" in request.form:
+        if request.method == "POST":
             user_prompt = request.form["user_prompt"]
             print(f"User Prompt: {user_prompt}")
 
@@ -27,13 +27,13 @@ def home_page():
             if response.status_code == 200:
                 # print(response.json())  # Print the JSON data from the response
                 return render_template("home.html", show_response_modal=True, response_dict=response.json())
-        elif "documents" in request.files:
-            delete_source_url = "http://localhost:5110/api/delete_source"  # URL of the /api/delete_source endpoint
+    elif "documents" in request.files:
+        if request.method == "POST":
             if request.form.get("action") == "reset":
+                delete_source_url = "http://localhost:5110/api/delete_source"  # URL of the /api/delete_source endpoint
                 response = requests.get(delete_source_url)
 
             save_document_url = "http://localhost:5110/api/save_document"
-            run_ingest_url = "http://localhost:5110/api/run_ingest"  # URL of the /api/run_ingest endpoint
             files = request.files.getlist("documents")
             for file in files:
                 print(file.filename)
@@ -43,6 +43,7 @@ def home_page():
                     f.seek(0)
                     response = requests.post(save_document_url, files={"document": (filename, f)})
                     print(response.status_code)  # print HTTP response status code for debugging
+            run_ingest_url = "http://localhost:5110/api/run_ingest"
             # Make a GET request to the /api/run_ingest endpoint
             response = requests.get(run_ingest_url)
             print(response.status_code)  # print HTTP response status code for debugging

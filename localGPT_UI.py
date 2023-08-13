@@ -48,11 +48,8 @@ DEVICE_TYPE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 if "result" not in st.session_state:
-    # Run the document ingestion process. 
-    run_langest_commands = ["python", "ingest.py"]
-    run_langest_commands.append("--device_type")
-    run_langest_commands.append(DEVICE_TYPE)
-
+    # Run the document ingestion process.
+    run_langest_commands = ["python", "ingest.py", "--device_type", DEVICE_TYPE]
     result = subprocess.run(run_langest_commands, capture_output=True)
     st.session_state.result = result
 
@@ -95,12 +92,7 @@ if "QA" not in st.session_state:
     st.session_state["QA"] = QA
 
 st.title('LocalGPT App 💬')
-    # Create a text input box for the user
-prompt = st.text_input('Input your prompt here')
-# while True:
-
-    # If the user hits enter
-if prompt:
+if prompt := st.text_input('Input your prompt here'):
     # Then pass the prompt to the LLM
     response = st.session_state["QA"](prompt)
     answer, docs = response["result"], response["source_documents"]

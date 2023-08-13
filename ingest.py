@@ -22,8 +22,7 @@ from constants import (
 def load_single_document(file_path: str) -> Document:
     # Loads a single document from a file path
     file_extension = os.path.splitext(file_path)[1]
-    loader_class = DOCUMENT_MAP.get(file_extension)
-    if loader_class:
+    if loader_class := DOCUMENT_MAP.get(file_extension):
         loader = loader_class(file_path)
     else:
         raise ValueError("Document type is undefined")
