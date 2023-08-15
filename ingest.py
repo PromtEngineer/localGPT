@@ -43,14 +43,14 @@ def load_document_batch(filepaths):
 
 
 def load_documents(source_dir: str) -> list[Document]:
-    # Loads all documents from the source documents directory
-    all_files = os.listdir(source_dir)
+    # Loads all documents from the source documents directory, including nested folders
     paths = []
-    for file_path in all_files:
-        file_extension = os.path.splitext(file_path)[1]
-        source_file_path = os.path.join(source_dir, file_path)
-        if file_extension in DOCUMENT_MAP.keys():
-            paths.append(source_file_path)
+    for root, _, files in os.walk(source_dir):
+        for file_name in files:
+            file_extension = os.path.splitext(file_name)[1]
+            source_file_path = os.path.join(root, file_name)
+            if file_extension in DOCUMENT_MAP.keys():
+                paths.append(source_file_path)
 
     # Have at least one worker and at most INGEST_THREADS workers
     n_workers = min(INGEST_THREADS, max(len(paths), 1))
