@@ -21,7 +21,7 @@ from transformers import (
     pipeline,
 )
 
-from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
+from constants import EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
 
 
 def load_model(device_type, model_id, model_basename=None):
@@ -189,7 +189,7 @@ def main(device_type, show_sources):
     db = Chroma(
         persist_directory=PERSIST_DIRECTORY,
         embedding_function=embeddings,
-        client_settings=CHROMA_SETTINGS,
+
     )
     retriever = db.as_retriever()
     

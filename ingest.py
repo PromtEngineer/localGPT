@@ -10,7 +10,6 @@ from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
 from constants import (
-    CHROMA_SETTINGS,
     DOCUMENT_MAP,
     EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
@@ -146,10 +145,9 @@ def main(device_type):
         texts,
         embeddings,
         persist_directory=PERSIST_DIRECTORY,
-        client_settings=CHROMA_SETTINGS,
+
     )
-    db.persist()
-    db = None
+   
 
 
 if __name__ == "__main__":
