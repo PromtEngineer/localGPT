@@ -17,6 +17,11 @@ PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/DB"
 # Can be changed to a specific number
 INGEST_THREADS = os.cpu_count() or 8
 
+# Define the Chroma settings
+CHROMA_SETTINGS = Settings(
+    anonymized_telemetry=False
+)
+
 
 # https://python.langchain.com/en/latest/_modules/langchain/document_loaders/excel.html#UnstructuredExcelLoader
 DOCUMENT_MAP = {
