@@ -19,7 +19,8 @@ INGEST_THREADS = os.cpu_count() or 8
 
 # Define the Chroma settings
 CHROMA_SETTINGS = Settings(
-    anonymized_telemetry=False
+    anonymized_telemetry=False,
+    is_persistent=True,
 )
 
 
