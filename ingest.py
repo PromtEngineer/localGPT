@@ -4,6 +4,8 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 
 import click
 import torch
+from pathlib import Path
+from typing import List
 from langchain.docstore.document import Document
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
@@ -19,15 +21,16 @@ from constants import (
 )
 
 
-def load_single_document(file_path: str) -> Document:
+def load_single_document(file_path: str) -> list[Document]:
     # Loads a single document from a file path
     file_extension = os.path.splitext(file_path)[1]
     loader_class = DOCUMENT_MAP.get(file_extension)
     if loader_class:
+        logging.info(f"Loading document {Path(file_path).name} with {loader_class.__name__}")
         loader = loader_class(file_path)
     else:
         raise ValueError("Document type is undefined")
-    return loader.load()[0]
+    return loader.load()
 
 
 def load_document_batch(filepaths):
@@ -37,7 +40,8 @@ def load_document_batch(filepaths):
         # load files
         futures = [exe.submit(load_single_document, name) for name in filepaths]
         # collect data
-        data_list = [future.result() for future in futures]
+        nested_data_list = [future.result() for future in futures]
+        data_list = [item for sublist in nested_data_list for item in sublist]
         # return data and file paths
         return (data_list, filepaths)
 
