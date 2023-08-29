@@ -147,9 +147,9 @@ def main(device_type):
         embeddings,
         persist_directory=PERSIST_DIRECTORY,
         client_settings=CHROMA_SETTINGS,
+
     )
-    db.persist()
-    db = None
+   
 
 
 if __name__ == "__main__":
