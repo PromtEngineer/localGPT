@@ -6,7 +6,7 @@ from auto_gptq import AutoGPTQForCausalLM
 from huggingface_hub import hf_hub_download
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.llms import HuggingFacePipeline, LlamaCpp
+from langchain.llms import HuggingFacePipeline, LlamaCpp, CTransformers
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
 
@@ -47,21 +47,11 @@ def load_model(device_type, model_id, model_basename=None):
 
     if model_basename is not None:
         if ".ggml" in model_basename:
-            logging.info("Using Llamacpp for GGML quantized models")
-            model_path = hf_hub_download(repo_id=model_id, filename=model_basename)
-            max_ctx_size = 2048
-            kwargs = {
-                "model_path": model_path,
-                "n_ctx": max_ctx_size,
-                "max_tokens": max_ctx_size,
-            }
-            if device_type.lower() == "mps":
-                kwargs["n_gpu_layers"] = 1000
-            if device_type.lower() == "cuda":
-                kwargs["n_gpu_layers"] = 1000
-                kwargs["n_batch"] = max_ctx_size
-            return LlamaCpp(**kwargs)
-
+            # Llamacpp no more supports GGML format - https://huggingface.co/TheBloke/Llama-2-13B-chat-GGML/discussions/14#:~:text=cpp%20is%20no%20longer%20compatible,As%20far%20as%20llama.
+            logging.info("Using CTransformers for GGML quantized models")
+            config = { 'repetition_penalty': 1.15}
+            local_llm = CTransformers(model=MODEL_ID, model_file=MODEL_BASENAME, config=config)
+            return local_llm
         else:
             # The code supports all huggingface models that ends with GPTQ and have some variation
             # of .no-act.order or .safetensors in their HF repo.

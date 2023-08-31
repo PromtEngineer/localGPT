@@ -1,0 +1,7 @@
+SOURCE_DOCUMENTS_/
+*.bin
+*.pyc
+DB/
+test_chroma_ingest.py
+test_chroma.py
+SOURCE_DOCUMENTS/dress code.pdf
