@@ -142,7 +142,7 @@ def main(device_type):
 
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
-    db = Chroma.from_documents(
+    Chroma.from_documents(
         texts,
         embeddings,
         persist_directory=PERSIST_DIRECTORY,
