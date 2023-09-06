@@ -24,6 +24,7 @@ from constants import (
   PERSIST_DIRECTORY,
   MODEL_ID,
   MODEL_BASENAME,
+  DEVICE_TYPES,
 )
 
 
@@ -137,29 +138,7 @@ def load_model(device_type, model_id, model_basename=None):
 @click.option(
     "--device_type",
     default="cuda" if torch.cuda.is_available() else "cpu",
-    type=click.Choice(
-        [
-            "cpu",
-            "cuda",
-            "ipu",
-            "xpu",
-            "mkldnn",
-            "opengl",
-            "opencl",
-            "ideep",
-            "hip",
-            "ve",
-            "fpga",
-            "ort",
-            "xla",
-            "lazy",
-            "vulkan",
-            "mps",
-            "meta",
-            "hpu",
-            "mtia",
-        ],
-    ),
+    type=click.Choice(DEVICE_TYPES),
     help="Device to run on. (Default is cuda)",
 )
 @click.option(

@@ -140,3 +140,25 @@ MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 # MODEL_BASENAME = "wizard-vicuna-13B.ggmlv3.q2_K.bin"
 # MODEL_ID = "TheBloke/orca_mini_3B-GGML"
 # MODEL_BASENAME = "orca-mini-3b.ggmlv3.q4_0.bin"
+
+DEVICE_TYPES = [
+    "cpu",
+    "cuda",
+    "ipu",
+    "xpu",
+    "mkldnn",
+    "opengl",
+    "opencl",
+    "ideep",
+    "hip",
+    "ve",
+    "fpga",
+    "ort",
+    "xla",
+    "lazy",
+    "vulkan",
+    "mps",
+    "meta",
+    "hpu",
+    "mtia",
+]
