@@ -167,21 +167,21 @@ CMAKE_ARGS="-DLLAMA_METAL=on" FORCE_CMAKE=1 pip install -U llama-cpp-python --no
    MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
    ```
 
-3. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
+2. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
 
-4. Navigate to the `/LOCALGPT` directory.
+3. Navigate to the `/LOCALGPT` directory.
 
-5. Run the following command `python run_localGPT_API.py`. The API should being to run.
+4. Run the following command `python run_localGPT_API.py`. The API should being to run.
 
-6. Wait until everything has loaded in. You should see something like `INFO:werkzeug:Press CTRL+C to quit`.
+5. Wait until everything has loaded in. You should see something like `INFO:werkzeug:Press CTRL+C to quit`.
 
-7. Open up a second terminal and activate the same python environment.
+6. Open up a second terminal and activate the same python environment.
 
-8. Navigate to the `/LOCALGPT/localGPTUI` directory.
+7. Navigate to the `/LOCALGPT/localGPTUI` directory.
 
-9. Run the command `python localGPTUI.py`.
+8. Run the command `python localGPTUI.py`.
 
-10. Open up a web browser and go the address `http://localhost:5111/`.
+9. Open up a web browser and go the address `http://localhost:5111/`.
 
 # How does it work?
 
@@ -197,15 +197,15 @@ The following will provide instructions on how you can select a different LLM mo
 
 1. Open up `constants.py` in the editor of your choice.
 2. Change the `MODEL_ID` and `MODEL_BASENAME`. If you are using a quantized model (`GGML`, `GPTQ`), you will need to provide `MODEL_BASENAME`. For unquatized models, set `MODEL_BASENAME` to `NONE`
-5. There are a number of example models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
-6. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
+3. There are a number of example models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
+4. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
 
    - Make sure you have a model_id selected. For example -> `MODEL_ID = "TheBloke/guanaco-7B-HF"`
    - If you go to its HuggingFace [repo](https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
    - Any model files that contain .bin extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
    - `MODEL_ID = "TheBloke/guanaco-7B-HF"`
 
-7. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
+5. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
 
    - Make sure you have a model_id selected. For example -> model_id = `"TheBloke/wizardLM-7B-GPTQ"`
    - You will also need its model basename file selected. For example -> `model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
@@ -215,8 +215,7 @@ The following will provide instructions on how you can select a different LLM mo
 
      `MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"`
 
-
-8. Comment out all other instances of `MODEL_ID="other model names"`, `MODEL_BASENAME=other base model names`, and `llm = load_model(args*)`
+6. Comment out all other instances of `MODEL_ID="other model names"`, `MODEL_BASENAME=other base model names`, and `llm = load_model(args*)`
 
 # System Requirements
 
