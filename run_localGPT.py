@@ -20,11 +20,11 @@ from transformers import (
 )
 
 from constants import (
-  EMBEDDING_MODEL_NAME,
-  PERSIST_DIRECTORY,
-  MODEL_ID,
-  MODEL_BASENAME,
-  DEVICE_TYPES,
+    EMBEDDING_MODEL_NAME,
+    PERSIST_DIRECTORY,
+    MODEL_ID,
+    MODEL_BASENAME,
+    DEVICE_TYPES,
 )
 
 
@@ -195,11 +195,14 @@ def main(device_type, show_sources):
         return_source_documents=True,
         chain_type_kwargs={"prompt": prompt, "memory": memory},
     )
+
     # Interactive questions and answers
     while True:
         query = input("\nEnter a query: ")
+
         if query == "exit":
             break
+
         # Get the answer from the chain
         res = qa(query)
         answer, docs = res["result"], res["source_documents"]
@@ -210,7 +213,8 @@ def main(device_type, show_sources):
         print("\n> Answer:")
         print(answer)
 
-        if show_sources:  # this is a flag that you can set to disable showing answers.
+        if show_sources:
+            # this is a flag that you can set to disable showing answers.
             # # Print the relevant sources used for the answer
             print("----------------------------------SOURCE DOCUMENTS---------------------------")
             for document in docs:
