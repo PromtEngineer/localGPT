@@ -47,7 +47,7 @@ Installing the required packages for GPU inference on Nvidia GPUs, like gcc 11 a
 As an alternative to Conda, you can use Docker with the provided Dockerfile.
 It includes CUDA, your system just needs Docker, BuildKit, your Nvidia GPU driver and the Nvidia container toolkit.
 Build as `docker build . -t localgpt`, requires BuildKit.
-Docker BuildKit does not support GPU during *docker build* time right now, only during *docker run*.
+Docker BuildKit does not support GPU during _docker build_ time right now, only during _docker run_.
 Run as `docker run -it --mount src="$HOME/.cache",target=/root/.cache,type=bind --gpus=all localgpt`.
 
 ## Test dataset
