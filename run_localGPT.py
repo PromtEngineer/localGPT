@@ -128,7 +128,7 @@ def load_model(device_type, model_id, model_basename=None):
     return local_llm
 
 
-# chose device typ to run on as well as to show source documents.
+# chose device type to run on as well as to show source documents.
 @click.command()
 @click.option(
     "--device_type",
