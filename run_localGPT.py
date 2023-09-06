@@ -19,7 +19,12 @@ from transformers import (
     pipeline,
 )
 
-from constants import EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
+from constants import (
+  EMBEDDING_MODEL_NAME,
+  PERSIST_DIRECTORY,
+  MODEL_ID,
+  MODEL_BASENAME,
+)
 
 
 def load_model(device_type, model_id, model_basename=None):
