@@ -147,9 +147,7 @@ def main(device_type):
         embeddings,
         persist_directory=PERSIST_DIRECTORY,
         client_settings=CHROMA_SETTINGS,
-
     )
-   
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT.
 
 For detailed overview of the project, Watch these videos
+
 - [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo).
 - [Llama-2 with LocalGPT](https://youtu.be/lbFmceo4D5E)
 - [Adding Chat History](https://youtu.be/d7otIM_MCZs)
@@ -32,7 +33,6 @@ In order to set your environment up to run the code here, first install all requ
 ```shell
 pip install -r requirements.txt
 ```
-
 
 If you want to use BLAS or Metal with [llama-cpp](<(https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal)>) you can set appropriate flags:
 
@@ -253,25 +253,25 @@ This is a test project to validate the feasibility of a fully local solution for
 
 # Common Errors
 
- - [Torch not compatible with CUDA enabled](https://github.com/pytorch/pytorch/issues/30664)
+- [Torch not compatible with CUDA enabled](https://github.com/pytorch/pytorch/issues/30664)
 
-   -  Get CUDA version
-      ```shell
-      nvcc --version
-      ```
-      ```shell
-      nvidia-smi
-      ```
-   - Try installing PyTorch depending on your CUDA version
-      ```shell
-         conda install -c pytorch torchvision cudatoolkit=10.1 pytorch
-      ```
-   - If it doesn't work, try reinstalling
-      ```shell
-         pip uninstall torch
-         pip cache purge
-         pip install torch -f https://download.pytorch.org/whl/torch_stable.html
-      ```
+  - Get CUDA version
+    ```shell
+    nvcc --version
+    ```
+    ```shell
+    nvidia-smi
+    ```
+  - Try installing PyTorch depending on your CUDA version
+    ```shell
+       conda install -c pytorch torchvision cudatoolkit=10.1 pytorch
+    ```
+  - If it doesn't work, try reinstalling
+    ```shell
+       pip uninstall torch
+       pip cache purge
+       pip install torch -f https://download.pytorch.org/whl/torch_stable.html
+    ```
 
 - [ERROR: pip's dependency resolver does not currently take into account all the packages that are installed](https://stackoverflow.com/questions/72672196/error-pips-dependency-resolver-does-not-currently-take-into-account-all-the-pa/76604141#76604141)
   ```shell

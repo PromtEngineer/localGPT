@@ -38,7 +38,7 @@ DOCUMENT_MAP = {
 }
 
 # Default Instructor Model
-EMBEDDING_MODEL_NAME = "hkunlp/instructor-large" # Uses 1.5 GB of VRAM (High Accuracy with lower VRAM usage)
+EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Accuracy with lower VRAM usage)
 
 ####
 #### OTHER EMBEDDING MODEL OPTIONS
@@ -53,22 +53,22 @@ EMBEDDING_MODEL_NAME = "hkunlp/instructor-large" # Uses 1.5 GB of VRAM (High Acc
 #### MULTILINGUAL EMBEDDING MODELS
 ####
 
-# EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-large" # Uses 2.5 GB of VRAM 
-# EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-base" # Uses 1.2 GB of VRAM 
+# EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-large" # Uses 2.5 GB of VRAM
+# EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-base" # Uses 1.2 GB of VRAM
 
 
 #### SELECT AN OPEN SOURCE LLM (LARGE LANGUAGE MODEL)
-    # Select the Model ID and model_basename
-    # load the LLM for generating Natural Language responses
+# Select the Model ID and model_basename
+# load the LLM for generating Natural Language responses
 
 #### GPU VRAM Memory required for LLM Models (ONLY) by Billion Parameter value (B Model)
 #### Does not include VRAM used by Embedding Models - which use an additional 2GB-7GB of VRAM depending on the model.
 ####
 #### (B Model)   (float32)    (float16)    (GPTQ 8bit)         (GPTQ 4bit)
-####    7b         28 GB        14 GB       7 GB - 9 GB        3.5 GB - 5 GB     
-####    13b        52 GB        26 GB       13 GB - 15 GB      6.5 GB - 8 GB    
-####    32b        130 GB       65 GB       32.5 GB - 35 GB    16.25 GB - 19 GB  
-####    65b        260.8 GB     130.4 GB    65.2 GB - 67 GB    32.6 GB -  - 35 GB  
+####    7b         28 GB        14 GB       7 GB - 9 GB        3.5 GB - 5 GB
+####    13b        52 GB        26 GB       13 GB - 15 GB      6.5 GB - 8 GB
+####    32b        130 GB       65 GB       32.5 GB - 35 GB    16.25 GB - 19 GB
+####    65b        260.8 GB     130.4 GB    65.2 GB - 67 GB    32.6 GB -  - 35 GB
 
 MODEL_ID = "TheBloke/Llama-2-7B-Chat-GGML"
 MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
@@ -98,8 +98,8 @@ MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 # model_basename = "model.safetensors"
 # model_id = "TheBloke/gpt4-alpaca-lora_mlp-65B-GPTQ"
 # model_basename = "model.safetensors"
-# model_id = "TheBloke/Upstage-Llama1-65B-Instruct-GPTQ" 
-# model_basename = "model.safetensors"    
+# model_id = "TheBloke/Upstage-Llama1-65B-Instruct-GPTQ"
+# model_basename = "model.safetensors"
 
 ##### 24GB VRAM Graphics Cards (RTX 3090 - RTX 4090 (35% Faster) - RTX A5000 - RTX A5500) #####
 
@@ -110,14 +110,14 @@ MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 # model_basename = "model.safetensors"
 # model_id = "TheBloke/Nous-Hermes-13B-GPTQ"
 # model_basename = "nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
-# model_id = "TheBloke/WizardLM-13B-V1.2-GPTQ" 
+# model_id = "TheBloke/WizardLM-13B-V1.2-GPTQ"
 # model_basename = "gptq_model-4bit-128g.safetensors
 
 ### 30b GPTQ Models for 24GB GPUs (*** Requires using intfloat/e5-base-v2 instead of hkunlp/instructor-large as embedding model ***)
 # model_id = "TheBloke/Wizard-Vicuna-30B-Uncensored-GPTQ"
-# model_basename = "Wizard-Vicuna-30B-Uncensored-GPTQ-4bit--1g.act.order.safetensors" 
+# model_basename = "Wizard-Vicuna-30B-Uncensored-GPTQ-4bit--1g.act.order.safetensors"
 # model_id = "TheBloke/WizardLM-30B-Uncensored-GPTQ"
-# model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" 
+# model_basename = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors"
 
 ##### 8-10GB VRAM Graphics Cards (RTX 3080 - RTX 3080 Ti - RTX 3070 Ti - 3060 Ti - RTX 2000 Series, Quadro RTX 4000, 5000, 6000) #####
 ### (*** Requires using intfloat/e5-small-v2 instead of hkunlp/instructor-large as embedding model ***)
