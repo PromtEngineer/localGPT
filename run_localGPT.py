@@ -59,11 +59,10 @@ def load_model(device_type, model_id, model_basename=None):
                 "n_ctx": max_ctx_size,
                 "max_tokens": max_ctx_size,
             }
-            if device_type.lower() == "mps":
+            if device_type.lower() == "mps" or device_type.lower() == "cuda":
                 kwargs["n_gpu_layers"] = 1000
-            if device_type.lower() == "cuda":
-                kwargs["n_gpu_layers"] = 1000
-                kwargs["n_batch"] = max_ctx_size
+                if device_type.lower() == "cuda":
+                    kwargs["n_batch"] = max_ctx_size
             return LlamaCpp(**kwargs)
 
         else:
@@ -71,10 +70,7 @@ def load_model(device_type, model_id, model_basename=None):
             # of .no-act.order or .safetensors in their HF repo.
             logging.info("Using AutoGPTQForCausalLM for quantized models")
 
-            if ".safetensors" in model_basename:
-                # Remove the ".safetensors" ending if present
-                model_basename = model_basename.replace(".safetensors", "")
-
+            model_basename = model_basename.replace(".safetensors", "")
             tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
             logging.info("Tokenizer loaded")
 
@@ -87,9 +83,8 @@ def load_model(device_type, model_id, model_basename=None):
                 use_triton=False,
                 quantize_config=None,
             )
-    elif (
-        device_type.lower() == "cuda"
-    ):  # The code supports all huggingface models that ends with -HF or which have a .bin
+    elif device_type.lower() == "cuda":
+        # The code supports all huggingface models that ends with -HF or which have a .bin
         # file in their HF repo.
         logging.info("Using AutoModelForCausalLM for full models")
         tokenizer = AutoTokenizer.from_pretrained(model_id)
