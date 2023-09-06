@@ -2,29 +2,15 @@ import logging
 import os
 import shutil
 import subprocess
-
 import torch
-from auto_gptq import AutoGPTQForCausalLM
+
 from flask import Flask, jsonify, request
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-
-# from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.llms import HuggingFacePipeline
-from run_localGPT import load_model
-
-# from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    GenerationConfig,
-    LlamaForCausalLM,
-    LlamaTokenizer,
-    pipeline,
-)
 from werkzeug.utils import secure_filename
 
+from run_localGPT import load_model
 from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
 
 DEVICE_TYPE = "cuda" if torch.cuda.is_available() else "cpu"
