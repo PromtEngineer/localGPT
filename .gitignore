@@ -1,0 +1,13 @@
+# Documents
+SOURCE_DOCUMENTS/
+!SOURCE_DOCUMENTS/constitution.pdf
+
+# Generated folders
+DB/
+
+# Cache folders
+*pyc
+
+# IDE
+.vscode/
+.idea/
