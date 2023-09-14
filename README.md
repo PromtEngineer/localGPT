@@ -18,12 +18,17 @@
 - [Adding Chat History](https://youtu.be/d7otIM_MCZs)
 
 ## Technical Details 🛠️
-LocalGPT replaces the GPT4ALL model with the Vicuna-7B model, utilizing InstructorEmbeddings over LlamaEmbeddings. Both embeddings and LLMs are GPU-optimized, but CPU support is also available.
+By selecting the right local models and the power of `LangChain` you can run the entire RAG pipeline locally, without any data leaving your environment, and with reasonable performance.
+
+- `ingest.py` uses `LangChain` tools to parse the document and create embeddings locally using `InstructorEmbeddings`. It then stores the result in a local vector database using `Chroma` vector store.
+- `run_localGPT.py` uses a local LLM to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
+- You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format.
 
 ## Built Using 🧩
 - [LangChain](https://github.com/hwchase17/langchain)
-- [Vicuna-7B](https://huggingface.co/TheBloke/vicuna-7B-1.1-HF)
+- [HuggingFace LLMs](https://huggingface.co/models)
 - [InstructorEmbeddings](https://instructor-embedding.github.io/)
+- [Streamlit](https://streamlit.io/)
 
 # Environment Setup 🌍
 
@@ -183,21 +188,6 @@ Another option is to enable chat history. ***Note***: This is disabled by defaul
 python run_localGPT.py --use_history
 ```
 
-# Run it on CPU
-
-By default, localGPT will use your GPU to run both the `ingest.py` and `run_localGPT.py` scripts. But if you do not have a GPU and want to run this on CPU, now you can do that (Warning: Its going to be slow!). You will need to use `--device_type cpu`flag with both scripts.
-
-For Ingestion run the following:
-
-```shell
-python ingest.py --device_type cpu
-```
-
-In order to ask a question, run a command like:
-
-```shell
-python run_localGPT.py --device_type cpu
-```
 
 # Run the Graphical User Interface
 
@@ -224,40 +214,26 @@ python run_localGPT.py --device_type cpu
 
 10. Open up a web browser and go the address `http://localhost:5111/`.
 
-# How does it work?
-
-Selecting the right local models and the power of `LangChain` you can run the entire pipeline locally, without any data leaving your environment, and with reasonable performance.
-
-- `ingest.py` uses `LangChain` tools to parse the document and create embeddings locally using `InstructorEmbeddings`. It then stores the result in a local vector database using `Chroma` vector store.
-- `run_localGPT.py` uses a local LLM to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
-- You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format.
 
 # How to select different LLM models?
 
-The following will provide instructions on how you can select a different LLM model to create your response:
+To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`. 
 
 1. Open up `constants.py` in the editor of your choice.
-2. Change the `MODEL_ID` and `MODEL_BASENAME`. If you are using a quantized model (`GGML`, `GPTQ`), you will need to provide `MODEL_BASENAME`. For unquatized models, set `MODEL_BASENAME` to `NONE`
+2. Change the `MODEL_ID` and `MODEL_BASENAME`. If you are using a quantized model (`GGML`, `GPTQ`, `GGUF`), you will need to provide `MODEL_BASENAME`. For unquatized models, set `MODEL_BASENAME` to `NONE`
 5. There are a number of example models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
 6. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
 
-   - Make sure you have a model_id selected. For example -> `MODEL_ID = "TheBloke/guanaco-7B-HF"`
-   - If you go to its HuggingFace [repo](https://huggingface.co/TheBloke/guanaco-7B-HF) and go to "Files and versions" you will notice model files that end with a .bin extension.
-   - Any model files that contain .bin extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
-   - `MODEL_ID = "TheBloke/guanaco-7B-HF"`
+   - Make sure you have a `MODEL_ID` selected. For example -> `MODEL_ID = "TheBloke/guanaco-7B-HF"`
+   - Go to the [HuggingFace Repo](https://huggingface.co/TheBloke/guanaco-7B-HF)
 
 7. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
 
-   - Make sure you have a model_id selected. For example -> model_id = `"TheBloke/wizardLM-7B-GPTQ"`
-   - You will also need its model basename file selected. For example -> `model_basename = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
-   - If you go to its HuggingFace [repo](https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and go to "Files and versions" you will notice a model file that ends with a .safetensors extension.
-   - Any model files that contain no-act-order or .safetensors extensions will be run with the following code where the `# load the LLM for generating Natural Language responses` comment is found.
-   - `MODEL_ID = "TheBloke/WizardLM-7B-uncensored-GPTQ"`
+   - Make sure you have a `MODEL_ID` selected. For example -> model_id = `"TheBloke/wizardLM-7B-GPTQ"`
+   - Got to the corresponding [HuggingFace Repo](https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and select "Files and versions".
+   - Pick one of the model names and set it as  `MODEL_BASENAME`. For example -> `MODEL_BASENAME = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
 
-     `MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"`
-
-
-8. Comment out all other instances of `MODEL_ID="other model names"`, `MODEL_BASENAME=other base model names`, and `llm = load_model(args*)`
+8. Follow the same steps for `GGUF` and `GGML` models. 
 
 # System Requirements
 
