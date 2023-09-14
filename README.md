@@ -1,17 +1,25 @@
-# localGPT
+# LocalGPT: Secure, Local Conversations with Your Documents 🌐
 
-This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT). Most of the description here is inspired by the original privateGPT.
+**LocalGPT** is an open-source initiative that allows you to converse with your documents without compromising your privacy. With everything running locally, you can be assured that no data ever leaves your computer. Dive into the world of secure, local document interactions with LocalGPT.
 
-For detailed overview of the project, Watch these videos
-- [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo).
+## Features 🌟
+- **Utmost Privacy**: Your data remains on your computer, ensuring 100% security.
+- **Versatile Model Support**: Seamlessly integrate a variety of open-source models, including HF, GPTQ, GGML, and GGUF.
+- **Diverse Embeddings**: Choose from a range of open-source embeddings.
+- **Reuse Your LLM**: Once downloaded, reuse your LLM without the need for repeated downloads.
+
+## Dive Deeper with Our Videos 🎥
+- [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo)
 - [Llama-2 with LocalGPT](https://youtu.be/lbFmceo4D5E)
 - [Adding Chat History](https://youtu.be/d7otIM_MCZs)
 
-In this model, I have replaced the GPT4ALL model with Vicuna-7B model and we are using the InstructorEmbeddings instead of LlamaEmbeddings as used in the original privateGPT. Both Embeddings as well as LLM will run on GPU instead of CPU. It also has CPU support if you do not have a GPU (see below for instruction).
+## Technical Details 🛠️
+LocalGPT replaces the GPT4ALL model with the Vicuna-7B model, utilizing InstructorEmbeddings over LlamaEmbeddings. Both embeddings and LLMs are GPU-optimized, but CPU support is also available.
 
-Ask questions to your documents without an internet connection, using the power of LLMs. 100% private, no data leaves your execution environment at any point. You can ingest documents and ask questions without an internet connection!
-
-Built with [LangChain](https://github.com/hwchase17/langchain) and [Vicuna-7B](https://huggingface.co/TheBloke/vicuna-7B-1.1-HF) (+ alot more!) and [InstructorEmbeddings](https://instructor-embedding.github.io/)
+## Built Using 🧩
+- [LangChain](https://github.com/hwchase17/langchain)
+- [Vicuna-7B](https://huggingface.co/TheBloke/vicuna-7B-1.1-HF)
+- [InstructorEmbeddings](https://instructor-embedding.github.io/)
 
 # Environment Setup
 
