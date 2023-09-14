@@ -8,6 +8,9 @@
 - **Diverse Embeddings**: Choose from a range of open-source embeddings.
 - **Reuse Your LLM**: Once downloaded, reuse your LLM without the need for repeated downloads.
 - **Chat History**: Remebers your previous conversations (in a session).
+- **API**: LocalGPT has an API that you can use for building RAG Applications.
+- **Graphical Interface**: LocalGPT comes with two GUIs, one uses the API and the other is standalone (based on streamlit).
+- **GPU, CPU & MPS Support**: Supports mulitple platforms out of the box, Chat with your data using `CUDA`, `CPU` or `MPS` and more!
 
 ## Dive Deeper with Our Videos 🎥
 - [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo)
@@ -100,18 +103,6 @@ DOCUMENT_MAP = {
 }
 ```
 
-DOCUMENT_MAP = {
-    ".txt": TextLoader,
-    ".md": TextLoader,
-    ".py": TextLoader,
-    ".pdf": PDFMinerLoader,
-    ".csv": CSVLoader,
-    ".xls": UnstructuredExcelLoader,
-    ".xlsx": UnstructuredExcelLoader,
-    ".docx": Docx2txtLoader,
-    ".doc": Docx2txtLoader,
-}
-
 ### Ingest
 
 Run the following command to ingest all the data.
@@ -121,6 +112,9 @@ If you have `cuda` setup on your system.
 ```shell
 python ingest.py
 ```
+You will see an output like this:
+<img width="1110" alt="Screenshot 2023-09-14 at 3 36 27 PM" src="https://github.com/PromtEngineer/localGPT/assets/134474669/c9274e9a-842c-49b9-8d95-606c3d80011f">
+
 
 Use the device type argument to specify a given device.
 To run on `cuda` 
@@ -148,23 +142,46 @@ Note: When you run this for the first time, it will need internet access to down
 
 ## Ask questions to your documents, locally!
 
-In order to ask a question, run a command like:
+In order to chat with your documents, run the following commnad (by default, it will run on `cuda`). 
 
 ```shell
 python run_localGPT.py
 ```
+You can also specify the device type just like `ingest.py`
 
-And wait for the script to require your input.
+```shell
+python run_localGPT.py --device_type mps # to run on Apple silicon
+```
+
+This will load the ingested vector store and embedding model. You will be presented with a prompt: 
 
 ```shell
 > Enter a query:
 ```
 
-Hit enter. Wait while the LLM model consumes the prompt and prepares the answer. Once done, it will print the answer and the 4 sources it used as context from your documents; you can then ask another question without re-running the script, just wait for the prompt again.
+After typing your question, hit enter. LocalGPT will take some time based on your hardware. You will get a response like this below. 
+<img width="1312" alt="Screenshot 2023-09-14 at 3 33 19 PM" src="https://github.com/PromtEngineer/localGPT/assets/134474669/a7268de9-ade0-420b-a00b-ed12207dbe41">
 
-Note: When you run this for the first time, it will need internet connection to download the vicuna-7B model. After that you can turn off your internet connection, and the script inference would still work. No data gets out of your local environment.
+Once the answer is generated, you can then ask another question without re-running the script, just wait for the prompt again.
+
+
+***Note:*** When you run this for the first time, it will need internet connection to download the LLM (default: `TheBloke/Llama-2-7b-Chat-GGUF`). After that you can turn off your internet connection, and the script inference would still work. No data gets out of your local environment.
 
 Type `exit` to finish the script.
+
+### Extra Options with run_localGPT.py
+
+You can use the `--show_sources` flag with `run_localGPT.py` to show which chunks were retrieved by the embedding model. By default, it will show 4 different sources/chunks. You can change the number of sources/chunks
+
+```shell
+python run_localGPT.py --show_sources
+```
+
+Another option is to enable chat history. ***Note***: This is disabled by default and can be enabled by using the  `--use_history` flag. The context window is limited so keep in mind enabling history will use it and might overflow. 
+
+```shell
+python run_localGPT.py --use_history
+```
 
 # Run it on CPU
 
@@ -182,48 +199,13 @@ In order to ask a question, run a command like:
 python run_localGPT.py --device_type cpu
 ```
 
-# Run quantized for M1/M2:
-
-GGML quantized models for Apple Silicon (M1/M2) are supported through the llama-cpp library, [example](https://huggingface.co/TheBloke/Wizard-Vicuna-13B-Uncensored-GGML). GPTQ quantized models that leverage auto-gptq will not work, [see here](https://github.com/PanQiWei/AutoGPTQ/issues/133#issuecomment-1575002893). GGML models will work for CPU or MPS.
-
-## Troubleshooting
-
-**Install MPS:**
-1- Follow this [page](https://developer.apple.com/metal/pytorch/) to build up PyTorch with Metal Performance Shaders (MPS) support. PyTorch uses the new MPS backend for GPU training acceleration. It is good practice to verify mps support using a simple Python script as mentioned in the provided link.
-
-2- By following the page, here is an example of what you may initiate in your terminal
-
-```shell
-xcode-select --install
-conda install pytorch torchvision torchaudio -c pytorch-nightly
-pip install chardet
-pip install cchardet
-pip uninstall charset_normalizer
-pip install charset_normalizer
-pip install pdfminer.six
-pip install xformers
-```
-
-**Upgrade packages:**
-Your langchain or llama-cpp version could be outdated. Upgrade your packages by running install again.
-
-```shell
-pip install -r requirements.txt
-```
-
-If you are still getting errors, try installing the latest llama-cpp-python with these flags, and [see thread](https://github.com/abetlen/llama-cpp-python/issues/317#issuecomment-1587962205).
-
-```shell
-CMAKE_ARGS="-DLLAMA_METAL=on" FORCE_CMAKE=1 pip install -U llama-cpp-python --no-cache-dir
-```
-
-# Run the UI
+# Run the Graphical User Interface
 
 1. Open `constants.py` in an editor of your choice and depending on choice add the LLM you want to use. By default, the following model will be used:
 
    ```shell
-   MODEL_ID = "TheBloke/Llama-2-7B-Chat-GGML"
-   MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
+   MODEL_ID = "TheBloke/Llama-2-7b-Chat-GGUF"
+   MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
    ```
 
 3. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
