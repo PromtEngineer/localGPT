@@ -21,35 +21,52 @@ LocalGPT replaces the GPT4ALL model with the Vicuna-7B model, utilizing Instruct
 - [Vicuna-7B](https://huggingface.co/TheBloke/vicuna-7B-1.1-HF)
 - [InstructorEmbeddings](https://instructor-embedding.github.io/)
 
-# Environment Setup
+# Environment Setup 🌍
 
-Install conda
-
+1. 📥 Clone the repo using git:
+  
 ```shell
-conda create -n localGPT
+git clone https://github.com/PromtEngineer/localGPT.git
 ```
 
-Activate
+2. 🐍 Instal [conda](https://www.anaconda.com/download) for virtual environment management. Create and activate a new virtual environment. 
 
 ```shell
+conda create -n localGPT python=3.10.0
 conda activate localGPT
 ```
 
-In order to set your environment up to run the code here, first install all requirements:
+3. 🛠️ Install the dependencies using pip
+
+To set up your environment to run the code, first install all requirements:
 
 ```shell
 pip install -r requirements.txt
 ```
 
+***Important Note:***
 
-If you want to use BLAS or Metal with [llama-cpp](<(https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal)>) you can set appropriate flags:
+LocalGPT uses [LlamaCpp-Python](https://github.com/abetlen/llama-cpp-python) for GGML (you will need llama-cpp-python <=0.1.76) and GGUF (llama-cpp-python >=0.1.83) models.
+
+
+If you want to use BLAS or Metal with [llama-cpp](https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal) you can set appropriate flags:
+
+For `NVIDIA` GPUs support, use `cuBLAS`
 
 ```shell
 # Example: cuBLAS
 CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install -r requirements.txt
 ```
 
-## Docker
+For Apple Metal (`M1/M2`) support, use 
+
+```shell
+# Example: METAL
+CMAKE_ARGS="-DLLAMA_METAL=on"  FORCE_CMAKE=1 pip install -r requirements.txt
+```
+For more details, please refer to [llama-cpp](https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal)
+
+## Docker 🐳
 
 Installing the required packages for GPU inference on Nvidia GPUs, like gcc 11 and CUDA 11, may cause conflicts with other packages in your system.
 As an alternative to Conda, you can use Docker with the provided Dockerfile.
@@ -60,9 +77,39 @@ Run as `docker run -it --mount src="$HOME/.cache",target=/root/.cache,type=bind 
 
 ## Test dataset
 
-This repo uses a [Constitution of USA ](https://constitutioncenter.org/media/files/constitution.pdf) as an example.
+For testing, this repository comes with [Constitution of USA](https://constitutioncenter.org/media/files/constitution.pdf) as an example file to use.
 
-## Instructions for ingesting your own dataset
+## Ingesting your OWN data.
+Put you files in the `SOURCE_DOCUMENTS` folder. You can put multiple folders within the `SOURCE_DOCUMENTS` folder and the code will recursively read your files.
+
+### Support file formats:
+LocalGPT currently supports the following file formats. LocalGPT uses `LangChain` for loading these file formats. The code in `constants.py` uses a `DOCUMENT_MAP` dictionary to map a file format to the corresponding loader. In order to add support for another file format, simply add this dictionary with the file format and the corresponding loader from [LangChain](https://python.langchain.com/docs/modules/data_connection/document_loaders/). 
+
+```shell
+DOCUMENT_MAP = {
+    ".txt": TextLoader,
+    ".md": TextLoader,
+    ".py": TextLoader,
+    ".pdf": PDFMinerLoader,
+    ".csv": CSVLoader,
+    ".xls": UnstructuredExcelLoader,
+    ".xlsx": UnstructuredExcelLoader,
+    ".docx": Docx2txtLoader,
+    ".doc": Docx2txtLoader,
+}
+```
+
+DOCUMENT_MAP = {
+    ".txt": TextLoader,
+    ".md": TextLoader,
+    ".py": TextLoader,
+    ".pdf": PDFMinerLoader,
+    ".csv": CSVLoader,
+    ".xls": UnstructuredExcelLoader,
+    ".xlsx": UnstructuredExcelLoader,
+    ".docx": Docx2txtLoader,
+    ".doc": Docx2txtLoader,
+}
 
 Put any and all of your .txt, .pdf, or .csv files into the SOURCE_DOCUMENTS directory
 in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory.
