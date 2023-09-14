@@ -7,6 +7,7 @@
 - **Versatile Model Support**: Seamlessly integrate a variety of open-source models, including HF, GPTQ, GGML, and GGUF.
 - **Diverse Embeddings**: Choose from a range of open-source embeddings.
 - **Reuse Your LLM**: Once downloaded, reuse your LLM without the need for repeated downloads.
+- **Chat History**: Remebers your previous conversations (in a session).
 
 ## Dive Deeper with Our Videos 🎥
 - [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo)
@@ -79,7 +80,7 @@ Run as `docker run -it --mount src="$HOME/.cache",target=/root/.cache,type=bind 
 
 For testing, this repository comes with [Constitution of USA](https://constitutioncenter.org/media/files/constitution.pdf) as an example file to use.
 
-## Ingesting your OWN data.
+## Ingesting your OWN Data.
 Put you files in the `SOURCE_DOCUMENTS` folder. You can put multiple folders within the `SOURCE_DOCUMENTS` folder and the code will recursively read your files.
 
 ### Support file formats:
@@ -111,23 +112,27 @@ DOCUMENT_MAP = {
     ".doc": Docx2txtLoader,
 }
 
-Put any and all of your .txt, .pdf, or .csv files into the SOURCE_DOCUMENTS directory
-in the load_documents() function, replace the docs_path with the absolute path of your source_documents directory.
-
-The current default file types are .txt, .pdf, .csv, and .xlsx, if you want to use any other file type, you will need to convert it to one of the default file types.
+### Ingest
 
 Run the following command to ingest all the data.
 
-`defaults to cuda`
+If you have `cuda` setup on your system.
 
 ```shell
 python ingest.py
 ```
 
 Use the device type argument to specify a given device.
+To run on `cuda` 
 
 ```sh
 python ingest.py --device_type cpu
+```
+
+To run on `M1/M2` 
+
+```sh
+python ingest.py --device_type mps
 ```
 
 Use help for a full list of supported devices.
@@ -136,11 +141,10 @@ Use help for a full list of supported devices.
 python ingest.py --help
 ```
 
-It will create an index containing the local vectorstore. Will take time, depending on the size of your documents.
-You can ingest as many documents as you want, and all will be accumulated in the local embeddings database.
-If you want to start from an empty database, delete the `index`.
+This will create a new folder called `DB` and use it for the newly created vector store. You can ingest as many documents as you want, and all will be accumulated in the local embeddings database.
+If you want to start from an empty database, delete the `DB` and reingest your documents.
 
-Note: When you run this for the first time, it will download take time as it has to download the embedding model. In the subseqeunt runs, no data will leave your local enviroment and can be run without internet connection.
+Note: When you run this for the first time, it will need internet access to download the embedding model (default: `Instructor Embedding`). In the subseqeunt runs, no data will leave your local enviroment and you can ingest data without internet connection.
 
 ## Ask questions to your documents, locally!
 
