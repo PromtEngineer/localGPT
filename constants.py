@@ -160,5 +160,12 @@ MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 # MODEL_BASENAME = "orca-mini-3b.ggmlv3.q4_0.bin"
 
 #### If you get a "not enough space in the buffer" error, you should reduce the values below, start with half of the original values and keep halving the value until the error stops appearing
+
 N_GPU_LAYERS = 1000
 N_BATCH = 2048
+
+### From experimenting with the Llama-2-7B-Chat-GGML model on 8GB VRAM, these values work:
+# N_GPU_LAYERS = 20
+# N_BATCH = 512
+
+
