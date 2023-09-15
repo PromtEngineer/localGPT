@@ -28,6 +28,8 @@ By selecting the right local models and the power of `LangChain` you can run the
 - [LangChain](https://github.com/hwchase17/langchain)
 - [HuggingFace LLMs](https://huggingface.co/models)
 - [InstructorEmbeddings](https://instructor-embedding.github.io/)
+- [LLAMACPP](https://github.com/abetlen/llama-cpp-python)
+- [ChromaDB](https://www.trychroma.com/)
 - [Streamlit](https://streamlit.io/)
 
 # Environment Setup 🌍
