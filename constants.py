@@ -25,7 +25,17 @@ CHROMA_SETTINGS = Settings(
 
 # Context Window and Max New Tokens
 CONTEXT_WINDOW_SIZE = 4096
-MAX_NEW_TOKENS = CONTEXT_WINDOW_SIZE#int(CONTEXT_WINDOW_SIZE/4)
+MAX_NEW_TOKENS = CONTEXT_WINDOW_SIZE  # int(CONTEXT_WINDOW_SIZE/4)
+
+#### If you get a "not enough space in the buffer" error, you should reduce the values below, start with half of the original values and keep halving the value until the error stops appearing
+
+N_GPU_LAYERS = 100  # Llama-2-70B has 83 layers
+N_BATCH = 512
+
+### From experimenting with the Llama-2-7B-Chat-GGML model on 8GB VRAM, these values work:
+# N_GPU_LAYERS = 20
+# N_BATCH = 512
+
 
 # https://python.langchain.com/en/latest/_modules/langchain/document_loaders/excel.html#UnstructuredExcelLoader
 DOCUMENT_MAP = {
@@ -41,7 +51,7 @@ DOCUMENT_MAP = {
 }
 
 # Default Instructor Model
-EMBEDDING_MODEL_NAME = "hkunlp/instructor-large" # Uses 1.5 GB of VRAM (High Accuracy with lower VRAM usage)
+EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Accuracy with lower VRAM usage)
 
 ####
 #### OTHER EMBEDDING MODEL OPTIONS
@@ -56,25 +66,25 @@ EMBEDDING_MODEL_NAME = "hkunlp/instructor-large" # Uses 1.5 GB of VRAM (High Acc
 #### MULTILINGUAL EMBEDDING MODELS
 ####
 
-# EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-large" # Uses 2.5 GB of VRAM 
-# EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-base" # Uses 1.2 GB of VRAM 
+# EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-large" # Uses 2.5 GB of VRAM
+# EMBEDDING_MODEL_NAME = "intfloat/multilingual-e5-base" # Uses 1.2 GB of VRAM
 
 
 #### SELECT AN OPEN SOURCE LLM (LARGE LANGUAGE MODEL)
-    # Select the Model ID and model_basename
-    # load the LLM for generating Natural Language responses
+# Select the Model ID and model_basename
+# load the LLM for generating Natural Language responses
 
 #### GPU VRAM Memory required for LLM Models (ONLY) by Billion Parameter value (B Model)
 #### Does not include VRAM used by Embedding Models - which use an additional 2GB-7GB of VRAM depending on the model.
 ####
 #### (B Model)   (float32)    (float16)    (GPTQ 8bit)         (GPTQ 4bit)
-####    7b         28 GB        14 GB       7 GB - 9 GB        3.5 GB - 5 GB     
-####    13b        52 GB        26 GB       13 GB - 15 GB      6.5 GB - 8 GB    
-####    32b        130 GB       65 GB       32.5 GB - 35 GB    16.25 GB - 19 GB  
-####    65b        260.8 GB     130.4 GB    65.2 GB - 67 GB    32.6 GB -  - 35 GB  
+####    7b         28 GB        14 GB       7 GB - 9 GB        3.5 GB - 5 GB
+####    13b        52 GB        26 GB       13 GB - 15 GB      6.5 GB - 8 GB
+####    32b        130 GB       65 GB       32.5 GB - 35 GB    16.25 GB - 19 GB
+####    65b        260.8 GB     130.4 GB    65.2 GB - 67 GB    32.6 GB -  - 35 GB
 
-MODEL_ID = "TheBloke/Llama-2-7B-Chat-GGML"
-MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
+# MODEL_ID = "TheBloke/Llama-2-7B-Chat-GGML"
+# MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 
 ####
 #### (FOR GGUF MODELS)
@@ -83,8 +93,8 @@ MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 # MODEL_ID = "TheBloke/Llama-2-13b-Chat-GGUF"
 # MODEL_BASENAME = "llama-2-13b-chat.Q4_K_M.gguf"
 
-# MODEL_ID = "TheBloke/Llama-2-7b-Chat-GGUF"
-# MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
+MODEL_ID = "TheBloke/Llama-2-7b-Chat-GGUF"
+MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
 
 # MODEL_ID = "TheBloke/Llama-2-70b-Chat-GGUF"
 # MODEL_BASENAME = "llama-2-70b-chat.Q4_K_M.gguf"
@@ -116,8 +126,8 @@ MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 # MODEL_BASENAME = "model.safetensors"
 # MODEL_ID = "TheBloke/gpt4-alpaca-lora_mlp-65B-GPTQ"
 # MODEL_BASENAME = "model.safetensors"
-# MODEL_ID = "TheBloke/Upstage-Llama1-65B-Instruct-GPTQ" 
-# MODEL_BASENAME = "model.safetensors"    
+# MODEL_ID = "TheBloke/Upstage-Llama1-65B-Instruct-GPTQ"
+# MODEL_BASENAME = "model.safetensors"
 
 ##### 24GB VRAM Graphics Cards (RTX 3090 - RTX 4090 (35% Faster) - RTX A5000 - RTX A5500) #####
 
@@ -128,14 +138,14 @@ MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 # MODEL_BASENAME = "model.safetensors"
 # MODEL_ID = "TheBloke/Nous-Hermes-13B-GPTQ"
 # MODEL_BASENAME = "nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
-# MODEL_ID = "TheBloke/WizardLM-13B-V1.2-GPTQ" 
+# MODEL_ID = "TheBloke/WizardLM-13B-V1.2-GPTQ"
 # MODEL_BASENAME = "gptq_model-4bit-128g.safetensors
 
 ### 30b GPTQ Models for 24GB GPUs (*** Requires using intfloat/e5-base-v2 instead of hkunlp/instructor-large as embedding model ***)
 # MODEL_ID = "TheBloke/Wizard-Vicuna-30B-Uncensored-GPTQ"
-# MODEL_BASENAME = "Wizard-Vicuna-30B-Uncensored-GPTQ-4bit--1g.act.order.safetensors" 
+# MODEL_BASENAME = "Wizard-Vicuna-30B-Uncensored-GPTQ-4bit--1g.act.order.safetensors"
 # MODEL_ID = "TheBloke/WizardLM-30B-Uncensored-GPTQ"
-# MODEL_BASENAME = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors" 
+# MODEL_BASENAME = "WizardLM-30B-Uncensored-GPTQ-4bit.act-order.safetensors"
 
 ##### 8-10GB VRAM Graphics Cards (RTX 3080 - RTX 3080 Ti - RTX 3070 Ti - 3060 Ti - RTX 2000 Series, Quadro RTX 4000, 5000, 6000) #####
 ### (*** Requires using intfloat/e5-small-v2 instead of hkunlp/instructor-large as embedding model ***)
@@ -158,14 +168,3 @@ MODEL_BASENAME = "llama-2-7b-chat.ggmlv3.q4_0.bin"
 # MODEL_BASENAME = "wizard-vicuna-13B.ggmlv3.q2_K.bin"
 # MODEL_ID = "TheBloke/orca_mini_3B-GGML"
 # MODEL_BASENAME = "orca-mini-3b.ggmlv3.q4_0.bin"
-
-#### If you get a "not enough space in the buffer" error, you should reduce the values below, start with half of the original values and keep halving the value until the error stops appearing
-
-N_GPU_LAYERS = 1000
-N_BATCH = 2048
-
-### From experimenting with the Llama-2-7B-Chat-GGML model on 8GB VRAM, these values work:
-# N_GPU_LAYERS = 20
-# N_BATCH = 512
-
-

@@ -1,4 +1,3 @@
-
 import torch
 from auto_gptq import AutoGPTQForCausalLM
 from huggingface_hub import hf_hub_download
@@ -10,20 +9,15 @@ from transformers import (
     LlamaForCausalLM,
     LlamaTokenizer,
 )
-from constants import (
-    CONTEXT_WINDOW_SIZE, 
-    MAX_NEW_TOKENS
-    , 
-    N_GPU_LAYERS, 
-    N_BATCH
-)
+from constants import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, N_GPU_LAYERS, N_BATCH
+
 
 def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, logging):
     """
     Load a GGUF/GGML quantized model using LlamaCpp.
 
-    This function attempts to load a GGUF/GGML quantized model using the LlamaCpp library. 
-    If the model is of type GGML, and newer version of LLAMA-CPP is used which does not support GGML, 
+    This function attempts to load a GGUF/GGML quantized model using the LlamaCpp library.
+    If the model is of type GGML, and newer version of LLAMA-CPP is used which does not support GGML,
     it logs a message indicating that LLAMA-CPP has dropped support for GGML.
 
     Parameters:
@@ -43,33 +37,34 @@ def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, loggin
     try:
         logging.info("Using Llamacpp for GGUF/GGML quantized models")
         model_path = hf_hub_download(
-            repo_id=model_id, 
-            filename=model_basename, 
-            resume_download=True, 
+            repo_id=model_id,
+            filename=model_basename,
+            resume_download=True,
             cache_dir="./models",
-            )
+        )
         kwargs = {
             "model_path": model_path,
             "n_ctx": CONTEXT_WINDOW_SIZE,
             "max_tokens": MAX_NEW_TOKENS,
+            "n_batch": N_BATCH,  # set this based on your GPU & CPU RAM
         }
         if device_type.lower() == "mps":
             kwargs["n_gpu_layers"] = 1
         if device_type.lower() == "cuda":
-            kwargs["n_gpu_layers"] = 100 # set this based on your GPU
-            kwargs["n_batch"] = N_BATCH  # set this based on your GPU & CPU RAM
+            kwargs["n_gpu_layers"] = N_GPU_LAYERS  # set this based on your GPU
+
         return LlamaCpp(**kwargs)
     except:
-        if 'ggml' in model_basename:
+        if "ggml" in model_basename:
             logging.INFO("If you were using GGML model, LLAMA-CPP Dropped Support, Use GGUF Instead")
         return None
 
-def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
 
+def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
     """
     Load a GPTQ quantized model using AutoGPTQForCausalLM.
 
-    This function loads a quantized model that ends with GPTQ and may have variations 
+    This function loads a quantized model that ends with GPTQ and may have variations
     of .no-act.order or .safetensors in their HuggingFace repo.
 
     Parameters:
@@ -85,7 +80,7 @@ def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
     Notes:
     - The function checks for the ".safetensors" ending in the model_basename and removes it if present.
     """
-        
+
     # The code supports all huggingface models that ends with GPTQ and have some variation
     # of .no-act.order or .safetensors in their HF repo.
     logging.info("Using AutoGPTQForCausalLM for quantized models")
@@ -108,13 +103,13 @@ def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
     )
     return model, tokenizer
 
-def load_full_model(model_id, model_basename, device_type, logging):
 
+def load_full_model(model_id, model_basename, device_type, logging):
     """
     Load a full model using either LlamaTokenizer or AutoModelForCausalLM.
 
-    This function loads a full model based on the specified device type. 
-    If the device type is 'mps' or 'cpu', it uses LlamaTokenizer and LlamaForCausalLM. 
+    This function loads a full model based on the specified device type.
+    If the device type is 'mps' or 'cpu', it uses LlamaTokenizer and LlamaForCausalLM.
     Otherwise, it uses AutoModelForCausalLM.
 
     Parameters:
@@ -134,14 +129,8 @@ def load_full_model(model_id, model_basename, device_type, logging):
 
     if device_type.lower() in ["mps", "cpu"]:
         logging.info("Using LlamaTokenizer")
-        tokenizer = LlamaTokenizer.from_pretrained(
-            model_id, 
-            cache_dir="./models/"
-            )
-        model = LlamaForCausalLM.from_pretrained(
-            model_id, 
-            cache_dir="./models/"
-            )
+        tokenizer = LlamaTokenizer.from_pretrained(model_id, cache_dir="./models/")
+        model = LlamaForCausalLM.from_pretrained(model_id, cache_dir="./models/")
     else:
         logging.info("Using AutoModelForCausalLM for full models")
         tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir="./models/")
