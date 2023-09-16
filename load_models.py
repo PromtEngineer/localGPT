@@ -13,6 +13,9 @@ from transformers import (
 from constants import (
     CONTEXT_WINDOW_SIZE, 
     MAX_NEW_TOKENS
+    , 
+    N_GPU_LAYERS, 
+    N_BATCH
 )
 
 def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, logging):
@@ -54,7 +57,7 @@ def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, loggin
             kwargs["n_gpu_layers"] = 1
         if device_type.lower() == "cuda":
             kwargs["n_gpu_layers"] = 100 # set this based on your GPU
-
+            kwargs["n_batch"] = N_BATCH  # set this based on your GPU & CPU RAM
         return LlamaCpp(**kwargs)
     except:
         if 'ggml' in model_basename:
