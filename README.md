@@ -237,6 +237,18 @@ To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`.
 
 8. Follow the same steps for `GGUF` and `GGML` models. 
 
+# GPU and vRAM Requirements
+
+Below is the vRAM requiment for different models depending on their size (Billions of paramters). The estimates in the table does not include vRAM used by the Embedding models - which use an additional 2GB-7GB of VRAM depending on the model.
+
+| Mode Size (B) | float32   | float16   | GPTQ 8bit      | GPTQ 4bit          |
+| ------- | --------- | --------- | -------------- | ------------------ |
+| 7B      | 28 GB     | 14 GB     | 7 GB - 9 GB    | 3.5 GB - 5 GB      |
+| 13B     | 52 GB     | 26 GB     | 13 GB - 15 GB  | 6.5 GB - 8 GB      |
+| 32B     | 130 GB    | 65 GB     | 32.5 GB - 35 GB| 16.25 GB - 19 GB   |
+| 65B     | 260.8 GB  | 130.4 GB  | 65.2 GB - 67 GB| 32.6 GB - 35 GB    |
+
+
 # System Requirements
 
 ## Python Version
