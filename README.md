@@ -55,7 +55,7 @@ To set up your environment to run the code, first install all requirements:
 pip install -r requirements.txt
 ```
 
-***Important Note:***
+***Installing LLAMA-CPP :***
 
 LocalGPT uses [LlamaCpp-Python](https://github.com/abetlen/llama-cpp-python) for GGML (you will need llama-cpp-python <=0.1.76) and GGUF (llama-cpp-python >=0.1.83) models.
 
@@ -66,14 +66,14 @@ For `NVIDIA` GPUs support, use `cuBLAS`
 
 ```shell
 # Example: cuBLAS
-CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install -r requirements.txt
+CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python==0.1.83 --no-cache-dir
 ```
 
 For Apple Metal (`M1/M2`) support, use 
 
 ```shell
 # Example: METAL
-CMAKE_ARGS="-DLLAMA_METAL=on"  FORCE_CMAKE=1 pip install -r requirements.txt
+CMAKE_ARGS="-DLLAMA_METAL=on"  FORCE_CMAKE=1 pip install llama-cpp-python==0.1.83 --no-cache-dir
 ```
 For more details, please refer to [llama-cpp](https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal)
 
