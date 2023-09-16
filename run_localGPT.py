@@ -21,7 +21,7 @@ from transformers import (
     pipeline,
 )
 
-from constants import EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
+from constants import EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME, N_GPU_LAYERS, N_BATCH
 
 
 def load_model(device_type, model_id, model_basename=None):
@@ -56,10 +56,10 @@ def load_model(device_type, model_id, model_basename=None):
                 "max_tokens": max_ctx_size,
             }
             if device_type.lower() == "mps":
-                kwargs["n_gpu_layers"] = 1000
+                kwargs["n_gpu_layers"] = N_GPU_LAYERS
             if device_type.lower() == "cuda":
-                kwargs["n_gpu_layers"] = 1000
-                kwargs["n_batch"] = max_ctx_size
+                kwargs["n_gpu_layers"] = N_GPU_LAYERS
+                kwargs["n_batch"] = N_BATCH
             return LlamaCpp(**kwargs)
 
         else:
