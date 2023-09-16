@@ -24,6 +24,8 @@ By selecting the right local models and the power of `LangChain` you can run the
 - `run_localGPT.py` uses a local LLM to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
 - You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format.
 
+This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT).
+
 ## Built Using 🧩
 - [LangChain](https://github.com/hwchase17/langchain)
 - [HuggingFace LLMs](https://huggingface.co/models)
