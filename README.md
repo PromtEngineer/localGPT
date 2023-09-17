@@ -16,6 +16,7 @@
 - [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo)
 - [Llama-2 with LocalGPT](https://youtu.be/lbFmceo4D5E)
 - [Adding Chat History](https://youtu.be/d7otIM_MCZs)
+- [LocalGPT - Updated (09/17/2023)](https://youtu.be/G_prHSKX9d4)
 
 ## Technical Details 🛠️
 By selecting the right local models and the power of `LangChain` you can run the entire RAG pipeline locally, without any data leaving your environment, and with reasonable performance.
