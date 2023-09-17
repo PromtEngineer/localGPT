@@ -9,7 +9,7 @@ from transformers import (
     LlamaForCausalLM,
     LlamaTokenizer,
 )
-from constants import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, N_GPU_LAYERS, N_BATCH
+from constants import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, N_GPU_LAYERS, N_BATCH, MODELS_PATH
 
 
 def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, logging):
@@ -40,7 +40,7 @@ def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, loggin
             repo_id=model_id,
             filename=model_basename,
             resume_download=True,
-            cache_dir="./models",
+            cache_dir=MODELS_PATH,
         )
         kwargs = {
             "model_path": model_path,
@@ -140,7 +140,7 @@ def load_full_model(model_id, model_basename, device_type, logging):
             device_map="auto",
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
-            cache_dir="./models/",
+            cache_dir=MODELS_PATH,
             # trust_remote_code=True, # set these if you are using NVIDIA GPU
             # load_in_4bit=True,
             # bnb_4bit_quant_type="nf4",

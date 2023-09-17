@@ -5,29 +5,35 @@ import torch
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler # for streaming response
+from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 from langchain.callbacks.manager import CallbackManager
+
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
 from prompt_template_utils import get_prompt_template
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
-from transformers import (GenerationConfig,
-                          pipeline,
-                          )
+from transformers import (
+    GenerationConfig,
+    pipeline,
+)
 
-from load_models import (load_quantized_model_gguf_ggml,
-                         load_quantized_model_qptq,
-                         load_full_model,
-                         )
+from load_models import (
+    load_quantized_model_gguf_ggml,
+    load_quantized_model_qptq,
+    load_full_model,
+)
 
-from constants import (EMBEDDING_MODEL_NAME, 
-                       PERSIST_DIRECTORY, 
-                       MODEL_ID, 
-                       MODEL_BASENAME, 
-                       MAX_NEW_TOKENS
-                       )
+from constants import (
+    EMBEDDING_MODEL_NAME,
+    PERSIST_DIRECTORY,
+    MODEL_ID,
+    MODEL_BASENAME,
+    MAX_NEW_TOKENS,
+    MODELS_PATH,
+)
+
 
 def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     """
@@ -89,7 +95,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     """
     Initializes and returns a retrieval-based Question Answering (QA) pipeline.
 
-    This function sets up a QA system that retrieves relevant information using embeddings 
+    This function sets up a QA system that retrieves relevant information using embeddings
     from the HuggingFace library. It then answers questions based on the retrieved information.
 
     Parameters:
@@ -108,40 +114,43 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     - The QA system retrieves relevant documents using the retriever and then answers questions based on those documents.
     """
 
-    embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, 
-                                               model_kwargs={"device": device_type})
+    embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": device_type})
     # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
     # load the vectorstore
-    db = Chroma(persist_directory=PERSIST_DIRECTORY,
-                embedding_function=embeddings,)
+    db = Chroma(
+        persist_directory=PERSIST_DIRECTORY,
+        embedding_function=embeddings,
+    )
     retriever = db.as_retriever()
-    
+
     # get the prompt template and memory if set by the user.
-    prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type, 
-                                         history=use_history)
-    
+    prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type, history=use_history)
+
     # load the llm pipeline
-    llm = load_model(device_type, 
-                     model_id=MODEL_ID, 
-                     model_basename=MODEL_BASENAME, 
-                     LOGGING=logging)
+    llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
 
     if use_history:
-        qa = RetrievalQA.from_chain_type(llm=llm, 
-                                    chain_type="stuff", # try other chains types as well. refine, map_reduce, map_rerank
-                                    retriever=retriever,
-                                    return_source_documents=True,# verbose=True,
-                                    callbacks=callback_manager,
-                                    chain_type_kwargs={"prompt": prompt, "memory": memory},)
+        qa = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
+            retriever=retriever,
+            return_source_documents=True,  # verbose=True,
+            callbacks=callback_manager,
+            chain_type_kwargs={"prompt": prompt, "memory": memory},
+        )
     else:
-        qa = RetrievalQA.from_chain_type(llm=llm, 
-                                    chain_type="stuff", # try other chains types as well. refine, map_reduce, map_rerank
-                                    retriever=retriever,
-                                    return_source_documents=True,# verbose=True,
-                                    callbacks=callback_manager,
-                                    chain_type_kwargs={"prompt": prompt,},)
+        qa = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
+            retriever=retriever,
+            return_source_documents=True,  # verbose=True,
+            callbacks=callback_manager,
+            chain_type_kwargs={
+                "prompt": prompt,
+            },
+        )
 
     return qa
 
@@ -214,13 +223,12 @@ def main(device_type, show_sources, use_history):
     logging.info(f"Use history set to: {use_history}")
 
     # check if models directory do not exist, create a new one and store models here.
-    if not os.path.exists("./models"):
-        os.mkdir("models")
+    if not os.path.exists(MODELS_PATH):
+        os.mkdir(MODELS_PATH)
 
     qa = retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama")
     # Interactive questions and answers
     while True:
-
         query = input("\nEnter a query: ")
         if query == "exit":
             break
