@@ -1,4 +1,5 @@
 # syntax=docker/dockerfile:1
+# Supports only Nvidia GPUs
 # Build as `docker build . -t localgpt`, requires BuildKit.
 # Run as `docker run -it --mount src="$HOME/.cache",target=/root/.cache,type=bind --gpus=all localgpt`, requires Nvidia container toolkit.
 
@@ -8,7 +9,8 @@ RUN apt-get install -y g++-11 make python3 python-is-python3 pip
 # only copy what's needed at every step to optimize layer cache
 COPY ./requirements.txt .
 # use BuildKit cache mount to drastically reduce redownloading from pip on repeated builds
-RUN --mount=type=cache,target=/root/.cache CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install --timeout 100 -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache pip install --timeout 100 -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install "llama-cpp-python>=0.2.6,<0.3" --force-reinstall --upgrade
 COPY SOURCE_DOCUMENTS ./SOURCE_DOCUMENTS
 COPY ingest.py constants.py ./
 # Docker BuildKit does not support GPU during *docker build* time right now, only during *docker run*.
