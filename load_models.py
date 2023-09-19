@@ -54,9 +54,10 @@ def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, loggin
             kwargs["n_gpu_layers"] = N_GPU_LAYERS  # set this based on your GPU
 
         return LlamaCpp(**kwargs)
-    except:
+    except Exception as e:
         if "ggml" in model_basename:
             logging.INFO("If you were using GGML model, LLAMA-CPP Dropped Support, Use GGUF Instead")
+        logging.info(f"LlamaCpp conversion error: {e}")
         return None
 
 
