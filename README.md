@@ -7,10 +7,10 @@
 - **Versatile Model Support**: Seamlessly integrate a variety of open-source models, including HF, GPTQ, GGML, and GGUF.
 - **Diverse Embeddings**: Choose from a range of open-source embeddings.
 - **Reuse Your LLM**: Once downloaded, reuse your LLM without the need for repeated downloads.
-- **Chat History**: Remebers your previous conversations (in a session).
+- **Chat History**: Remembers your previous conversations (in a session).
 - **API**: LocalGPT has an API that you can use for building RAG Applications.
 - **Graphical Interface**: LocalGPT comes with two GUIs, one uses the API and the other is standalone (based on streamlit).
-- **GPU, CPU & MPS Support**: Supports mulitple platforms out of the box, Chat with your data using `CUDA`, `CPU` or `MPS` and more!
+- **GPU, CPU & MPS Support**: Supports multiple platforms out of the box, Chat with your data using `CUDA`, `CPU` or `MPS` and more!
 
 ## Dive Deeper with Our Videos 🎥
 - [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo)
@@ -38,12 +38,12 @@ This project was inspired by the original [privateGPT](https://github.com/imarti
 # Environment Setup 🌍
 
 1. 📥 Clone the repo using git:
-  
+
 ```shell
 git clone https://github.com/PromtEngineer/localGPT.git
 ```
 
-2. 🐍 Instal [conda](https://www.anaconda.com/download) for virtual environment management. Create and activate a new virtual environment. 
+2. 🐍 Install [conda](https://www.anaconda.com/download) for virtual environment management. Create and activate a new virtual environment.
 
 ```shell
 conda create -n localGPT python=3.10.0
@@ -72,7 +72,7 @@ For `NVIDIA` GPUs support, use `cuBLAS`
 CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python==0.1.83 --no-cache-dir
 ```
 
-For Apple Metal (`M1/M2`) support, use 
+For Apple Metal (`M1/M2`) support, use
 
 ```shell
 # Example: METAL
@@ -82,9 +82,9 @@ For more details, please refer to [llama-cpp](https://github.com/abetlen/llama-c
 
 ## Docker 🐳
 
-Installing the required packages for GPU inference on Nvidia GPUs, like gcc 11 and CUDA 11, may cause conflicts with other packages in your system.
+Installing the required packages for GPU inference on NVIDIA GPUs, like gcc 11 and CUDA 11, may cause conflicts with other packages in your system.
 As an alternative to Conda, you can use Docker with the provided Dockerfile.
-It includes CUDA, your system just needs Docker, BuildKit, your Nvidia GPU driver and the Nvidia container toolkit.
+It includes CUDA, your system just needs Docker, BuildKit, your NVIDIA GPU driver and the NVIDIA container toolkit.
 Build as `docker build . -t localgpt`, requires BuildKit.
 Docker BuildKit does not support GPU during *docker build* time right now, only during *docker run*.
 Run as `docker run -it --mount src="$HOME/.cache",target=/root/.cache,type=bind --gpus=all localgpt`.
@@ -97,7 +97,7 @@ For testing, this repository comes with [Constitution of USA](https://constituti
 Put you files in the `SOURCE_DOCUMENTS` folder. You can put multiple folders within the `SOURCE_DOCUMENTS` folder and the code will recursively read your files.
 
 ### Support file formats:
-LocalGPT currently supports the following file formats. LocalGPT uses `LangChain` for loading these file formats. The code in `constants.py` uses a `DOCUMENT_MAP` dictionary to map a file format to the corresponding loader. In order to add support for another file format, simply add this dictionary with the file format and the corresponding loader from [LangChain](https://python.langchain.com/docs/modules/data_connection/document_loaders/). 
+LocalGPT currently supports the following file formats. LocalGPT uses `LangChain` for loading these file formats. The code in `constants.py` uses a `DOCUMENT_MAP` dictionary to map a file format to the corresponding loader. In order to add support for another file format, simply add this dictionary with the file format and the corresponding loader from [LangChain](https://python.langchain.com/docs/modules/data_connection/document_loaders/).
 
 ```shell
 DOCUMENT_MAP = {
@@ -127,13 +127,13 @@ You will see an output like this:
 
 
 Use the device type argument to specify a given device.
-To run on `cuda` 
+To run on `cuda`
 
 ```sh
 python ingest.py --device_type cpu
 ```
 
-To run on `M1/M2` 
+To run on `M1/M2`
 
 ```sh
 python ingest.py --device_type mps
@@ -148,11 +148,11 @@ python ingest.py --help
 This will create a new folder called `DB` and use it for the newly created vector store. You can ingest as many documents as you want, and all will be accumulated in the local embeddings database.
 If you want to start from an empty database, delete the `DB` and reingest your documents.
 
-Note: When you run this for the first time, it will need internet access to download the embedding model (default: `Instructor Embedding`). In the subseqeunt runs, no data will leave your local enviroment and you can ingest data without internet connection.
+Note: When you run this for the first time, it will need internet access to download the embedding model (default: `Instructor Embedding`). In the subsequent runs, no data will leave your local environment and you can ingest data without internet connection.
 
 ## Ask questions to your documents, locally!
 
-In order to chat with your documents, run the following commnad (by default, it will run on `cuda`). 
+In order to chat with your documents, run the following command (by default, it will run on `cuda`).
 
 ```shell
 python run_localGPT.py
@@ -163,13 +163,13 @@ You can also specify the device type just like `ingest.py`
 python run_localGPT.py --device_type mps # to run on Apple silicon
 ```
 
-This will load the ingested vector store and embedding model. You will be presented with a prompt: 
+This will load the ingested vector store and embedding model. You will be presented with a prompt:
 
 ```shell
 > Enter a query:
 ```
 
-After typing your question, hit enter. LocalGPT will take some time based on your hardware. You will get a response like this below. 
+After typing your question, hit enter. LocalGPT will take some time based on your hardware. You will get a response like this below.
 <img width="1312" alt="Screenshot 2023-09-14 at 3 33 19 PM" src="https://github.com/PromtEngineer/localGPT/assets/134474669/a7268de9-ade0-420b-a00b-ed12207dbe41">
 
 Once the answer is generated, you can then ask another question without re-running the script, just wait for the prompt again.
@@ -187,7 +187,7 @@ You can use the `--show_sources` flag with `run_localGPT.py` to show which chunk
 python run_localGPT.py --show_sources
 ```
 
-Another option is to enable chat history. ***Note***: This is disabled by default and can be enabled by using the  `--use_history` flag. The context window is limited so keep in mind enabling history will use it and might overflow. 
+Another option is to enable chat history. ***Note***: This is disabled by default and can be enabled by using the  `--use_history` flag. The context window is limited so keep in mind enabling history will use it and might overflow.
 
 ```shell
 python run_localGPT.py --use_history
@@ -222,10 +222,10 @@ python run_localGPT.py --use_history
 
 # How to select different LLM models?
 
-To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`. 
+To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`.
 
 1. Open up `constants.py` in the editor of your choice.
-2. Change the `MODEL_ID` and `MODEL_BASENAME`. If you are using a quantized model (`GGML`, `GPTQ`, `GGUF`), you will need to provide `MODEL_BASENAME`. For unquatized models, set `MODEL_BASENAME` to `NONE`
+2. Change the `MODEL_ID` and `MODEL_BASENAME`. If you are using a quantized model (`GGML`, `GPTQ`, `GGUF`), you will need to provide `MODEL_BASENAME`. For unquantized models, set `MODEL_BASENAME` to `NONE`
 5. There are a number of example models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
 6. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
 
@@ -238,11 +238,11 @@ To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`.
    - Got to the corresponding [HuggingFace Repo](https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and select "Files and versions".
    - Pick one of the model names and set it as  `MODEL_BASENAME`. For example -> `MODEL_BASENAME = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
 
-8. Follow the same steps for `GGUF` and `GGML` models. 
+8. Follow the same steps for `GGUF` and `GGML` models.
 
-# GPU and vRAM Requirements
+# GPU and VRAM Requirements
 
-Below is the vRAM requiment for different models depending on their size (Billions of paramters). The estimates in the table does not include vRAM used by the Embedding models - which use an additional 2GB-7GB of VRAM depending on the model.
+Below is the VRAM requirement for different models depending on their size (Billions of parameters). The estimates in the table does not include VRAM used by the Embedding models - which use an additional 2GB-7GB of VRAM depending on the model.
 
 | Mode Size (B) | float32   | float16   | GPTQ 8bit      | GPTQ 4bit          |
 | ------- | --------- | --------- | -------------- | ------------------ |
