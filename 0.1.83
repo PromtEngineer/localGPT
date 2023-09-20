@@ -1,0 +1,4 @@
+Requirement already satisfied: llama-cpp-python in c:\users\mmahmoud\appdata\local\anaconda3\lib\site-packages (0.1.78)
+Requirement already satisfied: typing-extensions>=4.5.0 in c:\users\mmahmoud\appdata\local\anaconda3\lib\site-packages (from llama-cpp-python) (4.7.1)
+Requirement already satisfied: numpy>=1.20.0 in c:\users\mmahmoud\appdata\local\anaconda3\lib\site-packages (from llama-cpp-python) (1.23.5)
+Requirement already satisfied: diskcache>=5.6.1 in c:\users\mmahmoud\appdata\local\anaconda3\lib\site-packages (from llama-cpp-python) (5.6.1)

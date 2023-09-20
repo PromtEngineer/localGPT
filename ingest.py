@@ -1,11 +1,7 @@
-import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
-import click
-import torch
 from langchain.docstore.document import Document
-from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
@@ -14,8 +10,6 @@ from constants import (
     DOCUMENT_MAP,
     EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
-    PERSIST_DIRECTORY,
-    SOURCE_DIRECTORY,
 )
 
 
@@ -31,7 +25,7 @@ def load_single_document(file_path: str) -> Document:
 
 
 def load_document_batch(filepaths):
-    logging.info("Loading document batch")
+    print("Loading document batch")
     # create a thread pool
     with ThreadPoolExecutor(len(filepaths)) as exe:
         # load files
@@ -87,73 +81,29 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
     return text_docs, python_docs
 
 
-@click.command()
-@click.option(
-    "--device_type",
-    default="cuda" if torch.cuda.is_available() else "cpu",
-    type=click.Choice(
-        [
-            "cpu",
-            "cuda",
-            "ipu",
-            "xpu",
-            "mkldnn",
-            "opengl",
-            "opencl",
-            "ideep",
-            "hip",
-            "ve",
-            "fpga",
-            "ort",
-            "xla",
-            "lazy",
-            "vulkan",
-            "mps",
-            "meta",
-            "hpu",
-            "mtia",
-        ],
-    ),
-    help="Device to run on. (Default is cuda)",
-)
-def main(device_type):
+def main(device_type, embedding_model, chunk_size, chunk_overlap, source_directory, save_path):
+
+    os.makedirs(save_path, exist_ok=True)
+
+    persist_directory = os.path.join(save_path, f'cs_{chunk_size}_co_{chunk_overlap}')
     # Load documents and split in chunks
-    logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
-    documents = load_documents(SOURCE_DIRECTORY)
+    print(f"Loading documents from {source_directory}")
+    documents = load_documents(source_directory)
     text_documents, python_documents = split_documents(documents)
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     python_splitter = RecursiveCharacterTextSplitter.from_language(
         language=Language.PYTHON, chunk_size=880, chunk_overlap=200
     )
     texts = text_splitter.split_documents(text_documents)
     texts.extend(python_splitter.split_documents(python_documents))
-    logging.info(f"Loaded {len(documents)} documents from {SOURCE_DIRECTORY}")
-    logging.info(f"Split into {len(texts)} chunks of text")
+    print(f"Loaded {len(documents)} documents from {source_directory}")
+    print(f"Split into {len(texts)} chunks of text")
 
-    # Create embeddings
-    embeddings = HuggingFaceInstructEmbeddings(
-        model_name=EMBEDDING_MODEL_NAME,
-        model_kwargs={"device": device_type},
-    )
-    # change the embedding type here if you are running into issues.
-    # These are much smaller embeddings and will work for most appications
-    # If you use HuggingFaceEmbeddings, make sure to also use the same in the
-    # run_localGPT.py file.
-
-    # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
     db = Chroma.from_documents(
         texts,
-        embeddings,
-        persist_directory=PERSIST_DIRECTORY,
+        embedding_model,
+        persist_directory=persist_directory,
         client_settings=CHROMA_SETTINGS,
 
     )
-   
-
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
-    )
-    main()

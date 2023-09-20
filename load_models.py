@@ -12,7 +12,7 @@ from transformers import (
 from constants import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, N_GPU_LAYERS, N_BATCH, MODELS_PATH
 
 
-def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, logging):
+def load_quantized_model_gguf_ggml(model_id, model_basename, device_type):
     """
     Load a GGUF/GGML quantized model using LlamaCpp.
 
@@ -35,7 +35,7 @@ def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, loggin
     """
 
     try:
-        logging.info("Using Llamacpp for GGUF/GGML quantized models")
+        print("Using Llamacpp for GGUF/GGML quantized models")
         model_path = hf_hub_download(
             repo_id=model_id,
             filename=model_basename,
@@ -56,11 +56,11 @@ def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, loggin
         return LlamaCpp(**kwargs)
     except:
         if "ggml" in model_basename:
-            logging.INFO("If you were using GGML model, LLAMA-CPP Dropped Support, Use GGUF Instead")
+            print("If you were using GGML model, LLAMA-CPP Dropped Support, Use GGUF Instead")
         return None
 
 
-def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
+def load_quantized_model_qptq(model_id, model_basename, device_type):
     """
     Load a GPTQ quantized model using AutoGPTQForCausalLM.
 
@@ -83,14 +83,14 @@ def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
 
     # The code supports all huggingface models that ends with GPTQ and have some variation
     # of .no-act.order or .safetensors in their HF repo.
-    logging.info("Using AutoGPTQForCausalLM for quantized models")
+    print("Using AutoGPTQForCausalLM for quantized models")
 
     if ".safetensors" in model_basename:
         # Remove the ".safetensors" ending if present
         model_basename = model_basename.replace(".safetensors", "")
 
     tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
-    logging.info("Tokenizer loaded")
+    print("Tokenizer loaded")
 
     model = AutoGPTQForCausalLM.from_quantized(
         model_id,
@@ -104,7 +104,7 @@ def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
     return model, tokenizer
 
 
-def load_full_model(model_id, model_basename, device_type, logging):
+def load_full_model(model_id, model_basename, device_type):
     """
     Load a full model using either LlamaTokenizer or AutoModelForCausalLM.
 
@@ -128,13 +128,13 @@ def load_full_model(model_id, model_basename, device_type, logging):
     """
 
     if device_type.lower() in ["mps", "cpu"]:
-        logging.info("Using LlamaTokenizer")
+        print("Using LlamaTokenizer")
         tokenizer = LlamaTokenizer.from_pretrained(model_id, cache_dir="./models/")
         model = LlamaForCausalLM.from_pretrained(model_id, cache_dir="./models/")
     else:
-        logging.info("Using AutoModelForCausalLM for full models")
+        print("Using AutoModelForCausalLM for full models")
         tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir="./models/")
-        logging.info("Tokenizer loaded")
+        print("Tokenizer loaded")
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             device_map="auto",

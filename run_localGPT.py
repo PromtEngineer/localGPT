@@ -1,18 +1,11 @@
 import os
-import logging
-import click
-import torch
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
-from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
-from langchain.callbacks.manager import CallbackManager
 
-callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
 from prompt_template_utils import get_prompt_template
 
-# from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
 from transformers import (
     GenerationConfig,
@@ -27,15 +20,12 @@ from load_models import (
 
 from constants import (
     EMBEDDING_MODEL_NAME,
-    PERSIST_DIRECTORY,
-    MODEL_ID,
-    MODEL_BASENAME,
     MAX_NEW_TOKENS,
     MODELS_PATH,
 )
 
 
-def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
+def load_model(device_type, model_id, model_basename=None):
     """
     Select a model for text generation using the HuggingFace library.
     If you are running this for the first time, it will download a model for you.
@@ -53,19 +43,19 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     Raises:
         ValueError: If an unsupported model or device type is provided.
     """
-    logging.info(f"Loading Model: {model_id}, on: {device_type}")
-    logging.info("This action can take a few minutes!")
+    print(f"Loading Model: {model_id}, on: {device_type}")
+    print("This action can take a few minutes!")
 
     if model_basename is not None:
         if ".gguf" in model_basename.lower():
-            llm = load_quantized_model_gguf_ggml(model_id, model_basename, device_type, LOGGING)
+            llm = load_quantized_model_gguf_ggml(model_id, model_basename, device_type)
             return llm
         elif ".ggml" in model_basename.lower():
-            model, tokenizer = load_quantized_model_gguf_ggml(model_id, model_basename, device_type, LOGGING)
+            model, tokenizer = load_quantized_model_gguf_ggml(model_id, model_basename, device_type)
         else:
-            model, tokenizer = load_quantized_model_qptq(model_id, model_basename, device_type, LOGGING)
+            model, tokenizer = load_quantized_model_qptq(model_id, model_basename, device_type)
     else:
-        model, tokenizer = load_full_model(model_id, model_basename, device_type, LOGGING)
+        model, tokenizer = load_full_model(model_id, model_basename, device_type)
 
     # Load configuration from the model to avoid warnings
     generation_config = GenerationConfig.from_pretrained(model_id)
@@ -86,12 +76,12 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     )
 
     local_llm = HuggingFacePipeline(pipeline=pipe)
-    logging.info("Local LLM Loaded")
+    print("Local LLM Loaded")
 
     return local_llm
 
 
-def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
+def retrieval_qa_pipline(device_type, use_history, persist_directory, llm, k, promptTemplate_type="llama"):
     """
     Initializes and returns a retrieval-based Question Answering (QA) pipeline.
 
@@ -120,84 +110,28 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
 
     # load the vectorstore
     db = Chroma(
-        persist_directory=PERSIST_DIRECTORY,
+        persist_directory=persist_directory,
         embedding_function=embeddings,
     )
-    retriever = db.as_retriever()
+    retriever = db.as_retriever(search_kwargs={"k": k})
 
     # get the prompt template and memory if set by the user.
     prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type, history=use_history)
-
-    # load the llm pipeline
-    llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
-
-    if use_history:
-        qa = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
-            retriever=retriever,
-            return_source_documents=True,  # verbose=True,
-            callbacks=callback_manager,
-            chain_type_kwargs={"prompt": prompt, "memory": memory},
-        )
-    else:
-        qa = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
-            retriever=retriever,
-            return_source_documents=True,  # verbose=True,
-            callbacks=callback_manager,
-            chain_type_kwargs={
-                "prompt": prompt,
-            },
+    qa = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
+        retriever=retriever,
+        return_source_documents=True,  # verbose=True,
+        #callbacks=callback_manager,
+        chain_type_kwargs={
+            "prompt": prompt,
+        },
         )
 
     return qa
 
 
-# chose device typ to run on as well as to show source documents.
-@click.command()
-@click.option(
-    "--device_type",
-    default="cuda" if torch.cuda.is_available() else "cpu",
-    type=click.Choice(
-        [
-            "cpu",
-            "cuda",
-            "ipu",
-            "xpu",
-            "mkldnn",
-            "opengl",
-            "opencl",
-            "ideep",
-            "hip",
-            "ve",
-            "fpga",
-            "ort",
-            "xla",
-            "lazy",
-            "vulkan",
-            "mps",
-            "meta",
-            "hpu",
-            "mtia",
-        ],
-    ),
-    help="Device to run on. (Default is cuda)",
-)
-@click.option(
-    "--show_sources",
-    "-s",
-    is_flag=True,
-    help="Show sources along with answers (Default is False)",
-)
-@click.option(
-    "--use_history",
-    "-h",
-    is_flag=True,
-    help="Use history (Default is False)",
-)
-def main(device_type, show_sources, use_history):
+def main(device_type, llm, k, persist_directory, query, use_history, verbose=True, show_sources=False):
     """
     Implements the main information retrieval task for a localGPT.
 
@@ -218,26 +152,19 @@ def main(device_type, show_sources, use_history):
 
     """
 
-    logging.info(f"Running on: {device_type}")
-    logging.info(f"Display Source Documents set to: {show_sources}")
-    logging.info(f"Use history set to: {use_history}")
+    print(f"Running on: {device_type}")
+    print(f"Use history set to: {use_history}")
 
     # check if models directory do not exist, create a new one and store models here.
     if not os.path.exists(MODELS_PATH):
         os.mkdir(MODELS_PATH)
 
-    qa = retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama")
-    # Interactive questions and answers
-    while True:
-        query = input("\nEnter a query: ")
-        if query == "exit":
-            break
-        # Get the answer from the chain
-        res = qa(query)
-        answer, docs = res["result"], res["source_documents"]
-
+    qa = retrieval_qa_pipline(device_type, use_history, persist_directory, llm, k, promptTemplate_type="llama")
+    res = qa(query)
+    answer, docs = res["result"], res["source_documents"]
+    if verbose:
         # Print the result
-        print("\n\n> Question:")
+        print("\n\n> Query:")
         print(query)
         print("\n> Answer:")
         print(answer)
@@ -250,9 +177,4 @@ def main(device_type, show_sources, use_history):
                 print(document.page_content)
             print("----------------------------------SOURCE DOCUMENTS---------------------------")
 
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
-    )
-    main()
+    return answer, docs
