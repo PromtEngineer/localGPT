@@ -127,7 +127,7 @@ You will see an output like this:
 
 
 Use the device type argument to specify a given device.
-To run on `cuda`
+To run on `cpu`
 
 ```sh
 python ingest.py --device_type cpu
