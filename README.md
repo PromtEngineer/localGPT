@@ -110,6 +110,8 @@ DOCUMENT_MAP = {
     ".xlsx": UnstructuredExcelLoader,
     ".docx": Docx2txtLoader,
     ".doc": Docx2txtLoader,
+    ".ppt": UnstructuredPPTLoader,
+    ".pptx": UnstructuredPPTLoader,
 }
 ```
 
