@@ -5,28 +5,31 @@ from constants import (SOURCE_DIRECTORY, PERSIST_DIRECTORY,
 import os
 import glob
 from langchain.embeddings import HuggingFaceInstructEmbeddings
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+
+import torch
+
 
 # Device type
-DEVICE_TYPE='cpu'
-# DEVICE_TYPE='cuda'
+# DEVICE_TYPE='cpu'
+DEVICE_TYPE='cuda'
 
-# Use history
-USE_HISTORY = False
 
 # Create embeddings
 EMBEDDINGS = HuggingFaceInstructEmbeddings(
     model_name=EMBEDDING_MODEL_NAME,
-    model_kwargs={"device": DEVICE_TYPE},
+    model_kwargs={"device": "cpu"},
     )
 
 # Get folders and features
 FOLDERS = [os.path.basename(folder) for folder in glob.glob(f"{SOURCE_DIRECTORY}/*")]
-FEATURES = ["fees", "liquidity_model", "license"]
+FEATURES = ["liquidity_model", "license"]
 DIRECTORIES = [f"{folder}/{feature}" for folder in FOLDERS for feature in FEATURES]
 
 # k, chunk_size, chunk_overlap
-#CONFIGS = [(5, 500, 100), (4, 700, 100), (3, 1000, 200)]
-CONFIGS = [(5, 500, 100)]
+CONFIGS = [(5, 500, 100), (4, 700, 100), (3, 1000, 200)]
+#CONFIGS = [(5, 500, 100)]
 
 def run(model_id=MODEL_ID, model_basename=MODEL_BASENAME):
 
@@ -54,17 +57,43 @@ def run(model_id=MODEL_ID, model_basename=MODEL_BASENAME):
             with open(f"queries/{feature}.txt", "r") as f:
                 query = f.read()
 
+            # Replacing the DEX with the name of the DEX
+            query = query.replace("the DEX", dex_name)
+
             print("Running localGPT...")
-            answer, docs = run_localGPT.main(DEVICE_TYPE, llm, k, persist_directory, query, USE_HISTORY, verbose=False, show_sources=False)
+
+            # If llama in model_id, use promptTemplate_type="llama"
+            promptTemplate_type=None
+            if "llama" in model_id.lower():
+                promptTemplate_type="llama"
+            answer, docs = run_localGPT.main(DEVICE_TYPE, llm, k, persist_directory, query,\
+                            verbose=False, show_sources=False, promptTemplate_type=promptTemplate_type)
 
             # Saving the answer in answers/dex_name/feature/model_id/k_cs_co.txt
-            os.makedirs(f"answers/{dex_name}/{feature}/{os.path.basename(MODEL_ID)}", exist_ok=True)
-            with open(f"answers/{dex_name}/{feature}/{os.path.basename(MODEL_ID)}/k_{k}_cs_{cs}_co_{co}.txt", "w") as f:
+            os.makedirs(f"answers/{dex_name}/{feature}/{os.path.basename(model_id)}", exist_ok=True)
+            with open(f"answers/{dex_name}/{feature}/{os.path.basename(model_id)}/k_{k}_cs_{cs}_co_{co}.txt", "w", encoding='utf-8') as f:
                 f.write(answer)
+
+    # When done, unload the model
+    del llm
+    torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
-    models = {"TheBloke/Llama-2-7b-Chat-GGUF": "llama-2-7b-chat.Q4_K_M.gguf"}
+    models = {"TheBloke/Llama-2-70B-chat-GPTQ": "model.safetensors",
+              "TheBloke/WizardLM-Uncensored-Falcon-40B-GPTQ": "model.safetensors",
+              "TheBloke/Wizard-Vicuna-30B-Uncensored-GPTQ" : "model.safetensors",
+              "TheBloke/Airoboros-L2-70B-2.1-GPTQ" : "model.safetensors",
+              "TheBloke/llama-2-70b-Guanaco-QLoRA-GPTQ" : "model.safetensors",
+              }
+#MODEL_ID = "TheBloke/guanaco-65B-GPTQ"
+# MODEL_BASENAME = "model.safetensors"
+# MODEL_ID = "TheBloke/Airoboros-65B-GPT4-2.0-GPTQ"
+# MODEL_BASENAME = "model.safetensors"
+# MODEL_ID = "TheBloke/gpt4-alpaca-lora_mlp-65B-GPTQ"
+# MODEL_BASENAME = "model.safetensors"
+# MODEL_ID = "TheBloke/Upstage-Llama1-65B-Instruct-GPTQ"
+# MODEL_BASENAME = "model.safetensors"
     print('==================== Running all ====================')
     for model_id, model_basename in models.items():
         print(f'==================== Running {model_id} ====================')

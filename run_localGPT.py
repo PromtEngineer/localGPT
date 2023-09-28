@@ -69,7 +69,7 @@ def load_model(device_type, model_id, model_basename=None):
         model=model,
         tokenizer=tokenizer,
         max_length=MAX_NEW_TOKENS,
-        temperature=0.2,
+        temperature=0.0,
         # top_p=0.95,
         repetition_penalty=1.15,
         generation_config=generation_config,
@@ -81,7 +81,7 @@ def load_model(device_type, model_id, model_basename=None):
     return local_llm
 
 
-def retrieval_qa_pipline(device_type, use_history, persist_directory, llm, k, promptTemplate_type="llama"):
+def retrieval_qa_pipline(device_type, persist_directory, llm, k, promptTemplate_type="llama"):
     """
     Initializes and returns a retrieval-based Question Answering (QA) pipeline.
 
@@ -104,7 +104,7 @@ def retrieval_qa_pipline(device_type, use_history, persist_directory, llm, k, pr
     - The QA system retrieves relevant documents using the retriever and then answers questions based on those documents.
     """
 
-    embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": device_type})
+    embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": "cpu"})
     # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
@@ -116,7 +116,7 @@ def retrieval_qa_pipline(device_type, use_history, persist_directory, llm, k, pr
     retriever = db.as_retriever(search_kwargs={"k": k})
 
     # get the prompt template and memory if set by the user.
-    prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type, history=use_history)
+    prompt = get_prompt_template(promptTemplate_type=promptTemplate_type)
     qa = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
@@ -131,7 +131,7 @@ def retrieval_qa_pipline(device_type, use_history, persist_directory, llm, k, pr
     return qa
 
 
-def main(device_type, llm, k, persist_directory, query, use_history, verbose=True, show_sources=False):
+def main(device_type, llm, k, persist_directory, query, verbose=True, show_sources=False, promptTemplate_type=None):
     """
     Implements the main information retrieval task for a localGPT.
 
@@ -153,13 +153,14 @@ def main(device_type, llm, k, persist_directory, query, use_history, verbose=Tru
     """
 
     print(f"Running on: {device_type}")
-    print(f"Use history set to: {use_history}")
 
     # check if models directory do not exist, create a new one and store models here.
     if not os.path.exists(MODELS_PATH):
         os.mkdir(MODELS_PATH)
 
-    qa = retrieval_qa_pipline(device_type, use_history, persist_directory, llm, k, promptTemplate_type="llama")
+    # If model
+
+    qa = retrieval_qa_pipline(device_type, persist_directory, llm, k, promptTemplate_type=promptTemplate_type)
     res = qa(query)
     answer, docs = res["result"], res["source_documents"]
     if verbose:
