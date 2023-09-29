@@ -28,7 +28,7 @@ FEATURES = ["liquidity_model", "license"]
 DIRECTORIES = [f"{folder}/{feature}" for folder in FOLDERS for feature in FEATURES]
 
 # k, chunk_size, chunk_overlap
-CONFIGS = [(5, 500, 100), (4, 700, 100), (3, 1000, 200)]
+CONFIGS = [(5, 500, 100), (5, 500, 200), (4, 700, 100), (4, 700, 200) (3, 1000, 200), (3, 1000, 300)]
 #CONFIGS = [(5, 500, 100)]
 
 def run(model_id=MODEL_ID, model_basename=MODEL_BASENAME):
