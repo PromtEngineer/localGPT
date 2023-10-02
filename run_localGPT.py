@@ -197,7 +197,15 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     is_flag=True,
     help="Use history (Default is False)",
 )
-def main(device_type, show_sources, use_history):
+@click.option(
+    "--model_type",
+    default="llama",
+    type=click.Choice(
+        ["llama", "mistral", "non_llama"],
+    ),
+    help="model type, llama, mistral or non_llama",
+)
+def main(device_type, show_sources, use_history, model_type):
     """
     Implements the main information retrieval task for a localGPT.
 
@@ -226,7 +234,7 @@ def main(device_type, show_sources, use_history):
     if not os.path.exists(MODELS_PATH):
         os.mkdir(MODELS_PATH)
 
-    qa = retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama")
+    qa = retrieval_qa_pipline(device_type, use_history, promptTemplate_type=model_type)
     # Interactive questions and answers
     while True:
         query = input("\nEnter a query: ")

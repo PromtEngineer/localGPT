@@ -11,7 +11,6 @@ from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
 
 
-
 def model_memory():
     # Adding history to the model.
     template = """Use the following pieces of context to answer the question at the end. If you don't know the answer,\
@@ -28,33 +27,40 @@ def model_memory():
 
     return prompt, memory
 
+
 # Sidebar contents
 with st.sidebar:
-    st.title('🤗💬 Converse with your Data')
-    st.markdown('''
+    st.title("🤗💬 Converse with your Data")
+    st.markdown(
+        """
     ## About
     This app is an LLM-powered chatbot built using:
     - [Streamlit](https://streamlit.io/)
     - [LangChain](https://python.langchain.com/)
     - [LocalGPT](https://github.com/PromtEngineer/localGPT) 
  
-    ''')
+    """
+    )
     add_vertical_space(5)
-    st.write('Made with ❤️ by [Prompt Engineer](https://youtube.com/@engineerprompt)')
+    st.write("Made with ❤️ by [Prompt Engineer](https://youtube.com/@engineerprompt)")
 
 
-DEVICE_TYPE = "cuda" if torch.cuda.is_available() else "cpu"
+if torch.backends.mps.is_available():
+    DEVICE_TYPE = "mps"
+elif torch.cuda.is_available():
+    DEVICE_TYPE = "cuda"
+else:
+    DEVICE_TYPE = "cpu"
 
 
+# if "result" not in st.session_state:
+#     # Run the document ingestion process.
+#     run_langest_commands = ["python", "ingest.py"]
+#     run_langest_commands.append("--device_type")
+#     run_langest_commands.append(DEVICE_TYPE)
 
-if "result" not in st.session_state:
-    # Run the document ingestion process. 
-    run_langest_commands = ["python", "ingest.py"]
-    run_langest_commands.append("--device_type")
-    run_langest_commands.append(DEVICE_TYPE)
-
-    result = subprocess.run(run_langest_commands, capture_output=True)
-    st.session_state.result = result
+#     result = subprocess.run(run_langest_commands, capture_output=True)
+#     st.session_state.result = result
 
 # Define the retreiver
 # load the vectorstore
@@ -79,27 +85,24 @@ if "LLM" not in st.session_state:
     st.session_state["LLM"] = LLM
 
 
-
-
 if "QA" not in st.session_state:
-
     prompt, memory = model_memory()
 
     QA = RetrievalQA.from_chain_type(
-        llm=LLM, 
-        chain_type="stuff", 
-        retriever=RETRIEVER, 
+        llm=LLM,
+        chain_type="stuff",
+        retriever=RETRIEVER,
         return_source_documents=True,
         chain_type_kwargs={"prompt": prompt, "memory": memory},
     )
     st.session_state["QA"] = QA
 
-st.title('LocalGPT App 💬')
-    # Create a text input box for the user
-prompt = st.text_input('Input your prompt here')
+st.title("LocalGPT App 💬")
+# Create a text input box for the user
+prompt = st.text_input("Input your prompt here")
 # while True:
 
-    # If the user hits enter
+# If the user hits enter
 if prompt:
     # Then pass the prompt to the LLM
     response = st.session_state["QA"](prompt)
@@ -107,13 +110,13 @@ if prompt:
     # ...and write it out to the screen
     st.write(answer)
 
-    # With a streamlit expander  
-    with st.expander('Document Similarity Search'):
+    # With a streamlit expander
+    with st.expander("Document Similarity Search"):
         # Find the relevant pages
-        search = st.session_state.DB.similarity_search_with_score(prompt) 
+        search = st.session_state.DB.similarity_search_with_score(prompt)
         # Write out the first
-        for i, doc in enumerate(search): 
+        for i, doc in enumerate(search):
             # print(doc)
             st.write(f"Source Document # {i+1} : {doc[0].metadata['source'].split('/')[-1]}")
-            st.write(doc[0].page_content) 
+            st.write(doc[0].page_content)
             st.write("--------------------------------")

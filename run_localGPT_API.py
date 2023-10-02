@@ -18,7 +18,13 @@ from werkzeug.utils import secure_filename
 
 from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
 
-DEVICE_TYPE = "cuda" if torch.cuda.is_available() else "cpu"
+if torch.backends.mps.is_available():
+    DEVICE_TYPE = "mps"
+elif torch.cuda.is_available():
+    DEVICE_TYPE = "cuda"
+else:
+    DEVICE_TYPE = "cpu"
+
 SHOW_SOURCES = True
 logging.info(f"Running on: {DEVICE_TYPE}")
 logging.info(f"Display Source Documents set to: {SHOW_SOURCES}")
@@ -27,24 +33,24 @@ EMBEDDINGS = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, mode
 
 # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
 # EMBEDDINGS = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
-if os.path.exists(PERSIST_DIRECTORY):
-    try:
-        shutil.rmtree(PERSIST_DIRECTORY)
-    except OSError as e:
-        print(f"Error: {e.filename} - {e.strerror}.")
-else:
-    print("The directory does not exist")
+# if os.path.exists(PERSIST_DIRECTORY):
+#     try:
+#         shutil.rmtree(PERSIST_DIRECTORY)
+#     except OSError as e:
+#         print(f"Error: {e.filename} - {e.strerror}.")
+# else:
+#     print("The directory does not exist")
 
-run_langest_commands = ["python", "ingest.py"]
-if DEVICE_TYPE == "cpu":
-    run_langest_commands.append("--device_type")
-    run_langest_commands.append(DEVICE_TYPE)
+# run_langest_commands = ["python", "ingest.py"]
+# if DEVICE_TYPE == "cpu":
+#     run_langest_commands.append("--device_type")
+#     run_langest_commands.append(DEVICE_TYPE)
 
-result = subprocess.run(run_langest_commands, capture_output=True)
-if result.returncode != 0:
-    raise FileNotFoundError(
-        "No files were found inside SOURCE_DOCUMENTS, please put a starter file inside before starting the API!"
-    )
+# result = subprocess.run(run_langest_commands, capture_output=True)
+# if result.returncode != 0:
+#     raise FileNotFoundError(
+#         "No files were found inside SOURCE_DOCUMENTS, please put a starter file inside before starting the API!"
+#     )
 
 # load the vectorstore
 DB = Chroma(
