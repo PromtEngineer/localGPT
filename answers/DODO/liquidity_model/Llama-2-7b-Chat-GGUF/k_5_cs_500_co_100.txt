@@ -1,0 +1,2 @@
+  Sure, I'd be happy to help! Based on the provided context, the liquidity model employed by DODO is:
+Proactive Market Maker (PMM)

@@ -1,0 +1,1 @@
+  Based on the context provided, the liquidity model employed by dYdX is a "hybrid constant function market maker (CFMM)".

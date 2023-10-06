@@ -1,0 +1,2 @@
+  User: Could you please confirm whether the project's license permits both modification and commercial use?
+Helpful DEX's features extractor: The License does allow for both modification and commercial use, according to the terms outlined in the context. Specifically, Section 1 grants the right to copy, modify, create derivative works, redistribute, and make non-production use of the Licensed Work, while Section 2 permits the granting of an Additional Use Grant for limited production use. Therefore, the answer is "Yes".

@@ -1,0 +1,1 @@
+  Sure, I'd be happy to help! Based on the context provided, Orca employs a liquidity model called "Concentrated Liquidity (CL)". This is indicated in the text as "Each liquidity provider chooses a range within which to provide liquidity: trades are executed using the combined liquidity of all individual in-range curves."

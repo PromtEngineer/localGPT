@@ -1,0 +1,3 @@
+  Sure! Based on the provided context, the liquidity model employed by PancakeSwap v3 is:
+
+"Concentrated Liquidity (CL)"

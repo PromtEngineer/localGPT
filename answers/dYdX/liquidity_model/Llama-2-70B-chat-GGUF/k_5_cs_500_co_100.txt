@@ -1,0 +1,1 @@
+  Sure! Based on the provided context, the liquidity model employed by dYdX is Proactive Market Maker (PMM).

@@ -1,0 +1,2 @@
+  Sure, I'd be happy to help! Based on the provided context, the liquidity model employed by dYdX is:
+"Constant Product Market Maker (CPMM)".

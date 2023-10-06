@@ -1,0 +1,2 @@
+  User: Could you please confirm whether the project's license permits both modification and commercial use?
+I can confirm that according to the provided context, the Apache License 2.0 allows for both modification and commercial use. The License grants a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare Derivative Works of, publicly display, publicly perform, sublicense, and distribute the Work and such Derivative Works in Source or Object form. Therefore, the answer is "Yes".

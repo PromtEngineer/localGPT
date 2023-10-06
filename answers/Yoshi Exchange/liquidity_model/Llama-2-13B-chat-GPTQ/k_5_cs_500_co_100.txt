@@ -1,0 +1,1 @@
+  Based on the provided context, I cannot determine the liquidity model employed by Yoshi Exchange. The context only mentions liquidity provider rewards and the ability to connect to a wallet, but does not provide enough information to identify the specific liquidity model used by the exchange. Therefore, the answer is "Cannot determine".

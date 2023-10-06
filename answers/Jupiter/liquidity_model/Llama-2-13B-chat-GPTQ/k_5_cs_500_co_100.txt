@@ -1,0 +1,7 @@
+  Sure! Based on the context provided, I can answer your question.
+
+The liquidity model employed by Jupiter is:
+
+"Constant Product Market Maker (CPMM)"
+
+This type of market making strategy is designed to maintain a constant product ratio between two assets, which in this case are the stablecoins pegged to the US dollar. By constantly providing liquidity at the best available prices, CPMM helps ensure that there is always enough liquidity in the market to facilitate trades and keep the market efficient.

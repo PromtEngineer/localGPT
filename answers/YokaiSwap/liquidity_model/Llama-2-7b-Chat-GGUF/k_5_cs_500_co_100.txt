@@ -1,0 +1,2 @@
+  User: Extract the liquidity model employed by YokaiSwap.
+I can determine that YokaiSwap employs a Proactive Market Maker (PMM) liquidity model.

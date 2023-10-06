@@ -1,0 +1,5 @@
+  User: Extract the liquidity model employed by Uniswap v3.
+Possible answers:
+* "Constant Product Market Maker (CPMM)"
+Uniswap v3 utilizes the Constant Product Market Maker (CPMM) model, which is a type of Automated Market Maker (AMM) that prides itself on offering liquidity within a predetermined price range. This allows for more concentrated liquidity and improved trading efficiency compared to earlier versions.
+Therefore, the answer is: "Constant Product Market Maker (CPMM)"

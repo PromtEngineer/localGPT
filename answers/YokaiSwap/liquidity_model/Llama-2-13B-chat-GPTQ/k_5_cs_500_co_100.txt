@@ -1,0 +1,7 @@
+  Based on the context provided, I can answer your question as follows:
+
+The liquidity model employed by YokaiSwap is:
+
+"Constant Product Market Maker (CPMM)"
+
+This is because YokaiSwap uses an AMM (Automated Market Maker) protocol that is essential for priced assets to be algorithmically and efficiently swapped for users to smart contract transactions. The CPMM model is a type of market maker that maintains a constant product ratio between two assets, which is suitable for YokaiSwap's automated market making functionality.

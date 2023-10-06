@@ -1,0 +1,1 @@
+ The value of the extracted text should be the name of the liquidity model employed by dYdX.

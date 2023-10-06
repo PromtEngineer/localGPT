@@ -1,0 +1,1 @@
+ The PMM model is used in YokaiSwap as it provides an automated market making service that helps maintain order book depth and liquidity.

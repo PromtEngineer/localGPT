@@ -1,0 +1,2 @@
+  Thank you for providing the context! Based on the information provided, the liquidity model employed by QuickSwap v3 is:
+"Proactive Market Maker (PMM)"
