@@ -81,7 +81,7 @@ def load_model(device_type, model_id, model_basename=None):
     return local_llm
 
 
-def retrieval_qa_pipline(device_type, persist_directory, llm, k, promptTemplate_type="llama"):
+def retrieval_qa_pipline(device_type, persist_directory, llm, k, promptTemplate_type=None):
     """
     Initializes and returns a retrieval-based Question Answering (QA) pipeline.
 

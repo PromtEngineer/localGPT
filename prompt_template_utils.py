@@ -26,6 +26,19 @@ def get_prompt_template(system_prompt=system_prompt, promptTemplate_type=None):
         prompt_template =  B_INST + SYSTEM_PROMPT + instruction + E_INST
         prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
 
+    elif promptTemplate_type == "mistral":
+        B_INST, E_INST = "<s>[INST] ", " [/INST]"
+        prompt_template = (
+            B_INST
+            + system_prompt
+            + """
+
+        Context: {context}
+        User: {question}"""
+            + E_INST
+        )
+        prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
+
     else:
         prompt_template = system_prompt + """
 

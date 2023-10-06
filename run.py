@@ -5,15 +5,13 @@ from constants import (SOURCE_DIRECTORY, PERSIST_DIRECTORY,
 import os
 import glob
 from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
 
 import torch
 
 
 # Device type
-# DEVICE_TYPE='cpu'
-DEVICE_TYPE='cuda'
+DEVICE_TYPE='cpu'
+# DEVICE_TYPE='cuda'
 
 
 # Create embeddings
@@ -28,8 +26,8 @@ FEATURES = ["liquidity_model", "license"]
 DIRECTORIES = [f"{folder}/{feature}" for folder in FOLDERS for feature in FEATURES]
 
 # k, chunk_size, chunk_overlap
-CONFIGS = [(5, 500, 100), (5, 500, 200), (4, 700, 100), (4, 700, 200) (3, 1000, 200), (3, 1000, 300)]
-#CONFIGS = [(5, 500, 100)]
+#CONFIGS = [(5, 500, 100), (5, 500, 200), (4, 700, 100), (4, 700, 200) (3, 1000, 200), (3, 1000, 300)]
+CONFIGS = [(5, 500, 100)]
 
 def run(model_id=MODEL_ID, model_basename=MODEL_BASENAME):
 
@@ -66,6 +64,8 @@ def run(model_id=MODEL_ID, model_basename=MODEL_BASENAME):
             promptTemplate_type=None
             if "llama" in model_id.lower():
                 promptTemplate_type="llama"
+            elif "mistral" in model_id.lower():
+                promptTemplate_type="mistral"
             answer, docs = run_localGPT.main(DEVICE_TYPE, llm, k, persist_directory, query,\
                             verbose=False, show_sources=False, promptTemplate_type=promptTemplate_type)
 
@@ -80,12 +80,14 @@ def run(model_id=MODEL_ID, model_basename=MODEL_BASENAME):
 
 
 if __name__ == "__main__":
-    models = {"TheBloke/Llama-2-70B-chat-GPTQ": "model.safetensors",
+
+    models = {"TheBloke/Mistral-7B-Instruct-v0.1-GGUF": "mistral-7b-instruct-v0.1.Q2_K.gguf"}
+    """models = {"TheBloke/Llama-2-70B-chat-GPTQ": "model.safetensors",
               "TheBloke/WizardLM-Uncensored-Falcon-40B-GPTQ": "model.safetensors",
               "TheBloke/Wizard-Vicuna-30B-Uncensored-GPTQ" : "model.safetensors",
               "TheBloke/Airoboros-L2-70B-2.1-GPTQ" : "model.safetensors",
               "TheBloke/llama-2-70b-Guanaco-QLoRA-GPTQ" : "model.safetensors",
-              }
+              }"""
 #MODEL_ID = "TheBloke/guanaco-65B-GPTQ"
 # MODEL_BASENAME = "model.safetensors"
 # MODEL_ID = "TheBloke/Airoboros-65B-GPT4-2.0-GPTQ"
