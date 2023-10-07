@@ -205,7 +205,13 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     ),
     help="model type, llama, mistral or non_llama",
 )
-def main(device_type, show_sources, use_history, model_type):
+@click.option(
+    "--save_q&a",
+    is_flag=True,
+    help="whether to save Q&A pairs to a CSV file (Default is False)",
+)
+
+def main(device_type, show_sources, use_history, model_type, save_qa):
     """
     Implements the main information retrieval task for a localGPT.
 
@@ -257,6 +263,10 @@ def main(device_type, show_sources, use_history, model_type):
                 print("\n> " + document.metadata["source"] + ":")
                 print(document.page_content)
             print("----------------------------------SOURCE DOCUMENTS---------------------------")
+        
+        # Log the Q&A to CSV only if save_qa is True
+        if save_qa:
+            log_to_csv(query, answer)
 
 
 if __name__ == "__main__":
