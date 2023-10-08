@@ -206,7 +206,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     help="model type, llama, mistral or non_llama",
 )
 @click.option(
-    "--save_q&a",
+    "--save_qa",
     is_flag=True,
     help="whether to save Q&A pairs to a CSV file (Default is False)",
 )
