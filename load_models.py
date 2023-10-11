@@ -9,6 +9,8 @@ from transformers import (
     LlamaForCausalLM,
     LlamaTokenizer,
 )
+# Uncomment below line if you have Intel® Discrete GPU's and it has XPU Support.
+#import intel_extension_for_pytorch as ipex
 from constants import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, N_GPU_LAYERS, N_BATCH, MODELS_PATH
 
 
@@ -131,6 +133,13 @@ def load_full_model(model_id, model_basename, device_type, logging):
         logging.info("Using LlamaTokenizer")
         tokenizer = LlamaTokenizer.from_pretrained(model_id, cache_dir="./models/")
         model = LlamaForCausalLM.from_pretrained(model_id, cache_dir="./models/")
+    elif device_type.lower() == "xpu":
+        logging.info("Using LlamaTokenizer")
+        tokenizer = LlamaTokenizer.from_pretrained(model_id, cache_dir="./models/")
+        logging.info("Using AutoModelForCausalLM")
+        model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=torch.float16, device_map="auto", low_cpu_mem_usage=True, cache_dir="./models")
+        model = model.to('xpu')
+        model = ipex.optimize(model)
     else:
         logging.info("Using AutoModelForCausalLM for full models")
         tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir="./models/")

@@ -7,6 +7,10 @@ from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 from langchain.callbacks.manager import CallbackManager
+from langchain.llms.base import LLM
+
+# Uncomment below line if you have Intel Discrete GPU's and it has XPU Support
+#import intel_extension_for_pytorch as ipex
 
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
@@ -17,6 +21,18 @@ from langchain.vectorstores import Chroma
 from transformers import (
     GenerationConfig,
     pipeline,
+)
+
+import warnings
+
+warnings.filterwarnings(
+    "ignore", category=UserWarning, module="intel_extension_for_pytorch"
+)
+warnings.filterwarnings(
+    "ignore", category=UserWarning, module="torchvision.io.image", lineno=13
+)
+warnings.filterwarnings(
+    "ignore", category=UserWarning, module="transformers"
 )
 
 from load_models import (
@@ -33,7 +49,6 @@ from constants import (
     MAX_NEW_TOKENS,
     MODELS_PATH,
 )
-
 
 def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     """
@@ -65,7 +80,20 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
         else:
             model, tokenizer = load_quantized_model_qptq(model_id, model_basename, device_type, LOGGING)
     else:
-        model, tokenizer = load_full_model(model_id, model_basename, device_type, LOGGING)
+        model, tokenizer = load_full_model(model_id, model_basename,  device_type, LOGGING)
+        if device_type == "xpu":
+            class CustomLLM(LLM):
+                def _call(self, prompt, stop=None, run_manager=None) -> str:
+                    input_ids = tokenizer.encode(prompt, return_tensors="pt").to('xpu')
+                    result = model.generate(input_ids=input_ids, max_new_tokens=MAX_NEW_TOKENS)
+                    result = tokenizer.decode(result[0])
+                    return result
+                @property
+                def _llm_type(self) -> str:
+                    return "custom"
+
+            llm = CustomLLM()
+            return llm
 
     # Load configuration from the model to avoid warnings
     generation_config = GenerationConfig.from_pretrained(model_id)
