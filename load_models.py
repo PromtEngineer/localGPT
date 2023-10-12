@@ -57,8 +57,8 @@ def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, loggin
     except Exception as e:
         if "ggml" in model_basename:
             logging.INFO("If you were using GGML model, LLAMA-CPP Dropped Support, Use GGUF Instead")
-        logging.info(f"LlamaCpp conversion error: {e}")
-        return None
+        logging.info("LlamaCpp conversion error: ")
+        raise e
 
 
 def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
