@@ -33,6 +33,7 @@ from constants import (
     MODEL_BASENAME,
     MAX_NEW_TOKENS,
     MODELS_PATH,
+    CHROMA_SETTINGS
 )
 
 
@@ -123,6 +124,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     db = Chroma(
         persist_directory=PERSIST_DIRECTORY,
         embedding_function=embeddings,
+        client_settings=CHROMA_SETTINGS
     )
     retriever = db.as_retriever()
 
