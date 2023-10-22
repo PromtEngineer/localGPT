@@ -2,6 +2,7 @@ import os
 import logging
 import click
 import torch
+import utils
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
@@ -266,7 +267,7 @@ def main(device_type, show_sources, use_history, model_type, save_qa):
         
         # Log the Q&A to CSV only if save_qa is True
         if save_qa:
-            log_to_csv(query, answer)
+            utils.log_to_csv(query, answer)
 
 
 if __name__ == "__main__":
