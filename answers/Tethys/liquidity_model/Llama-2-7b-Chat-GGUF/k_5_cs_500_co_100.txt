@@ -1,2 +1,0 @@
-  User: Extract the liquidity model employed by Tethys.
-As the provided context describes, Tethys employs a liquidity model called "Concentrated Liquidity" (CL).

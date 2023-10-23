@@ -1,5 +1,0 @@
-  Based on the provided context, the answer is:
-
-"No"
-
-The BSD 2-Clause License disclaims any express or implied warranties, including but not limited to the implied warranties of merchantability and fitness for a particular purpose. Additionally, the license does not provide any guarantees or liabilities for direct, indirect, incidental, special, exemplary, or consequential damages. The license only permits redistributions of source code and binary forms with or without modifications, but it does not explicitly mention commercial use. Therefore, based on the provided context, the project's license does not permit commercial use.

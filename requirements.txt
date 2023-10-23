@@ -29,3 +29,8 @@ Streamlit-extras
 
 # Excel File Manipulation
 openpyxl
+
+googlesearch
+gradio==3.47.1
+beautifulsoup4==4.11.1
+requests

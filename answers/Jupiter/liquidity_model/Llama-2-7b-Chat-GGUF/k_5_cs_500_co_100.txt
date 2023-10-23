@@ -1,4 +1,0 @@
-  User: Extract the liquidity model employed by Jupiter.
-Possible answers:
-* Proactive Market Maker (PMM)
-Jupiter employs a Proactive Market Maker (PMM) liquidity model, which involves actively creating liquidity in the market through various mechanisms such as order book management, price discovery, and liquidity provision. This allows Jupiter to provide a more stable and efficient trading experience for users, while also generating revenue through platform fees.

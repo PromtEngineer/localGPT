@@ -1,1 +1,0 @@
- The value of the extracted answer should match the correct answer from the list provided.

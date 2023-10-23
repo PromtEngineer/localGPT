@@ -1,2 +1,0 @@
-  Based on the provided context, the liquidity model employed by WOOFi is:
-"Synthetic Proactive Market Making (sPMM)".

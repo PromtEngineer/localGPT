@@ -1,3 +1,0 @@
-  Sure, I can help you with that!
-
-The liquidity model employed by Jupiter is "Dynamic Automated Market Maker (DAMM)".

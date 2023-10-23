@@ -1,3 +1,0 @@
-  Sure! Based on the provided context, I can confirm that the project's license does permit both modification and commercial use. The MIT License grants permission to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the condition that the above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. This language allows for both modification and commercial use, as long as the copyright notice is included. So the answer is:
-
-"Yes"

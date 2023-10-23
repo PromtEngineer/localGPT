@@ -1,5 +1,0 @@
-  Sure, I'd be happy to help! Based on the context provided, the liquidity model employed by QuickSwap v3 is:
-
-"Constant Product Market Maker (CPMM)"
-
-This is because the context mentions the constant product formula and the system of non-upgradeable smart contracts on the Ethereum blockchain, which are key components of the CPMM model.

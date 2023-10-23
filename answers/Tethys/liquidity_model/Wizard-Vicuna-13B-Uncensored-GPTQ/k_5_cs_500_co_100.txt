@@ -1,1 +1,0 @@
- The PMM model is designed to proactively adjust orders based on changing market conditions, with the goal of maximizing profits while minimizing risks. It uses advanced algorithms to analyze market data and make decisions about when to buy or sell assets, taking into account factors such as price movements, trading volumes, and news events that may affect asset prices.

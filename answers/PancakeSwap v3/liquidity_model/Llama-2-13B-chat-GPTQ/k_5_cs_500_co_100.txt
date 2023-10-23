@@ -1,5 +1,0 @@
-  Sure, I'd be happy to help! Based on the context provided, the liquidity model employed by PancakeSwap V3 is:
-
-"Concentrated Liquidity (CL)"
-
-This is because PancakeSwap V3 allows liquidity providers to concentrate their capital in specific price ranges where most of the trading occurs, making their capital more efficient.

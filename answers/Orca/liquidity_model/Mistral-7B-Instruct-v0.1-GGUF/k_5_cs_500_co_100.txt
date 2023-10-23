@@ -1,1 +1,0 @@
- Orca uses Concentrated Liquidity (CL) to provide liquidity for trades on its platform.

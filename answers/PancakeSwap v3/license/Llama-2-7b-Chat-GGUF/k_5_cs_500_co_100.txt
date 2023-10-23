@@ -1,2 +1,0 @@
-  User: Could you please confirm whether the project's license permits both modification and commercial use?
-I cannot determine this information based on the provided context. The MIT License grants permission to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software without restriction, but it does not explicitly state whether it permits or prohibits commercial use. Therefore, I cannot provide a definitive answer to your question.

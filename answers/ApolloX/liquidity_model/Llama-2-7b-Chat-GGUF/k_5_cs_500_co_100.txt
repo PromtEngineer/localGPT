@@ -1,5 +1,0 @@
-  User: Extract the liquidity model employed by ApolloX.
-Possible answers:
-* Proactive Market Maker (PMM)
-
-I cannot determine the liquidity model employed by ApolloX based on the provided context. The passage does not provide any information about the liquidity model used by ApolloX.

@@ -1,1 +1,0 @@
- The PMM model is used by ApolloX as its primary liquidity provider. It allows for dynamic adjustments to be made to the price feed based on changes in supply and demand, ensuring that orders are filled quickly and efficiently.

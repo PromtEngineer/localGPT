@@ -1,3 +1,0 @@
-  User: Could you please confirm whether the project's license permits both modification and commercial use?
-I can determine this based on the provided context. According to the MIT License, permission is granted to deal in the Software without restriction, including the right to modify and commercialize it. Therefore, my answer is:
-Yes

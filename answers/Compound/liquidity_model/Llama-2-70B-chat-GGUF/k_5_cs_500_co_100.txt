@@ -1,5 +1,0 @@
-  Unfortunately, based on the given context, I cannot determine the liquidity model employed by Compound. The provided information does not contain enough details to answer this question.
-
-The context only mentions markets, governance, docs, cTokens, Comptroller, Open Price Feed, Security, and Compound v2, but it does not provide any information about the liquidity model used by Compound.
-
-Therefore, I cannot give a definitive answer to this question based on the provided context.

@@ -1,3 +1,0 @@
-  Sure, I'd be happy to help! Based on the context provided, the liquidity model employed by Uniswap v3 is:
-
-"Concentrated Liquidity (CL)"

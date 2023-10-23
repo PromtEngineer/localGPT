@@ -1,3 +1,0 @@
-  Sure! Based on the provided context, the liquidity model employed by QuickSwap v3 is:
-
-"Constant Product Market Maker (CPMM)"

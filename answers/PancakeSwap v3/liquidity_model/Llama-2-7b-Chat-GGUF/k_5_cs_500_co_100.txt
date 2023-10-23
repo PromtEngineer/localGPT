@@ -1,3 +1,0 @@
-  User: Extract the liquidity model employed by PancakeSwap v3.
-I can help you with that! Based on the provided context, the liquidity model employed by PancakeSwap v3 is:
-"Concentrated Liquidity (CL)"

@@ -1,3 +1,0 @@
-  Thank you for providing the context! Based on the information provided, the liquidity model employed by Compound is:
-"Proactive Market Maker (PMM)"
-This is a type of market making strategy that actively seeks to improve liquidity in the market by continuously buying and selling assets.

@@ -1,1 +1,0 @@
-  Sure! The liquidity model employed by CRODEX is "Automated Market Making (AMM)".

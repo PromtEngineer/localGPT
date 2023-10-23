@@ -1,1 +1,0 @@
-  Sure! The liquidity model employed by ApolloX is "Constant Product Market Maker (CPMM)".

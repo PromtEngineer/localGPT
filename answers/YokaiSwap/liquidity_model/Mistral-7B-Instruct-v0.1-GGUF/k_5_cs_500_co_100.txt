@@ -1,1 +1,0 @@
- "Constant Product Market Maker (CPMM)"

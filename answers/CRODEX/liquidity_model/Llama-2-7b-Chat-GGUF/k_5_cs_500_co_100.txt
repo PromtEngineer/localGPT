@@ -1,2 +1,0 @@
-  User: Extract the liquidity model employed by CRODEX.
-Helpful DEX's features extractor: Sure! According to the provided context, the liquidity model employed by CRODEX is a Proactive Market Maker (PMM).
