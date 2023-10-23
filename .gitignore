@@ -169,5 +169,10 @@ cython_debug/
 SOURCE_DOCUMENTS/.DS_Store
 
 # files
-#*.txt
+*.txt
 *.html
+*.bin
+*.sqlite3
+*.gguf
+*.ggml
+*.gptq
