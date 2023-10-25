@@ -176,3 +176,4 @@ SOURCE_DOCUMENTS/.DS_Store
 *.gguf
 *.ggml
 *.gptq
+*.json

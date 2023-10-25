@@ -81,7 +81,7 @@ def load_model(device_type, model_id, model_basename=None):
     return local_llm
 
 
-def retrieval_qa_pipline(device_type, persist_directory, llm, k, promptTemplate_type=None):
+def retrieval_qa_pipline(embeddings, persist_directory, llm, k, promptTemplate_type=None):
     """
     Initializes and returns a retrieval-based Question Answering (QA) pipeline.
 
@@ -104,7 +104,7 @@ def retrieval_qa_pipline(device_type, persist_directory, llm, k, promptTemplate_
     - The QA system retrieves relevant documents using the retriever and then answers questions based on those documents.
     """
 
-    embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": "cpu"})
+    #embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": device_type})
     # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
     # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
@@ -131,7 +131,7 @@ def retrieval_qa_pipline(device_type, persist_directory, llm, k, promptTemplate_
     return qa
 
 
-def main(device_type, llm, k, persist_directory, query, verbose=True, show_sources=False, promptTemplate_type=None):
+def main(llm, embeddings, k, persist_directory, query, verbose=True, show_sources=False, promptTemplate_type=None):
     """
     Implements the main information retrieval task for a localGPT.
 
@@ -152,7 +152,7 @@ def main(device_type, llm, k, persist_directory, query, verbose=True, show_sourc
 
     """
 
-    print(f"Running on: {device_type}")
+    #print(f"Running on: {device_type}")
 
     # check if models directory do not exist, create a new one and store models here.
     if not os.path.exists(MODELS_PATH):
@@ -160,7 +160,7 @@ def main(device_type, llm, k, persist_directory, query, verbose=True, show_sourc
 
     # If model
 
-    qa = retrieval_qa_pipline(device_type, persist_directory, llm, k, promptTemplate_type=promptTemplate_type)
+    qa = retrieval_qa_pipline(embeddings, persist_directory, llm, k, promptTemplate_type=promptTemplate_type)
     res = qa(query)
     answer, docs = res["result"], res["source_documents"]
     if verbose:

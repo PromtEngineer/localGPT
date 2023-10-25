@@ -81,7 +81,7 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
     return text_docs, python_docs
 
 
-def main(device_type, embedding_model, chunk_size, chunk_overlap, source_directory, save_path):
+def main(embedding_model, chunk_size, chunk_overlap, source_directory, save_path):
 
     os.makedirs(save_path, exist_ok=True)
 
