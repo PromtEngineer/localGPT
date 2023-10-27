@@ -1,22 +1,13 @@
-# LocalGPT: Secure, Local Conversations with Your Documents 🌐
+# DEX Explorer: An application that helps you find answers about a DEX
 
-**LocalGPT** is an open-source initiative that allows you to converse with your documents without compromising your privacy. With everything running locally, you can be assured that no data ever leaves your computer. Dive into the world of secure, local document interactions with LocalGPT.
+**DEX Explorer** is an application that enable you to extract key informations about DEXs. It uses online Data combined with Open-Source LLMs to inform about a DEX of your choice or from ccoinmarketcap top DEX. You can also enter your OpenAI ids to use Open AI API.
 
 ## Features 🌟
 - **Utmost Privacy**: Your data remains on your computer, ensuring 100% security.
 - **Versatile Model Support**: Seamlessly integrate a variety of open-source models, including HF, GPTQ, GGML, and GGUF.
 - **Diverse Embeddings**: Choose from a range of open-source embeddings.
 - **Reuse Your LLM**: Once downloaded, reuse your LLM without the need for repeated downloads.
-- **Chat History**: Remebers your previous conversations (in a session).
-- **API**: LocalGPT has an API that you can use for building RAG Applications.
-- **Graphical Interface**: LocalGPT comes with two GUIs, one uses the API and the other is standalone (based on streamlit).
 - **GPU, CPU & MPS Support**: Supports mulitple platforms out of the box, Chat with your data using `CUDA`, `CPU` or `MPS` and more!
-
-## Dive Deeper with Our Videos 🎥
-- [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo)
-- [Llama-2 with LocalGPT](https://youtu.be/lbFmceo4D5E)
-- [Adding Chat History](https://youtu.be/d7otIM_MCZs)
-- [LocalGPT - Updated (09/17/2023)](https://youtu.be/G_prHSKX9d4)
 
 ## Technical Details 🛠️
 By selecting the right local models and the power of `LangChain` you can run the entire RAG pipeline locally, without any data leaving your environment, and with reasonable performance.
@@ -28,6 +19,8 @@ By selecting the right local models and the power of `LangChain` you can run the
 This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT).
 
 ## Built Using 🧩
+- [localGPT](https://github.com/PromtEngineer/localGPT)
+- [Gradio](https://github.com/gradio-app/gradio/tree/main)
 - [LangChain](https://github.com/hwchase17/langchain)
 - [HuggingFace LLMs](https://huggingface.co/models)
 - [InstructorEmbeddings](https://instructor-embedding.github.io/)
@@ -38,12 +31,12 @@ This project was inspired by the original [privateGPT](https://github.com/imarti
 # Environment Setup 🌍
 
 1. 📥 Clone the repo using git:
-  
+
 ```shell
-git clone https://github.com/PromtEngineer/localGPT.git
+git https://github.com/moustapha00/localGPT.git
 ```
 
-2. 🐍 Instal [conda](https://www.anaconda.com/download) for virtual environment management. Create and activate a new virtual environment. 
+2. 🐍 Instal [conda](https://www.anaconda.com/download) for virtual environment management. Create and activate a new virtual environment.
 
 ```shell
 conda create -n localGPT python=3.10.0
@@ -72,7 +65,7 @@ For `NVIDIA` GPUs support, use `cuBLAS`
 CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python==0.1.83 --no-cache-dir
 ```
 
-For Apple Metal (`M1/M2`) support, use 
+For Apple Metal (`M1/M2`) support, use
 
 ```shell
 # Example: METAL
@@ -97,7 +90,7 @@ For testing, this repository comes with [Constitution of USA](https://constituti
 Put you files in the `SOURCE_DOCUMENTS` folder. You can put multiple folders within the `SOURCE_DOCUMENTS` folder and the code will recursively read your files.
 
 ### Support file formats:
-LocalGPT currently supports the following file formats. LocalGPT uses `LangChain` for loading these file formats. The code in `constants.py` uses a `DOCUMENT_MAP` dictionary to map a file format to the corresponding loader. In order to add support for another file format, simply add this dictionary with the file format and the corresponding loader from [LangChain](https://python.langchain.com/docs/modules/data_connection/document_loaders/). 
+LocalGPT currently supports the following file formats. LocalGPT uses `LangChain` for loading these file formats. The code in `constants.py` uses a `DOCUMENT_MAP` dictionary to map a file format to the corresponding loader. In order to add support for another file format, simply add this dictionary with the file format and the corresponding loader from [LangChain](https://python.langchain.com/docs/modules/data_connection/document_loaders/).
 
 ```shell
 DOCUMENT_MAP = {
@@ -127,13 +120,13 @@ You will see an output like this:
 
 
 Use the device type argument to specify a given device.
-To run on `cuda` 
+To run on `cuda`
 
 ```sh
 python ingest.py --device_type cpu
 ```
 
-To run on `M1/M2` 
+To run on `M1/M2`
 
 ```sh
 python ingest.py --device_type mps
@@ -152,7 +145,7 @@ Note: When you run this for the first time, it will need internet access to down
 
 ## Ask questions to your documents, locally!
 
-In order to chat with your documents, run the following commnad (by default, it will run on `cuda`). 
+In order to chat with your documents, run the following commnad (by default, it will run on `cuda`).
 
 ```shell
 python run_localGPT.py
@@ -163,13 +156,13 @@ You can also specify the device type just like `ingest.py`
 python run_localGPT.py --device_type mps # to run on Apple silicon
 ```
 
-This will load the ingested vector store and embedding model. You will be presented with a prompt: 
+This will load the ingested vector store and embedding model. You will be presented with a prompt:
 
 ```shell
 > Enter a query:
 ```
 
-After typing your question, hit enter. LocalGPT will take some time based on your hardware. You will get a response like this below. 
+After typing your question, hit enter. LocalGPT will take some time based on your hardware. You will get a response like this below.
 <img width="1312" alt="Screenshot 2023-09-14 at 3 33 19 PM" src="https://github.com/PromtEngineer/localGPT/assets/134474669/a7268de9-ade0-420b-a00b-ed12207dbe41">
 
 Once the answer is generated, you can then ask another question without re-running the script, just wait for the prompt again.
@@ -187,7 +180,7 @@ You can use the `--show_sources` flag with `run_localGPT.py` to show which chunk
 python run_localGPT.py --show_sources
 ```
 
-Another option is to enable chat history. ***Note***: This is disabled by default and can be enabled by using the  `--use_history` flag. The context window is limited so keep in mind enabling history will use it and might overflow. 
+Another option is to enable chat history. ***Note***: This is disabled by default and can be enabled by using the  `--use_history` flag. The context window is limited so keep in mind enabling history will use it and might overflow.
 
 ```shell
 python run_localGPT.py --use_history
@@ -196,7 +189,7 @@ python run_localGPT.py --use_history
 
 # Run the Graphical User Interface
 
-1. Open `constants.py` in an editor of your choice and depending on choice add the LLM you want to use. By default, the following model will be used:
+1. In `app` folder open `variables.py` in an editor of your choice and depending on choice add the LLM you want to use. By default, the following model will be used:
 
    ```shell
    MODEL_ID = "TheBloke/Llama-2-7b-Chat-GGUF"
@@ -222,7 +215,7 @@ python run_localGPT.py --use_history
 
 # How to select different LLM models?
 
-To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`. 
+To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`.
 
 1. Open up `constants.py` in the editor of your choice.
 2. Change the `MODEL_ID` and `MODEL_BASENAME`. If you are using a quantized model (`GGML`, `GPTQ`, `GGUF`), you will need to provide `MODEL_BASENAME`. For unquatized models, set `MODEL_BASENAME` to `NONE`
@@ -238,7 +231,7 @@ To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`.
    - Got to the corresponding [HuggingFace Repo](https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and select "Files and versions".
    - Pick one of the model names and set it as  `MODEL_BASENAME`. For example -> `MODEL_BASENAME = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
 
-8. Follow the same steps for `GGUF` and `GGML` models. 
+8. Follow the same steps for `GGUF` and `GGML` models.
 
 # GPU and vRAM Requirements
 
@@ -283,7 +276,7 @@ Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-
 
 # Disclaimer
 
-This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license.
+This prOject is based on a fork from localGPT a project for a local LLM question answering. Ce projet reprend plusiers elements de celui ci.
 
 # Common Errors
 

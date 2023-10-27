@@ -1,5 +1,6 @@
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import json
 
 from langchain.docstore.document import Document
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
@@ -8,12 +9,11 @@ from langchain.vectorstores import Chroma
 from constants import (
     CHROMA_SETTINGS,
     DOCUMENT_MAP,
-    EMBEDDING_MODEL_NAME,
     INGEST_THREADS,
 )
 
-
 def load_single_document(file_path: str) -> Document:
+    URL_MAP = json.load(open("C:/Users/mmahmoud/localGPT/app/url_map.json", "r"))
     # Loads a single document from a file path
     file_extension = os.path.splitext(file_path)[1]
     loader_class = DOCUMENT_MAP.get(file_extension)
@@ -21,7 +21,12 @@ def load_single_document(file_path: str) -> Document:
         loader = loader_class(file_path)
     else:
         raise ValueError("Document type is undefined")
-    return loader.load()[0]
+    data = loader.load()[0]
+    filename = os.path.basename(file_path)
+    if filename in URL_MAP.keys():
+        for key, value in URL_MAP[filename].items():
+            data.metadata[key] = value
+    return data
 
 
 def load_document_batch(filepaths):

@@ -1,4 +1,5 @@
 *
 !*.py
 !requirements.txt
-!SOURCE_DOCUMENTS
+!*.ipynb
+!app

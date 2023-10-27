@@ -7,6 +7,7 @@ from chromadb.config import Settings
 from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader, Docx2txtLoader, \
     UnstructuredHTMLLoader
 
+
 # load_dotenv()
 ROOT_DIRECTORY = os.path.dirname(os.path.realpath(__file__))
 
