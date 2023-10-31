@@ -154,7 +154,7 @@ def get_documents(dex_name, save_path=SOURCE_DIRECTORY):
         # If no official license is found, create a txt file with the message
         if not license_found:
             with open(f'{save_path}/{dex_name}/license/no_license.txt', 'w') as f:
-                f.write("No license found for this DEX using GitHub API.")
+                f.write("No license found for this DEX.")
     else:
         print(f'Failed to search for repositories related to {dex_name}: {response.status_code}')
         with open(f'{save_path}/{dex_name}/license/no_license.txt', 'w') as f:
