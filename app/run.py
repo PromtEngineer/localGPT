@@ -1,7 +1,7 @@
 import ingest
 import run_localGPT
-from constants import (SOURCE_DIRECTORY, PERSIST_DIRECTORY,
-            MODEL_ID, MODEL_BASENAME, EMBEDDING_MODEL_NAME)
+from variables import (SOURCE_DIRECTORY, PERSIST_DIRECTORY,
+            MODEL_ID, MODEL_BASENAME, EMBEDDING_NAME)
 import os
 import glob
 from langchain.embeddings import HuggingFaceInstructEmbeddings

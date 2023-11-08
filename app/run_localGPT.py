@@ -1,6 +1,5 @@
 import os
 from langchain.chains import RetrievalQA
-from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
 
 
@@ -18,8 +17,7 @@ from load_models import (
     load_full_model,
 )
 
-from constants import (
-    EMBEDDING_MODEL_NAME,
+from variables import (
     MAX_NEW_TOKENS,
     MODELS_PATH,
 )
@@ -131,7 +129,7 @@ def retrieval_qa_pipline(embeddings, persist_directory, llm, k, promptTemplate_t
     return qa
 
 
-def main(llm, embeddings, k, persist_directory, query, verbose=True, show_sources=False, promptTemplate_type=None):
+def main(llm, embeddings, k, persist_directory, query, promptTemplate_type=None):
     """
     Implements the main information retrieval task for a localGPT.
 
@@ -158,24 +156,7 @@ def main(llm, embeddings, k, persist_directory, query, verbose=True, show_source
     if not os.path.exists(MODELS_PATH):
         os.mkdir(MODELS_PATH)
 
-    # If model
-
     qa = retrieval_qa_pipline(embeddings, persist_directory, llm, k, promptTemplate_type=promptTemplate_type)
     res = qa(query)
     answer, docs = res["result"], res["source_documents"]
-    if verbose:
-        # Print the result
-        print("\n\n> Query:")
-        print(query)
-        print("\n> Answer:")
-        print(answer)
-
-        if show_sources:  # this is a flag that you can set to disable showing answers.
-            # # Print the relevant sources used for the answer
-            print("----------------------------------SOURCE DOCUMENTS---------------------------")
-            for document in docs:
-                print("\n> " + document.metadata["source"] + ":")
-                print(document.page_content)
-            print("----------------------------------SOURCE DOCUMENTS---------------------------")
-
     return answer, docs

@@ -6,14 +6,14 @@ from langchain.docstore.document import Document
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
-from constants import (
+from variables import (
     CHROMA_SETTINGS,
     DOCUMENT_MAP,
     INGEST_THREADS,
 )
 
 def load_single_document(file_path: str) -> Document:
-    URL_MAP = json.load(open("C:/Users/mmahmoud/localGPT/app/url_map.json", "r"))
+    URL_MAP = json.load(open("url_map.json", "r"))
     # Loads a single document from a file path
     file_extension = os.path.splitext(file_path)[1]
     loader_class = DOCUMENT_MAP.get(file_extension)

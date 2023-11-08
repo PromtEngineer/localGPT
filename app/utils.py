@@ -1,7 +1,3 @@
-
-import sys
-#sys.path.append('/path/to/project')
-sys.path.append("C:/Users/mmahmoud/localGPT")
 import ingest
 import run_localGPT
 import json
@@ -92,7 +88,7 @@ def get_documents(dex_name, save_path=SOURCE_DIRECTORY):
     Scrape the documents for a DEX.
     """
 
-    URL_MAP = json.load(open("C:/Users/mmahmoud/localGPT/app/url_map.json", "r"))
+    URL_MAP = json.load(open("url_map.json", "r"))
 
     # Extract links for liquidity model using googlesearch (only html files)
     query = f'{dex_name} liquidity model'
@@ -140,7 +136,6 @@ def get_documents(dex_name, save_path=SOURCE_DIRECTORY):
                 if 'content' in license_data:
                     license_text = base64.b64decode(license_data['content']).decode('utf-8')
                     # Save license text to a file in the dex folder in the license folder
-                    #license_name = f'{repo["full_name"].replace("/", "__")}.txt'
                     filename = f'{hashlib.md5(license_url.encode()).hexdigest()}.txt'
                     with open(f'{save_path}/{dex_name}/license/{filename}', 'w') as f:
                         f.write(license_text)
@@ -177,32 +172,32 @@ def user_interaction(dex_name, k, co, cs, progress=gr.Progress()):
     # Check if all parameters are provided
     if dex_name and k is not None and co is not None and cs is not None:
         progress(0.0, desc="Scraping documents...")
-        # time.sleep(1)
+        time.sleep(1)
         # if the dex folder doesn't exist, use get_documents to scrape the documents
         dex_folder = f"{SOURCE_DIRECTORY}/{dex_name}"
         if not os.path.exists(dex_folder):
             dex_folder = get_documents(dex_name)
-        # dex_folder = get_documents(dex_name) # SOURCE_DIRECTORY/dex_name
-
 
         progress(0.1, desc="Loading embedding model...")
-        # time.sleep(1)
-        embedding_model = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_NAME, model_kwargs={"device": "cpu"})
+        time.sleep(1)
+        embedding_model = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_NAME, model_kwargs={"device": DEVICE_EMBEDDING})
         #embedding_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY, openai_organization=OPENAI_ORGANIZATION)
 
         progress(0.2, desc="Loading LLM model...")
-        #time.sleep(1)
-        llm = run_localGPT.load_model(device_type="cpu", model_id=MODEL_ID, model_basename=MODEL_BASENAME)
+        time.sleep(1)
+        llm = run_localGPT.load_model(device_type=DEVICE_MODEL, model_id=MODEL_ID, model_basename=MODEL_BASENAME)
         #llm = OpenAI(openai_api_key=OPENAI_API_KEY, openai_organization=OPENAI_ORGANIZATION, temperature=0.0)
 
         for i, feature in enumerate(features):
             source_directory = f"{dex_folder}/{feature}"
             progress(0.4 + 0.6*(i)/len(features), desc=f"Processing {feature}..")
+            time.sleep(1)
 
             save_path = f"{source_directory}/{embedding_model.model_name}"
             #save_path = f"{source_directory}/openaiembeddings"
             save_path = f"{PERSIST_DIRECTORY}/{dex_name}/{feature}/{embedding_model.model_name.replace('/', '_')}"
             #save_path = f"{PERSIST_DIRECTORY}/{dex_name}/{feature}/openaiembeddings"
+
             # Convert chunk_size and chunk_overlap to integers
             cs = int(cs)
             co = int(co)
@@ -212,7 +207,7 @@ def user_interaction(dex_name, k, co, cs, progress=gr.Progress()):
             persist_directory = os.path.join(save_path, f'cs_{cs}_co_{co}')
 
             # Getting the query from queries/feature.txt
-            with open(f"../queries/{feature}.txt", "r") as f:
+            with open(f"queries/{feature}.txt", "r") as f:
                 query = f.read()
                 query = query.replace("the DEX", dex_name)
 
@@ -220,7 +215,7 @@ def user_interaction(dex_name, k, co, cs, progress=gr.Progress()):
             k = int(k)
 
             # Running localGPT
-            answer, docs = run_localGPT.main(llm, embedding_model, k, persist_directory, query, verbose=False, show_sources=False, promptTemplate_type=None)
+            answer, docs = run_localGPT.main(llm, embedding_model, k, persist_directory, query, promptTemplate_type=None)
 
             # Store the results
             results[feature] = {"answer": answer, "sources": [document for document in docs]}
@@ -231,7 +226,9 @@ def user_interaction(dex_name, k, co, cs, progress=gr.Progress()):
             with open(results_path, "w") as f:
                 json.dump(results, f)"""
 
-        # After obtaining the results, update the DataFrame
+
+        progress(1, desc="Done !")
+        time.sleep(1)
 
         # Assuming you have obtained features from the results
         features = list(results.keys())
@@ -246,7 +243,6 @@ def user_interaction(dex_name, k, co, cs, progress=gr.Progress()):
                 format_metadata = "<br>".join([f"&nbsp;{' ' * 4}<span style='color: Orange;'><strong>{key}:</strong></span> {value}" for key, value in metadata.items() if key!="source"])
                 sources.append(f"{page_content}<br>{format_metadata}")
             # enumerate the sources
-            #sources = [source.replace('\n', ' ') for source in results[feature]['sources']]
             format_sources = "<br>".join([f"<span style='color: Red;'><strong>{i+1}.</strong></span> {source}" for i, source in enumerate(sources)])
             new_row[feature] = f"<span style='color: green;'><strong>Answer:</strong></span> {format_answer}\
                 <br> <span style='color: Red;'><strong>Sources:</strong></span><br> {format_sources}"
@@ -304,7 +300,7 @@ def delete_table(confirm_checkbox):
         df = pd.DataFrame({"Dex name": [], "liquidity_model": [], "license": []})
         df.to_excel("dataframes/table.xlsx", index=False)
     else:
-        gr.Info("Please confirm that you want to delete the table.")
+        gr.Info("Please confirm that you want to delete the main table.")
     table = gr.Dataframe(
             headers=["DEX name", "liquidity_model", "license"],
             datatype=["str", "markdown", "markdown"],
@@ -323,10 +319,10 @@ def delete_table(confirm_checkbox):
 
 def delete_dex_from_table(dex_to_delete_from_table, confirm_delete_dex_from_table):
     if not dex_to_delete_from_table:
-        gr.Info("Please select a DEX to delete from the table.")
+        gr.Info("Please select a DEX to delete from the main table.")
     else:
         if not confirm_delete_dex_from_table:
-            gr.Info("Please confirm that you want to delete the DEX from the table.")
+            gr.Info("Please confirm that you want to delete the DEX from the main table.")
         else:
             df = pd.read_excel("dataframes/table.xlsx")
             df = df[df["Dex name"] != dex_to_delete_from_table]
@@ -351,10 +347,10 @@ def delete_dex_from_table(dex_to_delete_from_table, confirm_delete_dex_from_tabl
 
 def delete_dex_from_dropdown(dex_to_delete_from_dropdown, confirm_delete_dex_from_dropdown):
     if not dex_to_delete_from_dropdown:
-        gr.Info("Please select a DEX to delete from the dropdown.")
+        gr.Info("Please select a DEX to delete from the CoinMarketCap list.")
     else:
         if not confirm_delete_dex_from_dropdown:
-            gr.Info("Please confirm that you want to delete the DEX from the dropdown.")
+            gr.Info("Please confirm that you want to delete the DEX from the CoinMarketCap list.")
         else:
             df = pd.read_excel("dataframes/dex_list.xlsx")
             df = df[df["Dex Name"] != dex_to_delete_from_dropdown]
@@ -374,7 +370,7 @@ def delete_dex_from_dropdown(dex_to_delete_from_dropdown, confirm_delete_dex_fro
 
 def delete_dropdown_list(confirm_delete_dropdown_list):
     if not confirm_delete_dropdown_list:
-        gr.Info("Please confirm that you want to delete the dropdown list.")
+        gr.Info("Please confirm that you want to delete the CoinMarketCap list.")
     else:
         df = pd.DataFrame({"Dex Name": []})
         df.to_excel("dataframes/dex_list.xlsx", index=False)
@@ -394,14 +390,14 @@ def delete_dropdown_list(confirm_delete_dropdown_list):
 def update_and_extract_all(k, co, cs, progress=gr.Progress()):
     results = gr.JSON(label="Results")
     old_list=pd.read_excel("dataframes/dex_list.xlsx")["Dex Name"].tolist()
-    dropdown = refresh_dex_list()
-    updated_list=pd.read_excel("dataframes/dex_list.xlsx")["Dex Name"].tolist()
-    new_list = list(set(updated_list) - set(old_list))
-    if len(new_list) == 0:
-        gr.Info("No new DEXs added to the dropdown.")
+    #dropdown = refresh_dex_list()
+    #updated_list=pd.read_excel("dataframes/dex_list.xlsx")["Dex Name"].tolist()
+    #new_list = list(set(updated_list) - set(old_list))
+    #if len(new_list) == 0:
+        #gr.Info("No new DEXs added to the dropdown.")
     # Show the new DEXs in the dropdown
-    else:
-        gr.Info(f"New DEXs added to the dropdown: {', '.join(new_list)}")
+    #else:
+        #gr.Info(f"New DEXs added to the dropdown: {', '.join(new_list)}")
     for dex_name in progress.tqdm(old_list):
         _, results, _ = user_interaction(dex_name, k, co, cs)
     dropdown = gr.Dropdown(

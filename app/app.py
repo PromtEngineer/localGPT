@@ -8,13 +8,13 @@ if not os.path.exists("dataframes/table.xlsx"):
     df = pd.DataFrame({"Dex name": [], "liquidity_model": [], "license": []})
     df.to_excel("dataframes/table.xlsx", index=False)
 
-solution1 = "images/chatwdoc (1).png"
-solution2 = "images/chatwdoc (2).png"
+solution1 = "../images/chatwdoc (1).png"
+solution2 = "../images/chatwdoc (2).png"
 
 with gr.Blocks(theme=gr.themes.Default(primary_hue='indigo', secondary_hue='orange')) as demo:
     # title
     gr.Markdown("<h1 style='color: #6C63FF; font-size: 40px; text-align: center;'>DEX explorer</h1>")
-    gr.Markdown("<p style='font-size: 20px; text-align: center; margin-top: 10px;'>An app that helps you find answers to questions about a DEX.</p>")
+    gr.Markdown("<p style='font-size: 20px; text-align: center; margin-top: 10px;'>Your Comprehensive DEX Information Tool</p>")
 
     with gr.Tab("Table"):
         table = gr.Dataframe(
@@ -53,7 +53,7 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue='indigo', secondary_hue='oran
                             allow_custom_value=True,
                             filterable=True
                             )
-                        update_dex_list_button = gr.Button("Update DEX List", variant='primary')
+                        update_dex_list_button = gr.Button("Update the CoinMarketCap list", variant='primary')
                     gr.Slider(minimum=0, maximum=1, value=0, label="Temperature", info="Choose between 0 and 1")
                     gr.Slider(minimum=0, maximum=1, value=0, label="Top P", info="Choose between 0 and 1")
                 with gr.Column("Ingesting Parameters"):
@@ -64,7 +64,7 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue='indigo', secondary_hue='oran
                 results = gr.JSON(label="Results")
         with gr.Row():
             extract_button = gr.Button("Extract", variant='primary')
-            update_and_extract_all_button = gr.Button("Update and Extract All", variant='primary')
+            update_and_extract_all_button = gr.Button("Update & Extract All", variant='primary')
 
         extract_button.click(user_interaction, inputs=[dex, k, co, cs], outputs=[table, results, dex_to_search_from_table])
         update_dex_list_button.click(refresh_dex_list, outputs=[dex], show_progress=True)
@@ -77,37 +77,35 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue='indigo', secondary_hue='oran
             dex_to_delete_from_dropdown = gr.Dropdown(
                                         label="DEX Name",
                                         choices=pd.read_excel("dataframes/dex_list.xlsx")["Dex Name"].tolist(),
-                                        info="Choose the DEX to delete from the dropdown list."
+                                        info="Choose the DEX to delete from the CoinMarketCap list."
                                         )
             with gr.Column():
                 confirm_delete_dex_from_dropdown = gr.Checkbox(
                                                     label="Confirm",
-                                                    info="This will delete the DEX from the dropdown \
-                                                        list and cannot be undone. By checking this box, \
-                                                        you confirm that you want to delete the DEX from the dropdown list."
+                                                    info="By checking this box, \
+                                                        you confirm that you want to delete the DEX from the CoinMarketCap list."
                                                     )
-                delete_dex_from_dropdown_button = gr.Button("Delete DEX from dropdown list", variant='primary')
+                delete_dex_from_dropdown_button = gr.Button("Delete", variant='primary')
         with gr.Row():
             dex_to_delete_from_table = gr.Dropdown(
                                     label="DEX Name",
                                     choices=pd.read_excel("dataframes/table.xlsx")["Dex name"].tolist(),
-                                    info="Choose the DEX to delete from the table."
+                                    info="Choose the DEX to delete from the main table."
                                     )
             with gr.Column():
                 confirm_delete_dex_from_table = gr.Checkbox(
                                                 label="Confirm",
-                                                info="This will delete the DEX from the table and \
-                                                    cannot be undone. By checking this box, you \
-                                                    confirm that you want to delete the DEX from the table."
+                                                info="By checking this box, you \
+                                                    confirm that you want to delete the DEX from the main table."
                                                     )
-                delete_dex_from_table_button = gr.Button("Delete DEX from table", variant='primary')
+                delete_dex_from_table_button = gr.Button("Delete", variant='primary')
         with gr.Row():
             with gr.Column():
-                confirm_delete_table = gr.Checkbox(label="Confirm", info="This will delete the table and cannot be undone. By checking this box, you confirm that you want to delete the table.")
+                confirm_delete_table = gr.Checkbox(label="Confirm", info="By checking this box, you confirm that you want to delete the main table.")
                 delete_table_button = gr.Button("Delete Table", variant='primary')
             with gr.Column():
-                confirm_delete_dropdown_list = gr.Checkbox(label="Confirm", info="This will delete the dropdown list and cannot be undone. By checking this box, you confirm that you want to delete the dropdown list.")
-                delete_dropdown_list_button = gr.Button("Delete Dropdown List", variant='primary')
+                confirm_delete_dropdown_list = gr.Checkbox(label="Confirm", info="By checking this box, you confirm that you want to delete the CoinMarketCap list.")
+                delete_dropdown_list_button = gr.Button("Delete the CoinMarketCap list", variant='primary')
 
         delete_dex_from_table_button.click(delete_dex_from_table, inputs=[dex_to_delete_from_table, confirm_delete_dex_from_table], outputs=[dex_to_search_from_table, dex_to_delete_from_table, table], show_progress=True)
         delete_dex_from_dropdown_button.click(delete_dex_from_dropdown, inputs=[dex_to_delete_from_dropdown, confirm_delete_dex_from_dropdown], outputs=[dex, dex_to_delete_from_dropdown], show_progress=True)

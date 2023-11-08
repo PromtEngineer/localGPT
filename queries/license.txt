@@ -1,8 +1,0 @@
-Could you please confirm whether the project's license permits both modification and commercial use?
-Possible answers:
-  - "Yes"
-  - "No"
-  - "Cannot determine" (if you can't find the answer)
-
-Just answer using an item from the list above between two quotation marks.
-Example of a helpful answer: "Yes"

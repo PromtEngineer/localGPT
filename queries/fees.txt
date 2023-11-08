@@ -1,1 +1,0 @@
-Check for the swap fee on this DEX; reply with a single word or brief statement; indicate if the information is not available.
