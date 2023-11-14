@@ -7,6 +7,7 @@ sentence-transformers
 faiss-cpu
 huggingface_hub
 transformers
+autoawq
 protobuf==3.20.2; sys_platform != 'darwin'
 protobuf==3.20.2; sys_platform == 'darwin' and platform_machine != 'arm64'
 protobuf==3.20.3; sys_platform == 'darwin' and platform_machine == 'arm64'

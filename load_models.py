@@ -149,3 +149,33 @@ def load_full_model(model_id, model_basename, device_type, logging):
         )
         model.tie_weights()
     return model, tokenizer
+
+def load_quantized_model_awq(model_id, logging):
+    """
+    Load a AWQ quantized model using AutoModelForCausalLM.
+
+    This function loads a quantized model that ends with AWQ.
+
+    Parameters:
+    - model_id (str): The identifier for the model on HuggingFace Hub.
+    - logging (logging.Logger): Logger instance for logging messages.
+
+    Returns:
+    - model (AutoModelForCausalLM): The loaded quantized model.
+    - tokenizer (AutoTokenizer): The tokenizer associated with the model.
+
+    """
+
+    # The code supports all huggingface models that ends with AWQ.
+    logging.info("Using AutoModelForCausalLM for AWQ quantized models")
+
+    tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
+    logging.info("Tokenizer loaded")
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id,
+        use_safetensors=True,
+        trust_remote_code=True,
+        device_map="auto",
+    )
+    return model, tokenizer
