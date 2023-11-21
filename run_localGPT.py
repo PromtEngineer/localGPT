@@ -1,3 +1,23 @@
+from constants import (
+    EMBEDDING_MODEL_NAME,
+    PERSIST_DIRECTORY,
+    MODEL_ID,
+    MODEL_BASENAME,
+    MAX_NEW_TOKENS,
+    MODELS_PATH,
+    CHROMA_SETTINGS
+)
+from load_models import (
+    load_quantized_model_gguf_ggml,
+    load_quantized_model_qptq,
+    load_full_model,
+)
+from transformers import (
+    GenerationConfig,
+    pipeline,
+)
+from langchain.vectorstores import Chroma
+from prompt_template_utils import get_prompt_template
 import os
 import logging
 import click
@@ -11,30 +31,8 @@ from langchain.callbacks.manager import CallbackManager
 
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
-from prompt_template_utils import get_prompt_template
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.vectorstores import Chroma
-from transformers import (
-    GenerationConfig,
-    pipeline,
-)
-
-from load_models import (
-    load_quantized_model_gguf_ggml,
-    load_quantized_model_qptq,
-    load_full_model,
-)
-
-from constants import (
-    EMBEDDING_MODEL_NAME,
-    PERSIST_DIRECTORY,
-    MODEL_ID,
-    MODEL_BASENAME,
-    MAX_NEW_TOKENS,
-    MODELS_PATH,
-    CHROMA_SETTINGS
-)
 
 
 def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
@@ -93,7 +91,7 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     return local_llm
 
 
-def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
+def retrieval_qa_pipline(device_type, use_history, promptTemplate_type=None):
     """
     Initializes and returns a retrieval-based Question Answering (QA) pipeline.
 
@@ -204,7 +202,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     "--model_type",
     default="llama",
     type=click.Choice(
-        ["llama", "mistral", "non_llama"],
+        ["llama", "mistral", "em_german_leo", "non_llama"],
     ),
     help="model type, llama, mistral or non_llama",
 )
@@ -213,7 +211,6 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     is_flag=True,
     help="whether to save Q&A pairs to a CSV file (Default is False)",
 )
-
 def main(device_type, show_sources, use_history, model_type, save_qa):
     """
     Implements the main information retrieval task for a localGPT.
@@ -266,7 +263,7 @@ def main(device_type, show_sources, use_history, model_type, save_qa):
                 print("\n> " + document.metadata["source"] + ":")
                 print(document.page_content)
             print("----------------------------------SOURCE DOCUMENTS---------------------------")
-        
+
         # Log the Q&A to CSV only if save_qa is True
         if save_qa:
             utils.log_to_csv(query, answer)

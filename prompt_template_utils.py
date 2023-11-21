@@ -57,6 +57,21 @@ def get_prompt_template(system_prompt=system_prompt, promptTemplate_type=None, h
                 + E_INST
             )
             prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
+    elif promptTemplate_type == "em_german_leo":
+        if history:
+            prompt_template = (
+                """Du bist ein hilfreicher Assistent. Nutze nur den folgenden Kontext: {context} sowie {history}
+            USER: {question} ASSISTANT:
+            """
+            )
+            prompt = PromptTemplate(input_variables=["history", "context", "question"], template=prompt_template)
+        else:
+            prompt_template = (
+                """Du bist ein hilfreicher Assistent. Nutze nur den folgenden Kontext: {context}
+            USER: {question} ASSISTANT:
+            """
+            )
+            prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
     else:
         # change this based on the model you have selected.
         if history:

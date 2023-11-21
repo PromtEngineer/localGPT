@@ -193,6 +193,11 @@ Another option is to enable chat history. ***Note***: This is disabled by defaul
 python run_localGPT.py --use_history
 ```
 
+Another option is to use a different model. ***Note***: Other models need a different prompt template. The prompt template is selected and can be edited in `prompt_template_utils.py`.
+
+```shell
+python run_localGPT.py --model_type em_german_leo
+```
 
 # Run the Graphical User Interface
 
@@ -205,7 +210,7 @@ python run_localGPT.py --use_history
 
 3. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
 
-4. Navigate to the `/LOCALGPT` directory.
+4. Navigate to the `/localGPT` directory.
 
 5. Run the following command `python run_localGPT_API.py`. The API should being to run.
 
@@ -213,7 +218,7 @@ python run_localGPT.py --use_history
 
 7. Open up a second terminal and activate the same python environment.
 
-8. Navigate to the `/LOCALGPT/localGPTUI` directory.
+8. Navigate to the `/localGPT/localGPTUI` directory.
 
 9. Run the command `python localGPTUI.py`.
 
@@ -239,6 +244,8 @@ To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`.
    - Pick one of the model names and set it as  `MODEL_BASENAME`. For example -> `MODEL_BASENAME = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
 
 8. Follow the same steps for `GGUF` and `GGML` models.
+
+9. Change the Prompt Template for your model in `prompt_template_utils.py`, if necessary.
 
 # GPU and VRAM Requirements
 
