@@ -21,6 +21,7 @@ from transformers import (
 )
 
 from load_models import (
+    load_quantized_model_awq,
     load_quantized_model_gguf_ggml,
     load_quantized_model_qptq,
     load_full_model,
@@ -64,6 +65,8 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
             return llm
         elif ".ggml" in model_basename.lower():
             model, tokenizer = load_quantized_model_gguf_ggml(model_id, model_basename, device_type, LOGGING)
+        elif ".awq" in model_basename.lower():
+            model, tokenizer = load_quantized_model_awq(model_id, LOGGING)
         else:
             model, tokenizer = load_quantized_model_qptq(model_id, model_basename, device_type, LOGGING)
     else:
