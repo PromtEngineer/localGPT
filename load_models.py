@@ -1,15 +1,15 @@
+import sys
+
 import torch
-from auto_gptq import AutoGPTQForCausalLM
+
+if sys.platform != "darwin":
+    from auto_gptq import AutoGPTQForCausalLM
+
 from huggingface_hub import hf_hub_download
 from langchain.llms import LlamaCpp
+from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaForCausalLM, LlamaTokenizer
 
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    LlamaForCausalLM,
-    LlamaTokenizer,
-)
-from constants import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, N_GPU_LAYERS, N_BATCH, MODELS_PATH
+from constants import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, MODELS_PATH, N_BATCH, N_GPU_LAYERS
 
 
 def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, logging):
@@ -54,7 +54,7 @@ def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, loggin
             kwargs["n_gpu_layers"] = N_GPU_LAYERS  # set this based on your GPU
 
         return LlamaCpp(**kwargs)
-    except:
+    except TypeError:
         if "ggml" in model_basename:
             logging.INFO("If you were using GGML model, LLAMA-CPP Dropped Support, Use GGUF Instead")
         return None
@@ -66,6 +66,10 @@ def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
 
     This function loads a quantized model that ends with GPTQ and may have variations
     of .no-act.order or .safetensors in their HuggingFace repo.
+    It will not work for Macs, as AutoGPTQ only supports Linux and Windows:
+    - Nvidia CUDA (Windows and Linux)
+    - AMD ROCm (Linux only)
+    - CPU QiGen (Linux only, new and experimental)
 
     Parameters:
     - model_id (str): The identifier for the model on HuggingFace Hub.
@@ -80,6 +84,10 @@ def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
     Notes:
     - The function checks for the ".safetensors" ending in the model_basename and removes it if present.
     """
+
+    if sys.platform == "darwin":
+        logging.INFO("GPTQ models will NOT work on Mac devices. Please choose a different model.")
+        return None, None
 
     # The code supports all huggingface models that ends with GPTQ and have some variation
     # of .no-act.order or .safetensors in their HF repo.
@@ -141,20 +149,22 @@ def load_full_model(model_id, model_basename, device_type, logging):
             torch_dtype=torch.float16,
             low_cpu_mem_usage=True,
             cache_dir=MODELS_PATH,
-            trust_remote_code=True, # set these if you are using NVIDIA GPU
+            trust_remote_code=True,  # set these if you are using NVIDIA GPU
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.float16,
-            max_memory={0: "15GB"} # Uncomment this line with you encounter CUDA out of memory errors
+            max_memory={0: "15GB"},  # Uncomment this line with you encounter CUDA out of memory errors
         )
         model.tie_weights()
     return model, tokenizer
+
 
 def load_quantized_model_awq(model_id, logging):
     """
     Load a AWQ quantized model using AutoModelForCausalLM.
 
     This function loads a quantized model that ends with AWQ.
+    It will not work for Macs as AutoAWQ currently only supports Nvidia GPUs.
 
     Parameters:
     - model_id (str): The identifier for the model on HuggingFace Hub.
@@ -165,6 +175,10 @@ def load_quantized_model_awq(model_id, logging):
     - tokenizer (AutoTokenizer): The tokenizer associated with the model.
 
     """
+
+    if sys.platform == "darwin":
+        logging.INFO("AWQ models will NOT work on Mac devices. Please choose a different model.")
+        return None, None
 
     # The code supports all huggingface models that ends with AWQ.
     logging.info("Using AutoModelForCausalLM for AWQ quantized models")
