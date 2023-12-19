@@ -85,7 +85,7 @@ For more details, please refer to [llama-cpp](https://github.com/abetlen/llama-c
 Installing the required packages for GPU inference on NVIDIA GPUs, like gcc 11 and CUDA 11, may cause conflicts with other packages in your system.
 As an alternative to Conda, you can use Docker with the provided Dockerfile.
 It includes CUDA, your system just needs Docker, BuildKit, your NVIDIA GPU driver and the NVIDIA container toolkit.
-Build as `docker build . -t localgpt`, requires BuildKit.
+Build as `docker build -t localgpt .`, requires BuildKit.
 Docker BuildKit does not support GPU during *docker build* time right now, only during *docker run*.
 Run as `docker run -it --mount src="$HOME/.cache",target=/root/.cache,type=bind --gpus=all localgpt`.
 
