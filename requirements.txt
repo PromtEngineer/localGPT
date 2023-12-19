@@ -7,11 +7,11 @@ sentence-transformers
 faiss-cpu
 huggingface_hub
 transformers
-autoawq
+autoawq; sys_platform != 'darwin'
 protobuf==3.20.2; sys_platform != 'darwin'
 protobuf==3.20.2; sys_platform == 'darwin' and platform_machine != 'arm64'
 protobuf==3.20.3; sys_platform == 'darwin' and platform_machine == 'arm64'
-auto-gptq==0.2.2
+auto-gptq==0.2.2; sys_platform != 'darwin'
 docx2txt
 unstructured
 unstructured[pdf]
