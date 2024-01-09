@@ -51,10 +51,6 @@ copy_pdfs() {
     done
 }
 
-# Uncomment the function you need:
-# download_pdf
-# copy_pdf
-
 # Run python script with device type
 run_ingest() {
     echo "Running ingest.py with device type $DEVICE_TYPE..."

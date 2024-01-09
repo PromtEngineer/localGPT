@@ -1,88 +1,64 @@
-Here is the Markdown documentation for the Makefile:
+# Docker Compose file
 
-# Makefile for Docker Compose operations
+This Docker Compose file defines two services:
 
-## Default values for environment variables
-```makefile
-DEVICE_TYPE := cpu
-SOURCE_DOCUMENTS := SOURCE_DOCUMENTS 
-```
-Replace `SOURCE_DOCUMENTS` with your default source documents directory
+## localgpt service
 
-## Default target 
-Executed when no arguments are given to make.
-```makefile 
-.PHONY: all
-all: build
-```
+This service builds the localgpt image and runs the localGPT API server.
 
-## Build target
-Builds the Docker image using Docker Compose
-```makefile
-.PHONY: build 
-build: 
-	@echo "Building Docker image with DEVICE_TYPE=$(DEVICE_TYPE) and SOURCE_DOCUMENTS=$(SOURCE_DOCUMENTS)..." 
-	@DEVICE_TYPE=$(DEVICE_TYPE) SOURCE_DOCUMENTS=$(SOURCE_DOCUMENTS) docker-compose build
-```
-
-## Run target 
-Runs the Docker container using Docker Compose
-```makefile
-.PHONY: run
-run:
-	@echo "Running Docker container with DEVICE_TYPE=$(DEVICE_TYPE) and SOURCE_DOCUMENTS=$(SOURCE_DOCUMENTS)..." 
-	@DEVICE_TYPE=$(DEVICE_TYPE) SOURCE_DOCUMENTS=$(SOURCE_DOCUMENTS) docker-compose up
+```yaml
+services:
+  localgpt:
+    build: 
+      context: .
+      dockerfile: Dockerfile.api
+    image: localgpt
+    environment: 
+      - device_type=${DEVICE_TYPE}
+      - source_documents=${SOURCE_DOCUMENTS}
+    volumes:
+      - "$HOME/.cache:/root/.cache"
+      - "$HOME/${SOURCE_DOCUMENTS}:/SOURCE_DOCUMENTS"  
+    command: python run_localGPT_API.py --port 8080 --host 0.0.0.0
+    networks:
+      - localgpt-network
 ```
 
-## Stop target
-Stops the running container using Docker Compose
-```makefile 
-.PHONY: stop
-stop: 
-	@echo "Stopping Docker container..."
-	@docker-compose down
+- Builds Dockerfile.api 
+- Sets device_type and source_documents environment variables
+- Mounts host cache and source documents
+- Runs the API server on port 8080
+
+## localgpt-ui service
+
+This service runs the localGPT UI frontend.
+
+```yaml
+  localgpt-ui:
+    build: 
+      context: localGPTUI/  
+      dockerfile: Dockerfile
+    ports:
+      - "5111:5111" 
+    environment:
+      API_HOST: http://localgpt:8080/api
+    depends_on:
+      - localgpt
+    networks:
+      - localgpt-network
 ```
 
-## GPU target
-Sets the device type to GPU (CUDA)
-```makefile
-.PHONY: use-gpu 
-use-gpu: 
-	$(eval DEVICE_TYPE := cuda)
+- Builds the localGPTUI Dockerfile
+- Exposes port 5111 
+- Sets API_HOST env var pointing to localgpt API
+- Depends on localgpt service
+
+## Network
+
+```yaml
+networks:
+  localgpt-network:
+    driver: bridge
 ```
 
-## CPU target
-Sets the device type to CPU  
-```makefile
-.PHONY: use-cpu
-use-cpu:
-	$(eval DEVICE_TYPE := cpu)
-```
-
-## Set source docs target 
-Sets the source documents directory
-```makefile
-.PHONY: set-source-docs
-set-source-docs: 
-	$(eval SOURCE_DOCUMENTS := $(dir)) 
-```
-
-## Help target
-Describes how to use the Makefile
-```makefile 
-.PHONY: help
-help:
-	@echo "Makefile for Docker Compose operations"
-	@echo " make build - Builds the Docker image with the current DEVICE_TYPE and SOURCE_DOCUMENTS"
-	@echo " make run - Runs the Docker container with the current DEVICE_TYPE and SOURCE_DOCUMENTS" 
-	@echo " make stop - Stops the running Docker container"
-	@echo " make use-gpu - Sets the DEVICE_TYPE to cuda (GPU)"  
-	@echo " make use-cpu - Sets the DEVICE_TYPE to cpu"  
-	@echo " make set-source-docs dir=<dir> - Sets the SOURCE_DOCUMENTS directory"  
-	@echo " make help - Displays this help"
-```
-
-To set the source documents directory:
-```
-make set-source-docs dir=MyDocuments
-```
+- Single network for communication between containers
