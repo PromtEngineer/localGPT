@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  localgpt:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: localgpt
+    environment:
+      - device_type=${DEVICE_TYPE}
+      - source_documents=${SOURCE_DOCUMENTS}
+    volumes:
+      - "$HOME/.cache:/root/.cache"
+      - "$HOME/${source_documents}:/SOURCE_DOCUMENTS"
+    runtime: nvidia
+    command: python run_localGPT.py --device_type ${device_type}
+    networks:
+      - localgpt-network
+
+  localgpt-ui:
+    build: 
+      context: localGPTUI/
+      dockerfile: Dockerfile  # Assuming the Dockerfile for Flask app is named Dockerfile
+    ports:
+      - "5111:5111"  # Map port 5111 inside the container to port 5111 on the Docker host
+    environment:
+      API_HOST: http://localgpt:PORT  # Replace PORT with the actual port localgpt service is listening on
+    depends_on:
+      - localgpt
+    networks:
+      - localgpt-network
+
+networks:
+  localgpt-network:
+    driver: bridge
