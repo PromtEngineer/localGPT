@@ -11,7 +11,7 @@ services:
       - source_documents=${SOURCE_DOCUMENTS}
     volumes:
       - "$HOME/.cache:/root/.cache"
-      - "$HOME/${source_documents}:/SOURCE_DOCUMENTS"
+      - "$HOME/${SOURCE_DOCUMENTS}:/SOURCE_DOCUMENTS"
     command: python run_localGPT_API.py  --port 8080 --host 0.0.0.0
     networks:
       - localgpt-network
