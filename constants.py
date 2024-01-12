@@ -103,14 +103,11 @@ EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Ac
 # MODEL_ID = "TheBloke/Llama-2-7b-Chat-GGUF"
 # MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
 
-# MODEL_ID = "TheBloke/Mistral-7B-Instruct-v0.1-GGUF"
-# MODEL_BASENAME = "mistral-7b-instruct-v0.1.Q8_0.gguf"
+MODEL_ID = "TheBloke/Mistral-7B-Instruct-v0.1-GGUF"
+MODEL_BASENAME = "mistral-7b-instruct-v0.1.Q8_0.gguf"
 
 # MODEL_ID = "TheBloke/Llama-2-70b-Chat-GGUF"
 # MODEL_BASENAME = "llama-2-70b-chat.Q4_K_M.gguf"
-
-MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.2"
-MODEL_BASENAME = "pytorch_model-00003-of-00003.bin"
 
 ####
 #### (FOR HF MODELS)
