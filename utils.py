@@ -1,5 +1,7 @@
 import os
 import csv
+import torch
+import sys
 from datetime import datetime
 
 def log_to_csv(question, answer):
@@ -23,3 +25,9 @@ def log_to_csv(question, answer):
         writer = csv.writer(file)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         writer.writerow([timestamp, question, answer])
+
+def has_mps():
+    return sys.platform == "darwin" and torch.backends.mps.is_available()
+
+def default_device_type():
+    return "cuda" if torch.cuda.is_available() else "mps" if has_mps() else "cpu"
