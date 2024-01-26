@@ -1,5 +1,7 @@
 import logging
 import os
+import sys
+from utils import default_device_type
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 import click
@@ -38,7 +40,7 @@ def load_single_document(file_path: str) -> Document:
        return loader.load()[0]
     except Exception as ex:
        file_log('%s loading error: \n%s' % (file_path, ex))
-       return None 
+       return None
 
 def load_document_batch(filepaths):
     logging.info("Loading document batch")
@@ -93,7 +95,7 @@ def load_documents(source_dir: str) -> list[Document]:
                 docs.extend(contents)
             except Exception as ex:
                 file_log('Exception: %s' % (ex))
-                
+
     return docs
 
 
@@ -109,11 +111,10 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
                text_docs.append(doc)
     return text_docs, python_docs
 
-
 @click.command()
 @click.option(
     "--device_type",
-    default="cuda" if torch.cuda.is_available() else "cpu",
+    default=default_device_type(),
     type=click.Choice(
         [
             "cpu",
@@ -137,7 +138,7 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
             "mtia",
         ],
     ),
-    help="Device to run on. (Default is cuda)",
+    help=f"Device to run on. (Default is {default_device_type()})",
 )
 def main(device_type):
     # Load documents and split in chunks
@@ -171,7 +172,7 @@ def main(device_type):
         persist_directory=PERSIST_DIRECTORY,
         client_settings=CHROMA_SETTINGS,
     )
-   
+
 
 
 if __name__ == "__main__":

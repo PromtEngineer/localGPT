@@ -3,6 +3,7 @@ import logging
 import click
 import torch
 import utils
+from utils import default_device_type
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
@@ -161,11 +162,11 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     return qa
 
 
-# chose device typ to run on as well as to show source documents.
+# chose device type to run on as well as to show source documents.
 @click.command()
 @click.option(
     "--device_type",
-    default="cuda" if torch.cuda.is_available() else "cpu",
+    default=default_device_type(),
     type=click.Choice(
         [
             "cpu",
@@ -189,7 +190,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
             "mtia",
         ],
     ),
-    help="Device to run on. (Default is cuda)",
+    help=f"Device to run on. (Default is {default_device_type()})",
 )
 @click.option(
     "--show_sources",
@@ -269,7 +270,7 @@ def main(device_type, show_sources, use_history, model_type, save_qa):
                 print("\n> " + document.metadata["source"] + ":")
                 print(document.page_content)
             print("----------------------------------SOURCE DOCUMENTS---------------------------")
-        
+
         # Log the Q&A to CSV only if save_qa is True
         if save_qa:
             utils.log_to_csv(query, answer)
