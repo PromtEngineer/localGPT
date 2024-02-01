@@ -3,7 +3,7 @@ langchain==0.0.267
 chromadb==0.4.6
 pdfminer.six==20221105
 InstructorEmbedding
-sentence-transformers
+sentence-transformers==2.2.2
 faiss-cpu
 huggingface_hub
 transformers
