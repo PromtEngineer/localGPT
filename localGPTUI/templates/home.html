@@ -6,15 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Bootstrap CSS -->
 
-    <link rel="icon" type="image" href="static\social_icons\favicon.png" />
-    <script src="static\dependencies\jquery\3.6.0\jquery.min.js"></script>
-    <script src="static\dependencies\bootstrap-5.1.3-dist\js\bootstrap.min.js"></script>
-    <link
-      rel="stylesheet"
-      href="static\dependencies\bootstrap-5.1.3-dist\css\bootstrap.min.css"
-    />
 
-    <title>localGPT</title>
+   <link rel="stylesheet" href="static/dependencies/bootstrap-5.1.3-dist/css/bootstrap.min.css" />
+<!-- Font Awesome CSS -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
+
+   <script src="https://code.jquery.com/jquery-3.6.0.js" integrity="sha256-H+K7U5CnXl1h5ywQfKtSj8PCmoN9aaq30gDh27Xc0jk=" crossorigin="anonymous"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+
+    <title> ChatBot</title>
   </head>
   <script>
     function openFileSelection() {
@@ -38,7 +39,7 @@
       $("#responseModal").modal("show");
 
       // Submit the form after a short delay to allow the modal to open
-      setTimeout(function () {
+   setTimeout(function () {
         document.getElementById("promptForm").submit();
       }, 5);
     }
@@ -73,46 +74,92 @@
   </script>
   {% endif %}
   <style>
-
-    @import url('https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap');
-
     body {
-      background-image: linear-gradient(90deg, #09203f, #0057ff);
-      height: 100vh;
+      background-image: linear-gradient(to left top, #bebebe, #000000);
       display: flex;
+        flex-direction: column;
+        height: 600px;
+        width: 400px;
+        position: fixed;
+        bottom: 0px;
+          right: 30px;
+        border-radius: 8px 8px 0px 0px;
       justify-content: center;
       align-items: center;
     }
+     #chatbotTrigger {
+  cursor: pointer;
+  position: fixed;
+  bottom: 10px;
+  right: 20px;
+  width: 50px;
+  height: auto;
+  font-size: 70px;
+  color:  rgb(109, 131, 243);
+}
+   .appContainer {
+        display: none;
+        flex-direction: column;
+        height: 600px;
+        width: 400px;
+        position: fixed;
+        bottom: 0px;
+        right: 65px;
+        border-radius: 8px 8px 0px 0px;
+      }
+      .appContainer .header {
+        height: 48px;
+        min-height: 48px;
+        flex-grow: 0;
+        background-color: rgb(109, 131, 243);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px; /* Adjust the value to set the desired font size */
+       margin: 0;
+      }
 
-    .container{
-      padding: 15px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      max-width: 1000px;
-      margin: 0 auto;
-    } 
+            .appContainer .content {
+        flex-grow: 1;
+        background-color: rgb(193, 193, 180);
+        5
+      }
+    .modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
 
-    .titlegpt{
-       font-size: 9vw;
-       color: white;
-       font-family: 'Play', sans-serif;
-    } 
+.modal-dialog{
+  margin:auto;
+  width: fit-content;
+}
+
+.modal-content {
+  width:fit-content;
+  max-width: 800px; /* Adjust max-width as needed */
+}
+
 
     .search {
-      width: 100%;
       box-shadow:
         inset 0 1px 1px rgba(0, 0, 0, 0.075),
         0 0 8px rgba(255, 0, 0, 0.6);
       background-color: #fff;
       padding: 4px;
       border-radius: 5px;
+      width:390px;
+      position: fixed;
+      bottom: 0;
+      right: 10;
     }
 
     ::placeholder {
-      color: rgb(110, 104, 104);
+      color: #eee;
       opacity: 1;
+      width: 100;
     }
 
     .search-2 {
@@ -121,11 +168,11 @@
     }
 
     .search-2 input {
-      height: 45px;
+   height: 45px;
       border: none;
       width: 100%;
-      padding-left: 100px;
-      padding-right: 200px;
+      padding-left: 0px;
+      padding-right: 20px;
     }
 
     .search-2 input:focus {
@@ -144,18 +191,18 @@
 
     .search-2 button {
       position: absolute;
-      right: 100px;
+      right:0px;
       top: 0px;
       border: none;
       height: 45px;
-      background-color: #ff0059;
+      background-color: rgb(111, 143, 247);
       color: #fff;
       width: 90px;
       border-radius: 4px;
     }
 
     .search-2 button:hover {
-      background: #ff0059;
+      background: #5304d2;
       color: #ffffff;
       transition: all 0.2s ease;
       cursor: pointer;
@@ -164,10 +211,10 @@
     .search-2 .upload_button {
       position: absolute;
       right: 1px;
-      top: 0px;
+     top: 0px;
       border: none;
       height: 45px;
-      background-color: #ff0059;
+      background-color: rgb(111, 143, 247);;
       color: #fff;
       width: 90px;
       border-radius: 4px;
@@ -192,22 +239,22 @@
     .default_button {
       border: none;
       height: 45px;
-      background-color: #ff0059;
+      background-color: rgb(111, 143, 247);;
       color: #fff;
       width: 90px;
       border-radius: 4px;
     }
 
     .default_button:hover {
-      background: #ff0059;
+      background: #d2042d;
       color: #ffffff;
       transition: all 0.2s ease;
       cursor: pointer;
     }
 
     .upload_button:hover {
-      background: #ff0059;
-      color: #ffffff;
+      background: #d2042d;
+        color: #ffffff;
       transition: all 0.2s ease;
       cursor: pointer;
     }
@@ -218,14 +265,14 @@
       top: 0px;
       border: none;
       height: 45px;
-      background-color: #ff0059;
+      background-color: red;
       color: #fff;
       width: 90px;
       border-radius: 4px;
     }
 
     .tutorial_button:hover {
-      background: #ff0059;
+      background: #d2042d;
       color: #ffffff;
       transition: all 0.2s ease;
       cursor: pointer;
@@ -250,7 +297,7 @@
       .search-2 button {
         height: 37px;
         top: 5px;
-      }
+         }
 
       .search-2 .tutorial_button {
         height: 37px;
@@ -281,19 +328,22 @@
 
     .accordion-button:focus {
       z-index: 3;
-      border-color: #ff0059;
+      border-color: #b51b54;
       box-shadow: 0 0 0 0.25rem rgba(153, 50, 168, 0.25);
     }
 
     .accordion-button:not(.collapsed) {
-      color:#ff0059;
+      color: #eb3477;
       background-color: #f5b3cb;
       box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.125);
     }
   </style>
   <body>
-    <div class="container">
-      <div class="titlegpt">LocalGPT</div>
+         <!-- <img src="static/social_icons/chat.png" alt="Chatbot Trigger" id="chatbotTrigger">-->
+   <i class="fas fa-comment"  alt="Chatbot Trigger"  id="chatbotTrigger"></i>
+    <div class="appContainer" id="chatbotContainer" >
+     <div class="header">Chatbot</div>
+      <div class="content">
       <div class="search">
         <div class="row">
           <div class="col-md-12">
@@ -303,20 +353,20 @@
                 action="{{ url_for('home_page') }}"
                 method="POST"
               >
-                <button
+            <!--    <button
                   type="button"
                   class="tutorial_button"
                   data-bs-toggle="modal"
                   data-bs-target="#tutorial_modal"
                 >
                   Tutorial
-                </button>
+                </button>-->
                 <i class="bx bxs-map"></i>
                 <input
                   type="text"
                   name="user_prompt"
                   id="searchInput"
-                  placeholder="Tell a summary of what you want to know?"
+                  placeholder="Tell a summary of what you know?"
                 />
                 <button type="button" onclick="submitPromptForm()">
                   Search
@@ -333,15 +383,15 @@
                   name="documents"
                   id="fileInput"
                   style="display: none"
-                  multiple
+                     multiple
                 />
-                <button
+               <!-- <button
                   type="button"
                   class="upload_button"
                   onclick="openFileSelection()"
                 >
                   Upload
-                </button>
+               </button>-->
               </form>
             </div>
           </div>
@@ -359,6 +409,25 @@
             submitPromptForm(); // Call the function to show the modal
           }
         });
+        document.addEventListener("DOMContentLoaded", function() {
+  // Image trigger element
+  var chatbotTrigger = document.getElementById("chatbotTrigger");
+
+  // Chatbot container element
+  var chatbotContainer = document.getElementById("chatbotContainer");
+
+
+  // Event listener for image click
+  chatbotTrigger.addEventListener("click", function() {
+       // Show/hide the chatbot container
+    if (chatbotContainer.style.display === "none") {
+      chatbotContainer.style.display = "flex"; // or "block" depending on your layout
+    } else {
+      chatbotContainer.style.display = "none";
+    }
+  });
+});
+
     </script>
 
     <!-- Chat Response Modal -->
@@ -367,6 +436,7 @@
       id="response_modal"
       tabindex="-1"
       aria-labelledby="response_modal"
+     data-bs-backdrop="false"
       aria-hidden="true"
     >
       <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -391,7 +461,7 @@
               {{response_dict['Answer']}}
             </p>
 
-            <strong>Sources</strong>
+           <!-- <strong>Sources</strong>
             <div
               class="accordion"
               id="accordionExample"
@@ -399,7 +469,7 @@
             >
               {% for item in response_dict['Sources'] %}
               <div class="accordion-item">
-                <h2
+ <h2
                   class="accordion-header text-center"
                   id="heading{{ loop.index0 }}"
                 >
@@ -412,7 +482,7 @@
                     aria-controls="collapse{{ loop.index0 }}"
                   >
                     {{ item[0] }}
-                    <!-- Source -->
+
                   </button>
                 </h2>
                 <div
@@ -430,19 +500,19 @@
                     "
                   >
                     {{ item[1] }}
-                    <!-- Content -->
+
                   </div>
                 </div>
               </div>
               {% endfor %}
-            </div>
+            </div> -->
           </div>
           <div class="modal-footer">
             <button
               type="button"
               class="default_button"
               data-bs-dismiss="modal"
-            >
+                 >
               Close
             </button>
           </div>
@@ -457,7 +527,7 @@
       tabindex="-1"
       aria-labelledby="responseModalLabel"
       aria-hidden="true"
-      data-bs-backdrop="static"
+      data-bs-backdrop="false"
       data-bs-keyboard="false"
     >
       <div class="modal-dialog modal-dialog-centered">
@@ -485,7 +555,7 @@
       aria-labelledby="uploadModalLabel"
       aria-hidden="true"
     >
-      <div class="modal-dialog modal-dialog-centered">
+   <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header justify-content-center">
             <h5
@@ -499,14 +569,14 @@
             <ul>
               <li>
                 Click
-                <span style="background-color: #ff0059; color: white">Add</span> if
+                <span style="background-color: red; color: white">Add</span> if
                 you want to add the documents selected to your pre-existing
                 knowledge base.
               </li>
               <br />
               <li>
                 Click
-                <span style="background-color: #ff0059; color: white">Reset</span>
+                <span style="background-color: red; color: white">Reset</span>
                 if you want to reset your knowledge base, and then use your new
                 documents as your new knowledge base.
               </li>
@@ -528,7 +598,7 @@
             >
               Add
             </button>
-            <button
+              <button
               type="submit"
               name="button_clicked"
               value="reset_document"
@@ -571,7 +641,7 @@
       class="modal fade"
       id="tutorial_modal"
       tabindex="-1"
-      aria-labelledby="tutorial_modal"
+  aria-labelledby="tutorial_modal"
       aria-hidden="true"
     >
       <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -589,7 +659,7 @@
             <strong style="margin-left: 5%; text-align: left">About</strong>
             <br />
             <p style="text-align: justify; margin-left: 5%; margin-right: 5%">
-              Introducing a cutting-edge application that empowers users to
+              Introducing an application that empowers users to
               leverage the capabilities of a language model, even in the absence
               of an internet connection. This advanced tool serves as an
               indispensable resource for accessing information beyond the
@@ -614,7 +684,7 @@
               utilization. Unlike the resource-intensive retraining processes
               employed by alternative methods, the ingestion of documents within
               this application demands significantly less compute power. This
-              efficiency optimization allows for a streamlined user experience,
+               efficiency optimization allows for a streamlined user experience,
               saving both time and computational resources.
               <br /><br />
               Discover the unparalleled capabilities of this technical marvel,
@@ -624,6 +694,7 @@
               possibilities. Embrace this powerful tool and unlock the true
               potential of your data today.
             </p>
+            <br />
             <strong style="margin-left: 5%; text-align: left"
               >Upload Documents</strong
             >
@@ -638,16 +709,16 @@
             >
               1. To upload documents for the app to ingest as its new knowledge
               base click the
-              <span style="background-color: #ff0059; color: white">Upload</span>
+              <span style="background-color: red; color: white">Upload</span>
               button.
               <br />
               2. Select the documents you want to serve as your new knowledge
               base to converse with.
               <br />
               3. Then you will be prompted with a confirmation to either
-              <span style="background-color: #ff0059; color: white">Add</span> the
+              <span style="background-color: red; color: white">Add</span> the
               documents to your knowledge base,
-              <span style="background-color: #ff0059; color: white">Reset</span>
+              <span style="background-color: red; color: white">Reset</span>
               your knowledge base with the documents you just selected, or
               <span style="background-color: gray; color: white">Cancel</span>
               the upload.
@@ -655,8 +726,9 @@
               4. There will be a short wait time as the documents get ingested
               into the vector database as your new knowledge base.
             </p>
-            <a
-              href="static/document_examples/constitution.pdf"
+            <!--
+             <a
+              href="{{ url_for('static', filename='document_examples/constitution.pdf') }}"
               style="margin-left: 5%"
               download
             >
@@ -664,13 +736,13 @@
                 Example Constitution
               </button>
             </a>
-            <a href="static/document_examples/news_articles.zip" download>
+            <a href="{{ url_for('static', filename='document_examples/news_articles.zip') }}" download>
               <button class="default_button" style="width: auto">
                 Example News Articles
               </button>
             </a>
+            -->
 
-            <br />
             <br />
             <strong style="margin-left: 5%; text-align: left">Searching</strong>
             <p
@@ -681,25 +753,24 @@
                 text-align: left;
               "
             >
-              1. In order to ask a question, type a question into the search bar
-              like:
+              1. In order to ask a question, type a question into the search bar.
               <br />
-              2.
+             <!-- 2.
               <span style="background-color: gray; color: white"
                 >Give me a summary of the documents</span
-              >
+                >
+                <br />-->
+              2. Hit enter on your keyboard or click
+              <span style="background-color: red; color: white">Search</span>
               <br />
-              3. Hit enter on your keyboard or click
-              <span style="background-color: #ff0059; color: white">Search</span>
-              <br />
-              4. Wait while the LLM model consumes the prompt and prepares the
+              3. Wait while the LLM model consumes the prompt and prepares the
               answer.
               <br />
-              5. Once done, it will print the answer and the 4 sources it used
+              4. Once done, it will print the answer and the 4 sources it used
               as context from your documents; you can then ask another question
               without re-running the script, just wait for the prompt again.
             </p>
-            <br />
+ <br />
           </div>
           <div class="modal-footer justify-content-center">
             <button
@@ -715,3 +786,4 @@
     </div>
   </body>
 </html>
+
