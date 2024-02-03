@@ -119,9 +119,33 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     - The QA system retrieves relevant documents using the retriever and then answers questions based on those documents.
     """
 
-    embeddings = HuggingFaceInstructEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={"device": device_type})
-    # uncomment the following line if you used HuggingFaceEmbeddings in the ingest.py
-    # embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
+    """
+    (1) Chooses an appropriate langchain library based on the enbedding model name.  Matching code is contained within ingest.py.
+    
+    (2) Provides additional arguments for instructor and BGE models to improve results, pursuant to the instructions contained on
+    their respective huggingface repository, project page or github repository.
+    """
+    
+    if "instructor" in EMBEDDING_MODEL_NAME:
+        return HuggingFaceInstructEmbeddings(
+            model_name=EMBEDDING_MODEL_NAME,
+            model_kwargs={"device": compute_device},
+            embed_instruction='Represent the document for retrieval:',
+            query_instruction='Represent the question for retrieving supporting documents:'
+        )
+
+    elif "bge" in EMBEDDING_MODEL_NAME:
+        return HuggingFaceBgeEmbeddings(
+            model_name=EMBEDDING_MODEL_NAME,
+            model_kwargs={"device": compute_device},
+            query_instruction='Represent this sentence for searching relevant passages:'
+        )
+
+    else:
+        return HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL_NAME,
+            model_kwargs={"device": compute_device},
+        )
 
     # load the vectorstore
     db = Chroma(
