@@ -126,27 +126,30 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     their respective huggingface repository, project page or github repository.
     """
     
-    if "instructor" in EMBEDDING_MODEL_NAME:
-        return HuggingFaceInstructEmbeddings(
-            model_name=EMBEDDING_MODEL_NAME,
-            model_kwargs={"device": compute_device},
-            embed_instruction='Represent the document for retrieval:',
-            query_instruction='Represent the question for retrieving supporting documents:'
-        )
+    def get_embeddings():
+        if "instructor" in EMBEDDING_MODEL_NAME:
+            return HuggingFaceInstructEmbeddings(
+                model_name=EMBEDDING_MODEL_NAME,
+                model_kwargs={"device": compute_device},
+                embed_instruction='Represent the document for retrieval:',
+                query_instruction='Represent the question for retrieving supporting documents:'
+            )
 
-    elif "bge" in EMBEDDING_MODEL_NAME:
-        return HuggingFaceBgeEmbeddings(
-            model_name=EMBEDDING_MODEL_NAME,
-            model_kwargs={"device": compute_device},
-            query_instruction='Represent this sentence for searching relevant passages:'
-        )
+        elif "bge" in EMBEDDING_MODEL_NAME:
+            return HuggingFaceBgeEmbeddings(
+                model_name=EMBEDDING_MODEL_NAME,
+                model_kwargs={"device": compute_device},
+                query_instruction='Represent this sentence for searching relevant passages:'
+            )
 
-    else:
-        return HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL_NAME,
-            model_kwargs={"device": compute_device},
-        )
-
+        else:
+            return HuggingFaceEmbeddings(
+                model_name=EMBEDDING_MODEL_NAME,
+                model_kwargs={"device": compute_device},
+            )
+    embeddings = get_embeddings()
+    logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
+    
     # load the vectorstore
     db = Chroma(
         persist_directory=PERSIST_DIRECTORY,
