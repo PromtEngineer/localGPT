@@ -12,6 +12,7 @@ from langchain.callbacks.manager import CallbackManager
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
 from prompt_template_utils import get_prompt_template
+from utils import get_embeddings
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
@@ -34,7 +35,7 @@ from constants import (
     MODEL_BASENAME,
     MAX_NEW_TOKENS,
     MODELS_PATH,
-    CHROMA_SETTINGS
+    CHROMA_SETTINGS,
 )
 
 
@@ -125,37 +126,13 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     (2) Provides additional arguments for instructor and BGE models to improve results, pursuant to the instructions contained on
     their respective huggingface repository, project page or github repository.
     """
-    
-    def get_embeddings():
-        if "instructor" in EMBEDDING_MODEL_NAME:
-            return HuggingFaceInstructEmbeddings(
-                model_name=EMBEDDING_MODEL_NAME,
-                model_kwargs={"device": device_type},
-                embed_instruction='Represent the document for retrieval:',
-                query_instruction='Represent the question for retrieving supporting documents:'
-            )
 
-        elif "bge" in EMBEDDING_MODEL_NAME:
-            return HuggingFaceBgeEmbeddings(
-                model_name=EMBEDDING_MODEL_NAME,
-                model_kwargs={"device": device_type},
-                query_instruction='Represent this sentence for searching relevant passages:'
-            )
+    embeddings = get_embeddings(device_type)
 
-        else:
-            return HuggingFaceEmbeddings(
-                model_name=EMBEDDING_MODEL_NAME,
-                model_kwargs={"device": device_type},
-            )
-    embeddings = get_embeddings()
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
-    
+
     # load the vectorstore
-    db = Chroma(
-        persist_directory=PERSIST_DIRECTORY,
-        embedding_function=embeddings,
-        client_settings=CHROMA_SETTINGS
-    )
+    db = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
     retriever = db.as_retriever()
 
     # get the prompt template and memory if set by the user.
@@ -243,7 +220,6 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     is_flag=True,
     help="whether to save Q&A pairs to a CSV file (Default is False)",
 )
-
 def main(device_type, show_sources, use_history, model_type, save_qa):
     """
     Implements the main information retrieval task for a localGPT.
@@ -296,7 +272,7 @@ def main(device_type, show_sources, use_history, model_type, save_qa):
                 print("\n> " + document.metadata["source"] + ":")
                 print(document.page_content)
             print("----------------------------------SOURCE DOCUMENTS---------------------------")
-        
+
         # Log the Q&A to CSV only if save_qa is True
         if save_qa:
             utils.log_to_csv(query, answer)
