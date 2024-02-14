@@ -294,7 +294,7 @@ This is a test project to validate the feasibility of a fully local solution for
 
 # Common Errors
 
- - [Torch not compatible with CUDA enabled](https://github.com/pytorch/pytorch/issues/30664)
+ - [Torch not compiled with CUDA enabled](https://github.com/pytorch/pytorch/issues/30664)
 
    -  Get CUDA version
       ```shell
