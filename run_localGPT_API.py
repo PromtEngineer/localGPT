@@ -19,6 +19,12 @@ from werkzeug.utils import secure_filename
 
 from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
 
+# API queue addition
+from threading import Lock
+
+request_lock = Lock()
+
+
 if torch.backends.mps.is_available():
     DEVICE_TYPE = "mps"
 elif torch.cuda.is_available():
@@ -155,23 +161,26 @@ def run_ingest_route():
 @app.route("/api/prompt_route", methods=["GET", "POST"])
 def prompt_route():
     global QA
+    global request_lock  # Make sure to use the global lock instance
     user_prompt = request.form.get("user_prompt")
     if user_prompt:
-        # print(f'User Prompt: {user_prompt}')
-        # Get the answer from the chain
-        res = QA(user_prompt)
-        answer, docs = res["result"], res["source_documents"]
+        # Acquire the lock before processing the prompt
+        with request_lock:
+            # print(f'User Prompt: {user_prompt}')              
+            # Get the answer from the chain
+            res = QA(user_prompt)
+            answer, docs = res["result"], res["source_documents"]
 
-        prompt_response_dict = {
-            "Prompt": user_prompt,
-            "Answer": answer,
-        }
+            prompt_response_dict = {
+                "Prompt": user_prompt,
+                "Answer": answer,
+            }
 
-        prompt_response_dict["Sources"] = []
-        for document in docs:
-            prompt_response_dict["Sources"].append(
-                (os.path.basename(str(document.metadata["source"])), str(document.page_content))
-            )
+            prompt_response_dict["Sources"] = []
+            for document in docs:
+                prompt_response_dict["Sources"].append(
+                    (os.path.basename(str(document.metadata["source"])), str(document.page_content))
+                )
 
         return jsonify(prompt_response_dict), 200
     else:
