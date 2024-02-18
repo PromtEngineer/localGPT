@@ -326,3 +326,10 @@ This is a test project to validate the feasibility of a fully local solution for
        conda uninstall tokenizers, transformers
        pip install transformers
     ```
+- Pip Fails to install requirements due to no matching distributions of packages such as autoawq
+  - Check CUDA Version <= 11.8
+  - Check python version <=3.11
+    ```shell
+       conda list -n localgpt
+       conda install python=3.11
+    ```
