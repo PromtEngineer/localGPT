@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="static/dependencies/ae360af17e.js"></script>
+    <link rel="icon" type="image/svg+xml" href="static/icons/brain_circuit_brown.svg">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.8.1/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="static/dependencies/bootstrap5.3.2.min.css" rel="stylesheet">
+    <script src="static/dependencies/jquery-3.6.0.min.js"></script>
+    <script src="static/dependencies/popper2.11.8.min.js"></script>
+    <script src="static/dependencies/bootstrap5.3.2.min.js"></script>
+    <style>
+        @import url('static/dependencies/css2.css');
+
+        *,
+        ::after,
+        ::before {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            margin: 0;
+            background-repeat: no-repeat;
+            background-position: center bottom;
+            background-size: cover;
+        }
+
+        h3 {
+            font-size: 1.2375rem;
+            color: #FFF;
+        }
+
+        a {
+            cursor: pointer;
+            text-decoration: none;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        /* Layout skeleton */
+
+        .wrapper {
+            align-items: stretch;
+            display: flex;
+            width: 100%;
+        }
+
+        #sidebar {
+            max-width: 264px;
+            min-width: 264px;
+            transition: all 0.35s ease-in-out;
+            box-shadow: 0 0 15px 0 rgba(49, 57, 66, 0.5);
+            z-index: 1111;
+            background-color: #5e4f4f;
+        }
+
+        /* Sidebar collapse */
+
+        #sidebar.collapsed {
+            margin-left: -264px;
+        }
+
+        .main {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            max-height: 100vh;
+            width: 100%;
+            overflow: hidden;
+            transition: all 0.35s ease-in-out;
+        }
+        
+        .sidebar-logo a {
+            color: #e9ecef;
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex; /* Make this a flex container */
+            align-items: center; /* Align items vertically in the center */
+            justify-content: space-between; /* Space out the children */
+            padding: .625rem .925rem;
+            margin: 10px;
+        }
+
+        .sidebar-logo a:hover {
+            background-color: #7f6b6b;
+            border-radius: 5px 5px 5px 5px;
+        }
+
+        .sidebar-logo a img, .sidebar-logo a span {
+            flex-shrink: 0; /* Prevent these from shrinking */
+        }
+
+        .sidebar-nav {
+            height: calc(100vh - 185px); /* Adjust the 120px according to your header/footer size */
+            overflow-y: auto;
+            padding: 0 10px;
+        }
+
+        /* Existing sidebar-nav scrollbar styles */
+        .sidebar-nav::-webkit-scrollbar {
+            width: 13px;
+        }
+
+        .sidebar-nav::-webkit-scrollbar-track {
+            background: #5e4f4f; /* Match sidebar color */
+            border-radius: 10px;
+            margin-right: 5px; /* Add space on the right */
+        }
+
+        .sidebar-nav::-webkit-scrollbar-thumb {
+            background: #5e4f4f; /* Match sidebar color */
+            border-radius: 5px;
+            border: 3px solid #5e4f4f; /* Add border with the same color as the track */
+        }
+
+        /* Change scrollbar color on hover */
+        #sidebar:hover .sidebar-nav::-webkit-scrollbar-thumb {
+            background: #e9ecef; /* Original scrollbar thumb color */
+        }
+
+        #sidebar:hover .sidebar-nav::-webkit-scrollbar-thumb:hover {
+            background: whitesmoke; /* Original scrollbar thumb hover color */
+        }
+
+        .sidebar-header {
+            color: #e9ecef;
+            font-size: .75rem;
+            padding: .5rem 1.5rem .375rem;
+        }
+
+        a.sidebar-link {
+            padding: .625rem .925rem;
+            color: #e9ecef;
+            position: relative;
+            display: block;
+            font-size: 1rem;
+        }
+
+        .sidebar-link[data-bs-toggle="collapse"]::after {
+            border: solid;
+            border-width: 0 .075rem .075rem 0;
+            content: "";
+            display: inline-block;
+            padding: 2px;
+            position: absolute;
+            right: 1.5rem;
+            top: 1.4rem;
+            transform: rotate(-135deg);
+            transition: all .2s ease-out;
+        }
+
+        .sidebar-link[data-bs-toggle="collapse"].collapsed::after {
+            transform: rotate(45deg);
+            transition: all .2s ease-out;
+        }
+
+        .highlighted {
+            background-color: #7f6b6b; /* or any highlight color you prefer */
+            border-radius: 5px; /* optional, for rounded corners */
+        }
+
+        .content {
+            flex: 1;
+            max-width: 100vw;
+            width: 100vw;
+        }
+
+        /* Responsive */
+
+        @media (min-width:768px) {
+            .content {
+                width: auto;
+            }
+        }
+
+        .dropdown-item:active {
+            --bs-dropdown-link-active-bg: #5e4f4f;
+        }
+
+        .chat-group-item {
+            max-width: 450px; /* Adjust as needed */
+            overflow: hidden;
+            flex-grow: 1;
+            text-overflow:clip;
+            white-space: nowrap;
+        }
+
+        /* Styles to apply when the parent of chat-group-item is hovered */
+        .conv-div:hover {
+            background-color: #7f6b6b;
+            border-radius: 5px 5px 5px 5px;
+        }
+        
+        .search{
+            position: relative;
+            box-shadow: none;
+        }
+       
+       .search input{
+            height: 60px;
+            padding-right: 120px;
+            text-indent: 25px;
+            border: 1px solid #d6d4d4;
+        }
+
+        .search input:focus {
+            box-shadow: none; /* Same as the non-focused state */
+            border: 1px solid #d6d4d4; /* Same as the non-focused state */
+        }
+
+       .search .fa-search{
+            position: absolute;
+        }
+
+        .search input:-webkit-autofill,
+        .search input:-webkit-autofill:hover,
+        .search input:-webkit-autofill:focus,
+        .search input:-webkit-autofill:active {
+            transition: background-color 5000s ease-in-out 0s;
+            /* Set the background color to white or any color you want the input to have */
+            background-color: #fff !important;
+            -webkit-text-fill-color: inherit !important; /* Set the text color to default or any you prefer */
+        }
+
+       .search button{
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            height: 50px;
+            width: 110px;
+            background: #5e4f4f;
+            border: none;
+        }
+
+        .search button:hover{
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            height: 50px;
+            width: 110px;
+            background: #4e4242;
+        }
+
+        .btn-primary {
+            --bs-btn-bg: #4e4242;
+            --bs-btn-border-color: #4e4242;
+            --bs-btn-hover-bg: #7f6b6b;
+            --bs-btn-hover-border-color: #7f6b6b;
+            --bs-btn-active-border-color: #7f6b6b;
+            --bs-btn-active-bg: #7f6b6b;
+            --bs-btn-active-border-color: #7f6b6b;
+            --bs-btn-active-shadow: none;
+            --bs-btn-disabled-bg: gray;
+        }
+
+        #messages {
+            width: 100%; /* Adjust the width as needed */
+            max-height: calc(100vh - 145px);
+            height:100%;
+            border: none; /* Just to show the boundary of the div */
+            overflow-y: scroll; /* This will add a scrollbar if the content exceeds the height */
+        }
+
+        #messages::-webkit-scrollbar {
+            width: 8px; /* width of the entire scrollbar */
+        }
+
+        #messages::-webkit-scrollbar-track {
+            background: white; /* color of the tracking area */
+            border-radius: 10px; /* roundness of the tracking area */
+        }
+
+        #messages::-webkit-scrollbar-thumb {
+            background: #d3c6c6; /* color of the scroll thumb */
+            border-radius: 5px; /* roundness of the scroll thumb */        }
+
+        #messages::-webkit-scrollbar-thumb:hover {
+            background: #5e4f4f; /* color of the scroll thumb on hover */
+        }
+
+        .copy-text-btn {
+            background-color: None;
+            color: white;
+        }
+        
+        .database-container {
+            background-color: None;
+            width:fit-content;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .database-container .db-btn, .database-container .add-db-btn, .add-db-btn-ex {
+            border: none;
+            --bs-btn-color: #7f6b6b;
+            --bs-btn-active-bg: #7f6b6b;
+            --bs-btn-active-border-color: #7f6b6b;
+            --bs-btn-active-shadow: none;
+            --bs-btn-disabled-bg: gray;
+        }
+
+        .database-container .db-btn:hover, .database-container .add-db-btn:hover, .add-db-btn-ex:hover {
+            background-color: #7f6b6b; /* Sets the background color on hover */
+        }
+
+        /* Specific styles for .add-db-btn if needed */
+        .database-container .add-db-btn, .add-db-btn-ex {
+            background-color: #7f6b6b;
+            --bs-btn-color: #e9ecef;
+            --bs-btn-active-bg: #7f6b6b;
+            --bs-btn-active-border-color: #7f6b6b;
+            --bs-btn-active-shadow: none;
+            --bs-btn-disabled-bg: gray;
+        }
+
+        .form-control:focus {
+            border-color: #7f6b6b; /* Change border color */
+            box-shadow: 0 0 0 0.25rem rgba(211, 198, 198, 0.85); /* Custom glow */
+        }
+
+        ol li {
+            margin-top: 15px;
+            margin-bottom: 15px;
+        }
+
+        .main .modal {
+            position: fixed; /* or fixed, depending on your requirement */
+            max-width: calc(100% - 264px); /* Assuming 264px is the sidebar width */
+            left: 264px; /* Adjust according to sidebar width */
+            color:#3d3434;
+        }
+
+        #sidebar.collapsed ~ .main .modal {
+            max-width: 100%;
+            left: 0px;
+        }
+
+        .tooltip {
+            --bs-tooltip-bg: #7f6b6b;
+        }
+
+        .dl_link {
+            color: #7f6b6b; /* Normal link color */
+        }
+        .dl_link:hover {
+            color: #5e4f4f; /* Color on hover */
+        }
+
+        .delete-tooltip {
+            --bs-tooltip-bg: #bb2d3d;
+        }
+
+        .reset-tooltip {
+            --bs-tooltip-bg: #ffca2c;
+        }
+
+        .add-tooltip {
+            --bs-tooltip-bg: #157347;
+        }
+    </style>
+
+    {% block head_style_scripts %}
+    <!-- Default content goes here, overridden by child templates -->
+    {% endblock %}
+</head>
+<body>
+    {% block content %}
+    <!-- Default content goes here, overridden by child templates -->
+    {% endblock %}
+</body>
+</html>

@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block head_style_scripts %}
+<title>Login</title>
+<style>
+    .centered-login-form {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh; /* Full viewport height */
+        margin: 0;
+    }
+    
+    .btn-close {
+        --bs-btn-close-focus-shadow: 0;
+    }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="centered-login-form">
+    <form method="post">
+        <center><h1 style="color: #4e4242;"><img src="static/icons/brain_circuit_brown.svg" alt="Brain Circuit" style="margin-bottom: 10px; margin-left: -20px; margin-right: 15px; width: 40px; height: 40px;"><strong>LocalGPT</strong></h1></center>
+        <p style="margin-bottom: 35px;">Providing easy access to your valuable information.</p>
+        <div class="input-group mb-3">
+            <input type="text" class="form-control" name="username" placeholder="Username">
+        </div>
+        <div class="input-group mb-3">
+            <input type="password" class="form-control" name="password" placeholder="Password">
+        </div>
+        <input class="btn btn-primary" type="submit" value="Login" style="width: 100%;">
+        {% if invalid_credentials %}
+        <div class="alert alert-warning alert-dismissible fade show" role="alert" style="margin-top: 15px;">
+            Invalid Credentials!
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endif %}
+        <center><p style="margin-top: 35px;">Contact your systems administrator for an account.</p></center>
+    </form>
+</div>
+{% endblock %}

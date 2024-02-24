@@ -1,0 +1,1341 @@
+{% extends 'base.html' %}
+
+{% block head_style_scripts %}
+<script>
+    // Wait for the DOM to fully load
+    document.addEventListener("DOMContentLoaded", function() {
+        // Function to adjust the height of the messages element
+        function adjustMessagesHeight() {
+            // Get the nav element
+            var navbar = document.querySelector('.navbar');
+
+            console.log(navbar.offsetHeight)
+
+            // Check if the nav element exists
+            if (navbar) {
+                // Calculate the max height for the messages element
+                var maxHeight = 'calc(100vh - 100px - ' + navbar.offsetHeight + 'px)';
+
+                // Get the messages element
+                var messages = document.getElementById('messages');
+
+                // Check if the messages element exists
+                if (messages) {
+                    // Set the max height for the messages element
+                    messages.style.maxHeight = maxHeight;
+                }
+            }
+        }
+
+        // Adjust the height when the page is first loaded
+        adjustMessagesHeight();
+
+        // Adjust the height whenever the window is resized
+        window.addEventListener('resize', adjustMessagesHeight);
+    });
+
+    var currentConversationId = '';
+    
+    function updateDatabaseContainerVisibility() {
+        var messageCount = $('#messages').children(':not(.default-page)').length;
+        
+        // Print the message count to the console
+        console.log('Message count:', messageCount);
+        
+        if (messageCount === 0) {
+            $('.default-page').show();
+        } else {
+            $('.default-page').hide();
+        }
+    }
+
+    function loadConversation(conversationId) {
+        // Remove highlighting from all conversation divs
+        $('.conv-div').removeClass('highlighted');
+        // Highlight the clicked conversation div
+        $('#conv-' + conversationId).addClass('highlighted');
+
+        currentConversationId = conversationId;
+        $('#messages').children().not('.default-page').remove();
+        $.getJSON('/conversation/' + conversationId, function(data){
+            $.each(data, function(i, exchange){
+                $('#messages').append('<div style="padding: 15px 20px 20px 40px;"><i class="fa-sharp fa-solid fa-user" style="margin-right: 7px;"></i><strong>You</strong><br><div style="padding-left: 21px; padding-right: 40px; text-align: justify;">' + exchange.User + '</div></div>');
+                $('#messages').append('<div style="padding: 15px 20px 0px 40px; background-color: #d3c6c6;"><img src="static/icons/brain_circuit_black.svg" alt="Brain Circuit" style="margin-left: -3px; margin-right: 6px; margin-bottom: 4px; width: 18px; height: 18px;"><strong>LocalGPT</strong><br><div style="padding-left: 21px; padding-right: 40px; text-align: justify;">' + exchange.Response + '</div></div>');
+                var sourcesContent = '';
+                if (exchange.Sources && exchange.Sources.length > 0) {
+                    sourcesContent = '<a href="#" class="sidebar-link" data-bs-toggle="collapse" data-bs-target="#sources' + exchange.Epoch + '" aria-expanded="true" aria-controls="multi" style="padding-left: 0px; color: #687079;"><i class="fas fa-folder" style="padding-left: 22px; margin-right: 5px;"></i><strong>Sources</strong></a>'
+                        + '<ul id="sources' + exchange.Epoch + '" class="sidebar-dropdown list-unstyled collapse" data-bs-parent="#sidebar">';
+                            
+                    sourcesContent += exchange.Sources.map(function(source) {
+                        var safeDocumentName = source[0].replace(/\./g, '')
+                            return '<li class="sidebar-item">'
+                                + '<a href="#" class="sidebar-link" data-bs-toggle="collapse" data-bs-target="#d' + safeDocumentName + exchange.Epoch + '" aria-expanded="true" aria-controls="' + safeDocumentName + '" style="color: #687079; padding-top: 0px; padding-left: 25px;">'
+                                + '<i class="fa-sharp fa-solid fa-eye" style="cursor: pointer; padding-left: 5px; padding-right: 5px;" data-bs-toggle="modal" data-bs-target="#documentViewerModal" onclick="viewDocument(\'' + '/static/databases/' + source[2] + '/' + source[0] + '\', \'' + source[0] + '\')""></i>'
+                                + '<strong>' + source[2] + ' - ' + source[0] + '</strong>'
+                                + '</a>'
+                                + '<ul id="d' + safeDocumentName + exchange.Epoch + '" class="sidebar-dropdown list-unstyled collapse">'
+                                + '<li class="sidebar-item">'
+                                + '<div class="sidebar-link" style="color: #687079; padding-left: 1.625rem; padding-right: 40px; padding-bottom: 25px; text-align: justify;">' + source[1] + '</div>'
+                                + '</li>'
+                                + '</ul>'
+                                + '</li>';
+                        }).join('');
+
+                    sourcesContent += '</ul>';
+                }
+                $('#messages').append('<div style="padding: 15px 20px 15px 40px; background-color: #d3c6c6;">' + sourcesContent + '</div>');
+
+            });
+            updateDatabaseContainerVisibility();
+        });
+        // Update form action to send messages to the correct conversation
+        $('form').attr('action', '/send/' + conversationId);
+    }
+
+    function addConversationButton(conversationId, firstMessage, timestamp) {
+        var convElement = $('<div id="conv-' + conversationId + '" class="d-flex conv-div justify-content-between align-items-center" data-timestamp="' + timestamp + '">');
+        var convButton = $('<a type="button" class="sidebar-link chat-group-item" onclick="loadConversation(\'' + conversationId + '\')"><i class="fa-sharp fa-solid fa-message" style="margin-right: 5px;"></i>' + firstMessage + '</a>');
+        var deleteButton = $('<a type="button" class="sidebar-link chat-group-item-trash" onclick="deleteConversation(\'' + conversationId + '\')"><i class="fa-sharp fa-solid fa-trash"></i></a>');
+        convElement.append(convButton).append(deleteButton);
+        $('#conversationList').prepend(convElement); // Use prepend to add the new conversation at the top
+        $('#conv-' + conversationId).addClass('highlighted');
+    }
+
+    function createNewChat(callback) {
+        $.getJSON('/new_conversation', function(data){
+            var newConversationId = data.conversation_id;
+            currentConversationId = newConversationId;
+            loadConversation(newConversationId);
+            if (callback) {
+                callback();
+            }
+        });
+        updateDatabaseContainerVisibility();
+    }
+
+    function deleteConversation(conversationId) {
+        if (confirm('Are you sure you want to delete this conversation?')) {
+            $.ajax({
+                url: '/delete_conversation/' + conversationId,
+                type: 'DELETE',
+                success: function(result) {
+                    $('#conv-' + conversationId).remove();
+                    if (currentConversationId === conversationId) {
+                        $('#messages').children().not('.default-page').remove();
+                        currentConversationId = '';
+                    }
+                }
+            });
+            createNewChat();
+            $('.default-page').show();
+        }
+
+    }
+
+    function escapeHTML(text) {
+        return text.replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+    }
+
+    $(document).ready(function(){
+
+        createNewChat();
+
+        function showOperationModal(message) {
+            $('#operationMessage').text(message);
+            $('#operationModal').modal('show');
+        }
+
+        $('#newChatBtn').click(function(){
+            createNewChat();
+        });
+        
+        $('#messageForm').on('submit', function(event){
+            event.preventDefault();
+            
+            console.log("Sending message with Database: ", selectedDbName);
+            $('.default-page').hide();
+            
+            var messageText = $('#message').val();
+            $('#message').val('').prop('disabled', true);
+            $('button[type="submit"]').prop('disabled', true);
+
+            function sendMessage() {
+
+                var sidebarLogo = document.querySelector('.sidebar-logo')
+                sidebarLogo.style.pointerEvents = 'none';
+                sidebarLogo.opacity = '0.5';
+
+                // Select all sidebar links
+                var sidebarLinks = document.querySelectorAll('.sidebar-link');
+                // Loop through each link and disable it
+                sidebarLinks.forEach(function(link) {
+                    link.style.pointerEvents = 'none';
+                    link.style.opacity = '0.5';
+                });
+
+                var operationIndex = 0;
+                var intervalId;
+                var startTime = Date.now();
+
+                function toggleModal() {
+                    var currentTime = Date.now();
+                    if (currentTime - startTime > 120000) { // Check if 120 seconds have passed
+                        showOperationModal("Oops, an error has occured. Please refresh the page.");
+                        clearInterval(intervalId); // Stop the interval
+                        return;
+                    }
+
+                    switch (operationIndex) {
+                        case 0:
+                            showOperationModal('Thinking');
+                            break;
+                        case 1:
+                            showOperationModal('Analyzing');
+                            break;
+                        case 2:
+                            showOperationModal('Reticulating');
+                            break;
+                        case 3:
+                            showOperationModal('Generating');
+                            break;
+                    }
+                    operationIndex = (operationIndex + 1) % 4; // Cycle through 0, 1, 2, 3
+                }
+
+                // Start toggling the modal every 2 seconds
+                toggleModal();
+                intervalId = setInterval(toggleModal, 3000);
+
+                $.ajax({
+                    data: {
+                        message: messageText,
+                        db_name: selectedDbName
+                    },
+                    type: 'POST',
+                    url: '/send/' + currentConversationId
+                }).done(function(data){
+                    // Loop through each link and enable it
+                    sidebarLinks.forEach(function(link) {
+                        link.style.pointerEvents = 'auto';
+                        link.style.opacity = '1';
+                    });
+
+                    sidebarLogo.style.pointerEvents = 'auto';
+                    sidebarLogo.opacity = '1';
+
+                    $('#operationModal').modal('hide');
+                    clearInterval(intervalId);
+
+                    $('#messages').append('<div style="padding: 15px 20px 20px 40px;"><i class="fa-sharp fa-solid fa-user" style="margin-right: 7px;"></i><strong>You</strong><br><div style="padding-left: 21px; padding-right: 40px; text-align: justify;">' + escapeHTML(messageText) + '</div></div>');
+
+                    // Handle server response
+                    if (data.server_response && data.server_response.Answer) {
+                        $('#messages').append('<div style="padding: 15px 20px 0px 40px; background-color: #d3c6c6;"><img src="static/icons/brain_circuit_black.svg" alt="Brain Circuit" style="margin-left: -3px; margin-right: 6px; margin-bottom: 4px; width: 18px; height: 18px;"><strong>LocalGPT</strong><br><div style="padding-left: 21px; padding-right: 40px; text-align: justify;">' + data.server_response.Answer + '</div></div>');
+                    }
+
+                    // Create sources content
+                    var sourcesContent = '';
+                    if (data.server_response && data.server_response.Sources && data.server_response.Sources.length > 0) {
+                        sourcesContent = '<a href="#" class="sidebar-link" data-bs-toggle="collapse" data-bs-target="#sources' + data.epoch_time + '" aria-expanded="true" aria-controls="multi" style="padding-left: 0px; color: #687079;"><i class="fas fa-folder" style="padding-left: 22px; margin-right: 5px;"></i><strong>Sources</strong></a>'
+                            + '<ul id="sources' + data.epoch_time + '" class="sidebar-dropdown list-unstyled collapse" data-bs-parent="#sidebar">';
+                        
+                        sourcesContent += data.server_response.Sources.map(function(source) {
+                            var safeDocumentName = source[0].replace(/\./g, '');
+                                return '<li class="sidebar-item">'
+                                    + '<a href="#" class="sidebar-link" data-bs-toggle="collapse" data-bs-target="#d' + safeDocumentName + data.epoch_time + '" aria-expanded="true" aria-controls="' + safeDocumentName + '" style="color: #687079; padding-top: 0px; padding-left: 25px;">'
+                                    + '<i class="fa-sharp fa-solid fa-eye" style="cursor: pointer; padding-left: 5px; padding-right: 5px;" data-bs-toggle="modal" data-bs-target="#documentViewerModal" onclick="viewDocument(\'' + '/static/databases/' + source[2] + '/' + source[0] + '\', \'' + source[0] + '\')""></i>'
+                                    + '<strong>' + source[2] + ' - ' + source[0] + '</strong>'
+                                    + '</a>'
+                                    + '<ul id="d' + safeDocumentName + data.epoch_time + '" class="sidebar-dropdown list-unstyled collapse">'
+                                    + '<li class="sidebar-item">'
+                                    + '<div class="sidebar-link" style="color: #687079; padding-left: 1.625rem; padding-right: 40px; padding-bottom: 25px; text-align: justify;">' + source[1] + '</div>'
+                                    + '</li>'
+                                    + '</ul>'
+                                    + '</li>';
+                            }).join('');
+
+                        sourcesContent += '</ul>';
+                    }
+                    $('#messages').append('<div style="padding: 15px 20px 15px 40px; background-color: #d3c6c6;">' + sourcesContent + '</div>');
+
+                    $('#message').val('').prop('disabled', false);
+                    $('button[type="submit"]').prop('disabled', false);
+                    
+                    // Add the conversation button and delete button if it's the first message
+                    if (!($('#conv-' + currentConversationId).length)) {
+                        addConversationButton(currentConversationId, escapeHTML(messageText), data.epoch_time);
+                    }
+                });
+                $('.default-page').hide();
+            }
+            
+            if (currentConversationId === '') {
+                createNewChat(sendMessage);
+            } else {
+                sendMessage();
+            }
+            $('.default-page').hide();
+        });
+        updateDatabaseContainerVisibility();
+    });
+</script>
+
+<style>
+    #menu {
+        width: 150px;
+        height: 150px;
+        position: absolute;
+        left: 50%;
+        top: 70%;
+        transform: translate(-50%, -50%); /* Center the menu within the menu container */
+        list-style: none;
+        font-size: 200%;
+    }
+
+    .menu-button {
+        width: 150px;
+        height: 150px;
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%); /* Center the menu buttons within the menu container */
+        border-radius: 50%;
+        background: transparent;
+        overflow: hidden;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .brain-menu {
+        width: 120px;  /* Set the width to 120px */
+        height: 120px; /* Set the height to 120px */
+        opacity: .6;
+        /* rest of your styling for .brain-menu */
+    }
+
+    #menu:not(:target)>a:first-of-type,
+    #menu:target>a:last-of-type {
+        opacity: 1;
+        z-index: 1;
+    }
+
+    #menu:not(:target)>.icon-plus:before,
+    #menu:target>.icon-minus:before {
+        opacity: 1;
+    }
+
+    .menu-item {
+        width: 70px;
+        height: 70px;
+        position: absolute;
+        left: 25%; /* Position menu items at the center horizontally within the menu container */
+        line-height: 5px;
+        top: 25%; /* Position menu items at the center vertically within the menu container */
+        border-radius: 50%;
+        background-color: #5E4F4F;
+        transform: translate(-50%, -50%); /* Center the menu items within the menu container */
+        transition: transform 500ms;
+        z-index: 1;
+        transition: .5s;
+        text-align: center;
+        transition: opacity 0.5s, visibility 0.5s, transform 0s;
+        transition-delay: 0s; /* Adjust this value as needed */
+        cursor: pointer;
+        opacity: .9;
+    }
+    
+
+    .menu-item:hover{
+        background-color: #7f6b6b;
+    }
+
+    .menu-item a {
+        color: #fff;
+        position: relative;
+        top: 30%;
+        left: 0;
+        text-decoration: none;
+    }
+
+    #menu:target>.menu-item:nth-child(3) {
+        transform: rotate(-20deg) translateY(-155px) rotate(20deg);
+        transition-delay: 0.2s;
+    }
+
+    #menu:target>.menu-item:nth-child(4) {
+        transform: rotate(-60deg) translateY(-150px) rotate(60deg);
+        transition-delay: 0.3s;
+    }
+
+    #menu:target>.menu-item:nth-child(5) {
+        transform: rotate(20deg) translateY(-155px) rotate(-20deg);
+        transition-delay: 0.1s;
+    }
+
+    #menu:target>.menu-item:nth-child(6) {
+        transform: rotate(60deg) translateY(-150px) rotate(300deg);
+        transition-delay: 0s;
+    }
+
+    #menu:not(:target)>.menu-item {
+        opacity: 0;
+        visibility: hidden;
+        transform: translate(-50%, -50%); /* Reset the position */
+        transition: opacity 0s, visibility 0s; /* Remove transition duration */
+        transition-delay: 0s; /* Start the fade-out immediately */
+    }
+
+    .menu-container{
+        position: relative;
+        top: -5%;
+    }
+</style>
+
+<script>
+    // When page loads, it will trigger the circle menu
+    window.onload = function() {
+        var menuButton = document.getElementById("open-menu");
+        menuButton.click();
+    };
+</script>
+
+<script>
+    function copyCodeText(elementId) {
+        var codeDiv = document.getElementById("copy-text-" + elementId);
+        var textArea = document.createElement("textarea");
+        textArea.value = codeDiv.innerText;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+
+        // Get the button and change the icon and text
+        var copyBtn = document.querySelector("#copy-text-btn-" + elementId);
+        copyBtn.innerHTML = '<i class="bi bi-clipboard-check"></i> text copied';
+
+        // Set a timeout to revert the icon and text after 5 seconds
+        setTimeout(function() {
+            copyBtn.innerHTML = '<i class="bi-clipboard"></i> copy text';
+        }, 5000);
+    }
+</script>
+
+<style type="text/css">
+    /*
+    generated by Pygments <https://pygments.org/>
+    Copyright 2006-2023 by the Pygments team.
+    Licensed under the BSD license, see LICENSE for details.
+    */
+    pre { line-height: 125%; }
+    td.linenos .normal { color: #666666; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+    span.linenos { color: #666666; background-color: transparent; padding-left: 5px; padding-right: 5px; }
+    td.linenos .special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+    span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 5px; padding-right: 5px; }
+    body .hll { background-color: #ffffcc }
+    /* body { background: #f0f0f0; } */
+    body .c { color: #60a0b0; font-style: italic } /* Comment */
+    body .err { border: 1px solid #FF0000 } /* Error */
+    body .k { color: #007020; font-weight: bold } /* Keyword */
+    body .o { color: #666666 } /* Operator */
+    body .ch { color: #60a0b0; font-style: italic } /* Comment.Hashbang */
+    body .cm { color: #60a0b0; font-style: italic } /* Comment.Multiline */
+    body .cp { color: #007020 } /* Comment.Preproc */
+    body .cpf { color: #60a0b0; font-style: italic } /* Comment.PreprocFile */
+    body .c1 { color: #60a0b0; font-style: italic } /* Comment.Single */
+    body .cs { color: #60a0b0; background-color: #fff0f0 } /* Comment.Special */
+    body .gd { color: #A00000 } /* Generic.Deleted */
+    body .ge { font-style: italic } /* Generic.Emph */
+    body .ges { font-weight: bold; font-style: italic } /* Generic.EmphStrong */
+    body .gr { color: #FF0000 } /* Generic.Error */
+    body .gh { color: #000080; font-weight: bold } /* Generic.Heading */
+    body .gi { color: #00A000 } /* Generic.Inserted */
+    body .go { color: #888888 } /* Generic.Output */
+    body .gp { color: #c65d09; font-weight: bold } /* Generic.Prompt */
+    body .gs { font-weight: bold } /* Generic.Strong */
+    body .gu { color: #800080; font-weight: bold } /* Generic.Subheading */
+    body .gt { color: #0044DD } /* Generic.Traceback */
+    body .kc { color: #007020; font-weight: bold } /* Keyword.Constant */
+    body .kd { color: #007020; font-weight: bold } /* Keyword.Declaration */
+    body .kn { color: #007020; font-weight: bold } /* Keyword.Namespace */
+    body .kp { color: #007020 } /* Keyword.Pseudo */
+    body .kr { color: #007020; font-weight: bold } /* Keyword.Reserved */
+    body .kt { color: #902000 } /* Keyword.Type */
+    body .m { color: #40a070 } /* Literal.Number */
+    body .s { color: #4070a0 } /* Literal.String */
+    body .na { color: #4070a0 } /* Name.Attribute */
+    body .nb { color: #007020 } /* Name.Builtin */
+    body .nc { color: #0e84b5; font-weight: bold } /* Name.Class */
+    body .no { color: #60add5 } /* Name.Constant */
+    body .nd { color: #555555; font-weight: bold } /* Name.Decorator */
+    body .ni { color: #d55537; font-weight: bold } /* Name.Entity */
+    body .ne { color: #007020 } /* Name.Exception */
+    body .nf { color: #06287e } /* Name.Function */
+    body .nl { color: #002070; font-weight: bold } /* Name.Label */
+    body .nn { color: #0e84b5; font-weight: bold } /* Name.Namespace */
+    body .nt { color: #062873; font-weight: bold } /* Name.Tag */
+    body .nv { color: #bb60d5 } /* Name.Variable */
+    body .ow { color: #007020; font-weight: bold } /* Operator.Word */
+    body .w { color: #bbbbbb } /* Text.Whitespace */
+    body .mb { color: #40a070 } /* Literal.Number.Bin */
+    body .mf { color: #40a070 } /* Literal.Number.Float */
+    body .mh { color: #40a070 } /* Literal.Number.Hex */
+    body .mi { color: #40a070 } /* Literal.Number.Integer */
+    body .mo { color: #40a070 } /* Literal.Number.Oct */
+    body .sa { color: #4070a0 } /* Literal.String.Affix */
+    body .sb { color: #4070a0 } /* Literal.String.Backtick */
+    body .sc { color: #4070a0 } /* Literal.String.Char */
+    body .dl { color: #4070a0 } /* Literal.String.Delimiter */
+    body .sd { color: #4070a0; font-style: italic } /* Literal.String.Doc */
+    body .s2 { color: #4070a0 } /* Literal.String.Double */
+    body .se { color: #4070a0; font-weight: bold } /* Literal.String.Escape */
+    body .sh { color: #4070a0 } /* Literal.String.Heredoc */
+    body .si { color: #70a0d0; font-style: italic } /* Literal.String.Interpol */
+    body .sx { color: #c65d09 } /* Literal.String.Other */
+    body .sr { color: #235388 } /* Literal.String.Regex */
+    body .s1 { color: #4070a0 } /* Literal.String.Single */
+    body .ss { color: #517918 } /* Literal.String.Symbol */
+    body .bp { color: #007020 } /* Name.Builtin.Pseudo */
+    body .fm { color: #06287e } /* Name.Function.Magic */
+    body .vc { color: #bb60d5 } /* Name.Variable.Class */
+    body .vg { color: #bb60d5 } /* Name.Variable.Global */
+    body .vi { color: #bb60d5 } /* Name.Variable.Instance */
+    body .vm { color: #bb60d5 } /* Name.Variable.Magic */
+    body .il { color: #40a070 } /* Literal.Number.Integer.Long */
+    
+</style>
+
+<style>
+    .video-container {
+      width: 100%; /* or any desired width */
+      max-width: 800px; /* maximum width for the video */
+      margin: 0 auto; /* center the container horizontally */
+    }
+    
+    .video-container video {
+      width: 100%; /* occupy full width of the container */
+      height: auto; /* maintain aspect ratio */
+      display: block; /* prevent any extra space */
+    }
+
+    .accordion-button:hover {
+        z-index: 3;
+        border-color: #ad926f;
+        outline: 0;
+    }
+
+    .accordion-button:not(.collapsed) {
+        color: #e9ecef;
+        background-color: #7f6b6b;
+        box-shadow: inset 0 calc(-1 * var(--bs-accordion-border-width)) 0 #7f6b6b;
+    }
+
+    .accordion-button:focus {
+        z-index: 3;
+        border-color: #ad926f;
+        outline: 0;
+        box-shadow: none;
+    }
+
+    .accordion-button::after {
+        background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23000000'><path fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/></svg>") !important;
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var tutorialModal = document.getElementById('tutorialModal');
+
+        // Add event listener for modal hide event
+        tutorialModal.addEventListener('hidden.bs.modal', function () {
+            // Get all videos inside the modal
+            var videos = tutorialModal.querySelectorAll('video');
+
+            // Pause all videos
+            videos.forEach(function (video) {
+            video.pause();
+            });
+        });
+    });
+</script>
+
+<title>LocalGPT</title>
+{% endblock %}
+
+{% block content %}
+<div class="wrapper">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+        <div class="hi">
+            <div class="sidebar-logo">
+                <a href="#" id="newChatBtn"><span><img src="static/icons/brain_circuit_light.svg" alt="Brain Circuit" style="margin-bottom: 5px; margin-right: 10px; width: 20px; height: 20px;">LocalGPT</span><i class="fa-sharp fa-solid fa-pen-to-square"></i></a>
+            </div>
+            <div class="sidebar-header">
+                Chats
+            </div>
+            <div id="conversationList" class="list-group sidebar-nav">
+                {% for conversation_id, messages in conversation_list %}
+                <div id="conv-{{ conversation_id }}" class="d-flex conv-div justify-content-between align-items-center" data-timestamp="{{ messages[0].Epoch }}">
+                    <a type="button" class="sidebar-link chat-group-item" onclick="loadConversation('{{ conversation_id }}')">
+                        <i class="fa-sharp fa-solid fa-message" style="margin-right: 5px;"></i>
+                        {{ messages[0].User }}
+                    </a>
+                    <a type="button" class="sidebar-link chat-group-item-trash" onclick="deleteConversation('{{ conversation_id }}')">
+                        <i class="fa-sharp fa-solid fa-trash"></i>
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+
+            <hr style="width: 90%; color: #e9ecef; margin-left: auto; margin-right: auto;">
+            <center style="margin-left: -15px;">
+                <button class="btn btn-secondary dropdown-toggle" type="button" id="dropupMenuButton" data-bs-toggle="dropdown" aria-expanded="false" style="border: none; background-color: transparent; margin-left: 10px;">
+                    <i class="fa-sharp fa-solid fa-user" style="margin-right: 5px;"></i>
+                    {{username}}
+                </button>
+                <ul class="dropdown-menu" aria-labelledby="dropupMenuButton">
+                    <li><a class="dropdown-item" href="#">Settings</a></li>
+                    <li><a class="dropdown-item" href="/logout">Sign out</a></li>
+                </ul>
+            </center>
+        </div>
+    </aside>
+    <!-- Main Component -->
+    <div class="main">
+        <nav class="navbar navbar-expand px-3 border-bottom">
+            <!-- Button for sidebar toggle -->
+            <button class="btn toggle-btn " type="button" data-bs-theme="dark" style="border: none;">
+                <i class="fa-sharp fa-solid fa-repeat"></i>
+            </button>
+            <div class="database-container">
+                <div class="row">
+                    <div class="col">
+                        <button type="button" class="btn btn-outline-primary db-btn" onclick="selectDatabase('DEFAULT')">DEFAULT</button>
+                        {% for db_name in db_names %}
+                            <button type="button" class="btn btn-outline-primary db-btn" onclick="selectDatabase('{{ db_name }}')">{{ db_name}}</button>
+                        {% endfor %}
+                        <button type="button" class="btn btn-primary add-db-btn" data-bs-toggle="modal" data-bs-target="#createDatabaseModal">
+                            +
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="modal fade" id="createDatabaseModal" tabindex="-1" aria-labelledby="createDatabaseModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                    <div class="modal-content">
+                        <h5 class="modal-title" id="createDatabaseModalLabel" style="margin-left: 15px; margin-top: 15px">Create a New Database</h5>
+                        <div class="modal-body">
+                        <form id="databaseForm">
+                            <div class="mb-3">
+                            <label for="databaseName" class="form-label">Database Name</label>
+                            <input type="text" class="form-control" id="databaseName" name="databaseName">
+                            </div>
+                            <div class="mb-3">
+                            <label for="databaseFiles" class="form-label">Database Files</label>
+                            <input type="file" class="form-control" id="databaseFiles" name="databaseFiles" title="Accepts .txt .md .yaml .py .pdf .csv .xls .xlsx .docx .doc .odt .html .png .jpg" multiple accept=".txt, .md, .yaml, .py, .pdf, .csv, .xls, .xlsx, .docx, .doc, .odt, .html, .png, .jpg">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Create</button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        </form>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+                
+                <div class="modal fade" id="operationModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="operationModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content border-0" style="background-color: transparent;">
+                            <div class="modal-body text-center">
+                                <div class="spinner-border" role="status" style="color: #d3c6c6;">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p id="operationMessage" class="mt-3" style="color: #d3c6c6;"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal fade" id="databaseActionModal" tabindex="-1" aria-labelledby="databaseActionModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content" style="margin-top: 60px;">
+                        <h5 class="modal-title" id="databaseActionModalLabel" style="margin-left: 15px; margin-top: 15px;">DATABASE - <span id="modalDbName"></span></h5>
+                        <div class="modal-body">
+                            <form id="databaseActionForm">
+                            <div class="mb-3">
+                                <label for="actionDatabaseFiles" class="form-label">Upload Files</label>
+                                <input type="file" class="form-control" id="actionDatabaseFiles" title="Accepts .txt .md .yaml .py .pdf .csv .xls .xlsx .docx .doc .odt .html .png .jpg" name="actionDatabaseFiles" multiple accept=".txt, .md, .yaml, .py, .pdf, .csv, .xls, .xlsx, .docx, .doc, .odt, .html, .png, .jpg">
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <button type="button" class="btn btn-danger" id="deleteDatabase" data-bs-toggle="tooltip-databaseAction" data-bs-placement="bottom" data-bs-custom-class="delete-tooltip" data-bs-title="This action will completely delete the database. Once executed, the data cannot be retrieved.">Delete</button>
+                                    <button type="button" class="btn btn-warning" id="resetDatabase" data-bs-toggle="tooltip-databaseAction" data-bs-placement="bottom" data-bs-custom-class="reset-tooltip" data-bs-title="This operation will erase all current data in the database and overwrite it with the data from the files chosen for upload.">Reset</button>
+                                    <button type="button" class="btn btn-success" id="addFiles" data-bs-toggle="tooltip-databaseAction" data-bs-placement="bottom" data-bs-custom-class="add-tooltip" data-bs-title="This process will preserve all existing data in the database and append it with the data from the selected files for upload.">Add</button>
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                </div>
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="documentButton">Documents</button>
+                            </div>
+                            </form>
+                        </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Document List Modal -->
+                <div class="modal fade" id="documentListModal" tabindex="-1" aria-labelledby="documentListModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-scrollable modal-xl">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="documentListModalLabel" style="margin-left: 15px;">Documents in <span id="modalDocDbName"></span></h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <ul id="documentList" class="list-group list-group-flush">
+                                    <!-- Document names will be appended here -->
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Document List Modal -->
+                <div class="modal fade" id="documentViewerModal" tabindex="-1" aria-labelledby="documentViewerModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-xl">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="w-100 modal-title text-center" id="documentViewerModalLabel"></h5>
+                            </div>
+                            <iframe id="docViewerIframeId" style="width:100%; height:calc(100vh - 185px);" frameborder="0"></iframe>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+        <main class="content">
+            <div id="messages">
+                <div class="default-page" style="text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px 0px 20px 0px; width: 100%; height: 100%;">
+                    <div class="menu-container">  
+                        <ul id="menu">
+                            <!-- open-menu id for click event -->
+                            <a class="menu-button icon-plus" id="open-menu" href="#menu" title="Show Me">
+                                <img src="static/icons/brain_circuit_brown.svg" alt="Brain Circuit" class="brain-menu">
+                            </a>
+                            <a class="menu-button icon-minus" href="#0" title="Hide Me">
+                                <img src="static/icons/brain_circuit_brown.svg" alt="Brain Circuit" class="brain-menu">
+                            </a>
+                            <li class="menu-item" data-bs-toggle="modal" data-bs-target="#usageModal">
+                                <a href="#menu" title="Usage" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="fa-sharp fa-solid fa-info"></i>
+                                </a>
+                            </li>
+                            <li class="menu-item" data-bs-toggle="modal" data-bs-target="#tutorialModal">
+                                <a href="#menu" title="Tutorial" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="fa-sharp fa-solid fa-book"></i>
+                                </a>
+                            </li>
+                            <li class="menu-item" data-bs-toggle="modal" data-bs-target="#architectureModal">
+                                <a href="#menu" title="Architecture" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="fa-sharp fa-solid fa-sitemap"></i>
+                                </a>
+                            </li>
+                            <li class="menu-item" data-bs-toggle="modal" data-bs-target="#creditsModal">
+                                <a href="#menu" title="Planned Features" data-bs-toggle="tooltip" data-bs-placement="top">
+                                    <i class="fa-sharp fa-solid fa-handshake-simple"></i>
+                                </a>
+                            </li>
+                        </ul>
+                        <p style="margin-top: 425px; font-size: 35px; color: #5e4f4f; opacity: .6;">Ask a question!</p>
+                        <div class="modal fade" id="usageModal" tabindex="-1" aria-labelledby="usageModalLabel" aria-hidden="true">
+                            <div class="modal-dialog modal-xl">
+                                <div class="modal-content">
+                                <div class="modal-header">
+                                    <h4 class="modal-title w-100 text-center" id="usageModalLabel"><strong>Usage</strong></h4>
+                                </div>
+                                <div class="modal-body" style="text-align: justify; margin-left: 45px; margin-right: 55px;">
+                                    <br>
+                                    <strong>About - </strong><i>Exploring LocalGPT's Core Functionalities</i>
+                                    <p style="padding-top: 5px;">
+                                        LocalGPT is a specialized tool designed for organizations to manage unstructured documentation efficiently. 
+                                        It functions as a private, internal search engine, interpreting natural language queries to facilitate easy information retrieval. 
+                                        This tool adeptly combines data from various documents to answer queries, engage in conversations, and provide explanations, showcasing a high level of coherence and relevance. 
+                                        It supports diverse tasks including translation, summarization, creative writing, tutoring, and coding, offering versatility and adaptability for a range of text-based applications.
+                                    </p>
+
+                                    <br>
+                                    <strong>Utility - </strong><i>Understanding LocalGPT's Interaction and Deployment</i>
+                                    <p style="padding-top: 5px;">
+                                        Developed for user-friendly interaction, LocalGPT mimics conversational dynamics but has limitations, such as potential inaccuracies and reliance on its training data without real-time learning. 
+                                        It's distinct from tools like ChatGPT, being deployable within an organization's internal network, isolated from the internet. 
+                                        This ensures data confidentiality and reduces information loss risks, commonly associated with employee turnover or misplaced documents in conventional storage systems like SharePoint.
+                                    </p>
+
+                                    <br>
+                                    <strong>Security - </strong><i>LocalGPT's Advantages in Secure Information Handling and Resource Management</i>
+                                    <p style="padding-top: 5px;">
+                                        LocalGPT's key advantage is its data control and security, crucial for handling sensitive or confidential information. 
+                                        It smoothly integrates various document formats into its system, creating a comprehensive, easily accessible database. 
+                                        This tool is resource-efficient, demanding less computational power for document processing compared to retraining methods. 
+                                        LocalGPT enhances productivity and broadens information access possibilities, offering a unique offline solution for effective data management and utilization. 
+                                        It addresses the challenges of locating and utilizing scattered organizational documentation, transforming it into a centralized, accessible knowledge base.
+                                    </p>
+
+                                    <br>
+                                </div>
+                                <div class="modal-footer" style="justify-content: center;">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal fade" id="tutorialModal" tabindex="-1" aria-labelledby="tutorialModalLabel" aria-hidden="true">
+                            <div class="modal-dialog modal-xl">
+                                <div class="modal-content">
+                                <div class="modal-header" style="justify-content: center;">
+                                    <h4 class="modal-title" id="tutorialModalLabel"><strong>Tutorial</strong></h4>
+                                </div>
+                                <div class="modal-body" style="text-align: left; margin-left: 45px; margin-right: 55px;">
+                                    <br>
+                                    <div class="accordion" id="tutorialAccordion">
+                                        <div class="accordion-item">
+                                            <h2 class="accordion-header">
+                                              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">
+                                                See Videos
+                                              </button>
+                                            </h2>
+                                            <div id="collapseTwo" class="accordion-collapse collapse" data-bs-parent="#tutorialAccordion">
+                                              <div class="accordion-body">
+                                                  <br>
+                                                  <center><strong>Introduction</strong></center>
+                                                  <br>
+                                                  <div class="video-container">
+                                                      <video controls>
+                                                        <source src="/static/tutorial_vids/introduction.mp4" type="video/mp4">
+                                                        Your browser does not support the video tag.
+                                                      </video>
+                                                  </div><br><br>
+                                                  <center><strong>Example 1 - General QA</strong></center>
+                                                  <br>
+                                                  <div class="video-container">
+                                                      <video controls>
+                                                        <source src="/static/tutorial_vids/example_1.mp4" type="video/mp4">
+                                                        Your browser does not support the video tag.
+                                                      </video>
+                                                  </div><br><br>
+                                                  <center><strong>Example 2 - Working with Diverse Documents</strong></center>
+                                                  <br>
+                                                  <div class="video-container">
+                                                      <video controls>
+                                                        <source src="/static/tutorial_vids/example_2.mp4" type="video/mp4">
+                                                        Your browser does not support the video tag.
+                                                      </video>
+                                                  </div><br><br>
+                                                  <center><strong>Example 3 - Working with a specific PDF</strong></center>
+                                                  <br>
+                                                  <div class="video-container">
+                                                      <video controls>
+                                                        <source src="/static/tutorial_vids/example_3.mp4" type="video/mp4">
+                                                        Your browser does not support the video tag.
+                                                      </video>
+                                                  </div><br><br>
+                                                  <center><strong>Example 4 - Working with specific Images</strong></center>
+                                                  <br>
+                                                  <div class="video-container">
+                                                      <video controls>
+                                                        <source src="/static/tutorial_vids/example_4.mp4" type="video/mp4">
+                                                        Your browser does not support the video tag.
+                                                      </video>
+                                                  </div><br><br>
+                                                  <center><strong>Conclusion</strong></center>
+                                                  <br>
+                                                  <div class="video-container">
+                                                      <video controls>
+                                                        <source src="/static/tutorial_vids/conclusion.mp4" type="video/mp4">
+                                                        Your browser does not support the video tag.
+                                                      </video>
+                                                  </div><br>
+                                              </div>
+                                            </div>
+                                        </div>
+                                        <div class="accordion-item">
+                                          <h2 class="accordion-header">
+                                            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="true" aria-controls="collapseOne">
+                                              Read & Download Example Documents
+                                            </button>
+                                          </h2>
+                                          <div id="collapseOne" class="accordion-collapse collapse show" data-bs-parent="#tutorialAccordion">
+                                            <div class="accordion-body">
+                                                <strong>Prep - Setting up a Knowledge Base:</strong>
+                                                <ol>
+                                                    <li>Locate the  
+                                                        <button type="button" class="btn btn-primary add-db-btn-ex">
+                                                            +
+                                                        </button>
+                                                    </li>
+                                                    <li>Click on this button.</li>
+                                                    <li>A menu will appear titled "Create a New Database."</li>
+                                                    <li>Below the "Database Files" title, use the file upload button to upload the documents you wish to use for your knowledge base.</li>
+                                                    <li>In the text box under "Database Name," enter a label that accurately represents your knowledge base.</li>
+                                                    <li>Click the "Create" button.</li>
+                                                    <li>After a brief waiting period (which may vary depending on the number and size of documents), a button labeled with the name of your new knowledge base will appear to the left of the   
+                                                        <button type="button" class="btn btn-primary add-db-btn-ex">
+                                                            +
+                                                        </button> 
+                                                        button.
+                                                    </li>
+                                                    <li>Click on this button to select it as your working knowledge base.</li>
+                                                </ol>
+                                                <br>
+                                                <strong>Chat - Interacting with the Knowledge Base:</strong>
+                                                <ol>
+                                                    <li>At the bottom of the screen, you will find a text box for typing your message.</li>
+                                                    <li>To the right of the text box, there is a button for sending your message. Alternatively, you can press the Enter key to send your message.</li>
+                                                    <li>If no database or knowledge base is selected, the text box will prompt you to choose one before sending your message.</li>
+                                                    <li>Your conversations with the AI will be accessible in the left sidebar of the screen.</li>
+                                                    <li>To close the sidebar, look for a toggle symbol in the top left corner of the screen and click it.</li>
+                                                    <li>To initiate a new conversation, click "Create a New Chat" in the top left corner of the screen.</li>
+                                                </ol>
+                                                <br>
+                                                <strong>Examples - Try out some example documents:</strong>
+                                                <ol>
+                                                    <li><a class="dl_link" href="/static/example_data/cnn_econ_html.zip" download="cnn_econ_html.zip">CNN Economic News (HTML format)</a></li>
+                                                    <li><a class="dl_link" href="/static/example_data/cnn_econ_odt.zip" download="cnn_econ_odt.zip">CNN Economic News (ODT and TXT formats)</a></li>
+                                                    <li><a class="dl_link" href="/static/example_data/cnn_israel_txt.zip" download="cnn_israel_txt.zip">CNN Israel News (TXT format)</a></li>
+                                                    <li><a class="dl_link" href="/static/example_data/gov_contracts_pdf.zip" download="gov_contracts_pdf.zip">Government AI Contract Proposals (PDF format)</a></li>
+                                                    <li><a class="dl_link" href="/static/example_data/aws_snowball_pdf.zip" download="aws_snowball_pdf.zip">AWS Snowball Documentation (PDF format)</a></li>
+                                                    <li><a class="dl_link" href="/static/example_data/titanic_csv.zip" download="titanic_csv.zip">Titanic Passengers and Details (CSV format)</a></li>
+                                                    <li><a class="dl_link" href="/static/example_data/s5cmd_readme_md.zip" download="s5cmd_readme_md.zip">S5cmd README (MD format)</a></li>
+                                                    <li><a class="dl_link" href="/static/example_data/fy2023_weapons_pdf.zip" download="fy2023_weapons_pdf.zip">FY2023 Weapons (PDF format)</a></li>
+                                                    <li><a class="dl_link" href="/static/example_data/ts_report_pdf.zip" download="ts_report_pdf.zip">TS Report (PDF format)</a></li>
+                                                </ol>
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <br>
+                                    </div>
+                                </div>
+                                <div class="modal-footer" style="justify-content: center;">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal fade" id="architectureModal" tabindex="-1" aria-labelledby="architectureModal" aria-hidden="true">
+                            <div class="modal-dialog modal-xl">
+                                <div class="modal-content">
+                                <div class="modal-header">
+                                    <h4 class="modal-title w-100 text-center" id="architectureModalLabel"><strong>RAG System and Large Language Model (LLM) Process</strong></h4>
+                                </div>
+                                <div class="modal-body">
+                                    <br>
+                                    <div style="text-align: justify; margin-left: 45px; margin-right: 55px;">
+                                        <p>
+                                            This document describes a process for enhancing Large Language Models (LLMs) with real-time access to external information through a Retriever-Augmented Generation (RAG) system, which significantly improves the relevance, accuracy, and specificity of responses. 
+                                            The process involves several key steps:
+                                        </p>
+                                        <ol>
+                                            <li><strong>Document Ingestion:</strong> Ingesting a large corpus of documents from sources like Wikipedia, news articles, or specialized databases.</li>
+                                            <li><strong>Extraction and Chunking:</strong> Processing the documents by extracting relevant data and splitting it into manageable chunks or passages.</li>
+                                            <li><strong>Transfer to Transformer:</strong> Feeding the chunks into a transformer-based model to analyze the text for context and semantics.</li>
+                                            <li><strong>Embedding Creation:</strong> Generating embeddings for each chunk, which are vector representations capturing the semantic essence of the text.</li>
+                                            <li><strong>Semantic Indexing:</strong> Indexing these embeddings semantically to create a searchable database for efficient retrieval based on content.</li>
+                                            <li><strong>Storing in Vector Database:</strong> Storing the indexed embeddings in a vector database, enabling quick and relevant information retrieval based on query matching.</li>
+                                            <li><strong>Query Processing with Conversation Memory:</strong> Combining received queries with any available conversation memory or context to form a comprehensive input.</li>
+                                            <li><strong>Retrieval of Ranked Results:</strong> Retrieving chunks from the vector database, ranked by relevance to the query and context.</li>
+                                            <li><strong>Response Generation:</strong> Feeding the ranked results and the original query into the Large Language Model, which generates a coherent and contextually informed response.</li>
+                                        </ol><br>
+                                        <p>In summary, this process allows RAG systems to augment the capabilities of LLMs by providing real-time access to external information, significantly enhancing the relevance, accuracy, and specificity of their responses.</p>                                    
+                                    </div>
+                                    <img src="/static/images/Architecture.png" alt="Architecture" style="width: 100%;">
+                                </div>
+                                <div class="modal-footer" style="justify-content: center;">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal fade" id="creditsModal" tabindex="-1" aria-labelledby="creditsModalLabel" aria-hidden="true">
+                            <div class="modal-dialog modal-xl">
+                                <div class="modal-content">
+                                <div class="modal-header">
+                                    <h4 class="modal-title w-100 text-center" id="creditsModalLabel"><strong>Planned Features</strong></h4>
+                                </div>
+                                <div class="modal-body">
+                                    <br>
+                                    <div style="text-align: justify; margin-left: 45px; margin-right: 55px;">
+                                        <strong>Develop session management and login capabilities to support multiple users:</strong>
+                                        <ul>
+                                            <li>Create dedicated databases for each user's use.</li>
+                                        </ul>
+
+                                        <strong>Enable response streaming to:</strong>
+                                        <ul>
+                                            <li>Allow users to view a response as it unfolds during generation.</li>
+                                            <li>Provide clear feedback regarding the submission status and real-time processing of their request by the backend engine.</li>
+                                        </ul>
+                                        <br>
+                                    </div>
+                                </div>
+                                <div class="modal-footer" style="justify-content: center;">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Messages will be loaded here -->
+            </div>
+        </main>
+        <form id="messageForm" action="/send" method="post" style="margin-left: 20px; margin-right: 20px;">
+            <div class="search">
+                <input type="text" id="message" name="message" class="form-control" placeholder="Type your message here" required>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+                <p style="font-size:x-small; text-align: center; padding-top: 5px; margin-bottom: 5px;">
+                    Verify vital information. LocalGPT serves as a helpful resource for exploring private data to locate relevant sources, offer insights, and aid with linguistic tasks.
+                </p>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+
+    function viewDocument(docPath, doc) {
+        // List of valid file extensions
+        const validExtensions = ['.txt', '.md', '.yaml', '.py', '.pdf', '.html', '.png', '.jpg'];
+
+        // Check if doc ends with a valid extension
+        const isValidExtension = validExtensions.some(ext => doc.toLowerCase().endsWith(ext));
+
+        // If not a valid extension, change docPath to the invalid document view path
+        if (!isValidExtension) {
+            docPath = '/static/images/invalid_documentView.txt';
+        }
+
+        // Set the content and source for the modal
+        document.getElementById('documentViewerModalLabel').textContent = doc;
+        document.getElementById('docViewerIframeId').src = docPath;
+
+        // Show the modal (assuming jQuery is used)
+        $('#documentViewerModal').modal('show');
+    }
+
+    $(function () {
+        $('[data-bs-toggle="tooltip-databaseAction"]').tooltip()
+    });
+
+    document.querySelector('.col').addEventListener('dblclick', function(event) {
+        // Check if the clicked target is a button with the class 'btn-outline-primary'
+        if(event.target && event.target.nodeName == "BUTTON" && event.target.classList.contains('btn-outline-primary')) {
+            // Get the database name from the button's text
+            var dbName = event.target.textContent || event.target.innerText;
+            
+            if (dbName != 'DEFAULT') {
+                // Set the database name in the modal title
+                document.getElementById('modalDbName').textContent = dbName;
+
+                // Open the modal
+                $('#databaseActionModal').modal('show');
+            }
+        }
+    });
+
+    var selectedDbName = '';
+
+    function updateSendButtonState() {
+        var sendButton = $('#messageForm button[type="submit"]');
+        var messageInput = $('#message');
+
+        if (selectedDbName) {
+            sendButton.prop('disabled', false);
+            messageInput.attr('placeholder', 'Type your message here');
+        } else {
+            sendButton.prop('disabled', true);
+            messageInput.attr('placeholder', 'Please select database first before conversing');
+        }
+    }
+
+    function selectDatabase(databaseName) {
+        // Deactivate all database buttons
+        var buttons = document.querySelectorAll('.btn-outline-primary');
+        buttons.forEach(function(button) {
+            button.classList.remove('active');
+        });
+
+        // Activate the clicked button
+        var activeButton = document.querySelector('button[onclick="selectDatabase(\'' + databaseName + '\')"]');
+        if (activeButton) {
+            activeButton.classList.add('active');
+        }
+
+        // Additional logic to set the selected database as active
+        
+        selectedDbName = databaseName;
+        updateSendButtonState();
+    }
+
+    $(document).ready(function(){
+        updateSendButtonState();
+
+        $('#documentButton').click(function() {
+            var dbName = $('#modalDbName').text(); // Get the database name
+            $.ajax({
+                type: "POST",
+                url: '/get_database_documents/' + dbName,
+                success: function(response) {
+                    var documents = response.documents;
+                    $('#modalDocDbName').text(dbName);
+                    var list = $('#documentList');
+                    list.empty(); // Clear previous entries
+                    documents.forEach(function(doc) {
+                        list.append(
+                            '<div class="row" style="margin-left: 5px;">' +
+                            '<div class="col-1"><i class="fa-sharp fa-solid fa-eye" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#documentViewerModal" onclick="viewDocument(\'' + '/static/databases/' + dbName + '/' + doc + '\', \'' + doc + '\')""></i></div>' +
+                            '<div class="col-1">' + '<a href="' + '/static/databases/' + dbName + '/' + doc + '" download="' + doc +'" style="color: #5E4F4F;"><i class="fa-sharp fa-solid fa-file-arrow-down"></i></a></div>' +
+                            '<div class="col-8">' + doc +'</div></div>'
+                            )
+                    });
+                    $('#documentListModal').modal('show'); // Show the modal
+                },
+                error: function(error) {
+                    console.log(error);
+                }
+            });
+        });
+
+        $("#databaseForm").on("submit", function(e){
+            e.preventDefault();
+            if (!validateFileInput('databaseFiles')) return;
+            var formData = new FormData(this);
+
+            var dbName = $('#databaseName').val().trim();
+            dbName = dbName.replace(/<\/?[^>]+(>|$)/g, ""); // remove html tags
+
+            // Check if the database name is empty
+            if (!dbName) {
+                showError('databaseName', 'This field cannot be empty');
+                return;
+            }
+
+            // Check if database exists before proceeding
+            $.ajax({
+                type: "POST",
+                url: "/check_database_existence",
+                data: { databaseName: dbName.toUpperCase() }, // Convert dbName to uppercase here
+                success: function(response) {
+                    if (response.exists) {
+                        showError('databaseName', "The database name you've entered is already in use. Please choose a unique name for your new database. If you're looking to modify an existing database, simply double-click on the desired database from the list and use the provided menu to make your changes.");
+                    } else {
+                        // If database does not exist, proceed with creation
+                        $('#createDatabaseModal').modal('hide');
+                        showOperationModal('Creating database');
+                        $.ajax({
+                            type: "POST",
+                            url: "/create_database",
+                            data: formData,
+                            processData: false,
+                            contentType: false,
+                            success: function(response) {
+                                console.log(response);
+                                // Close the modal on successful submission
+                                $('#operationModal').modal('hide');
+
+                                // Create the new database button
+                                var newDbButton = '<button type="button" class="btn btn-outline-primary db-btn" style="margin-right: 5px;" onclick="selectDatabase(\'' + dbName.toUpperCase() + '\')">' + dbName.toUpperCase() + '</button>'; // Convert dbName to uppercase here as well
+
+                                // Insert the new button before the "Create Database" button
+                                $(newDbButton).insertBefore('.btn-primary[data-bs-toggle="modal"]');
+                            },
+                            error: function(error) {
+                                console.log(error);
+                            }
+                        });
+                    }
+                },
+                error: function(error) {
+                    console.log(error);
+                }
+            });
+        });
+
+        function showError(inputId, message) {
+            var inputField = $('#' + inputId);
+            inputField.addClass('is-invalid');
+            inputField.siblings('.invalid-feedback').remove();
+            inputField.after('<div class="invalid-feedback">' + message + '</div>');
+        }
+
+        // Clear error on input
+        $('#databaseName').on('input', function() {
+            $(this).removeClass('is-invalid');
+        });
+
+        $('#deleteDatabase').click(function() {
+            // Confirmation dialog
+            var confirmDeletion = confirm("Are you sure you want to delete this database?");
+
+            // If the user confirms, proceed with deletion
+            if (confirmDeletion) {
+                // Get the database name from the modal
+                var dbName = $('#modalDbName').text();
+
+                $.ajax({
+                    type: "POST",
+                    url: '/delete_database/' + dbName,
+                    success: function(response) {
+                        console.log(response.message);
+                        // Close the modal
+                        $('#databaseActionModal').modal('hide');
+
+                        // Remove the button for the deleted database
+                        $('button[onclick="selectDatabase(\'' + dbName + '\')"]').remove();
+
+                        var sendButton = $('#messageForm button[type="submit"]');
+                        var messageInput = $('#message');
+
+                        sendButton.prop('disabled', true);
+                        messageInput.attr('placeholder', 'Please select database first before conversing');
+                    },
+                    error: function(error) {
+                        console.log(error);
+                    }
+                });
+
+                updateSendButtonState();
+            } else {
+                // If the user cancels, do nothing
+                console.log("Database deletion cancelled by user.");
+            }
+        });
+
+        $('#addFiles').click(function() {
+            if (!validateFileInput('actionDatabaseFiles')) return;
+
+            $('#databaseActionModal').modal('hide');
+            showOperationModal('Adding documents to database');
+            // Get the database name from the modal
+            var dbName = $('#modalDbName').text();
+
+            // Create a FormData object to store the files and additional data
+            var formData = new FormData();
+            var files = $('#actionDatabaseFiles')[0].files;
+            for (var i = 0; i < files.length; i++) {
+                formData.append('documents[]', files[i]);
+            }
+
+            $.ajax({
+                type: "POST",
+                url: '/add_documents_to_database/' + dbName,
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    console.log(response.message);
+                    // Close the modal
+                    $('#operationModal').modal('hide');
+                },
+                error: function(error) {
+                    console.log(error);
+                }
+            });
+        });
+
+        $('#resetDatabase').click(function() {
+            if (!validateFileInput('actionDatabaseFiles')) return;
+            $('#databaseActionModal').modal('hide');
+            showOperationModal('Resetting database with new documents');
+            // Get the database name from the modal
+            var dbName = $('#modalDbName').text();
+            
+            // Create a FormData object to store the files and additional data
+            var formData = new FormData();
+            var files = $('#actionDatabaseFiles')[0].files;
+            for (var i = 0; i < files.length; i++) {
+                formData.append('documents[]', files[i]);
+            }
+
+            $.ajax({
+                type: "POST",
+                url: '/reset_database/' + dbName,
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    console.log(response.message);
+                    // Close the modal
+                    $('#operationModal').modal('hide');
+                },
+                error: function(error) {
+                    console.log(error);
+                }
+            });
+        });
+
+        // Function to validate file input
+        function validateFileInput(inputId) {
+            var files = $('#' + inputId)[0].files;
+            if (files.length === 0) {
+                showError(inputId, 'Please select a file to upload.');
+                return false;
+            }
+            return true;
+        }
+
+        function showOperationModal(message) {
+            $('#operationMessage').text(message);
+            $('#operationModal').modal('show');
+        }
+
+        // Clear file input error on file selection for both inputs
+        $('#databaseFiles, #actionDatabaseFiles').on('change', function() {
+            if (this.files.length > 0) {
+                $(this).removeClass('is-invalid');
+                $(this).siblings('.invalid-feedback').remove();
+            }
+        });
+
+        // Add event listener for when the 'Create Database' modal is closed
+        $('#createDatabaseModal').on('hidden.bs.modal', function () {
+            // Reset the form inside the modal
+            var form = $(this).find('form')[0];
+            form.reset();
+
+            // Clear any invalid-feedback messages and remove the is-invalid class
+            $(form).find('.is-invalid').removeClass('is-invalid');
+            $(form).find('.invalid-feedback').remove();
+        });
+
+        // Add event listener for when the 'Database Action' modal is closed
+        $('#databaseActionModal').on('hidden.bs.modal', function () {
+            // Reset the form inside the modal
+            $(this).find('form')[0].reset();
+            $(this).find('.is-invalid').removeClass('is-invalid');
+            $(this).find('.invalid-feedback').hide();
+        });
+
+        $('.menu-item').hover(
+            function() {
+                // Mouse enter
+                $(this).find('[data-bs-toggle="tooltip"]').tooltip({
+                    offset: [0, 25] // Offset tooltip 20 pixels up
+                }).tooltip('show');
+            }, function() {
+                // Mouse leave
+                $(this).find('[data-bs-toggle="tooltip"]').tooltip('hide');
+            }
+        );
+    });
+</script>
+
+<script>
+    const toggler = document.querySelector(".toggle-btn");
+    toggler.addEventListener("click",function(){
+        document.querySelector("#sidebar").classList.toggle("collapsed");
+    });
+</script>  
+{% endblock %}
