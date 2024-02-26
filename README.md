@@ -198,7 +198,7 @@ python run_localGPT.py --use_history
 You can store user questions and model responses with flag `--save_qa` into a csv file `/local_chat_history/qa_log.csv`. Every interaction will be stored. 
 
 ```shell
-python run_localGPT.py --qa_save
+python run_localGPT.py --save_qa
 ```
 
 # Run the Graphical User Interface
