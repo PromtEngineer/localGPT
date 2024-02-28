@@ -326,3 +326,48 @@ This is a test project to validate the feasibility of a fully local solution for
        conda uninstall tokenizers, transformers
        pip install transformers
     ```
+
+- punkt not found
+   ```shell
+   **********************************************************************
+      Resource punkt not found.
+      Please use the NLTK Downloader to obtain the resource:
+
+      >>> import nltk
+      >>> nltk.download('punkt')
+
+      For more information see: https://www.nltk.org/data.html
+
+      Attempted to load tokenizers/punkt/english.pickle
+
+      Searched in:
+         - 'C:\\Users\\<username>/nltk_data'
+         - 'C:\\Users\\<username>\\anaconda3\\envs\\localGPT\\nltk_data'
+         - 'C:\\Users\\<username>\\anaconda3\\envs\\localGPT\\share\\nltk_data'
+         - 'C:\\Users\\<username>\\anaconda3\\envs\\localGPT\\lib\\nltk_data'
+         - 'C:\\Users\\<username>\\AppData\\Roaming\\nltk_data'
+         - 'C:\\nltk_data'
+         - 'D:\\nltk_data'
+         - 'E:\\nltk_data'
+         - ''
+      **********************************************************************
+   ```
+   - **Download punkt tokenizer manually from https://www.nltk.org/nltk_data/**
+   - Try switching your network.
+   - [Try suggentions mentioned here](https://github.com/delip/PyTorchNLPBook/issues/14)
+   - It looks like below once you get pass the punkt downloaded
+      ```shell
+         2023-10-18 03:51:13,309 - INFO - ingest.py:121 - Loading documents from C:\Projects\localGPT/SOURCE_DOCUMENTS
+            [nltk_data] Downloading package punkt to
+            [nltk_data]     C:\Users\yoges\AppData\Roaming\nltk_data...
+            [nltk_data]   Unzipping tokenizers\punkt.zip.
+            [nltk_data] Downloading package averaged_perceptron_tagger to
+            [nltk_data]     C:\Users\yoges\AppData\Roaming\nltk_data...
+            [nltk_data]   Unzipping taggers\averaged_perceptron_tagger.zip.
+            2023-10-18 03:51:34,856 - INFO - ingest.py:130 - Loaded 1 documents from C:\Projects\localGPT/SOURCE_DOCUMENTS
+            2023-10-18 03:51:34,856 - INFO - ingest.py:131 - Split into 193 chunks of text
+            2023-10-18 03:51:36,767 - INFO - SentenceTransformer.py:66 - Load pretrained SentenceTransformer:
+            .
+            .
+            .
+      ```
