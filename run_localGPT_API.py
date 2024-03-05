@@ -1,38 +1,38 @@
+import argparse
 import logging
 import os
 import shutil
 import subprocess
-import argparse
+
+# API queue addition
+from threading import Lock
 
 import torch
 from flask import Flask, jsonify, request
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 
-# from langchain.embeddings import HuggingFaceEmbeddings
-from run_localGPT import load_model
-from prompt_template_utils import get_prompt_template
-
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
 from werkzeug.utils import secure_filename
 
-from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
-
-# API queue addition
-from threading import Lock
-
-
 from constants import (
-    EMBEDDING_MODEL_NAME,
-    PERSIST_DIRECTORY,
-    MODEL_ID,
-    MODEL_BASENAME,
-    REVISION,
-    MAX_NEW_TOKENS,
-    MODELS_PATH,
     CHROMA_SETTINGS,
+    EMBEDDING_MODEL_NAME,
+    MAX_NEW_TOKENS,
+    MODEL_BASENAME,
+    MODEL_ID,
+    MODELS_PATH,
+    PERSIST_DIRECTORY,
+    REVISION,
 )
+# default model revision/branch
+REVISION = "main"
+
+from prompt_template_utils import get_prompt_template
+
+# from langchain.embeddings import HuggingFaceEmbeddings
+from run_localGPT import load_model
 
 request_lock = Lock()
 
@@ -82,7 +82,9 @@ RETRIEVER = DB.as_retriever()
 args = None
 parser = argparse.ArgumentParser()
 parser.add_argument("--port", type=int, default=5110, help="Port to run the API on. Defaults to 5110.")
-parser.add_argument("--model_type", type=str, default="llama", help="Model type: llama, mistral, non_llama, hermes, or vicuna.")
+parser.add_argument(
+    "--model_type", type=str, default="llama", help="Model type: llama, mistral, non_llama, hermes, or vicuna."
+)
 parser.add_argument(
     "--host",
     type=str,
@@ -211,8 +213,8 @@ def prompt_route():
     else:
         return "No user prompt received", 400
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
     )

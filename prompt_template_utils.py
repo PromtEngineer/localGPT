@@ -67,17 +67,17 @@ def get_prompt_template(system_prompt=system_prompt, promptTemplate_type=None, h
 
         Context: {context}
         User: {question}"""
-            + E_INST + "\n" + B_INST + "assistant"
+            + E_INST
+            + "\n"
+            + B_INST
+            + "assistant"
         )
         prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
     # A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. USER: {prompt} ASSISTANT:
 
     elif promptTemplate_type == "vicuna":
-
-        prompt_template = (
-        "Context: {context} USER: {question}"+ "ASSISTANT:"
-        )
-        prompt = PromptTemplate(input_variables=["context","question"], template=prompt_template)
+        prompt_template = "Context: {context} USER: {question}" + "ASSISTANT:"
+        prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
 
     else:
         # change this based on the model you have selected.

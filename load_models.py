@@ -7,7 +7,7 @@ if sys.platform != "darwin":
 
 from huggingface_hub import hf_hub_download
 from langchain.llms import LlamaCpp
-from transformers import AutoModelForCausalLM, AutoTokenizer, LlamaForCausalLM, LlamaTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, LlamaForCausalLM, LlamaTokenizer
 
 from constants import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, MODELS_PATH, N_BATCH, N_GPU_LAYERS
 
@@ -145,11 +145,11 @@ def load_full_model(model_id, model_basename, device_type, logging):
         tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir="./models/")
         logging.info("Tokenizer loaded")
         bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16
-                )
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+        )
         model = AutoModelForCausalLM.from_pretrained(
             model_id,
             device_map="auto",
@@ -158,10 +158,10 @@ def load_full_model(model_id, model_basename, device_type, logging):
             cache_dir=MODELS_PATH,
             trust_remote_code=True,  # set these if you are using NVIDIA GPU
             quantization_config=bnb_config
-           # load_in_4bit=True,
-           # bnb_4bit_quant_type="nf4",
-           # bnb_4bit_compute_dtype=torch.float16,
-           # max_memory={0: "15GB"},  # Uncomment this line with you encounter CUDA out of memory errors
+            # load_in_4bit=True,
+            # bnb_4bit_quant_type="nf4",
+            # bnb_4bit_compute_dtype=torch.float16,
+            # max_memory={0: "15GB"},  # Uncomment this line with you encounter CUDA out of memory errors
         )
 
         model.tie_weights()
