@@ -22,8 +22,19 @@ from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, 
 # API queue addition
 from threading import Lock
 
-request_lock = Lock()
 
+from constants import (
+    EMBEDDING_MODEL_NAME,
+    PERSIST_DIRECTORY,
+    MODEL_ID,
+    MODEL_BASENAME,
+    REVISION,
+    MAX_NEW_TOKENS,
+    MODELS_PATH,
+    CHROMA_SETTINGS,
+)
+
+request_lock = Lock()
 
 if torch.backends.mps.is_available():
     DEVICE_TYPE = "mps"
@@ -68,8 +79,22 @@ DB = Chroma(
 
 RETRIEVER = DB.as_retriever()
 
-LLM = load_model(device_type=DEVICE_TYPE, model_id=MODEL_ID, model_basename=MODEL_BASENAME)
-prompt, memory = get_prompt_template(promptTemplate_type="llama", history=False)
+args = None
+parser = argparse.ArgumentParser()
+parser.add_argument("--port", type=int, default=5110, help="Port to run the API on. Defaults to 5110.")
+parser.add_argument("--model_type", type=str, default="llama", help="Model type: llama, mistral, non_llama, hermes, or vicuna.")
+parser.add_argument(
+    "--host",
+    type=str,
+    default="127.0.0.1",
+    help="Host to run the UI on. Defaults to 127.0.0.1. "
+    "Set to 0.0.0.0 to make the UI externally "
+    "accessible from other devices.",
+)
+args = parser.parse_args()
+
+LLM = load_model(device_type=DEVICE_TYPE, model_id=MODEL_ID, revision=REVISION, model_basename=MODEL_BASENAME)
+prompt, memory = get_prompt_template(promptTemplate_type=args.model_type, history=False)
 
 QA = RetrievalQA.from_chain_type(
     llm=LLM,
@@ -166,7 +191,7 @@ def prompt_route():
     if user_prompt:
         # Acquire the lock before processing the prompt
         with request_lock:
-            # print(f'User Prompt: {user_prompt}')              
+            # print(f'User Prompt: {user_prompt}')
             # Get the answer from the chain
             res = QA(user_prompt)
             answer, docs = res["result"], res["source_documents"]
@@ -186,19 +211,7 @@ def prompt_route():
     else:
         return "No user prompt received", 400
 
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=5110, help="Port to run the API on. Defaults to 5110.")
-    parser.add_argument(
-        "--host",
-        type=str,
-        default="127.0.0.1",
-        help="Host to run the UI on. Defaults to 127.0.0.1. "
-        "Set to 0.0.0.0 to make the UI externally "
-        "accessible from other devices.",
-    )
-    args = parser.parse_args()
 
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO

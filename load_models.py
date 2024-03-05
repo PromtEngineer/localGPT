@@ -60,7 +60,7 @@ def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, loggin
         return None
 
 
-def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
+def load_quantized_model_qptq(model_id, revision, model_basename, device_type, logging):
     """
     Load a GPTQ quantized model using AutoGPTQForCausalLM.
 
@@ -102,6 +102,7 @@ def load_quantized_model_qptq(model_id, model_basename, device_type, logging):
 
     model = AutoGPTQForCausalLM.from_quantized(
         model_id,
+        revision=revision,
         model_basename=model_basename,
         use_safetensors=True,
         trust_remote_code=True,

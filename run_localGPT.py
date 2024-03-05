@@ -33,13 +33,14 @@ from constants import (
     PERSIST_DIRECTORY,
     MODEL_ID,
     MODEL_BASENAME,
+    REVISION,
     MAX_NEW_TOKENS,
     MODELS_PATH,
     CHROMA_SETTINGS,
 )
 
 
-def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
+def load_model(device_type, model_id, revision=None, model_basename=None, LOGGING=logging):
     """
     Select a model for text generation using the HuggingFace library.
     If you are running this for the first time, it will download a model for you.
@@ -69,7 +70,7 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
         elif ".awq" in model_basename.lower():
             model, tokenizer = load_quantized_model_awq(model_id, LOGGING)
         else:
-            model, tokenizer = load_quantized_model_qptq(model_id, model_basename, device_type, LOGGING)
+            model, tokenizer = load_quantized_model_qptq(model_id, revision, model_basename, device_type, LOGGING)
     else:
         model, tokenizer = load_full_model(model_id, model_basename, device_type, LOGGING)
 
@@ -122,7 +123,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
 
     """
     (1) Chooses an appropriate langchain library based on the enbedding model name.  Matching code is contained within ingest.py.
-    
+
     (2) Provides additional arguments for instructor and BGE models to improve results, pursuant to the instructions contained on
     their respective huggingface repository, project page or github repository.
     """
@@ -139,7 +140,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type, history=use_history)
 
     # load the llm pipeline
-    llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
+    llm = load_model(device_type, model_id=MODEL_ID, revision=REVISION, model_basename=MODEL_BASENAME, LOGGING=logging)
 
     if use_history:
         qa = RetrievalQA.from_chain_type(
@@ -211,7 +212,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     "--model_type",
     default="llama",
     type=click.Choice(
-        ["llama", "mistral", "non_llama"],
+        ["llama", "mistral", "non_llama", "hermes", "vicuna"],
     ),
     help="model type, llama, mistral or non_llama",
 )

@@ -142,12 +142,16 @@ MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
 ##### 24GB VRAM Graphics Cards (RTX 3090 - RTX 4090 (35% Faster) - RTX A5000 - RTX A5500) #####
 
 ### 13b GPTQ Models for 24GB GPUs (*** With best embedding model: hkunlp/instructor-xl ***)
-# MODEL_ID = "TheBloke/Wizard-Vicuna-13B-Uncensored-GPTQ"
-# MODEL_BASENAME = "Wizard-Vicuna-13B-Uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+# FAILS/blank answers
+#MODEL_ID = "TheBloke/Wizard-Vicuna-13B-Uncensored-GPTQ"
+#MODEL_BASENAME = "model.safetensors"
+
 # MODEL_ID = "TheBloke/vicuna-13B-v1.5-GPTQ"
 # MODEL_BASENAME = "model.safetensors"
+
 # MODEL_ID = "TheBloke/Nous-Hermes-13B-GPTQ"
 # MODEL_BASENAME = "nous-hermes-13b-GPTQ-4bit-128g.no-act.order"
+
 # MODEL_ID = "TheBloke/WizardLM-13B-V1.2-GPTQ"
 # MODEL_BASENAME = "gptq_model-4bit-128g.safetensors
 
@@ -161,10 +165,12 @@ MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
 ### (*** Requires using intfloat/e5-small-v2 instead of hkunlp/instructor-large as embedding model ***)
 
 ### 7b GPTQ Models for 8GB GPUs
-# MODEL_ID = "TheBloke/Wizard-Vicuna-7B-Uncensored-GPTQ"
-# MODEL_BASENAME = "Wizard-Vicuna-7B-Uncensored-GPTQ-4bit-128g.no-act.order.safetensors"
+#MODEL_ID = "TheBloke/Wizard-Vicuna-7B-Uncensored-GPTQ"
+#MODEL_BASENAME = "model.safetensors"
+
 # MODEL_ID = "TheBloke/WizardLM-7B-uncensored-GPTQ"
 # MODEL_BASENAME = "WizardLM-7B-uncensored-GPTQ-4bit-128g.compat.no-act-order.safetensors"
+
 # MODEL_ID = "TheBloke/wizardLM-7B-GPTQ"
 # MODEL_BASENAME = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"
 
@@ -184,5 +190,36 @@ MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
 ### (*** MODEL_BASENAME is not actually used but have to contain .awq so the correct model loading is used ***)
 ### (*** Compute capability 7.5 (sm75) and CUDA Toolkit 11.8+ are required ***)
 ####
-# MODEL_ID = "TheBloke/Llama-2-7B-Chat-AWQ"
-# MODEL_BASENAME = "model.safetensors.awq"
+#WORKS
+#MODEL_ID = "TheBloke/Llama-2-7B-Chat-AWQ"
+#MODEL_BASENAME = "model.safetensors.awq"
+
+# FAILS
+# torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 28.00 MiB (GPU 0; 23.62 GiB total capacity; 19.95 GiB already allocated; 50.75 MiB free; 19.95 GiB reserved in total by PyTorch) If reserved memory is >> allocated memory try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF
+
+#MODEL_ID = "TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ"
+#MODEL_BASENAME = "model.safetensors"
+
+# WORKS
+#MODEL_ID = "TheBloke/Mixtral-8x7B-Instruct-v0.1-GGUF"
+#MODEL_BASENAME = "mixtral-8x7b-instruct-v0.1.Q4_K_M.gguf"
+
+# LOADS Forever
+#MODEL_ID = "TheBloke/Mixtral-8x7B-Instruct-v0.1-GPTQ"
+#MODEL_BASENAME = "model.safetensors"
+
+# for GGUF/GGML models
+# pip install llama-cpp-python --force-reinstall --upgrade --no-cache-dir
+
+# WORKS
+#MODEL_ID = "TheBloke/CapybaraHermes-2.5-Mistral-7B-GPTQ"
+#MODEL_BASENAME = "model.safetensors"
+
+# WORKS BUT CHAT ONLY
+#MODEL_ID = "TheBloke/Llama-2-13B-chat-GPTQ"
+#MODEL_BASENAME = "model.safetensors"
+
+# WORKS, testing REVISION
+MODEL_ID = "TheBloke/vicuna-13B-v1.5-16K-GPTQ"
+MODEL_BASENAME = "model.safetensors"
+REVISION = "main"
