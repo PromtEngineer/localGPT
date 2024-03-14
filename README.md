@@ -103,10 +103,11 @@ LocalGPT currently supports the following file formats. LocalGPT uses `LangChain
 
 ```shell
 DOCUMENT_MAP = {
+    ".html": UnstructuredHTMLLoader,
     ".txt": TextLoader,
-    ".md": TextLoader,
+    ".md": UnstructuredMarkdownLoader,
     ".py": TextLoader,
-    ".pdf": PDFMinerLoader,
+    ".pdf": UnstructuredFileLoader,
     ".csv": CSVLoader,
     ".xls": UnstructuredExcelLoader,
     ".xlsx": UnstructuredExcelLoader,
