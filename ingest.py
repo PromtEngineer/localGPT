@@ -11,7 +11,7 @@ from langchain.embeddings import HuggingFaceInstructEmbeddings, HuggingFaceBgeEm
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 
-from config import (
+from constants import (
     CHROMA_SETTINGS,
     DOCUMENT_MAP,
     EMBEDDING_MODEL_NAME,

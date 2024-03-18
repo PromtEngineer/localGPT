@@ -8,7 +8,7 @@ from transformers import (
     AutoTokenizer,
     LlamaTokenizer
 )
-from config import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, N_GPU_LAYERS, N_BATCH, MODELS_PATH, INGEST_THREADS
+from constants import CONTEXT_WINDOW_SIZE, MAX_NEW_TOKENS, N_GPU_LAYERS, N_BATCH, MODELS_PATH, INGEST_THREADS
 
 
 def load_quantized_model_gguf_ggml(model_id, model_basename, device_type, logging):
@@ -92,7 +92,8 @@ def load_quantized_model_qptq(model_id, device_type, logging):
     model = AutoModelForCausalLM.from_pretrained(model_id,
                                                 device_map="auto",
                                                 trust_remote_code=False,
-                                                revision="gptq-4bit-32g-actorder_True")
+                                                # revision="gptq-4bit-32g-actorder_True"
+                                                )
     
     model = exllama_set_max_input_length(model, CONTEXT_WINDOW_SIZE)
 

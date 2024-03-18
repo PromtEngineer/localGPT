@@ -1,0 +1,15 @@
+# ==== black ====
+[tool.black]
+line-length = 119
+target-version = ['py311']
+
+
+# ==== isort ====
+[tool.isort]
+profile = "black"
+line_length = 119
+known_first_party = [
+    "tests",
+    "scripts",
+    "hooks",
+]

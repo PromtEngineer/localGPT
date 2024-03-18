@@ -1,0 +1,55 @@
+# Natural Language Processing
+langchain==0.0.353
+chromadb==0.4.21
+transformers==4.36.2
+torch==2.1.2+cu118 --find-links https://download.pytorch.org/whl/cu118
+torchvision==0.16.2+cu118 --find-links https://download.pytorch.org/whl/cu118
+torchaudio==2.1.2+cu118 --find-links https://download.pytorch.org/whl/cu118
+faiss-cpu
+autoawq; sys_platform != 'darwin'
+protobuf==3.20.2; sys_platform != 'darwin'
+protobuf==3.20.2; sys_platform == 'darwin' and platform_machine != 'arm64'
+protobuf==3.20.3; sys_platform == 'darwin' and platform_machine == 'arm64'
+# For auto-gptq, specify the extra index URL in your pip configuration
+# pip install auto-gptq --extra-index-url https://huggingface.github.io/autogptq-index/whl/cu118/
+auto-gptq==0.6.0; sys_platform != 'darwin'
+sentence-transformers==2.2.2
+optimum==1.16.1
+InstructorEmbedding
+
+# Document Ingestion Utilities
+unstructured==0.11.6
+unstructured[pdf] # This requires manual handling to install the pdf extra
+nltk==3.8.1 # Uncomment this line if you wish to include it
+pdf2image==1.16.3 # Uncomment this line if you wish to include it
+pdfminer.six==20231228 # Uncomment this line if you wish to include it
+unstructured-inference==0.7.20 # Uncomment this line if you wish to include it
+opencv-python==4.9.0.80
+docx2txt==0.8
+pypandoc==1.12 # you need sudo apt-get install pandoc
+
+# OCR Ingestion Utilities
+# For paddlepaddle-gpu, you need to configure pip to use the Tsinghua University index (-i https://pypi.tuna.tsinghua.edu.cn/simple)
+# pip install paddlepaddle-gpu==2.6.0 -i https://pypi.tuna.tsinghua.edu.cn/simple
+paddlepaddle-gpu==2.6.0
+paddleocr==2.7.0.3
+
+# Utilities
+urllib3==1.26.6
+accelerate
+bitsandbytes ; sys_platform != 'win32'
+bitsandbytes-windows ; sys_platform == 'win32'
+click
+Flask==3.0.0
+requests
+
+# Excel File Manipulation
+openpyxl
+
+
+
+
+
+
+
+
