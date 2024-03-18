@@ -1,10 +1,10 @@
 import os
-
+import json
 # from dotenv import load_dotenv
 from chromadb.config import Settings
 
 # https://python.langchain.com/en/latest/modules/indexes/document_loaders/examples/excel.html?highlight=xlsx#microsoft-excel
-from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader, Docx2txtLoader
+from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader, Docx2txtLoader,JSONLoader
 from langchain.document_loaders import UnstructuredFileLoader, UnstructuredMarkdownLoader
 from langchain.document_loaders import UnstructuredHTMLLoader
 
@@ -40,7 +40,43 @@ N_BATCH = 512
 ### From experimenting with the Llama-2-7B-Chat-GGML model on 8GB VRAM, these values work:
 # N_GPU_LAYERS = 20
 # N_BATCH = 512
-
+class JSONArrayLoader:
+    def _init_(self, file_path:str,jq_schema:str = ".",text_content:bool = True):
+        self.file_path = file_path
+        self.jq_schema = jq_schema
+        self.text_content = text_content
+        
+    def load(self):
+        documents = []
+        with open(self.file_path, encoding = "utf-8") as json_file:
+            raw_data = json_file.read()
+        try:
+            data = json.loads(raw_data)
+            if not isinstance(data,list):
+                raise ValueError("JSON file at {} should contain a list of documents.".format(self.file_path))
+                
+                for entry in data:
+                    if not isinstance(entry,dict):
+                        raise ValueError("Each entry in the JSON file at {} should be a dictionary.".format(self.file_path))
+                        
+                    entry_schema = self.jq_schema
+                    if self.text_content:
+                        entry_schema = f".{entry_schema}"
+                    loader = JSONLoader(
+                            file_path = self.file_path,
+                            jq_schema = entry_schema,
+                            text_content = self.text_content,
+                        )
+                    documents.append(loader.load()[0])
+                return documents
+            except:
+                loader = JSONLoader(
+                    file_path = self.file_path,
+                    jq_schema = self.jq_schema,
+                    text_content = self.text_content,
+                )
+                return loader.load()
+                        
 
 # https://python.langchain.com/en/latest/_modules/langchain/document_loaders/excel.html#UnstructuredExcelLoader
 DOCUMENT_MAP = {
@@ -55,6 +91,7 @@ DOCUMENT_MAP = {
     ".xlsx": UnstructuredExcelLoader,
     ".docx": Docx2txtLoader,
     ".doc": Docx2txtLoader,
+    ".json":JSONArrayLoader
 }
 
 # Default Instructor Model
