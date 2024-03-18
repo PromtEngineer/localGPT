@@ -4,7 +4,7 @@ from flask import Flask, jsonify, request
 from werkzeug.utils import secure_filename
 import json
 
-from config import (
+from constants import (
     SOURCE_DIRECTORY
 )
 
@@ -102,7 +102,7 @@ from load_models import (
     load_full_model,
 )
 
-from config import (
+from constants import (
     CHROMA_SETTINGS,
     EMBEDDING_MODEL_NAME,
     PERSIST_DIRECTORY,
