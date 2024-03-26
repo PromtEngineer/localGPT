@@ -93,7 +93,8 @@ Run as `docker run -it --mount src="$HOME/.cache",target=/root/.cache,type=bind 
 
 ## Test dataset
 
-For testing, this repository comes with [Constitution of USA](https://constitutioncenter.org/media/files/constitution.pdf) as an example file to use.
+For testing, this repository comes with [Orca: Progressive Learning from Complex
+Explanation Traces of GPT-4 - Research Paper](https://github.com/PromtEngineer/localGPT/blob/main/SOURCE_DOCUMENTS/Orca_paper.pdf) as an example file to use.
 
 ## Ingesting your OWN Data.
 Put your files in the `SOURCE_DOCUMENTS` folder. You can put multiple folders within the `SOURCE_DOCUMENTS` folder and the code will recursively read your files.
