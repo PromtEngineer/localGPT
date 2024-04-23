@@ -1,5 +1,8 @@
 # Natural Language Processing
-langchain==0.0.267
+#langchain==0.0.267   
+langchain   #For Groc Support
+langchain-groq   #For Groc Support
+
 chromadb==0.4.6
 pdfminer.six==20221105
 InstructorEmbedding

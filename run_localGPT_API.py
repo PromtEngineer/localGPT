@@ -16,11 +16,15 @@ from prompt_template_utils import get_prompt_template
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
 from werkzeug.utils import secure_filename
+from langchain_groq import ChatGroq
+import utils
+
 
 from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
 
 # API queue addition
 from threading import Lock
+
 
 request_lock = Lock()
 
@@ -32,7 +36,53 @@ elif torch.cuda.is_available():
 else:
     DEVICE_TYPE = "cpu"
 
+# Global variables for parameters
 SHOW_SOURCES = True
+SAVE_QA = False
+EXTERNAL_LLM = True
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--port", type=int, default=5110, help="Port to run the API on. Defaults to 5110.")
+parser.add_argument(
+    "--host",
+    type=str,
+    default="127.0.0.1",
+    help="Host to run the UI on. Defaults to 127.0.0.1. "
+    "Set to 0.0.0.0 to make the UI externally "
+    "accessible from other devices.",
+)
+parser.add_argument("--save_qa", action="store_true", help="Whether to save Q&A pairs to a CSV file.")
+parser.add_argument("--hide_sources", action="store_true", help="Whether to hide the source of documents.")
+parser.add_argument("--external_llm", action="store_true", help="Whether to load llm from Locally or from Groq.")
+args = parser.parse_args()
+
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
+)
+
+# Assigning the value of save_qa to the global variable
+if args.save_qa:
+    SAVE_QA = True
+else:
+    SAVE_QA = False
+
+logging.info(f"Save Question & Answer: {SAVE_QA}")
+
+if args.external_llm:
+    EXTERNAL_LLM = True
+else:
+    EXTERNAL_LLM = False  # Use from GROQ or extrenal LLM API
+
+logging.info(f"Use External LLM: {EXTERNAL_LLM}")
+
+if args.hide_sources:
+    SHOW_SOURCES = False
+else:
+    SHOW_SOURCES = True
+
+logging.info(f"Display Source Documents set to: {SHOW_SOURCES}")
+
+
 logging.info(f"Running on: {DEVICE_TYPE}")
 logging.info(f"Display Source Documents set to: {SHOW_SOURCES}")
 
@@ -68,7 +118,16 @@ DB = Chroma(
 
 RETRIEVER = DB.as_retriever()
 
-LLM = load_model(device_type=DEVICE_TYPE, model_id=MODEL_ID, model_basename=MODEL_BASENAME)
+if EXTERNAL_LLM:
+    print("\n\n*******Let us use the LLM from Groq")
+    LLM = ChatGroq(
+        groq_api_key="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",
+        model_name='llama3-70b-8192'
+    )
+else:
+    print("\n\n*******Let us use the local LLM ")
+    LLM = load_model(device_type=DEVICE_TYPE, model_id=MODEL_ID, model_basename=MODEL_BASENAME)
+
 prompt, memory = get_prompt_template(promptTemplate_type="llama", history=False)
 
 QA = RetrievalQA.from_chain_type(
@@ -160,21 +219,27 @@ def run_ingest_route():
 
 @app.route("/api/prompt_route", methods=["GET", "POST"])
 def prompt_route():
-    global QA
+    global QA, SAVE_QA
     global request_lock  # Make sure to use the global lock instance
     user_prompt = request.form.get("user_prompt")
     if user_prompt:
         # Acquire the lock before processing the prompt
         with request_lock:
-            # print(f'User Prompt: {user_prompt}')              
+            # print(f'User Prompt: {user_prompt}')
             # Get the answer from the chain
             res = QA(user_prompt)
-            answer, docs = res["result"], res["source_documents"]
+            # answer, docs = res["result"], res["source_documents"]
+            answer = res.get("result", "")  # Get the answer, default to empty string if not available
+            docs = res.get("source_documents", [])  # Get source documents, default to empty list if not available
 
             prompt_response_dict = {
                 "Prompt": user_prompt,
                 "Answer": answer,
             }
+
+            if (SAVE_QA):
+                print(f'User Prompt: {user_prompt}')
+                utils.log_to_csv(user_prompt, answer)
 
             prompt_response_dict["Sources"] = []
             for document in docs:
@@ -188,19 +253,4 @@ def prompt_route():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=5110, help="Port to run the API on. Defaults to 5110.")
-    parser.add_argument(
-        "--host",
-        type=str,
-        default="127.0.0.1",
-        help="Host to run the UI on. Defaults to 127.0.0.1. "
-        "Set to 0.0.0.0 to make the UI externally "
-        "accessible from other devices.",
-    )
-    args = parser.parse_args()
-
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
-    )
     app.run(debug=False, host=args.host, port=args.port)
