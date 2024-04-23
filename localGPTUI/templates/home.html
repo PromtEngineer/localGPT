@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <!-- Required meta tags -->
@@ -6,16 +6,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- Bootstrap CSS -->
 
+    <link
+      rel="stylesheet"
+      href="static/dependencies/bootstrap-5.1.3-dist/css/bootstrap.min.css"
+    />
+    <!-- Font Awesome CSS -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"
+    />
 
-   <link rel="stylesheet" href="static/dependencies/bootstrap-5.1.3-dist/css/bootstrap.min.css" />
-<!-- Font Awesome CSS -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
+    <script
+      src="https://code.jquery.com/jquery-3.6.0.js"
+      integrity="sha256-H+K7U5CnXl1h5ywQfKtSj8PCmoN9aaq30gDh27Xc0jk="
+      crossorigin="anonymous"
+    ></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3"
+      crossorigin="anonymous"
+    />
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p"
+      crossorigin="anonymous"
+    ></script>
 
-   <script src="https://code.jquery.com/jquery-3.6.0.js" integrity="sha256-H+K7U5CnXl1h5ywQfKtSj8PCmoN9aaq30gDh27Xc0jk=" crossorigin="anonymous"></script>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
-
-    <title> ChatBot</title>
+    <title>ChatBot</title>
   </head>
   <script>
     function openFileSelection() {
@@ -29,7 +47,7 @@
       // You can perform some checks on the files here if you want
       // Open the modal after file selection
       const uploadModal = new bootstrap.Modal(
-        document.getElementById("uploadModal"),
+        document.getElementById("uploadModal")
       );
       uploadModal.show();
     }
@@ -39,7 +57,7 @@
       $("#responseModal").modal("show");
 
       // Submit the form after a short delay to allow the modal to open
-   setTimeout(function () {
+      setTimeout(function () {
         document.getElementById("promptForm").submit();
       }, 5);
     }
@@ -77,80 +95,84 @@
     body {
       background-image: linear-gradient(to left top, #bebebe, #000000);
       display: flex;
-        flex-direction: column;
-        height: 600px;
-        width: 400px;
-        position: fixed;
-        bottom: 0px;
-          right: 30px;
-        border-radius: 8px 8px 0px 0px;
+      flex-direction: column;
+      height: 600px;
+      width: 400px;
+      position: fixed;
+      bottom: 0px;
+      right: 30px;
+      border-radius: 8px 8px 0px 0px;
       justify-content: center;
       align-items: center;
     }
-     #chatbotTrigger {
-  cursor: pointer;
-  position: fixed;
-  bottom: 10px;
-  right: 20px;
-  width: 50px;
-  height: auto;
-  font-size: 70px;
-  color:  rgb(109, 131, 243);
-}
-   .appContainer {
-        display: none;
-        flex-direction: column;
-        height: 600px;
-        width: 400px;
-        position: fixed;
-        bottom: 0px;
-        right: 65px;
-        border-radius: 8px 8px 0px 0px;
-      }
-      .appContainer .header {
-        height: 48px;
-        min-height: 48px;
-        flex-grow: 0;
-        background-color: rgb(109, 131, 243);
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 20px; /* Adjust the value to set the desired font size */
-       margin: 0;
-      }
 
-            .appContainer .content {
-        flex-grow: 1;
-        background-color: rgb(193, 193, 180);
-        5
-      }
+    #chatbotTrigger {
+      cursor: pointer;
+      position: fixed;
+      bottom: 10px;
+      right: 20px;
+      width: 50px;
+      height: auto;
+      font-size: 70px;
+      color: rgb(109, 131, 243);
+    }
+
+    .appContainer {
+      display: none;
+      flex-direction: column;
+      height: 600px;
+      width: 400px;
+      position: fixed;
+      bottom: 0px;
+      right: 65px;
+      border-radius: 8px 8px 0px 0px;
+      background-color: rgb(207, 211, 205);
+    }
+
+    .appContainer .header {
+      height: 48px;
+      min-height: 48px;
+      flex-grow: 0;
+      background-color: rgb(109, 131, 243);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      /* Adjust the value to set the desired font size */
+      margin: 0;
+    }
+
+    .appContainer .content {
+      flex-grow: 1;
+      background-color: rgb(193, 193, 180);
+    }
+
     .modal {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
 
-.modal-dialog{
-  margin:auto;
-  width: fit-content;
-}
+    .modal-dialog {
+      margin: auto;
+      width: fit-content;
+    }
 
-.modal-content {
-  width:fit-content;
-  max-width: 800px; /* Adjust max-width as needed */
-}
-
+    .modal-content {
+      width: fit-content;
+      max-width: 800px;
+      /* Adjust max-width as needed */
+    }
 
     .search {
-      box-shadow:
-        inset 0 1px 1px rgba(0, 0, 0, 0.075),
+      box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075),
         0 0 8px rgba(255, 0, 0, 0.6);
       background-color: #fff;
       padding: 4px;
       border-radius: 5px;
-      width:390px;
+      width: 390px;
       position: fixed;
       bottom: 0;
       right: 10;
@@ -168,7 +190,7 @@
     }
 
     .search-2 input {
-   height: 45px;
+      height: 45px;
       border: none;
       width: 100%;
       padding-left: 0px;
@@ -191,7 +213,7 @@
 
     .search-2 button {
       position: absolute;
-      right:0px;
+      right: 0px;
       top: 0px;
       border: none;
       height: 45px;
@@ -211,10 +233,10 @@
     .search-2 .upload_button {
       position: absolute;
       right: 1px;
-     top: 0px;
+      top: 0px;
       border: none;
       height: 45px;
-      background-color: rgb(111, 143, 247);;
+      background-color: rgb(111, 143, 247);
       color: #fff;
       width: 90px;
       border-radius: 4px;
@@ -239,7 +261,7 @@
     .default_button {
       border: none;
       height: 45px;
-      background-color: rgb(111, 143, 247);;
+      background-color: rgb(111, 143, 247);
       color: #fff;
       width: 90px;
       border-radius: 4px;
@@ -254,7 +276,7 @@
 
     .upload_button:hover {
       background: #d2042d;
-        color: #ffffff;
+      color: #ffffff;
       transition: all 0.2s ease;
       cursor: pointer;
     }
@@ -280,8 +302,7 @@
 
     .form-control:focus {
       border-color: #bc13cf;
-      box-shadow:
-        inset 0 1px 1px rgba(0, 0, 0, 0.075),
+      box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075),
         0 0 8px rgba(255, 0, 0, 0.6);
     }
 
@@ -297,7 +318,7 @@
       .search-2 button {
         height: 37px;
         top: 5px;
-         }
+      }
 
       .search-2 .tutorial_button {
         height: 37px;
@@ -338,22 +359,41 @@
       box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.125);
     }
   </style>
+
   <body>
-         <!-- <img src="static/social_icons/chat.png" alt="Chatbot Trigger" id="chatbotTrigger">-->
-   <i class="fas fa-comment"  alt="Chatbot Trigger"  id="chatbotTrigger"></i>
-    <div class="appContainer" id="chatbotContainer" >
-     <div class="header">Chatbot</div>
+    <!-- need to check how to enable -->
+    <form
+      id="uploadForm"
+      action="{{ url_for('home_page') }}"
+      method="POST"
+      enctype="multipart/form-data"
+    >
+      <input
+        type="file"
+        name="documents"
+        id="fileInput"
+        style="display: none"
+        multiple
+      />
+      <button type="button" class="upload_button" onclick="openFileSelection()">
+        Upload Doc to Scan
+      </button>
+    </form>
+    <!-- <img src="static/social_icons/chat.png" alt="Chatbot Trigger" id="chatbotTrigger">-->
+    <i class="fas fa-comment" alt="Chatbot Trigger" id="chatbotTrigger"></i>
+    <div class="appContainer" id="chatbotContainer">
+      <div class="header">Chatbot</div>
       <div class="content">
-      <div class="search">
-        <div class="row">
-          <div class="col-md-12">
-            <div class="search-2">
-              <form
-                id="promptForm"
-                action="{{ url_for('home_page') }}"
-                method="POST"
-              >
-            <!--    <button
+        <div class="search">
+          <div class="row">
+            <div class="col-md-12">
+              <div class="search-2">
+                <form
+                  id="promptForm"
+                  action="{{ url_for('home_page') }}"
+                  method="POST"
+                >
+                  <!--    <button
                   type="button"
                   class="tutorial_button"
                   data-bs-toggle="modal"
@@ -361,44 +401,23 @@
                 >
                   Tutorial
                 </button>-->
-                <i class="bx bxs-map"></i>
-                <input
-                  type="text"
-                  name="user_prompt"
-                  id="searchInput"
-                  placeholder="Tell a summary of what you know?"
-                />
-                <button type="button" onclick="submitPromptForm()">
-                  Search
-                </button>
-              </form>
-              <form
-                id="uploadForm"
-                action="{{ url_for('home_page') }}"
-                method="POST"
-                enctype="multipart/form-data"
-              >
-                <input
-                  type="file"
-                  name="documents"
-                  id="fileInput"
-                  style="display: none"
-                     multiple
-                />
-               <!-- <button
-                  type="button"
-                  class="upload_button"
-                  onclick="openFileSelection()"
-                >
-                  Upload
-               </button>-->
-              </form>
+                  <i class="bx bxs-map"></i>
+                  <input
+                    type="text"
+                    name="user_prompt"
+                    id="searchInput"
+                    placeholder="Tell a summary of what you know?"
+                  />
+                  <button type="button" onclick="submitPromptForm()">
+                    Search
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-
     <!-- For some reason the script needs to go here to make the the enter key also trigger the generating response modal -->
     <script>
       document
@@ -409,25 +428,23 @@
             submitPromptForm(); // Call the function to show the modal
           }
         });
-        document.addEventListener("DOMContentLoaded", function() {
-  // Image trigger element
-  var chatbotTrigger = document.getElementById("chatbotTrigger");
+      document.addEventListener("DOMContentLoaded", function () {
+        // Image trigger element
+        var chatbotTrigger = document.getElementById("chatbotTrigger");
 
-  // Chatbot container element
-  var chatbotContainer = document.getElementById("chatbotContainer");
+        // Chatbot container element
+        var chatbotContainer = document.getElementById("chatbotContainer");
 
-
-  // Event listener for image click
-  chatbotTrigger.addEventListener("click", function() {
-       // Show/hide the chatbot container
-    if (chatbotContainer.style.display === "none") {
-      chatbotContainer.style.display = "flex"; // or "block" depending on your layout
-    } else {
-      chatbotContainer.style.display = "none";
-    }
-  });
-});
-
+        // Event listener for image click
+        chatbotTrigger.addEventListener("click", function () {
+          // Show/hide the chatbot container
+          if (chatbotContainer.style.display === "flex") {
+            chatbotContainer.style.display = "none"; // or "block" depending on your layout
+          } else {
+            chatbotContainer.style.display = "flex";
+          }
+        });
+      });
     </script>
 
     <!-- Chat Response Modal -->
@@ -436,7 +453,7 @@
       id="response_modal"
       tabindex="-1"
       aria-labelledby="response_modal"
-     data-bs-backdrop="false"
+      data-bs-backdrop="false"
       aria-hidden="true"
     >
       <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -461,7 +478,7 @@
               {{response_dict['Answer']}}
             </p>
 
-           <!-- <strong>Sources</strong>
+            <!-- <strong>Sources</strong>
             <div
               class="accordion"
               id="accordionExample"
@@ -512,7 +529,7 @@
               type="button"
               class="default_button"
               data-bs-dismiss="modal"
-                 >
+            >
               Close
             </button>
           </div>
@@ -555,7 +572,7 @@
       aria-labelledby="uploadModalLabel"
       aria-hidden="true"
     >
-   <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
           <div class="modal-header justify-content-center">
             <h5
@@ -598,7 +615,7 @@
             >
               Add
             </button>
-              <button
+            <button
               type="submit"
               name="button_clicked"
               value="reset_document"
@@ -641,7 +658,7 @@
       class="modal fade"
       id="tutorial_modal"
       tabindex="-1"
-  aria-labelledby="tutorial_modal"
+      aria-labelledby="tutorial_modal"
       aria-hidden="true"
     >
       <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -659,11 +676,11 @@
             <strong style="margin-left: 5%; text-align: left">About</strong>
             <br />
             <p style="text-align: justify; margin-left: 5%; margin-right: 5%">
-              Introducing an application that empowers users to
-              leverage the capabilities of a language model, even in the absence
-              of an internet connection. This advanced tool serves as an
-              indispensable resource for accessing information beyond the
-              confines of traditional language model tools such as chatGPT.
+              Introducing an application that empowers users to leverage the
+              capabilities of a language model, even in the absence of an
+              internet connection. This advanced tool serves as an indispensable
+              resource for accessing information beyond the confines of
+              traditional language model tools such as chatGPT.
               <br /><br />
               One of the key advantages of this application is the preservation
               of data control. This feature becomes particularly valuable when
@@ -684,7 +701,7 @@
               utilization. Unlike the resource-intensive retraining processes
               employed by alternative methods, the ingestion of documents within
               this application demands significantly less compute power. This
-               efficiency optimization allows for a streamlined user experience,
+              efficiency optimization allows for a streamlined user experience,
               saving both time and computational resources.
               <br /><br />
               Discover the unparalleled capabilities of this technical marvel,
@@ -753,9 +770,10 @@
                 text-align: left;
               "
             >
-              1. In order to ask a question, type a question into the search bar.
+              1. In order to ask a question, type a question into the search
+              bar.
               <br />
-             <!-- 2.
+              <!-- 2.
               <span style="background-color: gray; color: white"
                 >Give me a summary of the documents</span
                 >
@@ -770,7 +788,7 @@
               as context from your documents; you can then ask another question
               without re-running the script, just wait for the prompt again.
             </p>
- <br />
+            <br />
           </div>
           <div class="modal-footer justify-content-center">
             <button
@@ -786,4 +804,3 @@
     </div>
   </body>
 </html>
-
