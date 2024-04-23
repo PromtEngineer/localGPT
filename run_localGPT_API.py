@@ -120,10 +120,7 @@ RETRIEVER = DB.as_retriever()
 
 if EXTERNAL_LLM:
     print("\n\n*******Let us use the LLM from Groq")
-    LLM = ChatGroq(
-        groq_api_key="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",
-        model_name='llama3-70b-8192'
-    )
+    LLM = ChatGroq(model_name='llama3-70b-8192')
 else:
     print("\n\n*******Let us use the local LLM ")
     LLM = load_model(device_type=DEVICE_TYPE, model_id=MODEL_ID, model_basename=MODEL_BASENAME)
