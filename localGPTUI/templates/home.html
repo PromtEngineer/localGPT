@@ -120,13 +120,13 @@
     .appContainer {
       display: none;
       flex-direction: column;
-      height: 600px;
-      width: 400px;
+      height: 80%;
+      width: 80%;
       position: fixed;
       bottom: 0px;
       right: 65px;
       border-radius: 8px 8px 0px 0px;
-      background-color: rgb(207, 211, 205);
+      background-color: rgb(223, 238, 215);
     }
 
     .appContainer .header {
@@ -148,7 +148,7 @@
       background-color: rgb(193, 193, 180);
     }
 
-    .modal {
+    .modal1 {
       position: absolute;
       top: 50%;
       left: 50%;
@@ -156,13 +156,16 @@
     }
 
     .modal-dialog {
+      width: 1400px;
       margin: auto;
-      width: fit-content;
+      /* width: fit-content; */
     }
 
     .modal-content {
-      width: fit-content;
-      max-width: 800px;
+      width: 1400px;
+
+      /* width: fit-content; */
+      /* max-width: 80%; */
       /* Adjust max-width as needed */
     }
 
@@ -172,7 +175,7 @@
       background-color: #fff;
       padding: 4px;
       border-radius: 5px;
-      width: 390px;
+      width: 80%;
       position: fixed;
       bottom: 0;
       right: 10;
@@ -393,14 +396,6 @@
                   action="{{ url_for('home_page') }}"
                   method="POST"
                 >
-                  <!--    <button
-                  type="button"
-                  class="tutorial_button"
-                  data-bs-toggle="modal"
-                  data-bs-target="#tutorial_modal"
-                >
-                  Tutorial
-                </button>-->
                   <i class="bx bxs-map"></i>
                   <input
                     type="text"
