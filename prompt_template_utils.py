@@ -33,6 +33,28 @@ def get_prompt_template(system_prompt=system_prompt, promptTemplate_type=None, h
 
             prompt_template = B_INST + SYSTEM_PROMPT + instruction + E_INST
             prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
+
+    elif promptTemplate_type == "llama3":
+
+        B_INST, E_INST = "<|start_header_id|>user<|end_header_id|>", "<|eot_id|>"
+        B_SYS, E_SYS = "<|begin_of_text|><|start_header_id|>system<|end_header_id|> ", "<|eot_id|>"
+        ASSISTANT_INST = "<|start_header_id|>assistant<|end_header_id|>"
+        SYSTEM_PROMPT = B_SYS + system_prompt + E_SYS
+        if history:
+            instruction = """
+            Context: {history} \n {context}
+            User: {question}"""
+
+            prompt_template = SYSTEM_PROMPT + B_INST + instruction + ASSISTANT_INST
+            prompt = PromptTemplate(input_variables=["history", "context", "question"], template=prompt_template)
+        else:
+            instruction = """
+            Context: {context}
+            User: {question}"""
+
+            prompt_template = SYSTEM_PROMPT + B_INST + instruction + ASSISTANT_INST
+            prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
+
     elif promptTemplate_type == "mistral":
         B_INST, E_INST = "<s>[INST] ", " [/INST]"
         if history:
@@ -81,6 +103,8 @@ def get_prompt_template(system_prompt=system_prompt, promptTemplate_type=None, h
             prompt = PromptTemplate(input_variables=["context", "question"], template=prompt_template)
 
     memory = ConversationBufferMemory(input_key="question", memory_key="history")
+
+    print(f"Here is the prompt used: {prompt}")
 
     return (
         prompt,
