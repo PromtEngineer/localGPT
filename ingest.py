@@ -1,6 +1,8 @@
 import logging
 import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import faiss
+import pickle
 
 import click
 import torch
@@ -8,6 +10,7 @@ from langchain.docstore.document import Document
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma , FAISS
 from utils import get_embeddings
+from langchain_community.docstore.in_memory import InMemoryDocstore
 
 from constants import (
     CHROMA_SETTINGS,
@@ -16,7 +19,11 @@ from constants import (
     INGEST_THREADS,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
+    INDEX_PATH,
+    METADATA_PATH,
+
 )
+
 
 
 def file_log(logentry):
@@ -142,6 +149,26 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
     ),
     help="Device to run on. (Default is cuda)",
 )
+def save_faiss_index(db, index_path, metadata_path):
+    faiss.write_index(db.index, index_path)
+    metadata = {
+        "index_to_docstore_id": db.index_to_docstore_id,
+        "docstore": db.docstore,
+    }
+    with open(metadata_path, "wb") as f:
+        pickle.dump(metadata, f)
+
+def load_faiss_index(index_path, metadata_path):
+    index = faiss.read_index(index_path)
+    with open(metadata_path, "rb") as f:
+        metadata = pickle.load(f)
+    docstore = metadata["docstore"]
+    index_to_docstore_id = metadata["index_to_docstore_id"]
+    db = FAISS(index=index, docstore=docstore, index_to_docstore_id=index_to_docstore_id)
+    return db
+
+
+
 def main(device_type):
     # Load documents and split in chunks
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
@@ -173,12 +200,30 @@ def main(device_type):
     #     persist_directory=PERSIST_DIRECTORY,
     #     client_settings=CHROMA_SETTINGS,
     # )
+    # if os.path.exists(INDEX_PATH) and os.path.exists(METADATA_PATH):
+    #     db = load_faiss_index(INDEX_PATH, METADATA_PATH)
+    #     logging.info("Loaded FAISS index and metadata from disk.")
+    # else:
+        
+    #     d = embeddings.shape[1]
+    #     index = faiss.IndexFlatL2(d)
+    #     index.add(embeddings)
+        
+    #     docstore = InMemoryDocstore()
+    #     index_to_docstore_id = {i: doc["id"] for i, doc in enumerate(texts)}
+
+    #     db = FAISS(index=index, docstore=docstore, index_to_docstore_id=index_to_docstore_id)
+        
+    #     save_faiss_index(db, INDEX_PATH, METADATA_PATH)
+    #     logging.info("Saved FAISS index and metadata to disk.")
+    
     db = FAISS.from_documents(
         texts,
         embeddings,
-        # persist_directory=PERSIST_DIRECTORY,
-        # client_settings=CHROMA_SETTINGS,
-    )
+        persist_directory=PERSIST_DIRECTORY,
+        client_settings=CHROMA_SETTINGS,
+        )
+
 
 if __name__ == "__main__":
     logging.basicConfig(

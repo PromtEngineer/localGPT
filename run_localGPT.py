@@ -12,6 +12,9 @@ from langchain.callbacks.manager import CallbackManager
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.docstore.in_memory import InMemoryDocstore
 import faiss
+from langchain_community.vectorstores.faiss import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.docstore.in_memory import InMemoryDocstore
 
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
@@ -141,18 +144,18 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     #             client_settings=CHROMA_SETTINGS)
     
     # Initialize the FAISS index
-    faiss_index = faiss.IndexFlatL2(embeddings)
-    # Initialize the docstore
-    docstore = InMemoryDocstore()
-    # Initialize the index_to_docstore_id
-    index_to_docstore_id = {}
+    # faiss_index = faiss.IndexFlatL2(embeddings)
+    # # Initialize the docstore
+    # docstore = InMemoryDocstore()
+    # # Initialize the index_to_docstore_id
+    # index_to_docstore_id = {}
     
-    db = FAISS(
-                embedding_function=embeddings,
-                index=faiss_index,
-                docstore=docstore,
-                index_to_docstore_id=index_to_docstore_id
-                )
+    # db = FAISS(
+    #             embedding_function=embeddings,
+    #             index=faiss_index,
+    #             docstore=docstore,
+    #             index_to_docstore_id=index_to_docstore_id
+    #             )
     
     # # Add documents and their embeddings to the FAISS index and the docstore
     # for i, (text, embedding) in enumerate(zip(df['Text'].tolist(), embeddings)):
@@ -160,7 +163,8 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     retriever = db.as_retriever()
 
     # get the prompt template and memory if set by the user.
-    prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type, history=use_history)
+    prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type,
+                                          history=use_history)
 
     # load the llm pipeline
     llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
