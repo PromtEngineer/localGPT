@@ -107,7 +107,8 @@ EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Ac
 # MODEL_BASENAME = "Meta-Llama-3-8B-Instruct.Q4_K_M.gguf"
 
 # LLAMA 3 # use for Apple Silicon
-MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
+# MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
+MODEL_ID = "TheBloke/Llama-2-7B-32K-Instruct-GPTQ"
 MODEL_BASENAME = None
 
 # LLAMA 3 # use for NVIDIA GPUs
