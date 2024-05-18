@@ -15,7 +15,7 @@ from prompt_template_utils import get_prompt_template
 from utils import get_embeddings
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma ,faiss
 from transformers import (
     GenerationConfig,
     pipeline,
@@ -132,7 +132,15 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
     # load the vectorstore
-    db = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
+    db = Chroma(persist_directory=PERSIST_DIRECTORY,
+                embedding_function=embeddings,
+                client_settings=CHROMA_SETTINGS)
+    
+    # db = faiss(persist_directory=PERSIST_DIRECTORY,
+    #             embedding_function=embeddings,
+    #             client_settings=CHROMA_SETTINGS)
+    
+
     retriever = db.as_retriever()
 
     # get the prompt template and memory if set by the user.
