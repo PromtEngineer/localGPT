@@ -15,7 +15,7 @@ from prompt_template_utils import get_prompt_template
 from utils import get_embeddings
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma
 from transformers import (
     GenerationConfig,
     pipeline,
