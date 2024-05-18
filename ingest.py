@@ -167,18 +167,18 @@ def main(device_type):
 
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
-    db = Chroma.from_documents(
-        texts,
-        embeddings,
-        persist_directory=PERSIST_DIRECTORY,
-        client_settings=CHROMA_SETTINGS,
-    )
-    # db = FAISS.from_documents(
+    # db = Chroma.from_documents(
     #     texts,
     #     embeddings,
     #     persist_directory=PERSIST_DIRECTORY,
-    #     client_settings=FAISS_SETTINGS,
+    #     client_settings=CHROMA_SETTINGS,
     # )
+    db = FAISS.from_documents(
+        texts,
+        embeddings,
+        # persist_directory=PERSIST_DIRECTORY,
+        # client_settings=CHROMA_SETTINGS,
+    )
 
 if __name__ == "__main__":
     logging.basicConfig(

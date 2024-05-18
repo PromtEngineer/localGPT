@@ -9,13 +9,17 @@ from langchain.llms import HuggingFacePipeline
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 from langchain.callbacks.manager import CallbackManager
 
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.docstore.in_memory import InMemoryDocstore
+import faiss
+
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
 from prompt_template_utils import get_prompt_template
 from utils import get_embeddings
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain_community.vectorstores import Chroma ,faiss
+from langchain_community.vectorstores import Chroma ,FAISS
 from transformers import (
     GenerationConfig,
     pipeline,
@@ -132,15 +136,27 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
     # load the vectorstore
-    db = Chroma(persist_directory=PERSIST_DIRECTORY,
-                embedding_function=embeddings,
-                client_settings=CHROMA_SETTINGS)
-    
-    # db = faiss(persist_directory=PERSIST_DIRECTORY,
+    # db = chroma(persist_directory=PERSIST_DIRECTORY,
     #             embedding_function=embeddings,
     #             client_settings=CHROMA_SETTINGS)
     
-
+    # Initialize the FAISS index
+    faiss_index = faiss.IndexFlatL2(embeddings)
+    # Initialize the docstore
+    docstore = InMemoryDocstore()
+    # Initialize the index_to_docstore_id
+    index_to_docstore_id = {}
+    
+    db = FAISS(
+                embedding_function=embeddings,
+                index=faiss_index,
+                docstore=docstore,
+                index_to_docstore_id=index_to_docstore_id
+                )
+    
+    # # Add documents and their embeddings to the FAISS index and the docstore
+    # for i, (text, embedding) in enumerate(zip(df['Text'].tolist(), embeddings)):
+    #     db.add_document(doc_id=i, text=text, embedding=embedding)
     retriever = db.as_retriever()
 
     # get the prompt template and memory if set by the user.
