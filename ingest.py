@@ -6,7 +6,7 @@ import click
 import torch
 from langchain.docstore.document import Document
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma , FAISS
 from utils import get_embeddings
 
 from constants import (
@@ -173,7 +173,12 @@ def main(device_type):
         persist_directory=PERSIST_DIRECTORY,
         client_settings=CHROMA_SETTINGS,
     )
-
+    # db = FAISS.from_documents(
+    #     texts,
+    #     embeddings,
+    #     persist_directory=PERSIST_DIRECTORY,
+    #     client_settings=FAISS_SETTINGS,
+    # )
 
 if __name__ == "__main__":
     logging.basicConfig(
