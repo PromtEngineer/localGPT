@@ -264,7 +264,9 @@ def main(device_type, show_sources, use_history, model_type, save_qa):
         if query == "exit":
             break
         # Get the answer from the chain
-        res = qa(query)
+        # res = qa(query)
+        res = qa.invoke(query)
+
         answer, docs = res["result"], res["source_documents"]
 
         # Print the result
