@@ -4,7 +4,7 @@ import click
 import torch
 import utils
 from langchain.chains import RetrievalQA
-from langchain.embeddings import HuggingFaceInstructEmbeddings
+from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 from langchain.callbacks.manager import CallbackManager

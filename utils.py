@@ -2,9 +2,9 @@ import os
 import csv
 from datetime import datetime
 from constants import EMBEDDING_MODEL_NAME
-from langchain.embeddings import HuggingFaceInstructEmbeddings
-from langchain.embeddings import HuggingFaceBgeEmbeddings
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceInstructEmbeddings
+from langchain_community.embeddings import HuggingFaceBgeEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 
 def log_to_csv(question, answer):
