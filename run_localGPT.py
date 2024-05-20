@@ -143,19 +143,24 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     #             embedding_function=embeddings,
     #             client_settings=CHROMA_SETTINGS)
     
-    # Initialize the FAISS index
-    # faiss_index = faiss.IndexFlatL2(embeddings)
-    # # Initialize the docstore
-    # docstore = InMemoryDocstore()
-    # # Initialize the index_to_docstore_id
-    # index_to_docstore_id = {}
+    # print(embeddings)
     
-    # db = FAISS(
-    #             embedding_function=embeddings,
-    #             index=faiss_index,
-    #             docstore=docstore,
-    #             index_to_docstore_id=index_to_docstore_id
-    #             )
+    # Initialize the FAISS index
+    faiss_index = faiss.IndexFlatL2(embeddings.embed())
+
+    # # Initialize the docstore
+    docstore = InMemoryDocstore()
+    # # Initialize the index_to_docstore_id
+    index_to_docstore_id = {}
+    # Add the embeddings to the index
+    faiss_index.add(embeddings)
+    
+    db = FAISS(
+                embedding_function=embeddings,
+                index=faiss_index,
+                docstore=docstore,
+                index_to_docstore_id=index_to_docstore_id
+                )
     
     # # Add documents and their embeddings to the FAISS index and the docstore
     # for i, (text, embedding) in enumerate(zip(df['Text'].tolist(), embeddings)):

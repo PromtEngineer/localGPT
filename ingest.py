@@ -170,6 +170,7 @@ def load_faiss_index(index_path, metadata_path):
 
 
 def main(device_type):
+    print(f"Running on device: {device_type}")
     # Load documents and split in chunks
     logging.info(f"Loading documents from {SOURCE_DIRECTORY}")
     documents = load_documents(SOURCE_DIRECTORY)
@@ -224,9 +225,13 @@ def main(device_type):
         client_settings=CHROMA_SETTINGS,
         )
 
+import argparse
 
 if __name__ == "__main__":
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
     )
-    main()
+    parser = argparse.ArgumentParser(description="Ingest script for localGPT")
+    parser.add_argument("--device_type", type=str, required=True, help="Device type (cpu or gpu)")
+    args = parser.parse_args()
+    main(args.device_type)
