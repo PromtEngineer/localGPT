@@ -13,6 +13,12 @@ from langchain_community.vectorstores import Chroma , FAISS
 from utils import get_embeddings
 from langchain_community.docstore.in_memory import InMemoryDocstore
 
+from langchain_cohere import CohereEmbeddings
+from langchain_core.documents import Document
+from langchain_postgres import PGVector
+from langchain_postgres.vectorstores import PGVector
+
+
 from constants import (
     CHROMA_SETTINGS,
     DOCUMENT_MAP,
@@ -199,12 +205,24 @@ def main(device_type):
 
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
-    db = Chroma.from_documents(
-        texts,
-        embeddings,
-        persist_directory=PERSIST_DIRECTORY,
-        client_settings=CHROMA_SETTINGS,
+    # See docker command above to launch a postgres instance with pgvector enabled.
+    connection = "postgresql+psycopg://langchain:langchain@localhost:6024/langchain"  # Uses psycopg3!
+    collection_name = "PG_VECTOR_SAudi"
+    embeddings = CohereEmbeddings()
+
+    vectorstore = PGVector(
+        documents= texts,
+        embeddings=embeddings,
+        collection_name=collection_name,
+        connection=connection,
+        use_jsonb=True,
     )
+    # db = Chroma.from_documents(
+    #     texts,
+    #     embeddings,
+    #     persist_directory=PERSIST_DIRECTORY,
+    #     client_settings=CHROMA_SETTINGS,
+    # )
     # if os.path.exists(INDEX_PATH) and os.path.exists(METADATA_PATH):
     #     db = load_faiss_index(INDEX_PATH, METADATA_PATH)
     #     logging.info("Loaded FAISS index and metadata from disk.")

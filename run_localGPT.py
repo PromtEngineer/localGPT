@@ -30,6 +30,12 @@ from transformers import (
     pipeline,
 )
 
+from langchain_cohere import CohereEmbeddings
+from langchain_core.documents import Document
+from langchain_postgres import PGVector
+from langchain_postgres.vectorstores import PGVector
+
+
 from load_models import (
     load_quantized_model_awq,
     load_quantized_model_gguf_ggml,
