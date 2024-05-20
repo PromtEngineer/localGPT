@@ -46,6 +46,9 @@ from constants import (
     CHROMA_SETTINGS,
 )
 
+# Check if CUDA is available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     """
@@ -152,21 +155,22 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
 
     
     # Initialize the FAISS index
-    faiss_index = faiss.IndexFlatL2(768)
+    # faiss_index = faiss.IndexFlatL2(768)
 
-    # # Initialize the docstore
-    docstore = InMemoryDocstore()
-    # # Initialize the index_to_docstore_id
-    index_to_docstore_id = {}
-    # Add the embeddings to the index
-    faiss_index.add(embeddings)
-    
-    db = FAISS(
-                embedding_function=embeddings,
-                index=faiss_index,
-                # docstore=docstore,
-                # index_to_docstore_id=index_to_docstore_id
-                )
+    # # # Initialize the docstore
+    # docstore = InMemoryDocstore()
+    # # # Initialize the index_to_docstore_id
+    # index_to_docstore_id = {}
+    # # Add the embeddings to the index
+    # faiss_index.add(embeddings)
+    # Loading the saved embeddings 
+    db =FAISS.load_local("DB/faiss", embeddings, allow_dangerous_deserialization=True)
+    # db = FAISS(
+    #             embedding_function=embeddings,
+    #             index=faiss_index,
+    #             # docstore=docstore,
+    #             # index_to_docstore_id=index_to_docstore_id
+    #             )
     
     # # Add documents and their embeddings to the FAISS index and the docstore
     # for i, (text, embedding) in enumerate(zip(df['Text'].tolist(), embeddings)):
@@ -179,6 +183,10 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
 
     # load the llm pipeline
     llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
+    
+    # # Ensure the model is on CPU
+    # device = torch.device("cpu")
+    # llm.to(device)
 
     if use_history:
         qa = RetrievalQA.from_chain_type(
