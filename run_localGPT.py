@@ -24,6 +24,7 @@ from utils import get_embeddings
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain_community.vectorstores import Chroma ,FAISS
+from langchain_community.vectorstores import chroma
 from transformers import (
     GenerationConfig,
     pipeline,
@@ -143,9 +144,9 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
     # load the vectorstore
-    # db = chroma(persist_directory=PERSIST_DIRECTORY,
-    #             embedding_function=embeddings,
-    #             client_settings=CHROMA_SETTINGS)
+    db = chroma(persist_directory=PERSIST_DIRECTORY,
+                embedding_function=embeddings,
+                client_settings=CHROMA_SETTINGS)
    
 
     print(embeddings)
@@ -164,7 +165,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     # # Add the embeddings to the index
     # faiss_index.add(embeddings)
     # Loading the saved embeddings 
-    db =FAISS.load_local("DB/faiss", embeddings, allow_dangerous_deserialization=True)
+    # db =FAISS.load_local("DB/faiss", embeddings, allow_dangerous_deserialization=True)
     # db = FAISS(
     #             embedding_function=embeddings,
     #             index=faiss_index,

@@ -20,8 +20,8 @@ PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/DB"
 
 MODELS_PATH = "./models"
 
-INDEX_PATH = "faiss_index.index"
-METADATA_PATH = "faiss_metadata.pkl"
+# INDEX_PATH = "faiss_index.index"
+# METADATA_PATH = "faiss_metadata.pkl"
 
 # Can be changed to a specific number
 INGEST_THREADS = os.cpu_count() or 8

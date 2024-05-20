@@ -199,12 +199,12 @@ def main(device_type):
 
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
-    # db = Chroma.from_documents(
-    #     texts,
-    #     embeddings,
-    #     persist_directory=PERSIST_DIRECTORY,
-    #     client_settings=CHROMA_SETTINGS,
-    # )
+    db = Chroma.from_documents(
+        texts,
+        embeddings,
+        persist_directory=PERSIST_DIRECTORY,
+        client_settings=CHROMA_SETTINGS,
+    )
     # if os.path.exists(INDEX_PATH) and os.path.exists(METADATA_PATH):
     #     db = load_faiss_index(INDEX_PATH, METADATA_PATH)
     #     logging.info("Loaded FAISS index and metadata from disk.")
@@ -262,13 +262,13 @@ def main(device_type):
     # Verify the loaded index
     # print(f"Number of vectors in the loaded index: {faiss_index_loaded.ntotal}")
     
-    db = FAISS.from_documents(
-        texts,
-        embeddings,
-        # persist_directory=PERSIST_DIRECTORY,
-        # client_settings=CHROMA_SETTINGS,
-        )
-    db.save_local("DB/faiss")
+    # db = FAISS.from_documents(
+    #     texts,
+    #     embeddings,
+    #     # persist_directory=PERSIST_DIRECTORY,
+    #     # client_settings=CHROMA_SETTINGS,
+    #     )
+    # db.save_local("DB/faiss")
 
 import argparse
 
