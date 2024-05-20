@@ -8,6 +8,7 @@ from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 from langchain.callbacks.manager import CallbackManager
+from transformers import AutoModel, AutoTokenizer
 
 from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.docstore.in_memory import InMemoryDocstore
@@ -142,11 +143,16 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     # db = chroma(persist_directory=PERSIST_DIRECTORY,
     #             embedding_function=embeddings,
     #             client_settings=CHROMA_SETTINGS)
-    
-    # print(embeddings)
+   
+
+    print(embeddings)
+
+
+   
+
     
     # Initialize the FAISS index
-    faiss_index = faiss.IndexFlatL2(embeddings.embed())
+    faiss_index = faiss.IndexFlatL2(768)
 
     # # Initialize the docstore
     docstore = InMemoryDocstore()
@@ -158,8 +164,8 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     db = FAISS(
                 embedding_function=embeddings,
                 index=faiss_index,
-                docstore=docstore,
-                index_to_docstore_id=index_to_docstore_id
+                # docstore=docstore,
+                # index_to_docstore_id=index_to_docstore_id
                 )
     
     # # Add documents and their embeddings to the FAISS index and the docstore

@@ -62,8 +62,8 @@ DOCUMENT_MAP = {
 }
 
 # Default Instructor Model
-EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Accuracy with lower VRAM usage)
-
+# EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Accuracy with lower VRAM usage)
+EMBEDDING_MODEL_NAME = 'TheBloke/Mistral-7B-Instruct-v0.1-GGUF'
 ####
 #### OTHER EMBEDDING MODEL OPTIONS
 ####

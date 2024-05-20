@@ -3,6 +3,7 @@ import os
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import faiss
 import pickle
+from transformers import AutoModel, AutoTokenizer
 
 import click
 import torch
@@ -164,7 +165,9 @@ def load_faiss_index(index_path, metadata_path):
         metadata = pickle.load(f)
     docstore = metadata["docstore"]
     index_to_docstore_id = metadata["index_to_docstore_id"]
-    db = FAISS(index=index, docstore=docstore, index_to_docstore_id=index_to_docstore_id)
+    db = FAISS(index=index,
+               docstore=docstore,
+               index_to_docstore_id=index_to_docstore_id)
     return db
 
 
@@ -189,6 +192,7 @@ def main(device_type):
     
     (2) Provides additional arguments for instructor and BGE models to improve results, pursuant to the instructions contained on
     their respective huggingface repository, project page or github repository.
+    
     """
 
     embeddings = get_embeddings(device_type)
@@ -217,12 +221,52 @@ def main(device_type):
         
     #     save_faiss_index(db, INDEX_PATH, METADATA_PATH)
     #     logging.info("Saved FAISS index and metadata to disk.")
+
+    # Load the model and tokenizer
+    model_name = EMBEDDING_MODEL_NAME
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+    # Tokenize the input texts
+    inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+    # Get the embeddings from the model
+    with torch.no_grad():
+        outputs = model(**inputs)
+    # Extract the last hidden states (embeddings)
+    embeddings = outputs.last_hidden_state
+    # Pool the embeddings (e.g., mean pooling)
+    pooled_embeddings = embeddings.mean(dim=1)
+    # Convert the embeddings to a NumPy array
+    numpy_embeddings = pooled_embeddings.cpu().numpy()
+    
+    # Get the dimension of the vectors
+    vector_dimension = numpy_embeddings.shape[1]
+
+    # Create the FAISS index
+    faiss_index = faiss.IndexFlatL2(vector_dimension)
+    print(faiss_index.is_trained)
+    # Add the embeddings to the index
+    faiss_index.add(numpy_embeddings)
+    # Save the index
+    faiss.write_index(faiss_index, index_file_path)
+    print(f"Index saved to {index_file_path}")
+    print(faiss_index.ntotal)
+    
+    # Define the directory and file name to save the index
+    persist_dir = PERSIST_DIRECTORY
+    index_file_path = os.path.join(persist_dir, 'faiss_index.index')
+    
+    # Load the index to verify
+    faiss_index_loaded = faiss.read_index(index_file_path)
+    print(f"Index loaded from {index_file_path}")
+
+    # Verify the loaded index
+    print(f"Number of vectors in the loaded index: {faiss_index_loaded.ntotal}")
     
     db = FAISS.from_documents(
         texts,
         embeddings,
-        persist_directory=PERSIST_DIRECTORY,
-        client_settings=CHROMA_SETTINGS,
+        # persist_directory=PERSIST_DIRECTORY,
+        # client_settings=CHROMA_SETTINGS,
         )
 
 import argparse
