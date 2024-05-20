@@ -210,7 +210,7 @@ def main(device_type):
     collection_name = "PG_VECTOR_SAudi"
     embeddings = CohereEmbeddings()
 
-    vectorstore = PGVector(
+    db = PGVector(
         documents= texts,
         embeddings=embeddings,
         collection_name=collection_name,
