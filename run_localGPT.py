@@ -144,7 +144,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
     # load the vectorstore
-    db = chroma(persist_directory=PERSIST_DIRECTORY,
+    db = Chroma(persist_directory=PERSIST_DIRECTORY,
                 embedding_function=embeddings,
                 client_settings=CHROMA_SETTINGS
                 )
