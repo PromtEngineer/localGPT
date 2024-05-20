@@ -146,10 +146,11 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     # load the vectorstore
     db = chroma(persist_directory=PERSIST_DIRECTORY,
                 embedding_function=embeddings,
-                client_settings=CHROMA_SETTINGS)
+                client_settings=CHROMA_SETTINGS
+                )
    
 
-    print(embeddings)
+    # print(embeddings)
 
 
    

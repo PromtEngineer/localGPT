@@ -20,8 +20,8 @@ from constants import (
     INGEST_THREADS,
     PERSIST_DIRECTORY,
     SOURCE_DIRECTORY,
-    INDEX_PATH,
-    METADATA_PATH,
+    # INDEX_PATH,
+    # METADATA_PATH,
 
 )
 
