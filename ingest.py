@@ -18,6 +18,8 @@ from langchain_cohere import CohereEmbeddings
 # from langchain_postgres import PGVector
 from langchain_postgres.vectorstores import PGVector
 
+from pgvector.psycopg import register_vector
+import psycopg
 
 from constants import (
     CHROMA_SETTINGS,
@@ -156,25 +158,25 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
     ),
     help="Device to run on. (Default is cuda)",
 )
-def save_faiss_index(db, index_path, metadata_path):
-    faiss.write_index(db.index, index_path)
-    metadata = {
-        "index_to_docstore_id": db.index_to_docstore_id,
-        "docstore": db.docstore,
-    }
-    with open(metadata_path, "wb") as f:
-        pickle.dump(metadata, f)
+# def save_faiss_index(db, index_path, metadata_path):
+#     faiss.write_index(db.index, index_path)
+#     metadata = {
+#         "index_to_docstore_id": db.index_to_docstore_id,
+#         "docstore": db.docstore,
+#     }
+#     with open(metadata_path, "wb") as f:
+#         pickle.dump(metadata, f)
 
-def load_faiss_index(index_path, metadata_path):
-    index = faiss.read_index(index_path)
-    with open(metadata_path, "rb") as f:
-        metadata = pickle.load(f)
-    docstore = metadata["docstore"]
-    index_to_docstore_id = metadata["index_to_docstore_id"]
-    db = FAISS(index=index,
-               docstore=docstore,
-               index_to_docstore_id=index_to_docstore_id)
-    return db
+# def load_faiss_index(index_path, metadata_path):
+#     index = faiss.read_index(index_path)
+#     with open(metadata_path, "rb") as f:
+#         metadata = pickle.load(f)
+#     docstore = metadata["docstore"]
+#     index_to_docstore_id = metadata["index_to_docstore_id"]
+#     db = FAISS(index=index,
+#                docstore=docstore,
+#                index_to_docstore_id=index_to_docstore_id)
+#     return db
 
 
 
@@ -205,18 +207,28 @@ def main(device_type):
 
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
-    # See docker command above to launch a postgres instance with pgvector enabled.
-    connection = "postgresql+psycopg://langchain:langchain@localhost:6024/langchain"  # Uses psycopg3!
+    # # See docker command above to launch a postgres instance with pgvector enabled.
+    # connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
+    # # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
+    # connection.execute('CREATE EXTENSION IF NOT EXISTS vector')
+    # register_vector(connection)
+    
+    # connection.execute('DROP TABLE IF EXISTS documents')
+    # connection.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(384))')
+
     collection_name = "PG_VECTOR_SAudi"
-    embeddings = CohereEmbeddings()
+    # embeddings = CohereEmbeddings()
 
     db = PGVector(
-        documents= texts,
+        # documents= texts,
         embeddings=embeddings,
         collection_name=collection_name,
         connection=connection,
         use_jsonb=True,
     )
+    db.add_documents(texts, ids=[doc.metadata["id"] for doc in texts])
+
+
     # db = Chroma.from_documents(
     #     texts,
     #     embeddings,

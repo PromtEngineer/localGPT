@@ -35,6 +35,12 @@ from langchain_core.documents import Document
 from langchain_postgres import PGVector
 from langchain_postgres.vectorstores import PGVector
 
+from pgvector.psycopg import register_vector
+import psycopg
+
+from langchain_community.llms import OpenAI
+from langchain_community.utilities import SQLDatabase
+# SQLDatabaseChain
 
 from load_models import (
     load_quantized_model_awq,
@@ -148,12 +154,36 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     embeddings = get_embeddings(device_type)
 
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
+    # load the llm pipeline
+    llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
+    
+    
 
+    # See docker command above to launch a postgres instance with pgvector enabled.
+    connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
+    # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
+    connection.execute('CREATE EXTENSION IF NOT EXISTS vector')
+    register_vector(connection)
+    
+    connection.execute('DROP TABLE IF EXISTS documents')
+    connection.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(384))')
+
+    for content, embedding in zip(input, embeddings):
+        connection.execute('INSERT INTO documents (content, embedding) VALUES (%s, %s)', (content, embedding))
+
+    document_id = 1
+    db = connection.execute('SELECT content FROM documents WHERE id != %(id)s ORDER BY embedding <=> (SELECT embedding FROM documents WHERE id = %(id)s) LIMIT 5', {'id': document_id}).fetchall()
+    for neighbor in db:
+        print(neighbor[0])
+    
+
+    dbUri="postgresql+psycopg2://langlocal:langlocalpass@localhost:5432/langlocal"
+    db = SQLDatabase.from_uri(connection)
     # load the vectorstore
-    db = Chroma(persist_directory=PERSIST_DIRECTORY,
-                embedding_function=embeddings,
-                client_settings=CHROMA_SETTINGS
-                )
+    # db = Chroma(persist_directory=PERSIST_DIRECTORY,
+    #             embedding_function=embeddings,
+    #             client_settings=CHROMA_SETTINGS
+    #             )
    
 
     # print(embeddings)
@@ -183,14 +213,12 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     # # Add documents and their embeddings to the FAISS index and the docstore
     # for i, (text, embedding) in enumerate(zip(df['Text'].tolist(), embeddings)):
     #     db.add_document(doc_id=i, text=text, embedding=embedding)
-    retriever = db.as_retriever()
+    retriever = db.as_retriever()#search_kwargs={'k':2}
 
     # get the prompt template and memory if set by the user.
     prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type,
                                           history=use_history)
 
-    # load the llm pipeline
-    llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
     
     # # Ensure the model is on CPU
     # device = torch.device("cpu")
