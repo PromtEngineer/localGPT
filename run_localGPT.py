@@ -162,14 +162,53 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
 
     # See docker command above to launch a postgres instance with pgvector enabled.
     # connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
-    connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432").cursor()
+    connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432")
     print(">>>>>>>>/n/n>>>>>>>>>>Connected to the database successfully!")
-
+    connection = connection.cursor()
     # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
+    
+    #install pgvector
     connection.execute("CREATE EXTENSION IF NOT EXISTS vector;")
     connection.commit()
+
+    #Connect to and configure your vector database
+    # Register the vector type with psycopg2
+
     register_vector(connection)
+    """
+    REF:
+    https://www.timescale.com/blog/postgresql-as-a-vector-database-create-store-and-query-openai-embeddings-with-pgvector/
+    https://www.timescale.com/blog/how-to-build-llm-applications-with-pgvector-vector-store-in-langchain/
+    Once we’ve connected to the database, let’s create a table that we’ll use to store embeddings along with metadata. Our table will look as follows:
     
+                id title url content tokens embedding
+
+    Id : represents the unique ID of each vector embedding in the table.
+    title : is the blog title from which the content associated with the embedding is taken.
+    url : is the blog URL from which the content associated with the embedding is taken.
+    content : is the actual blog content associated with the embedding.
+    tokens : is the number of tokens the embedding represents.
+    embedding : is the vector representation of the content.
+
+    """
+    # Create table to store embeddings and metadata
+    table_create_command = """
+    CREATE TABLE embeddings (
+                (id bigserial PRIMARY KEY,
+                 content text,
+                 embedding vector(384)
+                id bigserial primary key, 
+                title text,
+                url text,
+                content text,
+                tokens integer,
+                embedding vector(1536)
+                );
+                """
+
+    connection.execute(table_create_command)
+    connection.close()
+    connection.commit()
     connection.execute('DROP TABLE IF EXISTS documents')
     connection.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(384))')
 
