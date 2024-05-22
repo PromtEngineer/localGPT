@@ -37,6 +37,7 @@ from langchain_postgres.vectorstores import PGVector
 
 from pgvector.psycopg import register_vector
 import psycopg
+import psycopg2
 
 from langchain_community.llms import OpenAI
 from langchain_community.utilities import SQLDatabase
@@ -160,9 +161,13 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     
 
     # See docker command above to launch a postgres instance with pgvector enabled.
-    connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
+    # connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
+    connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432").cursor()
+    print(">>>>>>>>/n/n>>>>>>>>>>Connected to the database successfully!")
+
     # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
-    connection.execute('CREATE EXTENSION IF NOT EXISTS vector')
+    connection.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    connection.commit()
     register_vector(connection)
     
     connection.execute('DROP TABLE IF EXISTS documents')
