@@ -4,6 +4,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 import faiss
 import pickle
 from transformers import AutoModel, AutoTokenizer
+import psycopg2
 
 import click
 import torch
@@ -218,7 +219,12 @@ def main(device_type):
 
     collection_name = "PG_VECTOR_SAudi"
     # embeddings = CohereEmbeddings()
-
+# -------------------------------
+# Q
+#--------------------------------
+    connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432")
+    print(">>>>>>>>/n/n>>>>>>>>>>Connected to the database successfully!")
+    connection = connection.cursor()
     db = PGVector(
         # documents= texts,
         embeddings=embeddings,
@@ -228,7 +234,9 @@ def main(device_type):
     )
     db.add_documents(texts, ids=[doc.metadata["id"] for doc in texts])
 
-
+# -------------------------------
+# Q
+#--------------------------------
     # db = Chroma.from_documents(
     #     texts,
     #     embeddings,
