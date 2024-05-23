@@ -217,23 +217,39 @@ def main(device_type):
     # connection.execute('DROP TABLE IF EXISTS documents')
     # connection.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(384))')
 
-    collection_name = "PG_VECTOR_SAudi"
+    # collection_name = "PG_VECTOR_SAudi"
     # embeddings = CohereEmbeddings()
 # -------------------------------
 # Q
 #--------------------------------
     connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432")
     print(">>>>>>>>/n/n>>>>>>>>>>Connected to the database successfully!")
-    connection = connection.cursor()
-    db = PGVector(
-        # documents= texts,
-        embeddings=embeddings,
-        collection_name=collection_name,
-        connection=connection,
-        use_jsonb=True,
+    # connection = connection.cursor()
+    # db = PGVector(
+    #     documents= texts,
+    #     embeddings=embeddings,
+    #     collection_name=collection_name,
+    #     connection=connection,
+    #     use_jsonb=True,
+    # )
+    # db.add_documents(texts, ids=[doc.metadata["id"] for doc in texts])
+    # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
+    #changing to more programatically conn string
+    CONNECTION_STRING = PGVector.connection_string_from_db_params(
+        # driver=os.environ.get("PGVECTOR_DRIVER", "psycopg2"),
+        host='localhost',
+        port=5432,
+        database='postgres',
+        user='postgres',
+        password=123456,
     )
-    db.add_documents(texts, ids=[doc.metadata["id"] for doc in texts])
-
+    collection_name = "PG_VECTOR_SAudi"
+    db = PGVector.from_documents(
+        embedding=embeddings,
+        documents=texts,
+        connection_string=CONNECTION_STRING,
+        collection_name=collection_name,
+    )
 # -------------------------------
 # Q
 #--------------------------------

@@ -35,7 +35,7 @@ from langchain_core.documents import Document
 from langchain_postgres import PGVector
 from langchain_postgres.vectorstores import PGVector
 
-from pgvector.psycopg import register_vector
+from pgvector.psycopg2 import register_vector
 import psycopg
 import psycopg2
 
@@ -162,15 +162,19 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     # https://api.pgxn.org/src/vector/vector-0.7.0/sql/vector--0.6.2--0.7.0.sql
     # See docker command above to launch a postgres instance with pgvector enabled.
     # connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
+    
+    
     connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432")
     print(">>>>>>>>/n/n>>>>>>>>>>Connected to the database successfully!")
-    connection = connection.cursor()
+    curr = connection.cursor()
     # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
     
     #install pgvector
-    connection.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    curr.execute("CREATE EXTENSION IF NOT EXISTS vector;")
     connection.commit()
-
+    # Close the cursor and connection
+    # curr.close()
+    # connection.close()
     #Connect to and configure your vector database
     # Register the vector type with psycopg2
 
@@ -194,34 +198,37 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     # Create table to store embeddings and metadata
     table_create_command = """
     CREATE TABLE embeddings (
-                (id bigserial PRIMARY KEY,
-                 content text,
-                 embedding vector(384)
+          
                 id bigserial primary key, 
                 title text,
                 url text,
                 content text,
                 tokens integer,
                 embedding vector(1536)
+
                 );
                 """
 
-    connection.execute(table_create_command)
-    connection.close()
+    curr.execute(table_create_command)
+    curr.close()
     connection.commit()
-    connection.execute('DROP TABLE IF EXISTS documents')
-    connection.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(384))')
+    register_vector(connection)
+    # connection.commit()
+    # connection.execute('DROP TABLE IF EXISTS documents')
+    # connection.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(384))')
+    curr = connection.cursor()
 
     for content, embedding in zip(input, embeddings):
-        connection.execute('INSERT INTO documents (content, embedding) VALUES (%s, %s)', (content, embedding))
+        connection.execute('INSERT INTO embeddings (content, embedding) VALUES (%s, %s)', (content, embedding))
 
     document_id = 1
     db = connection.execute('SELECT content FROM documents WHERE id != %(id)s ORDER BY embedding <=> (SELECT embedding FROM documents WHERE id = %(id)s) LIMIT 5', {'id': document_id}).fetchall()
     for neighbor in db:
         print(neighbor[0])
     
-
-    dbUri="postgresql+psycopg2://langlocal:langlocalpass@localhost:5432/langlocal"
+    uri = 'postgresql+psycopg://postgres:123456@localhost:5432/postgres'
+    dbUri= uri
+    collection_name = "PDF_Saudi"
     db = SQLDatabase.from_uri(connection)
     # load the vectorstore
     # db = Chroma(persist_directory=PERSIST_DIRECTORY,
