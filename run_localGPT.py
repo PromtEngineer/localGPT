@@ -159,7 +159,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
     
     
-
+    # https://api.pgxn.org/src/vector/vector-0.7.0/sql/vector--0.6.2--0.7.0.sql
     # See docker command above to launch a postgres instance with pgvector enabled.
     # connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
     connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432")
