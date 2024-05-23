@@ -166,19 +166,19 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     
     connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432")
     print(">>>>>>>>/n/n>>>>>>>>>>Connected to the database successfully!")
-    curr = connection.cursor()
+    # curr = connection.cursor()
     # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
     
     #install pgvector
-    curr.execute("CREATE EXTENSION IF NOT EXISTS vector;")
-    connection.commit()
+    # curr.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    # connection.commit()
     # Close the cursor and connection
     # curr.close()
     # connection.close()
     #Connect to and configure your vector database
     # Register the vector type with psycopg2
 
-    register_vector(connection)
+    # register_vector(connection)
     """
     REF:
     https://www.timescale.com/blog/postgresql-as-a-vector-database-create-store-and-query-openai-embeddings-with-pgvector/
@@ -196,40 +196,48 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
 
     """
     # Create table to store embeddings and metadata
-    table_create_command = """
-    CREATE TABLE embeddings (
+    # table_create_command = """
+    # CREATE TABLE embeddings (
           
-                id bigserial primary key, 
-                title text,
-                url text,
-                content text,
-                tokens integer,
-                embedding vector(1536)
+    #             id bigserial primary key, 
+    #             title text,
+    #             url text,
+    #             content text,
+    #             tokens integer,
+    #             embedding vector(1536)
 
-                );
-                """
+    #             );
+    #             """
 
-    curr.execute(table_create_command)
-    curr.close()
-    connection.commit()
-    register_vector(connection)
+    # curr.execute(table_create_command)
+    # curr.close()
+    # connection.commit()
+    # register_vector(connection)
     # connection.commit()
     # connection.execute('DROP TABLE IF EXISTS documents')
     # connection.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(384))')
-    curr = connection.cursor()
+    # curr = connection.cursor()
 
-    for content, embedding in zip(input, embeddings):
-        connection.execute('INSERT INTO embeddings (content, embedding) VALUES (%s, %s)', (content, embedding))
+    # for content, embedding in zip(input, embeddings):
+    #     connection.execute('INSERT INTO embeddings (content, embedding) VALUES (%s, %s)', (content, embedding))
 
-    document_id = 1
-    db = connection.execute('SELECT content FROM documents WHERE id != %(id)s ORDER BY embedding <=> (SELECT embedding FROM documents WHERE id = %(id)s) LIMIT 5', {'id': document_id}).fetchall()
-    for neighbor in db:
-        print(neighbor[0])
+    # document_id = 1
+    # db = connection.execute('SELECT content FROM documents WHERE id != %(id)s ORDER BY embedding <=> (SELECT embedding FROM documents WHERE id = %(id)s) LIMIT 5', {'id': document_id}).fetchall()
+    # for neighbor in db:
+    #     print(neighbor[0])
     
-    uri = 'postgresql+psycopg://postgres:123456@localhost:5432/postgres'
-    dbUri= uri
-    collection_name = "PDF_Saudi"
-    db = SQLDatabase.from_uri(connection)
+    # uri = 'postgresql+psycopg://postgres:123456@localhost:5432/postgres'
+    # dbUri= uri
+    collection_name = "PG_VECTOR_SAudi"
+    # db = SQLDatabase.from_uri(connection)
+    connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # 
+
+    db = PGVector( #.from_existing_index(
+        embeddings=embeddings,
+        collection_name=collection_name,
+        connection=connection,
+        use_jsonb=True,
+    )
     # load the vectorstore
     # db = Chroma(persist_directory=PERSIST_DIRECTORY,
     #             embedding_function=embeddings,
@@ -264,7 +272,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     # # Add documents and their embeddings to the FAISS index and the docstore
     # for i, (text, embedding) in enumerate(zip(df['Text'].tolist(), embeddings)):
     #     db.add_document(doc_id=i, text=text, embedding=embedding)
-    retriever = db.as_retriever()#search_kwargs={'k':2}
+    retriever = db.as_retriever(search_type="similarity", search_kwargs={"k":2})#search_kwargs={'k':2}
 
     # get the prompt template and memory if set by the user.
     prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type,
@@ -280,7 +288,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
             llm=llm,
             chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
             retriever=retriever,
-            return_source_documents=True,  # verbose=True,
+            return_source_documents=True,   verbose=True,
             callbacks=callback_manager,
             chain_type_kwargs={"prompt": prompt, "memory": memory},
         )
@@ -289,7 +297,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
             llm=llm,
             chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
             retriever=retriever,
-            return_source_documents=True,  # verbose=True,
+            return_source_documents=True,   verbose=True,
             callbacks=callback_manager,
             chain_type_kwargs={
                 "prompt": prompt,

@@ -130,35 +130,35 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
     return text_docs, python_docs
 
 
-@click.command()
-@click.option(
-    "--device_type",
-    default="cuda" if torch.cuda.is_available() else "cpu",
-    type=click.Choice(
-        [
-            "cpu",
-            "cuda",
-            "ipu",
-            "xpu",
-            "mkldnn",
-            "opengl",
-            "opencl",
-            "ideep",
-            "hip",
-            "ve",
-            "fpga",
-            "ort",
-            "xla",
-            "lazy",
-            "vulkan",
-            "mps",
-            "meta",
-            "hpu",
-            "mtia",
-        ],
-    ),
-    help="Device to run on. (Default is cuda)",
-)
+# @click.command()
+# @click.option(
+#     "--device_type",
+#     default="cuda" if torch.cuda.is_available() else "cpu",
+#     type=click.Choice(
+#         [
+#             "cpu",
+#             "cuda",
+#             "ipu",
+#             "xpu",
+#             "mkldnn",
+#             "opengl",
+#             "opencl",
+#             "ideep",
+#             "hip",
+#             "ve",
+#             "fpga",
+#             "ort",
+#             "xla",
+#             "lazy",
+#             "vulkan",
+#             "mps",
+#             "meta",
+#             "hpu",
+#             "mtia",
+#         ],
+#     ),
+#     help="Device to run on. (Default is cuda)",
+# )
 # def save_faiss_index(db, index_path, metadata_path):
 #     faiss.write_index(db.index, index_path)
 #     metadata = {
@@ -178,7 +178,7 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
 #                docstore=docstore,
 #                index_to_docstore_id=index_to_docstore_id)
 #     return db
-
+device_type = 'cpu'
 
 
 def main(device_type):
@@ -209,7 +209,7 @@ def main(device_type):
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
     # # See docker command above to launch a postgres instance with pgvector enabled.
-    # connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
+    connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
     # # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
     # connection.execute('CREATE EXTENSION IF NOT EXISTS vector')
     # register_vector(connection)
@@ -217,13 +217,12 @@ def main(device_type):
     # connection.execute('DROP TABLE IF EXISTS documents')
     # connection.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(384))')
 
-    # collection_name = "PG_VECTOR_SAudi"
+    collection_name = "PG_VECTOR_SAudi"
     # embeddings = CohereEmbeddings()
 # -------------------------------
 # Q
 #--------------------------------
-    connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432")
-    print(">>>>>>>>/n/n>>>>>>>>>>Connected to the database successfully!")
+    # connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432")
     # connection = connection.cursor()
     # db = PGVector(
     #     documents= texts,
@@ -235,21 +234,22 @@ def main(device_type):
     # db.add_documents(texts, ids=[doc.metadata["id"] for doc in texts])
     # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
     #changing to more programatically conn string
-    CONNECTION_STRING = PGVector.connection_string_from_db_params(
-        # driver=os.environ.get("PGVECTOR_DRIVER", "psycopg2"),
-        host='localhost',
-        port=5432,
-        database='postgres',
-        user='postgres',
-        password=123456,
-    )
-    collection_name = "PG_VECTOR_SAudi"
     db = PGVector.from_documents(
+        documents= texts,
         embedding=embeddings,
-        documents=texts,
-        connection_string=CONNECTION_STRING,
         collection_name=collection_name,
+        connection=connection,
+        use_jsonb=True,
     )
+    print(">>>>>>>>/n/n>>>>>>>>>>Connected AND Loaded to the database successfully!")
+
+    # collection_name = "PG_VECTOR_SAudi"
+    # db = PGVector.from_documents(
+    #     embedding=embeddings,
+    #     documents=texts,
+    #     connection_string=CONNECTION_STRING,
+    #     collection_name=collection_name,
+    # )
 # -------------------------------
 # Q
 #--------------------------------
@@ -330,7 +330,7 @@ if __name__ == "__main__":
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)s - %(message)s", level=logging.INFO
     )
-    parser = argparse.ArgumentParser(description="Ingest script for localGPT")
-    parser.add_argument("--device_type", type=str, required=True, help="Device type (cpu or gpu)")
-    args = parser.parse_args()
-    main(args.device_type)
+    # parser = argparse.ArgumentParser(description="Ingest script for localGPT")
+    # parser.add_argument("--device_type", type=str, required=True, help="Device type (cpu or gpu)")
+    # args = parser.parse_args()
+    main(device_type='cpu')#args.device_type)
