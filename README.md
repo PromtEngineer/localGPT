@@ -71,6 +71,7 @@ pip install -r requirements.txt
 
 LocalGPT uses [LlamaCpp-Python](https://github.com/abetlen/llama-cpp-python) for GGML (you will need llama-cpp-python <=0.1.76) and GGUF (llama-cpp-python >=0.1.83) models.
 
+To run the quantized Llama3 model, ensure you have llama-cpp-python version 0.2.62 or higher installed.
 
 If you want to use BLAS or Metal with [llama-cpp](https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal) you can set appropriate flags:
 
