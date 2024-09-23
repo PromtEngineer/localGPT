@@ -1,5 +1,12 @@
 # LocalGPT: Secure, Local Conversations with Your Documents 🌐
 
+
+[![GitHub Stars](https://img.shields.io/github/stars/PromtEngineer/localGPT?style=social)](https://github.com/PromtEngineer/localGPT/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/PromtEngineer/localGPT?style=social)](https://github.com/PromtEngineer/localGPT/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/pulls)
+[![License](https://img.shields.io/github/license/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/blob/main/LICENSE)
+
 🚨🚨 You can run localGPT on a pre-configured [Virtual Machine](https://bit.ly/localGPT). Make sure to use the code: PromptEngineering to get 50% off. I will get a small commision!
 
 **LocalGPT** is an open-source initiative that allows you to converse with your documents without compromising your privacy. With everything running locally, you can be assured that no data ever leaves your computer. Dive into the world of secure, local document interactions with LocalGPT.
@@ -64,6 +71,7 @@ pip install -r requirements.txt
 
 LocalGPT uses [LlamaCpp-Python](https://github.com/abetlen/llama-cpp-python) for GGML (you will need llama-cpp-python <=0.1.76) and GGUF (llama-cpp-python >=0.1.83) models.
 
+To run the quantized Llama3 model, ensure you have llama-cpp-python version 0.2.62 or higher installed.
 
 If you want to use BLAS or Metal with [llama-cpp](https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal) you can set appropriate flags:
 
@@ -71,14 +79,14 @@ For `NVIDIA` GPUs support, use `cuBLAS`
 
 ```shell
 # Example: cuBLAS
-CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python==0.1.83 --no-cache-dir
+CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python --no-cache-dir
 ```
 
 For Apple Metal (`M1/M2`) support, use
 
 ```shell
 # Example: METAL
-CMAKE_ARGS="-DLLAMA_METAL=on"  FORCE_CMAKE=1 pip install llama-cpp-python==0.1.83 --no-cache-dir
+CMAKE_ARGS="-DLLAMA_METAL=on"  FORCE_CMAKE=1 pip install llama-cpp-python --no-cache-dir
 ```
 For more details, please refer to [llama-cpp](https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal)
 

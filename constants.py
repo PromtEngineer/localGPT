@@ -29,7 +29,7 @@ CHROMA_SETTINGS = Settings(
 )
 
 # Context Window and Max New Tokens
-CONTEXT_WINDOW_SIZE = 4096
+CONTEXT_WINDOW_SIZE = 8096
 MAX_NEW_TOKENS = CONTEXT_WINDOW_SIZE  # int(CONTEXT_WINDOW_SIZE/4)
 
 #### If you get a "not enough space in the buffer" error, you should reduce the values below, start with half of the original values and keep halving the value until the error stops appearing
@@ -100,8 +100,19 @@ EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Ac
 # MODEL_ID = "TheBloke/Llama-2-13b-Chat-GGUF"
 # MODEL_BASENAME = "llama-2-13b-chat.Q4_K_M.gguf"
 
-MODEL_ID = "TheBloke/Llama-2-7b-Chat-GGUF"
-MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
+# MODEL_ID = "TheBloke/Llama-2-7b-Chat-GGUF"
+# MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
+
+# MODEL_ID = "QuantFactory/Meta-Llama-3-8B-Instruct-GGUF"
+# MODEL_BASENAME = "Meta-Llama-3-8B-Instruct.Q4_K_M.gguf"
+
+# LLAMA 3 # use for Apple Silicon
+MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
+MODEL_BASENAME = None
+
+# LLAMA 3 # use for NVIDIA GPUs
+# MODEL_ID = "unsloth/llama-3-8b-bnb-4bit"
+# MODEL_BASENAME = None
 
 # MODEL_ID = "TheBloke/Mistral-7B-Instruct-v0.1-GGUF"
 # MODEL_BASENAME = "mistral-7b-instruct-v0.1.Q8_0.gguf"

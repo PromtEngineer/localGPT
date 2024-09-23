@@ -136,9 +136,19 @@ def load_full_model(model_id, model_basename, device_type, logging):
     """
 
     if device_type.lower() in ["mps", "cpu"]:
-        logging.info("Using LlamaTokenizer")
-        tokenizer = LlamaTokenizer.from_pretrained(model_id, cache_dir="./models/")
-        model = LlamaForCausalLM.from_pretrained(model_id, cache_dir="./models/")
+        logging.info("Using AutoModelForCausalLM")
+        # tokenizer = LlamaTokenizer.from_pretrained(model_id, cache_dir="./models/")
+        # model = LlamaForCausalLM.from_pretrained(model_id, cache_dir="./models/")
+
+        model = AutoModelForCausalLM.from_pretrained(model_id,
+                                            #  quantization_config=quantization_config,
+                                            #  low_cpu_mem_usage=True,
+                                            #  torch_dtype="auto",
+                                             torch_dtype=torch.bfloat16,
+                                             device_map="auto",
+                                             cache_dir="./models/")
+
+        tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir="./models/")
     else:
         logging.info("Using AutoModelForCausalLM for full models")
         tokenizer = AutoTokenizer.from_pretrained(model_id, cache_dir="./models/")
