@@ -62,7 +62,7 @@ def load_document_batch(filepaths):
 def load_documents(source_dir: str) -> list[Document]:
     # Loads all documents from the source documents directory, including nested folders
     paths = []
-    for root, _, files in os.walk(source_dir):
+    for root, _, files in os.walk(source_dir, followlinks=True):
         for file_name in files:
             print("Importing: " + file_name)
             file_extension = os.path.splitext(file_name)[1]
