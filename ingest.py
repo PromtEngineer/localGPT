@@ -116,7 +116,7 @@ def split_documents(documents: list[Document]) -> tuple[list[Document], list[Doc
 @click.command()
 @click.option(
     "--device_type",
-    default="cuda" if torch.cuda.is_available() else "cpu",
+    default="cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu",
     type=click.Choice(
         [
             "cpu",
