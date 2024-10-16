@@ -59,6 +59,7 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     """
     logging.info(f"Loading Model: {model_id}, on: {device_type}")
     logging.info("This action can take a few minutes!")
+    #process_rank = -1
 
     if model_basename is not None:
         if ".gguf" in model_basename.lower():
@@ -80,7 +81,21 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     # main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
 
     # Create a pipeline for text generation
-    pipe = pipeline(
+    if device_type == "hpu":
+        from gaudi_utils.pipeline import GaudiTextGenerationPipeline
+
+        pipe = GaudiTextGenerationPipeline(
+            model_name_or_path=model_id,
+            max_new_tokens=1000,
+            temperature=temperature,
+            top_p=top_p,
+            repetition_penalty=1.15,
+            do_sample=True,
+        )
+        pipe.compile_graph()
+        #process_rank = pipe.get_process_rank()
+    else:
+        pipe = pipeline(
         "text-generation",
         model=model,
         tokenizer=tokenizer,
