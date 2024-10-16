@@ -141,8 +141,16 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     (2) Provides additional arguments for instructor and BGE models to improve results, pursuant to the instructions contained on
     their respective huggingface repository, project page or github repository.
     """
+    if device_type == "hpu":
+        from gaudi_utils.embeddings import GaudiHuggingFaceEmbeddings
 
-    embeddings = get_embeddings(device_type)
+        embeddings = GaudiHuggingFaceEmbeddings(
+            embedding_input_size=EMBEDDING_INPUT_SIZE,
+            model_name=EMBEDDING_MODEL_NAME,
+            model_kwargs={"device": device_type},
+        )
+    else:
+        embeddings = get_embeddings(device_type)
 
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
