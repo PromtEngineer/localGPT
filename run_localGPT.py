@@ -36,6 +36,7 @@ from constants import (
     MAX_NEW_TOKENS,
     MODELS_PATH,
     CHROMA_SETTINGS,
+    EMBEDDING_INPUT_SIZE,
 )
 
 
@@ -87,8 +88,8 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
         pipe = GaudiTextGenerationPipeline(
             model_name_or_path=model_id,
             max_new_tokens=1000,
-            temperature=temperature,
-            top_p=top_p,
+            temperature=0.2,
+            #top_p=top_p,
             repetition_penalty=1.15,
             do_sample=True,
         )
