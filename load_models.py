@@ -135,7 +135,7 @@ def load_full_model(model_id, model_basename, device_type, logging):
     - Additional settings are provided for NVIDIA GPUs, such as loading in 4-bit and setting the compute dtype.
     """
 
-    if device_type.lower() in ["mps", "cpu"]:
+    if device_type.lower() in ["mps", "cpu", "hpu"]:
         logging.info("Using AutoModelForCausalLM")
         # tokenizer = LlamaTokenizer.from_pretrained(model_id, cache_dir="./models/")
         # model = LlamaForCausalLM.from_pretrained(model_id, cache_dir="./models/")
