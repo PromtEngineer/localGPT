@@ -89,9 +89,10 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
             model_name_or_path=model_id,
             max_new_tokens=1000,
             temperature=0.2,
-            #top_p=top_p,
+            top_p=0.95,
             repetition_penalty=1.15,
             do_sample=True,
+            max_padding_length=5000,
         )
         pipe.compile_graph()
         #process_rank = pipe.get_process_rank()
@@ -138,18 +139,18 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
 
     """
     (1) Chooses an appropriate langchain library based on the enbedding model name.  Matching code is contained within ingest.py.
-    
+
     (2) Provides additional arguments for instructor and BGE models to improve results, pursuant to the instructions contained on
     their respective huggingface repository, project page or github repository.
     """
     if device_type == "hpu":
-        from gaudi_utils.embeddings import GaudiHuggingFaceEmbeddings
+        from gaudi_utils.embeddings import load_embeddings
 
-        embeddings = GaudiHuggingFaceEmbeddings(
-            embedding_input_size=EMBEDDING_INPUT_SIZE,
-            model_name=EMBEDDING_MODEL_NAME,
-            model_kwargs={"device": device_type},
-        )
+        embeddings = load_embeddings()
+            #embedding_input_size=EMBEDDING_INPUT_SIZE,
+            #model_name=EMBEDDING_MODEL_NAME,
+            #model_kwargs={"device": device_type},
+        #)
     else:
         embeddings = get_embeddings(device_type)
 
