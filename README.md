@@ -175,8 +175,9 @@ python run_localGPT.py --device_type mps # to run on Apple silicon
 ```
 
 ```shell
+# To run on Intel® Gaudi® hpu
 MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.2" # in constants.py
-python run_localGPT.py --device_type hpu # to run on Intel® Gaudi® hpu
+python run_localGPT.py --device_type hpu
 ```
 
 This will load the ingested vector store and embedding model. You will be presented with a prompt:
