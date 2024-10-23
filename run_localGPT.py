@@ -35,8 +35,7 @@ from constants import (
     MODEL_BASENAME,
     MAX_NEW_TOKENS,
     MODELS_PATH,
-    CHROMA_SETTINGS,
-    EMBEDDING_INPUT_SIZE,
+    CHROMA_SETTINGS,    
 )
 
 
@@ -60,8 +59,7 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     """
     logging.info(f"Loading Model: {model_id}, on: {device_type}")
     logging.info("This action can take a few minutes!")
-    #process_rank = -1
-
+    
     if model_basename is not None:
         if ".gguf" in model_basename.lower():
             llm = load_quantized_model_gguf_ggml(model_id, model_basename, device_type, LOGGING)
@@ -95,7 +93,6 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
             max_padding_length=5000,
         )
         pipe.compile_graph()
-        #process_rank = pipe.get_process_rank()
     else:
         pipe = pipeline(
         "text-generation",
@@ -147,10 +144,6 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
         from gaudi_utils.embeddings import load_embeddings
 
         embeddings = load_embeddings()
-            #embedding_input_size=EMBEDDING_INPUT_SIZE,
-            #model_name=EMBEDDING_MODEL_NAME,
-            #model_kwargs={"device": device_type},
-        #)
     else:
         embeddings = get_embeddings(device_type)
 

@@ -60,9 +60,6 @@ DOCUMENT_MAP = {
 # Default Instructor Model
 EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Accuracy with lower VRAM usage)
 
-# Embedding input size for hpu
-EMBEDDING_INPUT_SIZE = -1
-
 ####
 #### OTHER EMBEDDING MODEL OPTIONS
 ####
