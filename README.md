@@ -19,7 +19,7 @@
 - **Chat History**: Remembers your previous conversations (in a session).
 - **API**: LocalGPT has an API that you can use for building RAG Applications.
 - **Graphical Interface**: LocalGPT comes with two GUIs, one uses the API and the other is standalone (based on streamlit).
-- **GPU, CPU & MPS Support**: Supports multiple platforms out of the box, Chat with your data using `CUDA`, `CPU` or `MPS` and more!
+- **GPU, CPU, HPU & MPS Support**: Supports multiple platforms out of the box, Chat with your data using `CUDA`, `CPU`, `HPU (Intel® Gaudi®)` or `MPS` and more!
 
 ## Dive Deeper with Our Videos 🎥
 - [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo)
@@ -98,6 +98,7 @@ It includes CUDA, your system just needs Docker, BuildKit, your NVIDIA GPU drive
 Build as `docker build -t localgpt .`, requires BuildKit.
 Docker BuildKit does not support GPU during *docker build* time right now, only during *docker run*.
 Run as `docker run -it --mount src="$HOME/.cache",target=/root/.cache,type=bind --gpus=all localgpt`.
+For running the code on Intel® Gaudi® HPU, use the following Dockerfile - `Dockerfile_hpu`.
 
 ## Test dataset
 
@@ -171,6 +172,12 @@ You can also specify the device type just like `ingest.py`
 
 ```shell
 python run_localGPT.py --device_type mps # to run on Apple silicon
+```
+
+```shell
+# To run on Intel® Gaudi® hpu
+MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.2" # in constants.py
+python run_localGPT.py --device_type hpu
 ```
 
 This will load the ingested vector store and embedding model. You will be presented with a prompt:

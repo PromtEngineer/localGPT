@@ -29,7 +29,7 @@ CHROMA_SETTINGS = Settings(
 )
 
 # Context Window and Max New Tokens
-CONTEXT_WINDOW_SIZE = 8096
+CONTEXT_WINDOW_SIZE = 2048
 MAX_NEW_TOKENS = CONTEXT_WINDOW_SIZE  # int(CONTEXT_WINDOW_SIZE/4)
 
 #### If you get a "not enough space in the buffer" error, you should reduce the values below, start with half of the original values and keep halving the value until the error stops appearing
@@ -105,6 +105,9 @@ EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Ac
 
 # MODEL_ID = "QuantFactory/Meta-Llama-3-8B-Instruct-GGUF"
 # MODEL_BASENAME = "Meta-Llama-3-8B-Instruct.Q4_K_M.gguf"
+
+# Use mistral to run on hpu
+# MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.2"
 
 # LLAMA 3 # use for Apple Silicon
 MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"

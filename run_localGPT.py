@@ -35,7 +35,7 @@ from constants import (
     MODEL_BASENAME,
     MAX_NEW_TOKENS,
     MODELS_PATH,
-    CHROMA_SETTINGS,
+    CHROMA_SETTINGS,    
 )
 
 
@@ -59,7 +59,7 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     """
     logging.info(f"Loading Model: {model_id}, on: {device_type}")
     logging.info("This action can take a few minutes!")
-
+    
     if model_basename is not None:
         if ".gguf" in model_basename.lower():
             llm = load_quantized_model_gguf_ggml(model_id, model_basename, device_type, LOGGING)
@@ -80,7 +80,21 @@ def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     # main_classes/text_generation#transformers.GenerationConfig.from_pretrained.returns
 
     # Create a pipeline for text generation
-    pipe = pipeline(
+    if device_type == "hpu":
+        from gaudi_utils.pipeline import GaudiTextGenerationPipeline
+
+        pipe = GaudiTextGenerationPipeline(
+            model_name_or_path=model_id,
+            max_new_tokens=1000,
+            temperature=0.2,
+            top_p=0.95,
+            repetition_penalty=1.15,
+            do_sample=True,
+            max_padding_length=5000,
+        )
+        pipe.compile_graph()
+    else:
+        pipe = pipeline(
         "text-generation",
         model=model,
         tokenizer=tokenizer,
@@ -122,12 +136,16 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
 
     """
     (1) Chooses an appropriate langchain library based on the enbedding model name.  Matching code is contained within ingest.py.
-    
+
     (2) Provides additional arguments for instructor and BGE models to improve results, pursuant to the instructions contained on
     their respective huggingface repository, project page or github repository.
     """
+    if device_type == "hpu":
+        from gaudi_utils.embeddings import load_embeddings
 
-    embeddings = get_embeddings(device_type)
+        embeddings = load_embeddings()
+    else:
+        embeddings = get_embeddings(device_type)
 
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 

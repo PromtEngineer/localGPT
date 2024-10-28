@@ -18,6 +18,9 @@ from constants import (
     SOURCE_DIRECTORY,
 )
 
+import nltk
+nltk.download('punkt_tab')
+nltk.download('averaged_perceptron_tagger_eng')
 
 def file_log(logentry):
     file1 = open("file_ingest.log", "a")
