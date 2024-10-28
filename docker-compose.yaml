@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  localgpt:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: localgpt
+    environment:
+      - device_type=${DEVICE_TYPE}
+      - source_documents=${SOURCE_DOCUMENTS}
+    volumes:
+      - "$HOME/.cache:/root/.cache"
+      - "$HOME/${SOURCE_DOCUMENTS}:/SOURCE_DOCUMENTS"
+    command: python run_localGPT_API.py  --port 8080 --host 0.0.0.0
+    networks:
+      - localgpt-network
+
+  localgpt-ui:
+    build: 
+      context: localGPTUI/
+      dockerfile: Dockerfile 
+    ports:
+      - "5111:5111"  # Map port 5111 inside the container to port 5111 on the Docker host
+    environment:
+      API_HOST: http://localgpt:8080/api 
+    depends_on:
+      - localgpt
+    networks:
+      - localgpt-network
+
+networks:
+  localgpt-network:
+    driver: bridge
