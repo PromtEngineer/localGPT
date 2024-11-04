@@ -4,10 +4,18 @@ import click
 import torch
 import utils
 from langchain.chains import RetrievalQA
-from langchain.embeddings import HuggingFaceInstructEmbeddings
+from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 from langchain.callbacks.manager import CallbackManager
+from transformers import AutoModel, AutoTokenizer
+
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.docstore.in_memory import InMemoryDocstore
+import faiss
+from langchain_community.vectorstores.faiss import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.docstore.in_memory import InMemoryDocstore
 
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
@@ -15,11 +23,25 @@ from prompt_template_utils import get_prompt_template
 from utils import get_embeddings
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma ,FAISS
+from langchain_community.vectorstores import chroma
 from transformers import (
     GenerationConfig,
     pipeline,
 )
+
+from langchain_cohere import CohereEmbeddings
+from langchain_core.documents import Document
+from langchain_postgres import PGVector
+from langchain_postgres.vectorstores import PGVector
+
+from pgvector.psycopg2 import register_vector
+import psycopg
+import psycopg2
+
+from langchain_community.llms import OpenAI
+from langchain_community.utilities import SQLDatabase
+# SQLDatabaseChain
 
 from load_models import (
     load_quantized_model_awq,
@@ -38,6 +60,9 @@ from constants import (
     CHROMA_SETTINGS,    
 )
 
+# Check if CUDA is available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     """
@@ -148,23 +173,140 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
         embeddings = get_embeddings(device_type)
 
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
-
-    # load the vectorstore
-    db = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
-    retriever = db.as_retriever()
-
-    # get the prompt template and memory if set by the user.
-    prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type, history=use_history)
-
     # load the llm pipeline
     llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
+    
+    
+    # https://api.pgxn.org/src/vector/vector-0.7.0/sql/vector--0.6.2--0.7.0.sql
+    # See docker command above to launch a postgres instance with pgvector enabled.
+    # connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # Uses psycopg3!
+    
+    
+    connection = psycopg2.connect("dbname=postgres user=postgres password=123456 host=localhost port=5432")
+    print(">>>>>>>>/n/n>>>>>>>>>>Connected to the database successfully!")
+    # curr = connection.cursor()
+    # "dbname=postgres user=postgres password=123456 host=localhost port=5432"
+    
+    #install pgvector
+    # curr.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    # connection.commit()
+    # Close the cursor and connection
+    # curr.close()
+    # connection.close()
+    #Connect to and configure your vector database
+    # Register the vector type with psycopg2
+
+    # register_vector(connection)
+    """
+    REF:
+    https://www.timescale.com/blog/postgresql-as-a-vector-database-create-store-and-query-openai-embeddings-with-pgvector/
+    https://www.timescale.com/blog/how-to-build-llm-applications-with-pgvector-vector-store-in-langchain/
+    Once we’ve connected to the database, let’s create a table that we’ll use to store embeddings along with metadata. Our table will look as follows:
+    
+                id title url content tokens embedding
+
+    Id : represents the unique ID of each vector embedding in the table.
+    title : is the blog title from which the content associated with the embedding is taken.
+    url : is the blog URL from which the content associated with the embedding is taken.
+    content : is the actual blog content associated with the embedding.
+    tokens : is the number of tokens the embedding represents.
+    embedding : is the vector representation of the content.
+
+    """
+    # Create table to store embeddings and metadata
+    # table_create_command = """
+    # CREATE TABLE embeddings (
+          
+    #             id bigserial primary key, 
+    #             title text,
+    #             url text,
+    #             content text,
+    #             tokens integer,
+    #             embedding vector(1536)
+
+    #             );
+    #             """
+
+    # curr.execute(table_create_command)
+    # curr.close()
+    # connection.commit()
+    # register_vector(connection)
+    # connection.commit()
+    # connection.execute('DROP TABLE IF EXISTS documents')
+    # connection.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(384))')
+    # curr = connection.cursor()
+
+    # for content, embedding in zip(input, embeddings):
+    #     connection.execute('INSERT INTO embeddings (content, embedding) VALUES (%s, %s)', (content, embedding))
+
+    # document_id = 1
+    # db = connection.execute('SELECT content FROM documents WHERE id != %(id)s ORDER BY embedding <=> (SELECT embedding FROM documents WHERE id = %(id)s) LIMIT 5', {'id': document_id}).fetchall()
+    # for neighbor in db:
+    #     print(neighbor[0])
+    
+    # uri = 'postgresql+psycopg://postgres:123456@localhost:5432/postgres'
+    # dbUri= uri
+    collection_name = "PG_VECTOR_SAudi"
+    # db = SQLDatabase.from_uri(connection)
+    connection = "postgresql+psycopg://postgres:123456@localhost:5432/postgres"  # 
+
+    db = PGVector( #.from_existing_index(
+        embeddings=embeddings,
+        collection_name=collection_name,
+        connection=connection,
+        use_jsonb=True,
+    )
+    # load the vectorstore
+    # db = Chroma(persist_directory=PERSIST_DIRECTORY,
+    #             embedding_function=embeddings,
+    #             client_settings=CHROMA_SETTINGS
+    #             )
+   
+
+    # print(embeddings)
+
+
+   
+
+    
+    # Initialize the FAISS index
+    # faiss_index = faiss.IndexFlatL2(768)
+
+    # # # Initialize the docstore
+    # docstore = InMemoryDocstore()
+    # # # Initialize the index_to_docstore_id
+    # index_to_docstore_id = {}
+    # # Add the embeddings to the index
+    # faiss_index.add(embeddings)
+    # Loading the saved embeddings 
+    # db =FAISS.load_local("DB/faiss", embeddings, allow_dangerous_deserialization=True)
+    # db = FAISS(
+    #             embedding_function=embeddings,
+    #             index=faiss_index,
+    #             # docstore=docstore,
+    #             # index_to_docstore_id=index_to_docstore_id
+    #             )
+    
+    # # Add documents and their embeddings to the FAISS index and the docstore
+    # for i, (text, embedding) in enumerate(zip(df['Text'].tolist(), embeddings)):
+    #     db.add_document(doc_id=i, text=text, embedding=embedding)
+    retriever = db.as_retriever(search_type="similarity", search_kwargs={"k":2})#search_kwargs={'k':2}
+
+    # get the prompt template and memory if set by the user.
+    prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type,
+                                          history=use_history)
+
+    
+    # # Ensure the model is on CPU
+    # device = torch.device("cpu")
+    # llm.to(device)
 
     if use_history:
         qa = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
             retriever=retriever,
-            return_source_documents=True,  # verbose=True,
+            return_source_documents=True,   verbose=True,
             callbacks=callback_manager,
             chain_type_kwargs={"prompt": prompt, "memory": memory},
         )
@@ -173,7 +315,7 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
             llm=llm,
             chain_type="stuff",  # try other chains types as well. refine, map_reduce, map_rerank
             retriever=retriever,
-            return_source_documents=True,  # verbose=True,
+            return_source_documents=True,   verbose=True,
             callbacks=callback_manager,
             chain_type_kwargs={
                 "prompt": prompt,
@@ -274,7 +416,9 @@ def main(device_type, show_sources, use_history, model_type, save_qa):
         if query == "exit":
             break
         # Get the answer from the chain
-        res = qa(query)
+        # res = qa(query)
+        res = qa.invoke(query)
+
         answer, docs = res["result"], res["source_documents"]
 
         # Print the result
