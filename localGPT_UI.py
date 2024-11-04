@@ -2,14 +2,16 @@ import torch
 import subprocess
 import streamlit as st
 from run_localGPT import load_model
-from langchain.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma
 from constants import CHROMA_SETTINGS, EMBEDDING_MODEL_NAME, PERSIST_DIRECTORY, MODEL_ID, MODEL_BASENAME
-from langchain.embeddings import HuggingFaceInstructEmbeddings
+from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from langchain.chains import RetrievalQA
-from streamlit_extras.add_vertical_space import add_vertical_space
+from streamlit_extras import add_vertical_space
 from langchain.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
 
+# Use the function in your Streamlit app
+add_vertical_space(10)
 
 def model_memory():
     # Adding history to the model.

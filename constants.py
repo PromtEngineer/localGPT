@@ -2,11 +2,12 @@ import os
 
 # from dotenv import load_dotenv
 from chromadb.config import Settings
+# from faissdb.config import Settings
 
 # https://python.langchain.com/en/latest/modules/indexes/document_loaders/examples/excel.html?highlight=xlsx#microsoft-excel
-from langchain.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader, Docx2txtLoader
-from langchain.document_loaders import UnstructuredFileLoader, UnstructuredMarkdownLoader
-from langchain.document_loaders import UnstructuredHTMLLoader
+from langchain_community.document_loaders import CSVLoader, PDFMinerLoader, TextLoader, UnstructuredExcelLoader, Docx2txtLoader
+from langchain_community.document_loaders import UnstructuredFileLoader, UnstructuredMarkdownLoader
+from langchain_community.document_loaders import UnstructuredHTMLLoader
 
 
 # load_dotenv()
@@ -18,6 +19,9 @@ SOURCE_DIRECTORY = f"{ROOT_DIRECTORY}/SOURCE_DOCUMENTS"
 PERSIST_DIRECTORY = f"{ROOT_DIRECTORY}/DB"
 
 MODELS_PATH = "./models"
+
+# INDEX_PATH = "faiss_index.index"
+# METADATA_PATH = "faiss_metadata.pkl"
 
 # Can be changed to a specific number
 INGEST_THREADS = os.cpu_count() or 8
@@ -59,7 +63,7 @@ DOCUMENT_MAP = {
 
 # Default Instructor Model
 EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Accuracy with lower VRAM usage)
-
+# EMBEDDING_MODEL_NAME = 'TheBloke/Mistral-7B-Instruct-v0.1-GGUF'
 ####
 #### OTHER EMBEDDING MODEL OPTIONS
 ####
@@ -110,15 +114,18 @@ EMBEDDING_MODEL_NAME = "hkunlp/instructor-large"  # Uses 1.5 GB of VRAM (High Ac
 # MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.2"
 
 # LLAMA 3 # use for Apple Silicon
-MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
-MODEL_BASENAME = None
+# MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
+# MODEL_ID = "TheBloke/Llama-2-7B-32K-Instruct-GPTQ"
+# MODEL_BASENAME = None#"Llama-2-7B-32K-Instruct-GPTQ"
+# MODEL_BASENAME = "model.safetensors.awq"
+
 
 # LLAMA 3 # use for NVIDIA GPUs
 # MODEL_ID = "unsloth/llama-3-8b-bnb-4bit"
 # MODEL_BASENAME = None
 
-# MODEL_ID = "TheBloke/Mistral-7B-Instruct-v0.1-GGUF"
-# MODEL_BASENAME = "mistral-7b-instruct-v0.1.Q8_0.gguf"
+MODEL_ID = "TheBloke/Mistral-7B-Instruct-v0.1-GGUF"
+MODEL_BASENAME = "mistral-7b-instruct-v0.1.Q8_0.gguf"
 
 # MODEL_ID = "TheBloke/Llama-2-70b-Chat-GGUF"
 # MODEL_BASENAME = "llama-2-70b-chat.Q4_K_M.gguf"

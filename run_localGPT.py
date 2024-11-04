@@ -4,10 +4,18 @@ import click
 import torch
 import utils
 from langchain.chains import RetrievalQA
-from langchain.embeddings import HuggingFaceInstructEmbeddings
+from langchain_community.embeddings import HuggingFaceInstructEmbeddings
 from langchain.llms import HuggingFacePipeline
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler  # for streaming response
 from langchain.callbacks.manager import CallbackManager
+from transformers import AutoModel, AutoTokenizer
+
+from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_community.docstore.in_memory import InMemoryDocstore
+import faiss
+from langchain_community.vectorstores.faiss import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.docstore.in_memory import InMemoryDocstore
 
 callback_manager = CallbackManager([StreamingStdOutCallbackHandler()])
 
@@ -15,7 +23,8 @@ from prompt_template_utils import get_prompt_template
 from utils import get_embeddings
 
 # from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
-from langchain.vectorstores import Chroma
+from langchain_community.vectorstores import Chroma ,FAISS
+from langchain_community.vectorstores import chroma
 from transformers import (
     GenerationConfig,
     pipeline,
@@ -38,6 +47,9 @@ from constants import (
     CHROMA_SETTINGS,    
 )
 
+# Check if CUDA is available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 def load_model(device_type, model_id, model_basename=None, LOGGING=logging):
     """
@@ -150,14 +162,51 @@ def retrieval_qa_pipline(device_type, use_history, promptTemplate_type="llama"):
     logging.info(f"Loaded embeddings from {EMBEDDING_MODEL_NAME}")
 
     # load the vectorstore
-    db = Chroma(persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings, client_settings=CHROMA_SETTINGS)
+    db = Chroma(persist_directory=PERSIST_DIRECTORY,
+                embedding_function=embeddings,
+                client_settings=CHROMA_SETTINGS
+                )
+   
+
+    # print(embeddings)
+
+
+   
+
+    
+    # Initialize the FAISS index
+    # faiss_index = faiss.IndexFlatL2(768)
+
+    # # # Initialize the docstore
+    # docstore = InMemoryDocstore()
+    # # # Initialize the index_to_docstore_id
+    # index_to_docstore_id = {}
+    # # Add the embeddings to the index
+    # faiss_index.add(embeddings)
+    # Loading the saved embeddings 
+    # db =FAISS.load_local("DB/faiss", embeddings, allow_dangerous_deserialization=True)
+    # db = FAISS(
+    #             embedding_function=embeddings,
+    #             index=faiss_index,
+    #             # docstore=docstore,
+    #             # index_to_docstore_id=index_to_docstore_id
+    #             )
+    
+    # # Add documents and their embeddings to the FAISS index and the docstore
+    # for i, (text, embedding) in enumerate(zip(df['Text'].tolist(), embeddings)):
+    #     db.add_document(doc_id=i, text=text, embedding=embedding)
     retriever = db.as_retriever()
 
     # get the prompt template and memory if set by the user.
-    prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type, history=use_history)
+    prompt, memory = get_prompt_template(promptTemplate_type=promptTemplate_type,
+                                          history=use_history)
 
     # load the llm pipeline
     llm = load_model(device_type, model_id=MODEL_ID, model_basename=MODEL_BASENAME, LOGGING=logging)
+    
+    # # Ensure the model is on CPU
+    # device = torch.device("cpu")
+    # llm.to(device)
 
     if use_history:
         qa = RetrievalQA.from_chain_type(
@@ -274,7 +323,9 @@ def main(device_type, show_sources, use_history, model_type, save_qa):
         if query == "exit":
             break
         # Get the answer from the chain
-        res = qa(query)
+        # res = qa(query)
+        res = qa.invoke(query)
+
         answer, docs = res["result"], res["source_documents"]
 
         # Print the result
