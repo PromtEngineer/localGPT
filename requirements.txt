@@ -5,7 +5,7 @@ pdfminer.six==20221105
 InstructorEmbedding
 sentence-transformers==2.2.2
 faiss-cpu
-huggingface_hub
+huggingface_hub==0.25.0
 transformers
 autoawq; sys_platform != 'darwin'
 protobuf==3.20.2; sys_platform != 'darwin'
