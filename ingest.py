@@ -65,12 +65,20 @@ def load_document_batch(filepaths):
 def load_documents(source_dir: str) -> list[Document]:
     # Loads all documents from the source documents directory, including nested folders
     paths = []
+    
     for root, _, files in os.walk(source_dir):
         for file_name in files:
             print("Importing: " + file_name)
             file_extension = os.path.splitext(file_name)[1]
             source_file_path = os.path.join(root, file_name)
-            if file_extension in DOCUMENT_MAP.keys():
+            # Rename the file to have a lowercase extension
+            if file_extension != file_extension.lower():
+                new_file_name = os.path.splitext(file_name)[0] + file_extension.lower()
+                new_file_path = os.path.join(root, new_file_name)
+                os.rename(source_file_path, new_file_path)
+                source_file_path = new_file_path
+            
+            if file_extension.lower() in DOCUMENT_MAP.keys():
                 paths.append(source_file_path)
 
     # Have at least one worker and at most INGEST_THREADS workers
