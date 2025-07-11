@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test PDF Upload</title>
+</head>
+<body>
+    <h1>Test PDF Upload</h1>
+    <form id="uploadForm">
+        <input type="file" id="fileInput" accept=".pdf" />
+        <button type="submit">Upload PDF</button>
+    </form>
+    
+    <div id="result"></div>
+    
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a file');
+                return;
+            }
+            
+            console.log('Selected file:', {
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                lastModified: file.lastModified
+            });
+            
+            const formData = new FormData();
+            formData.append('file_0', file);
+            
+            try {
+                const response = await fetch('http://localhost:8000/sessions/4b545007-f13f-4bc8-be69-3f0633645e52/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                document.getElementById('result').innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+                console.log('Upload result:', result);
+                
+            } catch (error) {
+                console.error('Upload failed:', error);
+                document.getElementById('result').innerHTML = 'Upload failed: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html> 
