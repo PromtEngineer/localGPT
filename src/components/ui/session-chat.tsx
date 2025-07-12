@@ -367,7 +367,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 if (!tok.trim()) {
                   return m; // skip empty/whitespace-only chunks
                 }
-                const updated = current.endsWith(tok) ? current : current + tok;
+                let updated = current.endsWith(tok) ? current : current + tok;
+                // Clean up excessive newlines
+                updated = updated.replace(/\n{3,}/g, '\n\n');
                 if (steps[finalIdx].key === 'direct') {
                   steps[0].details = updated;
                 } else {
@@ -393,7 +395,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 }
                 const curAns: string = detailsArr[idx].answer || '';
                 if (!curAns.endsWith(tok)) {
-                  detailsArr[idx].answer = curAns + tok;
+                  let updatedAnswer = curAns + tok;
+                  // Clean up excessive newlines
+                  updatedAnswer = updatedAnswer.replace(/\n{3,}/g, '\n\n');
+                  detailsArr[idx].answer = updatedAnswer;
                 }
                 steps[5].details = detailsArr;
                 if (isLoading) setIsLoading(false);

@@ -141,9 +141,8 @@ class ServiceManager:
             ),
             'backend': ServiceConfig(
                 name='backend',
-                command=[sys.executable, 'server.py'],
+                command=[sys.executable, 'backend/server.py'],
                 port=8000,
-                cwd='backend',
                 startup_delay=2,
                 required=True
             ),
