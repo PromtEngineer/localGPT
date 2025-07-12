@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 class ChatDatabase:
-    def __init__(self, db_path: str = "chat_history.db"):
+    def __init__(self, db_path: str = "backend/chat_data.db"):
         self.db_path = db_path
         self.init_database()
     

@@ -289,15 +289,15 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json_response({"error": "Message is required"}, status_code=400)
                 return
 
-            # Add user message to database first
-            user_message_id = db.add_message(session_id, message, "user")
-            
             if session['message_count'] == 0:
                 title = generate_session_title(message)
                 db.update_session_title(session_id, title)
+
+            # Add user message to database first
+            user_message_id = db.add_message(session_id, message, "user")
             
             # 🎯 SMART ROUTING: Decide between direct LLM vs RAG
-                idx_ids = db.get_indexes_for_session(session_id)
+            idx_ids = db.get_indexes_for_session(session_id)
             force_rag = bool(data.get("force_rag", False))
             use_rag = True if force_rag else self._should_use_rag(message, idx_ids)
             

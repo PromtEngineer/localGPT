@@ -17,7 +17,7 @@ from rag_system.main import get_agent
 from rag_system.factory import get_indexing_pipeline
 
 # Initialize database connection once at module level
-db = ChatDatabase("backend/chat_history.db")
+db = ChatDatabase("backend/chat_data.db")
 
 # Get the desired agent mode from environment variables, defaulting to 'default'
 # This allows us to easily switch between 'default', 'fast', 'react', etc.
