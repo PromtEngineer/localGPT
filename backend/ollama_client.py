@@ -1,6 +1,5 @@
 import requests
 import json
-import os
 from typing import List, Dict
 
 class OllamaClient:

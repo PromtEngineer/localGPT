@@ -1,4 +1,3 @@
-import os
 from dotenv import load_dotenv
 
 def get_agent(mode: str = "default"):

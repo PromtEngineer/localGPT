@@ -1,11 +1,8 @@
-from rag_system.indexing.representations import QwenEmbedder
 # from rag_system.indexing.representations import BM25Generator
 import lancedb
-import pandas as pd
 import pyarrow as pa
 from typing import List, Dict, Any
 import numpy as np
-import os
 import json
 
 class LanceDBManager:

@@ -3,13 +3,11 @@ Simple PDF Processing Service
 Handles PDF upload and text extraction for RAG functionality
 """
 
-import os
 import uuid
 from typing import List, Dict, Any
 import PyPDF2
 from io import BytesIO
 import sqlite3
-import json
 from datetime import datetime
 
 class SimplePDFProcessor:

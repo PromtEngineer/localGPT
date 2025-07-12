@@ -4,8 +4,6 @@ Simple test script for the localGPT backend
 """
 
 import requests
-import json
-import time
 
 def test_health_endpoint():
     """Test the health endpoint"""

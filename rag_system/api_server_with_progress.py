@@ -1,15 +1,14 @@
 import json
-import asyncio
 import threading
 import time
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 import logging
 from urllib.parse import urlparse, parse_qs
 import http.server
 import socketserver
 
 # Import the core logic and batch processing utilities
-from rag_system.main import run_indexing, get_agent
+from rag_system.main import get_agent
 from rag_system.utils.batch_processor import ProgressTracker, timer
 
 # Set up logging
