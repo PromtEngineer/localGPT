@@ -160,7 +160,7 @@ def main(device_type):
     logging.info(f"Split into {len(texts)} chunks of text")
 
     """
-    (1) Chooses an appropriate langchain library based on the enbedding model name.  Matching code is contained within fun_localGPT.py.
+    (1) Chooses an appropriate langchain library based on the enbedding model name.  Matching code is contained within run_localGPT.py.
     
     (2) Provides additional arguments for instructor and BGE models to improve results, pursuant to the instructions contained on
     their respective huggingface repository, project page or github repository.
