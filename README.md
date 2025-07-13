@@ -50,8 +50,12 @@ The architecture is **modular and lightweight**—enable only the components you
 ### 🤖 AI-Powered Chat
 - **Natural Language Queries**: Ask questions in plain English
 - **Source Attribution**: Every answer includes document references
-- **Smart Routing**: Automatically chooses the best approach for each query
-- **Multiple AI Models**: Support for Ollama, (support for   OpenAI and Hugging Face models in the future)
+- **Smart Routing**: Automatically chooses between RAG and direct LLM responses
+- **Query Decomposition**: Breaks complex queries into sub-questions for better answers
+- **Semantic Caching**: TTL-based caching with similarity matching for faster responses
+- **Session-Aware History**: Maintains conversation context across interactions
+- **Answer Verification**: Independent verification pass for accuracy
+- **Multiple AI Models**: Ollama for inference, HuggingFace for embeddings and reranking
 
 
 ### 🛠️ Developer-Friendly
@@ -77,12 +81,12 @@ The architecture is **modular and lightweight**—enable only the components you
 - 8GB+ RAM (16GB+ recommended)
 - Ollama (required for both deployment approaches)
 
-### Option 1: Docker Deployment (Recommended for Production)
+and ### Option 1: Docker Deployment (Recommended for Production)
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/localgpt.git
-cd localgpt
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Install Ollama locally (required even for Docker)
 curl -fsSL https://ollama.ai/install.sh | sh
@@ -121,6 +125,14 @@ cd localGPT
 # Install Python dependencies
 pip install -r requirements.txt
 
+# Key dependencies installed:
+# - torch==2.4.1, transformers==4.51.0 (AI models)
+# - lancedb (vector database)
+# - rank_bm25, fuzzywuzzy (search algorithms)
+# - sentence_transformers, rerankers (embedding/reranking)
+# - docling (document processing)
+# - colpali-engine (multimodal processing)
+
 # Install Node.js dependencies
 npm install
 
@@ -137,18 +149,34 @@ python run_system.py
 open http://localhost:3000
 ```
 
-**Direct Development Management:**
+**System Management:**
 ```bash
 # Check system health (comprehensive diagnostics)
 python system_health_check.py
 
-# Check service status
+# Check service status and health
 python run_system.py --health
+
+# Start in production mode
+python run_system.py --mode prod
+
+# Skip frontend (backend + RAG API only)
+python run_system.py --no-frontend
+
+# View aggregated logs
+python run_system.py --logs-only
 
 # Stop all services
 python run_system.py --stop
 # Or press Ctrl+C in the terminal running python run_system.py
 ```
+
+**Service Architecture:**
+The `run_system.py` launcher manages four key services:
+- **Ollama Server** (port 11434): AI model serving
+- **RAG API Server** (port 8001): Document processing and retrieval
+- **Backend Server** (port 8000): Session management and API endpoints
+- **Frontend Server** (port 3000): React/Next.js web interface
 
 ### Option 3: Manual Component Startup
 
@@ -215,18 +243,23 @@ nano .env
 
 **Key Configuration Options:**
 ```env
-# AI Models
+# AI Models (referenced in rag_system/main.py)
 OLLAMA_HOST=http://localhost:11434
-DEFAULT_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
-DEFAULT_GENERATION_MODEL=qwen3:0.6b
 
-# Database
+# Database Paths (used by backend and RAG system)
 DATABASE_PATH=./backend/chat_data.db
 VECTOR_DB_PATH=./lancedb
 
-# Server Settings
+# Server Settings (used by run_system.py)
 BACKEND_PORT=8000
 FRONTEND_PORT=3000
+RAG_API_PORT=8001
+
+# Optional: Override default models
+GENERATION_MODEL=qwen3:8b
+ENRICHMENT_MODEL=qwen3:0.6b
+EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
+RERANKER_MODEL=answerdotai/answerai-colbert-small-v1
 ```
 
 #### 4. Initialize the System
@@ -334,47 +367,74 @@ print(response.json()['response'])
 
 ### Model Configuration
 
-LocalGPT supports multiple AI model providers:
+LocalGPT supports multiple AI model providers with centralized configuration:
 
-#### Ollama Models (Local)
+#### Ollama Models (Local Inference)
 ```python
 OLLAMA_CONFIG = {
-    'host': 'http://localhost:11434',
-    'generation_model': 'qwen3:0.6b',
-    'embedding_model': 'nomic-embed-text'
+    "host": "http://localhost:11434",
+    "generation_model": "qwen3:8b",        # Main text generation
+    "enrichment_model": "qwen3:0.6b"       # Lightweight routing/enrichment
 }
 ```
 
-#### Hugging Face Models
+#### External Models (HuggingFace Direct)
 ```python
 EXTERNAL_MODELS = {
-    'embedding': {
-        'Qwen/Qwen3-Embedding-0.6B': {'dimensions': 1024},
-        'Qwen/Qwen3-Embedding-4B': {'dimensions': 2048},
-        'Qwen/Qwen3-Embedding-8B': {'dimensions': 4096}
-    }
+    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",           # 1024 dimensions
+    "reranker_model": "answerdotai/answerai-colbert-small-v1", # ColBERT reranker
+    "vision_model": "Qwen/Qwen-VL-Chat",                      # Multimodal support
+    "fallback_reranker": "BAAI/bge-reranker-base"             # Backup reranker
 }
 ```
 
-### Processing Configuration
+### Pipeline Configuration
 
+LocalGPT offers two main pipeline configurations:
+
+#### Default Pipeline (Production-Ready)
 ```python
-PIPELINE_CONFIGS = {
-    'default': {
-        'chunk_size': 512,
-        'chunk_overlap': 64,
-        'retrieval_mode': 'hybrid',
-        'window_size': 5,
-        'enable_enrich': True,
-        'latechunk': True,
-        'docling_chunk': True
+"default": {
+    "description": "Production-ready pipeline with hybrid search, AI reranking, and verification",
+    "storage": {
+        "lancedb_uri": "./lancedb",
+        "text_table_name": "text_pages_v3",
+        "bm25_path": "./index_store/bm25"
     },
-    'fast': {
-        'chunk_size': 256,
-        'chunk_overlap': 32,
-        'retrieval_mode': 'vector',
-        'enable_enrich': False
-    }
+    "retrieval": {
+        "retriever": "multivector",
+        "search_type": "hybrid",
+        "late_chunking": {"enabled": True},
+        "dense": {"enabled": True, "weight": 0.7},
+        "bm25": {"enabled": True}
+    },
+    "reranker": {
+        "enabled": True,
+        "type": "ai",
+        "strategy": "rerankers-lib",
+        "model_name": "answerdotai/answerai-colbert-small-v1",
+        "top_k": 10
+    },
+    "query_decomposition": {"enabled": True, "max_sub_queries": 3},
+    "verification": {"enabled": True},
+    "retrieval_k": 20,
+    "contextual_enricher": {"enabled": True, "window_size": 1}
+}
+```
+
+#### Fast Pipeline (Speed-Optimized)
+```python
+"fast": {
+    "description": "Speed-optimized pipeline with minimal overhead",
+    "retrieval": {
+        "search_type": "vector_only",
+        "late_chunking": {"enabled": False}
+    },
+    "reranker": {"enabled": False},
+    "query_decomposition": {"enabled": False},
+    "verification": {"enabled": False},
+    "retrieval_k": 10,
+    "contextual_enricher": {"enabled": False}
 }
 ```
 
@@ -442,11 +502,27 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 ### Getting Help
 
-1. **Check Logs**: Look at `logs/system.log` for detailed error messages
-2. **System Health**: Run `python system_health_check.py`
-3. **Documentation**: Check the [Technical Documentation](TECHNICAL_DOCS.md)
-4. **GitHub Issues**: Report bugs and request features
-5. **Community**: Join our Discord/Slack community
+1. **Check Logs**: The system creates structured logs in the `logs/` directory:
+   - `logs/system.log`: Main system events and errors
+   - `logs/ollama.log`: Ollama server logs
+   - `logs/rag-api.log`: RAG API processing logs
+   - `logs/backend.log`: Backend server logs
+   - `logs/frontend.log`: Frontend build and runtime logs
+
+2. **System Health**: Run comprehensive diagnostics:
+   ```bash
+   python system_health_check.py  # Full system diagnostics
+   python run_system.py --health  # Service status check
+   ```
+
+3. **Health Endpoints**: Check individual service health:
+   - Backend: `http://localhost:8000/health`
+   - RAG API: `http://localhost:8001/health`
+   - Ollama: `http://localhost:11434/api/tags`
+
+4. **Documentation**: Check the [Technical Documentation](TECHNICAL_DOCS.md)
+5. **GitHub Issues**: Report bugs and request features
+6. **Community**: Join our Discord/Slack community
 
 ---
 
@@ -456,6 +532,19 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 #### Chat API
 ```http
+# Session-based chat (recommended)
+POST /sessions/{session_id}/chat
+Content-Type: application/json
+
+{
+  "query": "What are the main topics discussed?",
+  "search_type": "hybrid",
+  "retrieval_k": 20,
+  "ai_rerank": true,
+  "context_window_size": 5
+}
+
+# Legacy chat endpoint
 POST /chat
 Content-Type: application/json
 
@@ -471,33 +560,124 @@ Content-Type: application/json
 ```http
 # Create index
 POST /indexes
-{"name": "My Index", "description": "Description"}
+Content-Type: application/json
+{
+  "name": "My Index",
+  "description": "Description",
+  "config": "default"
+}
 
-# Upload documents
+# Get all indexes
+GET /indexes
+
+# Get specific index
+GET /indexes/{id}
+
+# Upload documents to index
 POST /indexes/{id}/upload
 Content-Type: multipart/form-data
+files: [file1.pdf, file2.pdf, ...]
 
-# Build index
+# Build index (process uploaded documents)
 POST /indexes/{id}/build
+Content-Type: application/json
+{
+  "config_mode": "default",
+  "enable_enrich": true,
+  "chunk_size": 512
+}
 
-# Get index status
-GET /indexes/{id}
+# Delete index
+DELETE /indexes/{id}
 ```
 
 #### Session Management
 ```http
 # Create session
 POST /sessions
-{"title": "My Session", "model": "qwen3:0.6b"}
+Content-Type: application/json
+{
+  "title": "My Session",
+  "model": "qwen3:0.6b"
+}
 
-# Get sessions
+# Get all sessions
 GET /sessions
+
+# Get specific session
+GET /sessions/{session_id}
+
+# Get session documents
+GET /sessions/{session_id}/documents
+
+# Get session indexes
+GET /sessions/{session_id}/indexes
 
 # Link index to session
 POST /sessions/{session_id}/indexes/{index_id}
+
+# Delete session
+DELETE /sessions/{session_id}
+
+# Rename session
+POST /sessions/{session_id}/rename
+Content-Type: application/json
+{
+  "new_title": "Updated Session Name"
+}
 ```
 
 ### Advanced Features
+
+#### Query Decomposition
+The system can break complex queries into sub-questions for better answers:
+```http
+POST /sessions/{session_id}/chat
+Content-Type: application/json
+
+{
+  "query": "Compare the methodologies and analyze their effectiveness",
+  "query_decompose": true,
+  "compose_sub_answers": true
+}
+```
+
+#### Answer Verification
+Independent verification pass for accuracy using a separate verification model:
+```http
+POST /sessions/{session_id}/chat
+Content-Type: application/json
+
+{
+  "query": "What are the key findings?",
+  "verify": true
+}
+```
+
+#### Contextual Enrichment
+Document context enrichment during indexing for better understanding:
+```bash
+# Enable during index building
+POST /indexes/{id}/build
+{
+  "enable_enrich": true,
+  "window_size": 2
+}
+```
+
+#### Late Chunking
+Better context preservation by chunking after embedding:
+```bash
+# Configure in pipeline
+"late_chunking": {"enabled": true}
+```
+
+#### Multimodal Support
+Vision model integration for document images and charts:
+```python
+# Configured in EXTERNAL_MODELS
+"vision_model": "Qwen/Qwen-VL-Chat"
+```
 
 #### Streaming Chat
 ```http
@@ -512,7 +692,34 @@ Content-Type: application/json
 ```
 
 #### Batch Processing
+```bash
+# Using the batch indexing script
+python demo_batch_indexing.py --config batch_indexing_config.json
+
+# Example batch configuration (batch_indexing_config.json):
+{
+  "index_name": "Sample Batch Index",
+  "index_description": "Example batch index configuration",
+  "documents": [
+    "./rag_system/documents/invoice_1039.pdf",
+    "./rag_system/documents/invoice_1041.pdf"
+  ],
+  "processing": {
+    "chunk_size": 512,
+    "chunk_overlap": 64,
+    "enable_enrich": true,
+    "enable_latechunk": true,
+    "enable_docling": true,
+    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
+    "generation_model": "qwen3:0.6b",
+    "retrieval_mode": "hybrid",
+    "window_size": 2
+  }
+}
+```
+
 ```http
+# API endpoint for batch processing
 POST /batch/index
 Content-Type: application/json
 
@@ -520,7 +727,9 @@ Content-Type: application/json
   "file_paths": ["doc1.pdf", "doc2.pdf"],
   "config": {
     "chunk_size": 512,
-    "enable_enrich": true
+    "enable_enrich": true,
+    "enable_latechunk": true,
+    "enable_docling": true
   }
 }
 ```
@@ -539,17 +748,17 @@ graph TB
     API --> Agent[RAG Agent]
     Agent --> Retrieval[Retrieval Pipeline]
     Agent --> Generation[Generation Pipeline]
-    
+
     Retrieval --> Vector[Vector Search]
     Retrieval --> BM25[BM25 Search]
     Retrieval --> Rerank[Reranking]
-    
+
     Vector --> LanceDB[(LanceDB)]
     BM25 --> BM25DB[(BM25 Index)]
-    
+
     Generation --> Ollama[Ollama Models]
     Generation --> HF[Hugging Face Models]
-    
+
     API --> SQLite[(SQLite DB)]
 ```
 
