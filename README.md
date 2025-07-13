@@ -6,25 +6,31 @@
 
 **Transform your documents into intelligent, searchable knowledge with complete privacy**
 
-[![GitHub Stars](https://img.shields.io/github/stars/PromtEngineer/localGPT?style=social)](https://github.com/PromtEngineer/localGPT/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/PromtEngineer/localGPT?style=social)](https://github.com/PromtEngineer/localGPT/network/members)
-[![GitHub Issues](https://img.shields.io/github/issues/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/issues)
-[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/pulls)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](https://www.docker.com/)
+[![GitHub Stars](https://img.shields.io/github/stars/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/pulls)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg?style=flat-square)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-supported-blue.svg?style=flat-square)](https://www.docker.com/)
 
-[Quick Start](#quick-start) • [Features](#features) • [Installation](#installation) • [Documentation](#documentation) • [API Reference](#api-reference)
+[Quick Start](#quick-start) • [Features](#features) • [Installation](#detailed-installation) • [Getting&nbsp;Started](#getting-started) • [API&nbsp;Reference](#api-reference)
 
 </div>
 
 ## 🚀 What is LocalGPT?
 
-LocalGPT is a **private, local document intelligence platform** that allows you to chat with your documents using advanced AI models - all while keeping your data completely private and secure on your own infrastructure.
+LocalGPT is a **fully private, on-premise Document Intelligence platform**. Ask questions, summarise, and uncover insights from your files with state-of-the-art AI—no data ever leaves your machine.
 
-LocalGPT is not just another RAG (Retrieval-Augmented Generation) system. It employs a **hybrid search** approach that combines semantic similarity with keyword matching and [Late Chunking](https://jina.ai/news/late-chunking-in-long-context-embedding-models/), making it more effective than traditional RAG systems. It also uses a **smart routing** approach that automatically chooses the best approach for each query. It also uses a **contextual enrichment** approach that enhances document understanding with AI-generated context. LocalGPT uses [Context Pruning](https://huggingface.co/naver/provence-reranker-debertav3-v1) to identify the most relavant sentences, rather than relying on chunk based ranking. It also uses an independedent **verification** approach that ensures the accuracy of the results.  
+More than a traditional RAG (Retrieval-Augmented Generation) tool, LocalGPT features a **hybrid search engine** that blends semantic similarity, keyword matching, and [Late Chunking](https://jina.ai/news/late-chunking-in-long-context-embedding-models/) for long-context precision. A **smart router** automatically selects between RAG and direct LLM answering for every query, while **contextual enrichment** and sentence-level [Context Pruning](https://huggingface.co/naver/provence-reranker-debertav3-v1) surface only the most relevant content. An independent **verification** pass adds an extra layer of accuracy.
 
-Its modualr, you can enable or disable any of the features you want based on your needs and offers a flexible solution between accuracy and speed. 
+The architecture is **modular and lightweight**—enable only the components you need. With a pure-Python core and minimal dependencies, LocalGPT is simple to deploy, run, and maintain on any infrastructure.The system has minimal dependencies on frameworks and libraries, making it easy to deploy and maintain. The RAG system is pure python and does not require any additional dependencies.
+
+### 🖼️ UI Preview
+
+| Home | Create Index | Chat |
+|------|--------------|------|
+| ![](Documentation/images/Home.png) | ![](Documentation/images/Index%20Creation.png) | ![](Documentation/images/Retrieval%20Process.png) |
 
 ## ✨ Features
 
