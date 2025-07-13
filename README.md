@@ -2,9 +2,9 @@
 
 <div align="center">
 
-![LocalGPT Logo](https://img.shields.io/badge/LocalGPT-Private%20AI-blue?style=for-the-badge)
-
-**Transform your documents into intelligent, searchable knowledge with complete privacy**
+<p align="center">
+<a href="https://trendshift.io/repositories/2947" target="_blank"><img src="https://trendshift.io/api/badge/repositories/2947" alt="PromtEngineer%2FlocalGPT | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</p>
 
 [![GitHub Stars](https://img.shields.io/github/stars/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/network/members)
@@ -14,8 +14,14 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg?style=flat-square)](https://www.docker.com/)
 
-[Quick Start](#quick-start) • [Features](#features) • [Installation](#detailed-installation) • [Getting&nbsp;Started](#getting-started) • [API&nbsp;Reference](#api-reference)
-
+<p align="center">
+    <a href="https://x.com/engineerrprompt">
+      <img src="https://img.shields.io/badge/Follow%20on%20X-000000?style=for-the-badge&logo=x&logoColor=white" alt="Follow on X" />
+    </a>
+    <a href="https://discord.gg/tUDWAFGc">
+      <img src="https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join our Discord" />
+    </a>
+  </p>
 </div>
 
 ## 🚀 What is LocalGPT?
@@ -74,6 +80,8 @@ The architecture is **modular and lightweight**—enable only the components you
 
 ## 🚀 Quick Start
 
+Note: The installation is currently only tested on macOS. 
+
 ### Prerequisites
 - Python 3.8 or higher (tested with Python 3.11.5)
 - Node.js 16+ and npm (tested with Node.js 23.10.0, npm 10.9.2)
@@ -81,7 +89,15 @@ The architecture is **modular and lightweight**—enable only the components you
 - 8GB+ RAM (16GB+ recommended)
 - Ollama (required for both deployment approaches)
 
-and ### Option 1: Docker Deployment (Recommended for Production)
+### ***NOTE***
+Before this brach is moved to the main branch, please clone this branch for instalation:
+
+```bash
+git -b localgpt-v2 clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
+```
+
+### Option 1: Docker Deployment 
 
 ```bash
 # Clone the repository
@@ -131,7 +147,7 @@ pip install -r requirements.txt
 # - rank_bm25, fuzzywuzzy (search algorithms)
 # - sentence_transformers, rerankers (embedding/reranking)
 # - docling (document processing)
-# - colpali-engine (multimodal processing)
+# - colpali-engine (multimodal processing - support coming soon)
 
 # Install Node.js dependencies
 npm install
@@ -383,7 +399,6 @@ OLLAMA_CONFIG = {
 EXTERNAL_MODELS = {
     "embedding_model": "Qwen/Qwen3-Embedding-0.6B",           # 1024 dimensions
     "reranker_model": "answerdotai/answerai-colbert-small-v1", # ColBERT reranker
-    "vision_model": "Qwen/Qwen-VL-Chat",                      # Multimodal support
     "fallback_reranker": "BAAI/bge-reranker-base"             # Backup reranker
 }
 ```
@@ -672,13 +687,6 @@ Better context preservation by chunking after embedding:
 "late_chunking": {"enabled": true}
 ```
 
-#### Multimodal Support
-Vision model integration for document images and charts:
-```python
-# Configured in EXTERNAL_MODELS
-"vision_model": "Qwen/Qwen-VL-Chat"
-```
-
 #### Streaming Chat
 ```http
 POST /chat/stream
@@ -816,15 +824,6 @@ graph TD
     R_Hist_Update --> ZZZ(End: Return Result);
 ```
 
-### Key Components
-
-- **Frontend**: React/Next.js web interface
-- **Backend**: Python FastAPI server
-- **RAG Agent**: Intelligent query routing and processing
-- **Vector Database**: LanceDB for semantic search
-- **Search Engine**: BM25 for keyword search
-- **AI Models**: Ollama and Hugging Face integration
-
 ---
 
 ## 🤝 Contributing
@@ -877,29 +876,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-## 🙏 Acknowledgments
-
-- **Ollama**: For providing excellent local AI model serving
-- **LanceDB**: For high-performance vector database
-- **Hugging Face**: For state-of-the-art AI models
-- **React/Next.js**: For the modern web interface
-- **FastAPI**: For the robust backend framework
-
----
-
 ## 📞 Support
 
 - **Documentation**: [Technical Docs](TECHNICAL_DOCS.md)
 - **Issues**: [GitHub Issues](https://github.com/PromtEngineer/localGPT/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/PromtEngineer/localGPT/discussions)
-- **Email**: support@localgpt.com
-
+- **Business Deployment and Customization**: [Contact Us](https://tally.so/r/wv6R2d)
 ---
 
 <div align="center">
 
-**Made with ❤️ for private, intelligent document processing**
+## Star History
 
-[⭐ Star us on GitHub](https://github.com/PromtEngineer/localgpt) • [🐛 Report Bug](https://github.com/PromtEngineer/localgpt/issues) • [💡 Request Feature](https://github.com/PromtEngineer/localgpt/issues)
-
-</div>
+[![Star History Chart](https://api.star-history.com/svg?repos=PromtEngineer/localGPT&type=Date)](https://star-history.com/#PromtEngineer/localGPT&Date)
