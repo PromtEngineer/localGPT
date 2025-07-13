@@ -11,7 +11,7 @@ import numpy as np
 from threading import Lock
 
 from rag_system.utils.ollama_client import OllamaClient
-from rag_system.retrieval.retrievers import MultiVectorRetriever, GraphRetriever
+from rag_system.retrieval.retrievers import MultiVectorRetriever, GraphRetriever, BM25Retriever
 from rag_system.indexing.multimodal import LocalVisionModel
 from rag_system.indexing.representations import select_embedder
 from rag_system.indexing.embedders import LanceDBManager
@@ -256,7 +256,7 @@ ORIGINAL QUESTION: "{query}"
 
         return "".join(answer_parts)
 
-    def run(self, query: str, table_name: str = None, window_size_override: Optional[int] = None, event_callback=None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: Optional[str] = None, window_size_override: Optional[int] = None, event_callback=None) -> Dict[str, Any]:
         start_time = time.time()
         retrieval_k = self.config.get("retrieval_k", 10)
 

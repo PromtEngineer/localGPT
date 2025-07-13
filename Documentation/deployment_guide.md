@@ -102,8 +102,8 @@ brew install --cask docker
 
 #### **Step 2: Clone Repository**
 ```bash
-git clone https://github.com/your-org/rag-system.git
-cd rag-system
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 ```
 
 #### **Step 3: Install Ollama**
@@ -186,8 +186,8 @@ docker compose exec rag-api python -c "print('Hello')"
 **Python Dependencies:**
 ```bash
 # Clone repository
-git clone https://github.com/your-org/rag-system.git
-cd rag-system
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Create virtual environment (recommended)
 python -m venv venv
@@ -595,4 +595,4 @@ Your deployment is successful when:
 
 ---
 
-**Happy Deploying! 🚀** 
+**Happy Deploying! 🚀**    

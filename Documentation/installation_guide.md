@@ -139,8 +139,8 @@ docker compose version
 
 ```bash
 # Clone repository
-git clone <your-repository-url>
-cd rag_system_old
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Verify Ollama is running
 curl http://localhost:11434/api/tags
@@ -177,8 +177,8 @@ open http://localhost:3000
 #### **Python Setup:**
 ```bash
 # Clone repository
-git clone https://github.com/your-org/rag-system.git
-cd rag-system
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Create virtual environment (recommended)
 python -m venv venv
@@ -245,8 +245,8 @@ open http://localhost:3000
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/rag-system.git
-cd rag-system
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Check repository structure
 ls -la
@@ -539,4 +539,4 @@ chmod +x backup_system.sh
 
 ---
 
-**Congratulations! 🎉** Your RAG system is now ready to use. Visit http://localhost:3000 to start chatting with your documents. 
+**Congratulations! 🎉** Your RAG system is now ready to use. Visit http://localhost:3000 to start chatting with your documents.    

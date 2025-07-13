@@ -27,8 +27,8 @@ Best for: Development, customization, debugging, faster iteration
 
 ```bash
 # Clone repository
-git clone <your-repository-url>
-cd rag_system_old
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Ensure Docker is running
 docker version
@@ -89,8 +89,8 @@ Open your browser to: **http://localhost:3000**
 
 ```bash
 # Clone repository
-git clone <your-repository-url>
-cd rag_system_old
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Install Python dependencies
 pip install -r requirements.txt
@@ -376,4 +376,4 @@ These scripts automatically:
 - ✅ Process documents with the RAG pipeline
 - ✅ Generate searchable indexes
 
---- 
+---  

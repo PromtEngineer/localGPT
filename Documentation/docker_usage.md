@@ -39,8 +39,8 @@ This guide provides practical Docker commands and procedures for running the RAG
 
 ```bash
 # Clone repository
-git clone <your-repository-url>
-cd rag_system_old
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Verify Docker is running
 docker version
@@ -540,4 +540,4 @@ Your Docker deployment is successful when:
 
 ---
 
-**Happy Containerizing! 🐳** 
+**Happy Containerizing! 🐳**  

@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 import json
 import time, asyncio, os
 import numpy as np
@@ -140,7 +140,10 @@ class Agent:
             try:
                 similarity = self._cosine_similarity(query_embedding, cached_embedding)
 
-                if similarity >= self.semantic_cache_threshold:
+                threshold = self.semantic_cache_threshold
+                if isinstance(threshold, dict):
+                    threshold = threshold.get('value', 0.98)
+                if similarity >= float(threshold):
                     print(f"🚀 Semantic cache hit! Similarity: {similarity:.3f} with cached query '{key}'")
                     return cached_item.get('result')
             except ValueError:
@@ -248,7 +251,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
         }
 
     # ---------------- Public sync API (kept for backwards compatibility) --------------
-    def run(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: Optional[str] = None, session_id: Optional[str] = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
 
@@ -257,7 +260,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
         return asyncio.run(self._run_async(query, table_name, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback))
 
     # ---------------- Main async implementation --------------------------------------
-    async def _run_async(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_async(self, query: str, table_name: Optional[str] = None, session_id: Optional[str] = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[Callable] = None) -> Dict[str, Any]:
         start_time = time.time()
         
         # Emit analyze event at the start
@@ -410,7 +413,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     print("--- Only one sub-query after decomposition; using direct retrieval path ---")
                     result = self.retrieval_pipeline.run(
                         sub_queries[0],
-                        table_name,
+                        table_name or "default_text_table",
                         0 if context_expand is False else None,
                         event_callback=event_callback
                     )
@@ -457,7 +460,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                             executor.submit(
                                 self.retrieval_pipeline.run,
                                 sub_query,
-                                table_name,
+                                table_name or "default_text_table",
                                 0 if context_expand is False else None,
                                 make_cb(i),
                             ): (i, sub_query)
@@ -584,7 +587,7 @@ FINAL ANSWER:
                     snippet = (d.get('text','') or '')[:200].replace('\n',' ')
                     print(f"Orig[{i}] id={d.get('chunk_id')} dist={d.get('_distance','') or d.get('score','')}  {snippet}")
 
-                result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback)
+                result = self.retrieval_pipeline.run(contextual_query, table_name or "default_text_table", 0 if context_expand is False else None, event_callback=event_callback)
 
                 # After run, result['source_documents'] is reranked list
                 reranked_docs = result.get('source_documents', [])
