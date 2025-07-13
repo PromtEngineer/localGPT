@@ -81,7 +81,7 @@ The architecture is **modular and lightweight**—enable only the components you
 - 8GB+ RAM (16GB+ recommended)
 - Ollama (required for both deployment approaches)
 
-### Option 1: Docker Deployment (Recommended for Production)
+and ### Option 1: Docker Deployment (Recommended for Production)
 
 ```bash
 # Clone the repository
@@ -125,6 +125,14 @@ cd localGPT
 # Install Python dependencies
 pip install -r requirements.txt
 
+# Key dependencies installed:
+# - torch==2.4.1, transformers==4.51.0 (AI models)
+# - lancedb (vector database)
+# - rank_bm25, fuzzywuzzy (search algorithms)
+# - sentence_transformers, rerankers (embedding/reranking)
+# - docling (document processing)
+# - colpali-engine (multimodal processing)
+
 # Install Node.js dependencies
 npm install
 
@@ -167,7 +175,7 @@ python run_system.py --stop
 The `run_system.py` launcher manages four key services:
 - **Ollama Server** (port 11434): AI model serving
 - **RAG API Server** (port 8001): Document processing and retrieval
-- **Backend Server** (port 8000): Session management and API endpoints  
+- **Backend Server** (port 8000): Session management and API endpoints
 - **Frontend Server** (port 3000): React/Next.js web interface
 
 ### Option 3: Manual Component Startup
@@ -509,7 +517,7 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 3. **Health Endpoints**: Check individual service health:
    - Backend: `http://localhost:8000/health`
-   - RAG API: `http://localhost:8001/health` 
+   - RAG API: `http://localhost:8001/health`
    - Ollama: `http://localhost:11434/api/tags`
 
 4. **Documentation**: Check the [Technical Documentation](TECHNICAL_DOCS.md)
@@ -554,7 +562,7 @@ Content-Type: application/json
 POST /indexes
 Content-Type: application/json
 {
-  "name": "My Index", 
+  "name": "My Index",
   "description": "Description",
   "config": "default"
 }
@@ -589,7 +597,7 @@ DELETE /indexes/{id}
 POST /sessions
 Content-Type: application/json
 {
-  "title": "My Session", 
+  "title": "My Session",
   "model": "qwen3:0.6b"
 }
 
@@ -621,6 +629,56 @@ Content-Type: application/json
 
 ### Advanced Features
 
+#### Query Decomposition
+The system can break complex queries into sub-questions for better answers:
+```http
+POST /sessions/{session_id}/chat
+Content-Type: application/json
+
+{
+  "query": "Compare the methodologies and analyze their effectiveness",
+  "query_decompose": true,
+  "compose_sub_answers": true
+}
+```
+
+#### Answer Verification
+Independent verification pass for accuracy using a separate verification model:
+```http
+POST /sessions/{session_id}/chat
+Content-Type: application/json
+
+{
+  "query": "What are the key findings?",
+  "verify": true
+}
+```
+
+#### Contextual Enrichment
+Document context enrichment during indexing for better understanding:
+```bash
+# Enable during index building
+POST /indexes/{id}/build
+{
+  "enable_enrich": true,
+  "window_size": 2
+}
+```
+
+#### Late Chunking
+Better context preservation by chunking after embedding:
+```bash
+# Configure in pipeline
+"late_chunking": {"enabled": true}
+```
+
+#### Multimodal Support
+Vision model integration for document images and charts:
+```python
+# Configured in EXTERNAL_MODELS
+"vision_model": "Qwen/Qwen-VL-Chat"
+```
+
 #### Streaming Chat
 ```http
 POST /chat/stream
@@ -634,7 +692,34 @@ Content-Type: application/json
 ```
 
 #### Batch Processing
+```bash
+# Using the batch indexing script
+python demo_batch_indexing.py --config batch_indexing_config.json
+
+# Example batch configuration (batch_indexing_config.json):
+{
+  "index_name": "Sample Batch Index",
+  "index_description": "Example batch index configuration",
+  "documents": [
+    "./rag_system/documents/invoice_1039.pdf",
+    "./rag_system/documents/invoice_1041.pdf"
+  ],
+  "processing": {
+    "chunk_size": 512,
+    "chunk_overlap": 64,
+    "enable_enrich": true,
+    "enable_latechunk": true,
+    "enable_docling": true,
+    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
+    "generation_model": "qwen3:0.6b",
+    "retrieval_mode": "hybrid",
+    "window_size": 2
+  }
+}
+```
+
 ```http
+# API endpoint for batch processing
 POST /batch/index
 Content-Type: application/json
 
@@ -642,7 +727,9 @@ Content-Type: application/json
   "file_paths": ["doc1.pdf", "doc2.pdf"],
   "config": {
     "chunk_size": 512,
-    "enable_enrich": true
+    "enable_enrich": true,
+    "enable_latechunk": true,
+    "enable_docling": true
   }
 }
 ```
@@ -661,17 +748,17 @@ graph TB
     API --> Agent[RAG Agent]
     Agent --> Retrieval[Retrieval Pipeline]
     Agent --> Generation[Generation Pipeline]
-    
+
     Retrieval --> Vector[Vector Search]
     Retrieval --> BM25[BM25 Search]
     Retrieval --> Rerank[Reranking]
-    
+
     Vector --> LanceDB[(LanceDB)]
     BM25 --> BM25DB[(BM25 Index)]
-    
+
     Generation --> Ollama[Ollama Models]
     Generation --> HF[Hugging Face Models]
-    
+
     API --> SQLite[(SQLite DB)]
 ```
 
