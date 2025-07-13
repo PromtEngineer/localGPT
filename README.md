@@ -6,6 +6,10 @@
 
 **Transform your documents into intelligent, searchable knowledge with complete privacy**
 
+[![GitHub Stars](https://img.shields.io/github/stars/PromtEngineer/localGPT?style=social)](https://github.com/PromtEngineer/localGPT/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/PromtEngineer/localGPT?style=social)](https://github.com/PromtEngineer/localGPT/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/pulls)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](https://www.docker.com/)
@@ -18,36 +22,31 @@
 
 LocalGPT is a **private, local document intelligence platform** that allows you to chat with your documents using advanced AI models - all while keeping your data completely private and secure on your own infrastructure.
 
-### 🎯 Key Benefits
+LocalGPT is not just another RAG (Retrieval-Augmented Generation) system. It employs a **hybrid search** approach that combines semantic similarity with keyword matching and [Late Chunking](https://jina.ai/news/late-chunking-in-long-context-embedding-models/), making it more effective than traditional RAG systems. It also uses a **smart routing** approach that automatically chooses the best approach for each query. It also uses a **contextual enrichment** approach that enhances document understanding with AI-generated context. LocalGPT uses [Context Pruning](https://huggingface.co/naver/provence-reranker-debertav3-v1) to identify the most relavant sentences, rather than relying on chunk based ranking. It also uses an independedent **verification** approach that ensures the accuracy of the results.  
 
-- **🔒 Complete Privacy**: Your documents never leave your server
-- **🧠 Advanced AI**: State-of-the-art RAG (Retrieval-Augmented Generation) with smart routing
-- **📚 Multi-Format Support**: PDFs, Word docs, text files, and more
-- **🔍 Intelligent Search**: Hybrid search combining semantic similarity and keyword matching
-- **⚡ High Performance**: Optimized for speed with batch processing and caching
-- **🐳 Easy Deployment**: Docker support for simple setup and scaling
-
----
+Its modualr, you can enable or disable any of the features you want based on your needs and offers a flexible solution between accuracy and speed. 
 
 ## ✨ Features
 
+- **Utmost Privacy**: Your data remains on your computer, ensuring 100% security.
+- **Versatile Model Support**: Seamlessly integrate a variety of open-source models via Ollama.
+- **Diverse Embeddings**: Choose from a range of open-source embeddings.
+- **Reuse Your LLM**: Once downloaded, reuse your LLM without the need for repeated downloads.
+- **Chat History**: Remembers your previous conversations (in a session).
+- **API**: LocalGPT has an API that you can use for building RAG Applications.
+- **GPU, CPU, HPU & MPS Support**: Supports multiple platforms out of the box, Chat with your data using `CUDA`, `CPU`, `HPU (Intel® Gaudi®)` or `MPS` and more!
+
 ### 📖 Document Processing
-- **Multi-format Support**: PDF, DOCX, TXT, Markdown, and more
-- **Smart Chunking**: Intelligent text segmentation with overlap optimization
-- **Contextual Enrichment**: Enhanced document understanding with AI-generated context
+- **Multi-format Support**: PDF, DOCX, TXT, Markdown, and more (Currently only PDF is supported)
+- **Contextual Enrichment**: Enhanced document understanding with AI-generated context, inspired by [Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)
 - **Batch Processing**: Handle multiple documents simultaneously
 
 ### 🤖 AI-Powered Chat
 - **Natural Language Queries**: Ask questions in plain English
 - **Source Attribution**: Every answer includes document references
 - **Smart Routing**: Automatically chooses the best approach for each query
-- **Multiple AI Models**: Support for Ollama, OpenAI, and Hugging Face models
+- **Multiple AI Models**: Support for Ollama, (support for   OpenAI and Hugging Face models in the future)
 
-### 🔍 Advanced Search
-- **Hybrid Search**: Combines semantic similarity with keyword matching
-- **Vector Embeddings**: State-of-the-art embedding models for semantic understanding
-- **BM25 Ranking**: Traditional information retrieval for precise keyword matching
-- **Reranking**: AI-powered result refinement for better relevance
 
 ### 🛠️ Developer-Friendly
 - **RESTful APIs**: Complete API access for integration
@@ -110,8 +109,8 @@ docker compose logs -f
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/localgpt.git
-cd localgpt
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Install Python dependencies
 pip install -r requirements.txt
@@ -610,8 +609,8 @@ We welcome contributions from developers of all skill levels! LocalGPT is an ope
 
 ```bash
 # Fork and clone the repository
-git clone https://github.com/YOUR_USERNAME/multimodal_rag.git
-cd multimodal_rag
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Set up development environment
 pip install -r requirements.txt
@@ -633,14 +632,6 @@ python run_system.py --mode dev
 3. **🔧 Submit Code**: Follow our [development workflow](CONTRIBUTING.md#development-workflow)
 4. **📚 Improve Docs**: Help make our documentation better
 
-### 🎯 Priority Areas
-
-- **Performance Optimization**: Improve indexing and retrieval speed
-- **Model Integration**: Add support for new AI models
-- **User Experience**: Enhance the web interface
-- **Testing**: Expand test coverage
-- **Documentation**: Improve setup and usage guides
-
 ### 📖 Detailed Guidelines
 
 For comprehensive contributing guidelines, including:
@@ -656,7 +647,7 @@ For comprehensive contributing guidelines, including:
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. For models, please check their respective licenses.
 
 ---
 
@@ -673,8 +664,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 - **Documentation**: [Technical Docs](TECHNICAL_DOCS.md)
-- **Issues**: [GitHub Issues](https://github.com/yourusername/localgpt/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/localgpt/discussions)
+- **Issues**: [GitHub Issues](https://github.com/PromtEngineer/localGPT/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/PromtEngineer/localGPT/discussions)
 - **Email**: support@localgpt.com
 
 ---
@@ -683,6 +674,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Made with ❤️ for private, intelligent document processing**
 
-[⭐ Star us on GitHub](https://github.com/yourusername/localgpt) • [🐛 Report Bug](https://github.com/yourusername/localgpt/issues) • [💡 Request Feature](https://github.com/yourusername/localgpt/issues)
+[⭐ Star us on GitHub](https://github.com/PromtEngineer/localgpt) • [🐛 Report Bug](https://github.com/PromtEngineer/localgpt/issues) • [💡 Request Feature](https://github.com/PromtEngineer/localgpt/issues)
 
 </div>
