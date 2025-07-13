@@ -221,7 +221,7 @@ class IndexCreator:
             
             # Process documents through pipeline
             print("📚 Processing documents...")
-            self.pipeline.process_documents(documents)
+            self.pipeline.run(documents)
             
             print(f"\n✅ Index '{index_name}' created successfully!")
             print(f"Index ID: {index_id}")
@@ -300,7 +300,7 @@ class IndexCreator:
                 self.db.add_document_to_index(index_id, filename, doc_path)
             
             # Process documents
-            self.pipeline.process_documents(valid_documents)
+            self.pipeline.run(valid_documents)
             
             print(f"✅ Batch index '{index_name}' created successfully!")
             print(f"Index ID: {index_id}")
@@ -369,4 +369,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()  

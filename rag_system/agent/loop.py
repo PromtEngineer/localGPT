@@ -413,7 +413,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     print("--- Only one sub-query after decomposition; using direct retrieval path ---")
                     result = self.retrieval_pipeline.run(
                         sub_queries[0],
-                        table_name or "default_text_table",
+                        table_name or self.pipeline_configs.get("storage", {}).get("text_table_name", "default_text_table"),
                         0 if context_expand is False else None,
                         event_callback=event_callback
                     )
@@ -460,7 +460,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                             executor.submit(
                                 self.retrieval_pipeline.run,
                                 sub_query,
-                                table_name or "default_text_table",
+                                table_name or self.pipeline_configs.get("storage", {}).get("text_table_name", "default_text_table"),
                                 0 if context_expand is False else None,
                                 make_cb(i),
                             ): (i, sub_query)
@@ -587,7 +587,7 @@ FINAL ANSWER:
                     snippet = (d.get('text','') or '')[:200].replace('\n',' ')
                     print(f"Orig[{i}] id={d.get('chunk_id')} dist={d.get('_distance','') or d.get('score','')}  {snippet}")
 
-                result = self.retrieval_pipeline.run(contextual_query, table_name or "default_text_table", 0 if context_expand is False else None, event_callback=event_callback)
+                result = self.retrieval_pipeline.run(contextual_query, table_name or self.pipeline_configs.get("storage", {}).get("text_table_name", "default_text_table"), 0 if context_expand is False else None, event_callback=event_callback)
 
                 # After run, result['source_documents'] is reranked list
                 reranked_docs = result.get('source_documents', [])
