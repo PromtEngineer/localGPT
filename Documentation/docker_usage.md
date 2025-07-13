@@ -321,7 +321,7 @@ docker volume ls
 docker system df -v
 
 # Backup volumes
-docker run --rm -v rag_system_old_lancedb:/data -v $(pwd)/backup:/backup alpine tar czf /backup/lancedb_backup.tar.gz -C /data .
+docker run --rm -v localgpt_lancedb:/data -v $(pwd)/backup:/backup alpine tar czf /backup/lancedb_backup.tar.gz -C /data .
 
 # Clean unused volumes
 docker volume prune
@@ -540,4 +540,4 @@ Your Docker deployment is successful when:
 
 ---
 
-**Happy Containerizing! 🐳**  
+**Happy Containerizing! 🐳**    

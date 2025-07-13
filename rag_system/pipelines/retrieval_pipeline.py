@@ -11,7 +11,7 @@ import numpy as np
 from threading import Lock
 
 from rag_system.utils.ollama_client import OllamaClient
-from rag_system.retrieval.retrievers import MultiVectorRetriever, GraphRetriever, BM25Retriever
+from rag_system.retrieval.retrievers import MultiVectorRetriever, GraphRetriever
 from rag_system.indexing.multimodal import LocalVisionModel
 from rag_system.indexing.representations import select_embedder
 from rag_system.indexing.embedders import LanceDBManager
@@ -107,10 +107,8 @@ class RetrievalPipeline:
         if self.bm25_retriever is None and self.retriever_configs.get("bm25", {}).get("enabled"):
             try:
                 print(f"🔧 Lazily initializing BM25 retriever...")
-                self.bm25_retriever = BM25Retriever(
-                    index_path=self.storage_config["bm25_path"],
-                    index_name=self.retriever_configs["bm25"]["index_name"]
-                )
+                print("⚠️  BM25Retriever is deprecated - hybrid search will be used")
+                self.bm25_retriever = None
                 print("✅ BM25 retriever initialized successfully")
             except Exception as e:
                 print(f"❌ Failed to initialize BM25 retriever on demand: {e}")

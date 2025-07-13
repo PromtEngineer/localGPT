@@ -438,7 +438,7 @@ cp -r index_store backups/$(date +%Y%m%d)/
 
 # For Docker: also backup volumes
 docker compose down
-docker run --rm -v rag_system_old_ollama_data:/data -v $(pwd)/backups:/backup alpine tar czf /backup/ollama_models_$(date +%Y%m%d).tar.gz -C /data .
+docker run --rm -v localgpt_ollama_data:/data -v $(pwd)/backups:/backup alpine tar czf /backup/ollama_models_$(date +%Y%m%d).tar.gz -C /data .
 ```
 
 #### **Data Restore**
@@ -595,4 +595,4 @@ Your deployment is successful when:
 
 ---
 
-**Happy Deploying! 🚀**    
+**Happy Deploying! 🚀**      
