@@ -50,7 +50,7 @@ The architecture is **modular and lightweight**—enable only the components you
 ### 🤖 AI-Powered Chat
 - **Natural Language Queries**: Ask questions in plain English
 - **Source Attribution**: Every answer includes document references
-- **Smart Routing**: Automatically chooses between RAG, direct LLM, or graph queries
+- **Smart Routing**: Automatically chooses between RAG and direct LLM responses
 - **Query Decomposition**: Breaks complex queries into sub-questions for better answers
 - **Semantic Caching**: TTL-based caching with similarity matching for faster responses
 - **Session-Aware History**: Maintains conversation context across interactions
