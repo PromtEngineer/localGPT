@@ -164,19 +164,6 @@ npm run dev
 
 ---
 
-## 📋 Installation Guide
-
-### System Requirements
-
-| Component | Minimum | Recommended | Tested |
-|-----------|---------|-------------|--------|
-| Python | 3.8+ | 3.11+ | 3.11.5 |
-| Node.js | 16+ | 18+ | 23.10.0 |
-| RAM | 8GB | 16GB+ | 16GB+ |
-| Storage | 10GB | 50GB+ | 50GB+ |
-| CPU | 4 cores | 8+ cores | 8+ cores |
-| GPU | Optional | NVIDIA GPU with 8GB+ VRAM | MPS (Apple Silicon) |
-
 ### Detailed Installation
 
 #### 1. Install System Dependencies
@@ -397,36 +384,6 @@ SEARCH_CONFIG = {
     }
 }
 ```
-
----
-
-## 📚 Use Cases
-
-### 📊 Business Intelligence
-- **Document Analysis**: Extract insights from reports, contracts, and presentations
-- **Compliance**: Query regulatory documents and policies
-- **Knowledge Management**: Build searchable company knowledge bases
-
-### 🔬 Research & Academia
-- **Literature Review**: Analyze research papers and academic publications
-- **Data Analysis**: Query experimental results and datasets
-- **Collaboration**: Share findings with team members securely
-
-### ⚖️ Legal & Compliance
-- **Case Research**: Search through legal documents and precedents
-- **Contract Analysis**: Extract key terms and obligations
-- **Regulatory Compliance**: Query compliance requirements and guidelines
-
-### 🏥 Healthcare
-- **Medical Records**: Analyze patient data and treatment histories
-- **Research**: Query medical literature and clinical studies
-- **Compliance**: Navigate healthcare regulations and standards
-
-### 💼 Personal Productivity
-- **Document Organization**: Create searchable personal knowledge bases
-- **Research**: Analyze books, articles, and reference materials
-- **Learning**: Build interactive study materials from textbooks
-
 ---
 
 ## 🛠️ Troubleshooting
@@ -588,6 +545,60 @@ graph TB
     Generation --> HF[Hugging Face Models]
     
     API --> SQLite[(SQLite DB)]
+```
+
+Overview of the Retrieval Agent
+
+```mermaid
+graph TD
+    classDef llmcall fill:#e6f3ff,stroke:#007bff;
+    classDef pipeline fill:#e6ffe6,stroke:#28a745;
+    classDef cache fill:#fff3e0,stroke:#fd7e14;
+    classDef logic fill:#f8f9fa,stroke:#6c757d;
+    classDef thread stroke-dasharray: 5 5;
+
+    A(Start: Agent.run) --> B_asyncio.run(_run_async);
+    B --> C{_run_async};
+
+    C --> C1[Get Chat History];
+    C1 --> T1[Build Triage Prompt <br/> Query + Doc Overviews ];
+    T1 --> T2["(asyncio.to_thread)<br/>LLM Triage: RAG or LLM_DIRECT?"]; class T2 llmcall,thread;
+    T2 --> T3{Decision?};
+
+    T3 -- RAG --> RAG_Path;
+    T3 -- LLM_DIRECT --> LLM_Path;
+
+    subgraph RAG Path
+        RAG_Path --> R1[Format Query + History];
+        R1 --> R2["(asyncio.to_thread)<br/>Generate Query Embedding"]; class R2 pipeline,thread;
+        R2 --> R3{{Check Semantic Cache}}; class R3 cache;
+        R3 -- Hit --> R_Cache_Hit(Return Cached Result);
+        R_Cache_Hit --> R_Hist_Update;
+        R3 -- Miss --> R4{Decomposition <br/> Enabled?};
+
+        R4 -- Yes --> R5["(asyncio.to_thread)<br/>Decompose Raw Query"]; class R5 llmcall,thread;
+        R5 --> R6{{Run Sub-Queries <br/> Parallel RAG Pipeline}}; class R6 pipeline,thread;
+        R6 --> R7[Collect Results & Docs];
+        R7 --> R8["(asyncio.to_thread)<br/>Compose Final Answer"]; class R8 llmcall,thread;
+        R8 --> V1(RAG Answer);
+
+        R4 -- No --> R9["(asyncio.to_thread)<br/>Run Single Query <br/>(RAG Pipeline)"]; class R9 pipeline,thread;
+        R9 --> V1;
+
+        V1 --> V2{{Verification <br/> await verify_async}}; class V2 llmcall;
+        V2 --> V3(Final RAG Result);
+        V3 --> R_Cache_Store{{Store in Semantic Cache}}; class R_Cache_Store cache;
+        R_Cache_Store --> FinalResult;
+    end
+
+    subgraph Direct LLM Path
+        LLM_Path --> L1[Format Query + History];
+        L1 --> L2["(asyncio.to_thread)<br/>Generate Direct LLM Answer <br/> (No RAG)"]; class L2 llmcall,thread;
+        L2 --> FinalResult(Final Direct Result);
+    end
+
+    FinalResult --> R_Hist_Update(Update Chat History);
+    R_Hist_Update --> ZZZ(End: Return Result);
 ```
 
 ### Key Components
