@@ -93,7 +93,7 @@ Note: The installation is currently only tested on macOS.
 Before this brach is moved to the main branch, please clone this branch for instalation:
 
 ```bash
-git -b localgpt-v2 clone https://github.com/PromtEngineer/localGPT.git
+git clone -b localgpt-v2 https://github.com/PromtEngineer/localGPT.git
 cd localGPT
 ```
 
