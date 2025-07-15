@@ -7,6 +7,7 @@ import { EmptyChatState } from "./empty-chat-state"
 import { ChatMessage, ChatSession, chatAPI, generateUUID } from "@/lib/api"
 import { AttachedFile } from "@/lib/types"
 import { useEffect, useState, forwardRef, useImperativeHandle, useCallback } from "react"
+import { normalizeStreamingToken } from "@/utils/textNormalization"
 import { Button } from "./button"
 import type { Step } from '@/lib/api'
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal'
@@ -368,8 +369,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                   return m; // skip empty/whitespace-only chunks
                 }
                 let updated = current.endsWith(tok) ? current : current + tok;
-                // Clean up excessive newlines
-                updated = updated.replace(/\n{3,}/g, '\n\n');
+                updated = normalizeStreamingToken('', updated);
                 if (steps[finalIdx].key === 'direct') {
                   steps[0].details = updated;
                 } else {
@@ -396,8 +396,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 const curAns: string = detailsArr[idx].answer || '';
                 if (!curAns.endsWith(tok)) {
                   let updatedAnswer = curAns + tok;
-                  // Clean up excessive newlines
-                  updatedAnswer = updatedAnswer.replace(/\n{3,}/g, '\n\n');
+                  updatedAnswer = normalizeStreamingToken('', updatedAnswer);
                   detailsArr[idx].answer = updatedAnswer;
                 }
                 steps[5].details = detailsArr;
@@ -681,4 +680,4 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   )
 })
 
-SessionChat.displayName = "SessionChat" 
+SessionChat.displayName = "SessionChat"  

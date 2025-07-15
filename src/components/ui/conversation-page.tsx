@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChatMessage } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import Markdown from "@/components/Markdown"
+import { normalizeWhitespace } from "@/utils/textNormalization"
 
 interface ConversationPageProps {
   messages: ChatMessage[]
@@ -110,7 +111,7 @@ function ThinkingText({ text }: { text: string }) {
         </details>
       )}
       {visibleText.trim() && (
-        <Markdown text={visibleText} className="whitespace-pre-wrap" />
+        <Markdown text={normalizeWhitespace(visibleText)} className="whitespace-pre-wrap" />
       )}
     </>
   );
@@ -151,7 +152,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
               {step.key === 'final' && step.details && typeof step.details === 'object' && !Array.isArray(step.details) ? (
                 <div className="space-y-3">
                   <div className="whitespace-pre-wrap text-gray-100">
-                    <ThinkingText text={step.details.answer} />
+                    <ThinkingText text={normalizeWhitespace(step.details.answer)} />
                   </div>
                   {!hasSubAnswers && step.details.source_documents && step.details.source_documents.length > 0 && (
                     <CitationsBlock docs={step.details.source_documents} />
@@ -159,7 +160,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                 </div>
               ) : step.key === 'final' && step.details && typeof step.details === 'string' ? (
                 <div className="whitespace-pre-wrap text-gray-100">
-                  <ThinkingText text={step.details} />
+                  <ThinkingText text={normalizeWhitespace(step.details)} />
                 </div>
               ) : Array.isArray(step.details) ? (
                 step.key === 'decompose' && step.details.every((d: any)=> typeof d === 'string') ? (
@@ -175,7 +176,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                     {step.details.map((detail: any, idx: number) => (
                       <div key={idx} className="border-l-2 border-blue-400 pl-2">
                         <div className="font-semibold">{detail.question}</div>
-                        <div><ThinkingText text={detail.answer} /></div>
+                        <div><ThinkingText text={normalizeWhitespace(detail.answer)} /></div>
                         {detail.source_documents && detail.source_documents.length > 0 && (
                           <CitationsBlock docs={detail.source_documents} />
                         )}
@@ -185,7 +186,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                 )
               ) : (
                 // Handle string details
-                <ThinkingText text={step.details as string} />
+                <ThinkingText text={normalizeWhitespace(step.details as string)} />
               )}
             </div>
           );
@@ -327,7 +328,7 @@ export function ConversationPage({
                       ) : (
                         <div className="whitespace-pre-wrap text-base leading-relaxed">
                           {typeof message.content === 'string' 
-                              ? <ThinkingText text={message.content} />
+                              ? <ThinkingText text={normalizeWhitespace(message.content)} />
                               : <StructuredMessageBlock content={message.content} />
                           }
                         </div>
@@ -413,4 +414,4 @@ export function ConversationPage({
       )}
     </div>
   )
-} 
+}  
