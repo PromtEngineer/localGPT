@@ -16,8 +16,8 @@ class IndexingPipeline:
         self.llm_client = ollama_client
         self.ollama_config = ollama_config
         self.pdf_converter = PDFConverter()
-        # Chunker selection: legacy or docling
-        chunker_mode = config.get("chunker_mode", "legacy")
+        # Chunker selection: docling (token-based) or legacy (character-based)
+        chunker_mode = config.get("chunker_mode", "docling")
         
         # 🔧 Get chunking configuration from frontend parameters
         chunking_config = config.get("chunking", {})
