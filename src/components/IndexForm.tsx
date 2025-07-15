@@ -15,7 +15,7 @@ interface Props {
 export function IndexForm({ onClose, onIndexed }: Props) {
   const [files, setFiles] = useState<FileList | null>(null);
   const [indexName, setIndexName] = useState('');
-  const [chunkSize, setChunkSize] = useState(512);
+  const [chunkSize, setChunkSize] = useState(256);
   const [chunkOverlap, setChunkOverlap] = useState(64);
   const [windowSize, setWindowSize] = useState(5);
   const [enableEnrich, setEnableEnrich] = useState(true);
@@ -220,4 +220,4 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       </div>
     </div>
   );
-}      
+}        
