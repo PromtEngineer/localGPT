@@ -39,12 +39,14 @@ class IndexingPipeline:
                 print(f"⚠️  Failed to initialise DoclingChunker: {e}. Falling back to legacy chunker.")
                 self.chunker = MarkdownRecursiveChunker(
                     max_chunk_size=chunk_size,
-                    min_chunk_size=min(chunk_overlap, chunk_size // 4)  # Sensible minimum
+                    min_chunk_size=min(chunk_overlap, chunk_size // 4),  # Sensible minimum
+                    tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B")
                 )
         else:
             self.chunker = MarkdownRecursiveChunker(
                 max_chunk_size=chunk_size,
-                min_chunk_size=min(chunk_overlap, chunk_size // 4)  # Sensible minimum
+                min_chunk_size=min(chunk_overlap, chunk_size // 4),  # Sensible minimum
+                tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B")
             )
 
         retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})
