@@ -32,6 +32,9 @@ More than a traditional RAG (Retrieval-Augmented Generation) tool, LocalGPT feat
 
 The architecture is **modular and lightweight**—enable only the components you need. With a pure-Python core and minimal dependencies, LocalGPT is simple to deploy, run, and maintain on any infrastructure.The system has minimal dependencies on frameworks and libraries, making it easy to deploy and maintain. The RAG system is pure python and does not require any additional dependencies.
 
+## ▶️ Video
+Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT. 
+
 ### 🖼️ UI Preview
 
 | Home | Create Index | Chat |
