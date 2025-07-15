@@ -28,7 +28,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const [batchSizeEnrich, setBatchSizeEnrich] = useState(64);
   const [loading, setLoading] = useState(false);
   const [enableLateChunk, setEnableLateChunk] = useState(false);
-  const [enableDoclingChunk, setEnableDoclingChunk] = useState(false);
+  const [enableDoclingChunk, setEnableDoclingChunk] = useState(true);
 
   const handleSubmit = async () => {
     if (!files) return;
@@ -118,13 +118,13 @@ export function IndexForm({ onClose, onIndexed }: Props) {
               <GlassToggle checked={enableLateChunk} onChange={setEnableLateChunk} />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">High-recall chunking <InfoTooltip text="Sentence-level packing (Docling) for maximum recall at indexing time." size={12} /></span>
+              <span className="text-xs text-gray-400">High-recall chunking <InfoTooltip text="Advanced sentence-level packing with Docling features for maximum recall. Both modes use token-based sizing." size={12} /></span>
               <GlassToggle checked={enableDoclingChunk} onChange={setEnableDoclingChunk} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
-              <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Chunk size <InfoTooltip text="Maximum token length for each chunk before overlap." size={12} /></label>
+              <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Chunk size <InfoTooltip text="Maximum token length for each chunk. Both legacy and high-recall modes now use token-based sizing." size={12} /></label>
               <GlassInput type="number" value={chunkSize} onChange={(e) => setChunkSize(parseInt(e.target.value))} />
             </div>
             <div>
@@ -220,4 +220,4 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       </div>
     </div>
   );
-} 
+}      

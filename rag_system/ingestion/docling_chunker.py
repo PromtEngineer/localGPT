@@ -25,14 +25,24 @@ class DoclingChunker:
             repo_id = {
                 "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
             }.get(tokenizer_model.lower(), tokenizer_model)
-        self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+        
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+        except Exception as e:
+            print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
+            print("Falling back to character-based approximation (4 chars ≈ 1 token)")
+            self.tokenizer = None
         # Fallback simple sentence splitter (period, question, exclamation, newline)
         self._sent_re = re.compile(r"(?<=[\.\!\?])\s+|\n+")
         self.legacy = MarkdownRecursiveChunker(max_chunk_size=10_000, min_chunk_size=100)
 
     # ------------------------------------------------------------------
     def _token_len(self, text: str) -> int:
-        return len(self.tokenizer.tokenize(text))
+        if self.tokenizer is not None:
+            return len(self.tokenizer.tokenize(text))
+        else:
+            # Fallback: approximate 4 characters per token
+            return max(1, len(text) // 4)
 
     def split_markdown(self, markdown: str, *, document_id: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Split one Markdown doc into chunks with max_tokens limit."""
@@ -84,7 +94,11 @@ class DoclingChunker:
         metadata = metadata or {}
 
         def _token_len(txt: str) -> int:
-            return len(self.tokenizer.tokenize(txt))
+            if self.tokenizer is not None:
+                return len(self.tokenizer.tokenize(txt))
+            else:
+                # Fallback: approximate 4 characters per token
+                return max(1, len(txt) // 4)
 
         chunks: List[Dict[str, Any]] = []
         global_idx = 0
@@ -233,4 +247,4 @@ class DoclingChunker:
 
     # Public API expected by IndexingPipeline --------------------------------
     def chunk(self, text: str, document_id: str, document_metadata: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
-        return self.split_markdown(text, document_id=document_id, metadata=document_metadata or {}) 
+        return self.split_markdown(text, document_id=document_id, metadata=document_metadata or {})    

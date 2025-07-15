@@ -16,8 +16,8 @@ class IndexingPipeline:
         self.llm_client = ollama_client
         self.ollama_config = ollama_config
         self.pdf_converter = PDFConverter()
-        # Chunker selection: legacy or docling
-        chunker_mode = config.get("chunker_mode", "legacy")
+        # Chunker selection: docling (token-based) or legacy (character-based)
+        chunker_mode = config.get("chunker_mode", "docling")
         
         # 🔧 Get chunking configuration from frontend parameters
         chunking_config = config.get("chunking", {})
@@ -39,12 +39,14 @@ class IndexingPipeline:
                 print(f"⚠️  Failed to initialise DoclingChunker: {e}. Falling back to legacy chunker.")
                 self.chunker = MarkdownRecursiveChunker(
                     max_chunk_size=chunk_size,
-                    min_chunk_size=min(chunk_overlap, chunk_size // 4)  # Sensible minimum
+                    min_chunk_size=min(chunk_overlap, chunk_size // 4),  # Sensible minimum
+                    tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B")
                 )
         else:
             self.chunker = MarkdownRecursiveChunker(
                 max_chunk_size=chunk_size,
-                min_chunk_size=min(chunk_overlap, chunk_size // 4)  # Sensible minimum
+                min_chunk_size=min(chunk_overlap, chunk_size // 4),  # Sensible minimum
+                tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B")
             )
 
         retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})

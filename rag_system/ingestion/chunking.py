@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional
 import re
+from transformers import AutoTokenizer
 
 class MarkdownRecursiveChunker:
     """
@@ -7,11 +8,31 @@ class MarkdownRecursiveChunker:
     and embeds document-level metadata into each chunk.
     """
 
-    def __init__(self, max_chunk_size: int = 1500, min_chunk_size: int = 200):
+    def __init__(self, max_chunk_size: int = 1500, min_chunk_size: int = 200, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
         self.max_chunk_size = max_chunk_size
         self.min_chunk_size = min_chunk_size
         self.split_priority = ["\n## ", "\n### ", "\n#### ", "```", "\n\n"]
+        
+        repo_id = tokenizer_model
+        if "/" not in tokenizer_model and not tokenizer_model.startswith("Qwen/"):
+            repo_id = {
+                "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
+            }.get(tokenizer_model.lower(), tokenizer_model)
+        
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+        except Exception as e:
+            print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
+            print("Falling back to character-based approximation (4 chars ≈ 1 token)")
+            self.tokenizer = None
 
+    def _token_len(self, text: str) -> int:
+        """Get token count for text using the tokenizer."""
+        if self.tokenizer is not None:
+            return len(self.tokenizer.tokenize(text))
+        else:
+            return max(1, len(text) // 4)
+    
     def _split_text(self, text: str, separators: List[str]) -> List[str]:
         final_chunks = []
         chunks_to_process = [text]
@@ -19,7 +40,7 @@ class MarkdownRecursiveChunker:
         for sep in separators:
             new_chunks = []
             for chunk in chunks_to_process:
-                if len(chunk) > self.max_chunk_size:
+                if self._token_len(chunk) > self.max_chunk_size:
                     sub_chunks = re.split(f'({sep})', chunk)
                     combined = []
                     i = 0
@@ -38,8 +59,19 @@ class MarkdownRecursiveChunker:
         
         final_chunks = []
         for chunk in chunks_to_process:
-            if len(chunk) > self.max_chunk_size:
-                final_chunks.extend([chunk[i:i+self.max_chunk_size] for i in range(0, len(chunk), self.max_chunk_size)])
+            if self._token_len(chunk) > self.max_chunk_size:
+                words = chunk.split()
+                current_chunk = ""
+                for word in words:
+                    test_chunk = current_chunk + " " + word if current_chunk else word
+                    if self._token_len(test_chunk) <= self.max_chunk_size:
+                        current_chunk = test_chunk
+                    else:
+                        if current_chunk:
+                            final_chunks.append(current_chunk)
+                        current_chunk = word
+                if current_chunk:
+                    final_chunks.append(current_chunk)
             else:
                 final_chunks.append(chunk)
 
@@ -65,10 +97,11 @@ class MarkdownRecursiveChunker:
         merged_chunks_text = []
         current_chunk = ""
         for chunk_text in raw_chunks:
-            if not current_chunk or len(current_chunk) + len(chunk_text) <= self.max_chunk_size:
-                current_chunk += chunk_text
-            elif len(current_chunk) < self.min_chunk_size:
-                 current_chunk += chunk_text
+            test_chunk = current_chunk + chunk_text if current_chunk else chunk_text
+            if not current_chunk or self._token_len(test_chunk) <= self.max_chunk_size:
+                current_chunk = test_chunk
+            elif self._token_len(current_chunk) < self.min_chunk_size:
+                 current_chunk = test_chunk
             else:
                 merged_chunks_text.append(current_chunk)
                 current_chunk = chunk_text
