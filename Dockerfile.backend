@@ -16,8 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY rag_system/ ./rag_system/
 
-# Create necessary directories
-RUN mkdir -p shared_uploads logs
+# Create necessary directories and initialize database
+RUN mkdir -p shared_uploads logs backend
 
 # Expose port
 EXPOSE 8000
@@ -28,4 +28,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Run the backend server
 WORKDIR /app/backend
-CMD ["python", "server.py"] 
+CMD ["python", "server.py"]  

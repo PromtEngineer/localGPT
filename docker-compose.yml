@@ -57,7 +57,7 @@ services:
       - NODE_ENV=production
       - RAG_API_URL=http://rag-api:8001
     volumes:
-      - ./backend/chat_data.db:/app/backend/chat_data.db
+      - ./backend:/app/backend
       - ./shared_uploads:/app/shared_uploads
     depends_on:
       rag-api:
@@ -100,4 +100,4 @@ volumes:
 
 networks:
   rag-network:
-    driver: bridge 
+    driver: bridge  
