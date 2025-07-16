@@ -36,6 +36,9 @@ import logging
 from dataclasses import dataclass
 import psutil
 
+if 'PYTHONUTF8' not in os.environ:
+    os.environ['PYTHONUTF8'] = '1'
+
 @dataclass
 class ServiceConfig:
     name: str
@@ -261,6 +264,7 @@ class ServiceManager:
         try:
             # Setup environment
             env = os.environ.copy()
+            env['PYTHONUTF8'] = '1'
             if config.env:
                 env.update(config.env)
             
@@ -504,6 +508,8 @@ def main():
     
     args = parser.parse_args()
     
+    os.environ['PYTHONUTF8'] = '1'
+    
     # Create service manager
     manager = ServiceManager(mode=args.mode)
     
@@ -538,4 +544,4 @@ def main():
         manager.shutdown()
 
 if __name__ == "__main__":
-    main() 
+    main()      
