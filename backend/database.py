@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 class ChatDatabase:
-    def __init__(self, db_path: str = "backend/chat_data.db"):
+    def __init__(self, db_path: str = "/app/backend/chat_data.db"):
         self.db_path = db_path
         self.init_database()
     
@@ -681,4 +681,4 @@ if __name__ == "__main__":
     stats = db.get_stats()
     print(f"📊 Stats: {stats}")
     
-    print("✅ Database test completed!") 
+    print("✅ Database test completed!")  

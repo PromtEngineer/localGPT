@@ -56,8 +56,9 @@ services:
     environment:
       - NODE_ENV=production
       - RAG_API_URL=http://rag-api:8001
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://172.18.0.1:11434}
     volumes:
-      - ./backend/chat_data.db:/app/backend/chat_data.db
+      - ./backend:/app/backend
       - ./shared_uploads:/app/shared_uploads
     depends_on:
       rag-api:
@@ -100,4 +101,4 @@ volumes:
 
 networks:
   rag-network:
-    driver: bridge 
+    driver: bridge    
