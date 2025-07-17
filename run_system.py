@@ -223,7 +223,19 @@ class ServiceManager:
         """Ensure required Ollama models are available."""
         self.logger.info("📥 Checking required models...")
         
-        required_models = ['qwen3:8b', 'qwen3:0.6b']
+        try:
+            result = subprocess.run(['ollama', 'list'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                self.logger.info("✅ Ollama models check completed")
+                return
+        except subprocess.TimeoutExpired:
+            self.logger.warning("⚠️  Model check timed out - continuing anyway")
+            return
+        except subprocess.CalledProcessError:
+            pass
+        
+        suggested_models = ['llama3.2:latest', 'qwen3:0.6b']
         
         try:
             # Get list of installed models
@@ -231,14 +243,10 @@ class ServiceManager:
                                   capture_output=True, text=True, timeout=10)
             installed_models = result.stdout
             
-            for model in required_models:
-                if model not in installed_models:
-                    self.logger.info(f"📥 Pulling {model}...")
-                    subprocess.run(['ollama', 'pull', model], 
-                                 check=True, timeout=300)  # 5 min timeout
-                    self.logger.info(f"✅ {model} ready")
-                else:
-                    self.logger.info(f"✅ {model} already available")
+            self.logger.info("💡 No models found. You can pull models manually with:")
+            for model in suggested_models:
+                self.logger.info(f"   ollama pull {model}")
+            self.logger.info("💡 Or use any other Ollama-compatible model of your choice")
                     
         except subprocess.TimeoutExpired:
             self.logger.warning("⚠️  Model check timed out - continuing anyway")
@@ -538,4 +546,4 @@ def main():
         manager.shutdown()
 
 if __name__ == "__main__":
-    main() 
+    main()  
