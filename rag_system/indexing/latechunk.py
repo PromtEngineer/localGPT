@@ -76,5 +76,13 @@ class LateChunkEncoder:
                 # Fallback: if tokenizer lost the span (e.g. due to trimming) just average CLS + SEP
                 token_indices = [0]
             chunk_vec = last_hidden[token_indices].mean(dim=0).numpy().astype("float32")
+            
+            # Check for NaN or infinite values
+            if np.isnan(chunk_vec).any() or np.isinf(chunk_vec).any():
+                print(f"⚠️ Warning: Invalid values detected in late chunk embedding for span ({start_char}, {end_char})")
+                # Replace invalid values with zeros
+                chunk_vec = np.nan_to_num(chunk_vec, nan=0.0, posinf=0.0, neginf=0.0)
+                print(f"🔄 Replaced invalid values with zeros")
+            
             vectors.append(chunk_vec)
         return vectors 

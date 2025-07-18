@@ -48,7 +48,21 @@ class VectorIndexer:
         ])
 
         data = []
+        skipped_count = 0
+        
         for chunk, vector in zip(chunks, embeddings):
+            # Check for NaN values in the vector
+            if np.isnan(vector).any():
+                print(f"⚠️ Skipping chunk '{chunk.get('chunk_id', 'unknown')}' due to NaN values in embedding")
+                skipped_count += 1
+                continue
+                
+            # Check for infinite values in the vector
+            if np.isinf(vector).any():
+                print(f"⚠️ Skipping chunk '{chunk.get('chunk_id', 'unknown')}' due to infinite values in embedding")
+                skipped_count += 1
+                continue
+            
             # Ensure original_text is in metadata if not already present
             if 'original_text' not in chunk['metadata']:
                 chunk['metadata']['original_text'] = chunk['text']
@@ -71,6 +85,13 @@ class VectorIndexer:
                 "metadata": json.dumps(chunk)
             })
 
+        if skipped_count > 0:
+            print(f"⚠️ Skipped {skipped_count} chunks due to invalid embeddings (NaN or infinite values)")
+        
+        if not data:
+            print("❌ No valid embeddings to index after filtering out NaN/infinite values")
+            return
+
         # Incremental indexing: append to existing table if present, otherwise create it
         db = self.db_manager.db  # underlying LanceDB connection
 
@@ -81,8 +102,20 @@ class VectorIndexer:
             print(f"Creating table '{table_name}' (new) and adding {len(data)} vectors...")
             tbl = self.db_manager.create_table(table_name, schema=schema, mode="create")
 
-        tbl.add(data)
-        print(f"Indexed {len(data)} vectors into table '{table_name}'.")
+        # Add data with NaN handling configuration
+        try:
+            tbl.add(data, on_bad_vectors='drop')
+            print(f"✅ Indexed {len(data)} vectors into table '{table_name}'.")
+        except Exception as e:
+            print(f"❌ Failed to add data to table: {e}")
+            # Fallback: try with fill strategy
+            try:
+                print("🔄 Retrying with NaN fill strategy...")
+                tbl.add(data, on_bad_vectors='fill', fill_value=0.0)
+                print(f"✅ Indexed {len(data)} vectors into table '{table_name}' (with NaN fill).")
+            except Exception as e2:
+                print(f"❌ Failed to add data even with NaN fill: {e2}")
+                raise
 
 # BM25Indexer is no longer needed as we are moving to LanceDB's native FTS.
 # class BM25Indexer:
