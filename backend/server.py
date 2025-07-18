@@ -562,8 +562,8 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
             # Get conversation history for context
             conversation_history = db.get_conversation_history(session_id)
             
-            # Use the session's model or default
-            model = session.get('model', 'qwen3:8b')  # Default to fast model
+            # Use the session's model or default to llama3.2:latest
+            model = session.get('model', 'llama3.2:latest')  # Default to commonly available model
             
             # Direct Ollama call with thinking disabled for speed
             response_text = self.ollama_client.chat(
@@ -1139,4 +1139,4 @@ def main():
         print("\n🛑 Server stopped")
 
 if __name__ == "__main__":
-    main() 
+    main()  
