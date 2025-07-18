@@ -35,8 +35,6 @@ The architecture is **modular and lightweight**—enable only the components you
 ## ▶️ Video
 Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT. 
 
-### 🖼️ UI Preview
-
 | Home | Create Index | Chat |
 |------|--------------|------|
 | ![](Documentation/images/Home.png) | ![](Documentation/images/Index%20Creation.png) | ![](Documentation/images/Retrieval%20Process.png) |
