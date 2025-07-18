@@ -5,8 +5,16 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 class ChatDatabase:
-    def __init__(self, db_path: str = "/app/backend/chat_data.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            # Auto-detect environment and set appropriate path
+            import os
+            if os.path.exists("/app"):  # Docker environment
+                self.db_path = "/app/backend/chat_data.db"
+            else:  # Local development environment
+                self.db_path = "backend/chat_data.db"
+        else:
+            self.db_path = db_path
         self.init_database()
     
     def init_database(self):
