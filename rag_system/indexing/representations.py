@@ -52,7 +52,24 @@ class QwenEmbedder(EmbeddingModel):
             seq_len = inputs["attention_mask"].sum(dim=1) - 1  # index of last token
             batch_indices = torch.arange(last_hidden.size(0), device=self.device)
             embeddings = last_hidden[batch_indices, seq_len]
-        return embeddings.cpu().numpy()
+        
+        # Convert to numpy and validate
+        embeddings_np = embeddings.cpu().numpy()
+        
+        # Check for NaN or infinite values
+        if np.isnan(embeddings_np).any():
+            print(f"⚠️ Warning: NaN values detected in embeddings from {self.model_name}")
+            # Replace NaN values with zeros
+            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
+            print(f"🔄 Replaced NaN values with zeros")
+        
+        if np.isinf(embeddings_np).any():
+            print(f"⚠️ Warning: Infinite values detected in embeddings from {self.model_name}")
+            # Replace infinite values with zeros
+            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
+            print(f"🔄 Replaced infinite values with zeros")
+        
+        return embeddings_np
 
 class EmbeddingGenerator:
     def __init__(self, embedding_model: EmbeddingModel, batch_size: int = 50):
@@ -108,7 +125,22 @@ class OllamaEmbedder(EmbeddingModel):
     def create_embeddings(self, texts: List[str]):
         import numpy as np
         vectors = [self._embed_single(t) for t in texts]
-        return np.vstack(vectors)
+        embeddings_np = np.vstack(vectors)
+        
+        # Check for NaN or infinite values
+        if np.isnan(embeddings_np).any():
+            print(f"⚠️ Warning: NaN values detected in Ollama embeddings from {self.model_name}")
+            # Replace NaN values with zeros
+            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
+            print(f"🔄 Replaced NaN values with zeros")
+        
+        if np.isinf(embeddings_np).any():
+            print(f"⚠️ Warning: Infinite values detected in Ollama embeddings from {self.model_name}")
+            # Replace infinite values with zeros
+            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
+            print(f"🔄 Replaced infinite values with zeros")
+        
+        return embeddings_np
 
 def select_embedder(model_name: str, ollama_host: str | None = None):
     """Return appropriate EmbeddingModel implementation for the given name."""
