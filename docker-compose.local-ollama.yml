@@ -1,0 +1,77 @@
+services:
+  # RAG API server (connects to host Ollama)
+  rag-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.rag-api
+    container_name: rag-api
+    ports:
+      - "8001:8001"
+    environment:
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - NODE_ENV=production
+    volumes:
+      - ./lancedb:/app/lancedb
+      - ./index_store:/app/index_store
+      - ./shared_uploads:/app/shared_uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - rag-network
+
+  # Backend API server
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: rag-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ENV=production
+      - RAG_API_URL=http://rag-api:8001
+    volumes:
+      - ./backend/chat_data.db:/app/backend/chat_data.db
+      - ./shared_uploads:/app/shared_uploads
+    depends_on:
+      rag-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - rag-network
+
+  # Frontend Next.js application
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: rag-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - rag-network
+
+networks:
+  rag-network:
+    driver: bridge 

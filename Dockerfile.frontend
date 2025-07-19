@@ -1,0 +1,31 @@
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies (including dev dependencies for build)
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy source code and configuration files
+COPY src/ ./src/
+COPY public/ ./public/
+COPY next.config.ts ./
+COPY tsconfig.json ./
+COPY tailwind.config.js ./
+COPY postcss.config.mjs ./
+COPY eslint.config.mjs ./
+
+# Build the application (skip linting for Docker)
+ENV NEXT_LINT=false
+RUN npm run build
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:3000 || exit 1
+
+# Start the application
+CMD ["npm", "start"] 

@@ -2,10 +2,6 @@ requests
 python-dotenv
 PyPDF2
 colpali-engine
-requests
-python-dotenv
-PyPDF2
-colpali-engine
 PyMuPDF
 Pillow
 transformers==4.51.0
@@ -30,3 +26,6 @@ pandas
 sentence_transformers
 rerankers
 nltk
+# Standard library modules (no need to install)
+# asyncio, logging, json, os, sys, typing, threading, itertools, math, re
+# ocrmac - removed for Docker compatibility (macOS-specific) 
