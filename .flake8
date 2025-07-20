@@ -1,4 +1,0 @@
-[flake8]
-exclude = docs
-max-line-length = 119
-extend-ignore = E203

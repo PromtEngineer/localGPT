@@ -1,348 +1,892 @@
-# LocalGPT: Secure, Local Conversations with Your Documents 🌐
+# LocalGPT - Private Document Intelligence Platform
+
+<div align="center">
 
 <p align="center">
 <a href="https://trendshift.io/repositories/2947" target="_blank"><img src="https://trendshift.io/api/badge/repositories/2947" alt="PromtEngineer%2FlocalGPT | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </p>
 
-[![GitHub Stars](https://img.shields.io/github/stars/PromtEngineer/localGPT?style=social)](https://github.com/PromtEngineer/localGPT/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/PromtEngineer/localGPT?style=social)](https://github.com/PromtEngineer/localGPT/network/members)
-[![GitHub Issues](https://img.shields.io/github/issues/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/issues)
-[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/pulls)
-[![License](https://img.shields.io/github/license/PromtEngineer/localGPT)](https://github.com/PromtEngineer/localGPT/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/pulls)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg?style=flat-square)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
+[![Docker](https://img.shields.io/badge/docker-supported-blue.svg?style=flat-square)](https://www.docker.com/)
 
-🚨🚨 NEW VERSION OF LOCALGPT IS OUT ON THE [LOCALGPT-V2](https://github.com/PromtEngineer/localGPT/tree/localgpt-v2) BRANCH. 
+<p align="center">
+    <a href="https://x.com/engineerrprompt">
+      <img src="https://img.shields.io/badge/Follow%20on%20X-000000?style=for-the-badge&logo=x&logoColor=white" alt="Follow on X" />
+    </a>
+    <a href="https://discord.gg/tUDWAFGc">
+      <img src="https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join our Discord" />
+    </a>
+  </p>
+</div>
 
-You can run localGPT on a pre-configured [Virtual Machine](https://bit.ly/localGPT). Make sure to use the code: PromptEngineering to get 50% off. I will get a small commision!
+## 🚀 What is LocalGPT?
 
-**LocalGPT** is an open-source initiative that allows you to converse with your documents without compromising your privacy. With everything running locally, you can be assured that no data ever leaves your computer. Dive into the world of secure, local document interactions with LocalGPT.
+LocalGPT is a **fully private, on-premise Document Intelligence platform**. Ask questions, summarise, and uncover insights from your files with state-of-the-art AI—no data ever leaves your machine.
 
-## Features 🌟
+More than a traditional RAG (Retrieval-Augmented Generation) tool, LocalGPT features a **hybrid search engine** that blends semantic similarity, keyword matching, and [Late Chunking](https://jina.ai/news/late-chunking-in-long-context-embedding-models/) for long-context precision. A **smart router** automatically selects between RAG and direct LLM answering for every query, while **contextual enrichment** and sentence-level [Context Pruning](https://huggingface.co/naver/provence-reranker-debertav3-v1) surface only the most relevant content. An independent **verification** pass adds an extra layer of accuracy.
+
+The architecture is **modular and lightweight**—enable only the components you need. With a pure-Python core and minimal dependencies, LocalGPT is simple to deploy, run, and maintain on any infrastructure.The system has minimal dependencies on frameworks and libraries, making it easy to deploy and maintain. The RAG system is pure python and does not require any additional dependencies.
+
+## ▶️ Video
+Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT. 
+
+| Home | Create Index | Chat |
+|------|--------------|------|
+| ![](Documentation/images/Home.png) | ![](Documentation/images/Index%20Creation.png) | ![](Documentation/images/Retrieval%20Process.png) |
+
+## ✨ Features
+
 - **Utmost Privacy**: Your data remains on your computer, ensuring 100% security.
-- **Versatile Model Support**: Seamlessly integrate a variety of open-source models, including HF, GPTQ, GGML, and GGUF.
+- **Versatile Model Support**: Seamlessly integrate a variety of open-source models via Ollama.
 - **Diverse Embeddings**: Choose from a range of open-source embeddings.
 - **Reuse Your LLM**: Once downloaded, reuse your LLM without the need for repeated downloads.
 - **Chat History**: Remembers your previous conversations (in a session).
 - **API**: LocalGPT has an API that you can use for building RAG Applications.
-- **Graphical Interface**: LocalGPT comes with two GUIs, one uses the API and the other is standalone (based on streamlit).
 - **GPU, CPU, HPU & MPS Support**: Supports multiple platforms out of the box, Chat with your data using `CUDA`, `CPU`, `HPU (Intel® Gaudi®)` or `MPS` and more!
 
-## Dive Deeper with Our Videos 🎥
-- [Detailed code-walkthrough](https://youtu.be/MlyoObdIHyo)
-- [Llama-2 with LocalGPT](https://youtu.be/lbFmceo4D5E)
-- [Adding Chat History](https://youtu.be/d7otIM_MCZs)
-- [LocalGPT - Updated (09/17/2023)](https://youtu.be/G_prHSKX9d4)
+### 📖 Document Processing
+- **Multi-format Support**: PDF, DOCX, TXT, Markdown, and more (Currently only PDF is supported)
+- **Contextual Enrichment**: Enhanced document understanding with AI-generated context, inspired by [Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)
+- **Batch Processing**: Handle multiple documents simultaneously
 
-## Technical Details 🛠️
-By selecting the right local models and the power of `LangChain` you can run the entire RAG pipeline locally, without any data leaving your environment, and with reasonable performance.
+### 🤖 AI-Powered Chat
+- **Natural Language Queries**: Ask questions in plain English
+- **Source Attribution**: Every answer includes document references
+- **Smart Routing**: Automatically chooses between RAG and direct LLM responses
+- **Query Decomposition**: Breaks complex queries into sub-questions for better answers
+- **Semantic Caching**: TTL-based caching with similarity matching for faster responses
+- **Session-Aware History**: Maintains conversation context across interactions
+- **Answer Verification**: Independent verification pass for accuracy
+- **Multiple AI Models**: Ollama for inference, HuggingFace for embeddings and reranking
 
-- `ingest.py` uses `LangChain` tools to parse the document and create embeddings locally using `InstructorEmbeddings`. It then stores the result in a local vector database using `Chroma` vector store.
-- `run_localGPT.py` uses a local LLM to understand questions and create answers. The context for the answers is extracted from the local vector store using a similarity search to locate the right piece of context from the docs.
-- You can replace this local LLM with any other LLM from the HuggingFace. Make sure whatever LLM you select is in the HF format.
 
-This project was inspired by the original [privateGPT](https://github.com/imartinez/privateGPT).
+### 🛠️ Developer-Friendly
+- **RESTful APIs**: Complete API access for integration
+- **Real-time Progress**: Live updates during document processing
+- **Flexible Configuration**: Customize models, chunk sizes, and search parameters
+- **Extensible Architecture**: Plugin system for custom components
 
-## Built Using 🧩
-- [LangChain](https://github.com/hwchase17/langchain)
-- [HuggingFace LLMs](https://huggingface.co/models)
-- [InstructorEmbeddings](https://instructor-embedding.github.io/)
-- [LLAMACPP](https://github.com/abetlen/llama-cpp-python)
-- [ChromaDB](https://www.trychroma.com/)
-- [Streamlit](https://streamlit.io/)
+### 🎨 Modern Interface
+- **Intuitive Web UI**: Clean, responsive design
+- **Session Management**: Organize conversations by topic
+- **Index Management**: Easy document collection management
+- **Real-time Chat**: Streaming responses for immediate feedback
 
-# Environment Setup 🌍
+---
 
-1. 📥 Clone the repo using git:
+## 🚀 Quick Start
 
-```shell
+Note: The installation is currently only tested on macOS. 
+
+### Prerequisites
+- Python 3.8 or higher (tested with Python 3.11.5)
+- Node.js 16+ and npm (tested with Node.js 23.10.0, npm 10.9.2)
+- Docker (optional, for containerized deployment)
+- 8GB+ RAM (16GB+ recommended)
+- Ollama (required for both deployment approaches)
+
+### ***NOTE***
+Before this brach is moved to the main branch, please clone this branch for instalation:
+
+```bash
+git clone -b localgpt-v2 https://github.com/PromtEngineer/localGPT.git
+cd localGPT
+```
+
+### Option 1: Docker Deployment 
+
+```bash
+# Clone the repository
 git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
+
+# Install Ollama locally (required even for Docker)
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull qwen3:0.6b
+ollama pull qwen3:8b
+
+# Start Ollama
+ollama serve
+
+# Start with Docker (in a new terminal)
+./start-docker.sh
+
+# Access the application
+open http://localhost:3000
 ```
 
-2. 🐍 Install [conda](https://www.anaconda.com/download) for virtual environment management. Create and activate a new virtual environment.
+**Docker Management Commands:**
+```bash
+# Check container status
+docker compose ps
 
-```shell
-conda create -n localGPT python=3.10.0
-conda activate localGPT
+# View logs
+docker compose logs -f
+
+# Stop containers
+./start-docker.sh stop
 ```
 
-3. 🛠️ Install the dependencies using pip
+### Option 2: Direct Development (Recommended for Development)
 
-To set up your environment to run the code, first install all requirements:
+```bash
+# Clone the repository
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
-```shell
+# Install Python dependencies
 pip install -r requirements.txt
+
+# Key dependencies installed:
+# - torch==2.4.1, transformers==4.51.0 (AI models)
+# - lancedb (vector database)
+# - rank_bm25, fuzzywuzzy (search algorithms)
+# - sentence_transformers, rerankers (embedding/reranking)
+# - docling (document processing)
+# - colpali-engine (multimodal processing - support coming soon)
+
+# Install Node.js dependencies
+npm install
+
+# Install and start Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull qwen3:0.6b
+ollama pull qwen3:8b
+ollama serve
+
+# Start the system (in a new terminal)
+python run_system.py
+
+# Access the application
+open http://localhost:3000
 ```
 
-***Installing LLAMA-CPP :***
+**System Management:**
+```bash
+# Check system health (comprehensive diagnostics)
+python system_health_check.py
 
-LocalGPT uses [LlamaCpp-Python](https://github.com/abetlen/llama-cpp-python) for GGML (you will need llama-cpp-python <=0.1.76) and GGUF (llama-cpp-python >=0.1.83) models.
+# Check service status and health
+python run_system.py --health
 
-To run the quantized Llama3 model, ensure you have llama-cpp-python version 0.2.62 or higher installed.
+# Start in production mode
+python run_system.py --mode prod
 
-If you want to use BLAS or Metal with [llama-cpp](https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal) you can set appropriate flags:
+# Skip frontend (backend + RAG API only)
+python run_system.py --no-frontend
 
-For `NVIDIA` GPUs support, use `cuBLAS`
+# View aggregated logs
+python run_system.py --logs-only
 
-```shell
-# Example: cuBLAS
-CMAKE_ARGS="-DLLAMA_CUBLAS=on" FORCE_CMAKE=1 pip install llama-cpp-python --no-cache-dir
+# Stop all services
+python run_system.py --stop
+# Or press Ctrl+C in the terminal running python run_system.py
 ```
 
-For Apple Metal (`M1/M2`) support, use
+**Service Architecture:**
+The `run_system.py` launcher manages four key services:
+- **Ollama Server** (port 11434): AI model serving
+- **RAG API Server** (port 8001): Document processing and retrieval
+- **Backend Server** (port 8000): Session management and API endpoints
+- **Frontend Server** (port 3000): React/Next.js web interface
 
-```shell
-# Example: METAL
-CMAKE_ARGS="-DLLAMA_METAL=on"  FORCE_CMAKE=1 pip install llama-cpp-python --no-cache-dir
+### Option 3: Manual Component Startup
+
+```bash
+# Terminal 1: Start Ollama
+ollama serve
+
+# Terminal 2: Start RAG API
+python -m rag_system.api_server
+
+# Terminal 3: Start Backend
+cd backend && python server.py
+
+# Terminal 4: Start Frontend
+npm run dev
+
+# Access at http://localhost:3000
 ```
-For more details, please refer to [llama-cpp](https://github.com/abetlen/llama-cpp-python#installation-with-openblas--cublas--clblast--metal)
 
-## Docker 🐳
+---
 
-Installing the required packages for GPU inference on NVIDIA GPUs, like gcc 11 and CUDA 11, may cause conflicts with other packages in your system.
-As an alternative to Conda, you can use Docker with the provided Dockerfile.
-It includes CUDA, your system just needs Docker, BuildKit, your NVIDIA GPU driver and the NVIDIA container toolkit.
-Build as `docker build -t localgpt .`, requires BuildKit.
-Docker BuildKit does not support GPU during *docker build* time right now, only during *docker run*.
-Run as `docker run -it --mount src="$HOME/.cache",target=/root/.cache,type=bind --gpus=all localgpt`.
-For running the code on Intel® Gaudi® HPU, use the following Dockerfile - `Dockerfile_hpu`.
+### Detailed Installation
 
-## Test dataset
+#### 1. Install System Dependencies
 
-For testing, this repository comes with [Constitution of USA](https://constitutioncenter.org/media/files/constitution.pdf) as an example file to use.
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install python3.8 python3-pip nodejs npm docker.io docker-compose
+```
 
-## Ingesting your OWN Data.
-Put your files in the `SOURCE_DOCUMENTS` folder. You can put multiple folders within the `SOURCE_DOCUMENTS` folder and the code will recursively read your files.
+**macOS:**
+```bash
+brew install python@3.8 node npm docker docker-compose
+```
 
-### Support file formats:
-LocalGPT currently supports the following file formats. LocalGPT uses `LangChain` for loading these file formats. The code in `constants.py` uses a `DOCUMENT_MAP` dictionary to map a file format to the corresponding loader. In order to add support for another file format, simply add this dictionary with the file format and the corresponding loader from [LangChain](https://python.langchain.com/docs/modules/data_connection/document_loaders/).
+**Windows:**
+```bash
+# Install Python 3.8+, Node.js, and Docker Desktop
+# Then use PowerShell or WSL2
+```
 
-```shell
-DOCUMENT_MAP = {
-    ".txt": TextLoader,
-    ".md": TextLoader,
-    ".py": TextLoader,
-    ".pdf": PDFMinerLoader,
-    ".csv": CSVLoader,
-    ".xls": UnstructuredExcelLoader,
-    ".xlsx": UnstructuredExcelLoader,
-    ".docx": Docx2txtLoader,
-    ".doc": Docx2txtLoader,
+#### 2. Install AI Models
+
+**Install Ollama (Recommended):**
+```bash
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Pull recommended models
+ollama pull qwen3:0.6b          # Fast generation model
+ollama pull qwen3:8b            # High-quality generation model
+```
+
+#### 3. Configure Environment
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit configuration
+nano .env
+```
+
+**Key Configuration Options:**
+```env
+# AI Models (referenced in rag_system/main.py)
+OLLAMA_HOST=http://localhost:11434
+
+# Database Paths (used by backend and RAG system)
+DATABASE_PATH=./backend/chat_data.db
+VECTOR_DB_PATH=./lancedb
+
+# Server Settings (used by run_system.py)
+BACKEND_PORT=8000
+FRONTEND_PORT=3000
+RAG_API_PORT=8001
+
+# Optional: Override default models
+GENERATION_MODEL=qwen3:8b
+ENRICHMENT_MODEL=qwen3:0.6b
+EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
+RERANKER_MODEL=answerdotai/answerai-colbert-small-v1
+```
+
+#### 4. Initialize the System
+
+```bash
+# Run system health check
+python system_health_check.py
+
+# Initialize databases
+python -c "from backend.database import ChatDatabase; ChatDatabase().init_database()"
+
+# Test installation
+python -c "from rag_system.main import get_agent; print('✅ Installation successful!')"
+
+# Validate complete setup
+python run_system.py --health
+```
+
+---
+
+## 🎯 Getting Started
+
+### 1. Create Your First Index
+
+An **index** is a collection of processed documents that you can chat with.
+
+#### Using the Web Interface:
+1. Open http://localhost:3000
+2. Click "Create New Index"
+3. Upload your documents (PDF, DOCX, TXT)
+4. Configure processing options
+5. Click "Build Index"
+
+#### Using Scripts:
+```bash
+# Simple script approach
+./simple_create_index.sh "My Documents" "path/to/document.pdf"
+
+# Interactive script
+python create_index_script.py
+```
+
+#### Using API:
+```bash
+# Create index
+curl -X POST http://localhost:8000/indexes \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Index", "description": "My documents"}'
+
+# Upload documents
+curl -X POST http://localhost:8000/indexes/INDEX_ID/upload \
+  -F "files=@document.pdf"
+
+# Build index
+curl -X POST http://localhost:8000/indexes/INDEX_ID/build
+```
+
+### 2. Start Chatting
+
+Once your index is built:
+
+1. **Create a Chat Session**: Click "New Chat" or use an existing session
+2. **Select Your Index**: Choose which document collection to query
+3. **Ask Questions**: Type natural language questions about your documents
+4. **Get Answers**: Receive AI-generated responses with source citations
+
+### 3. Advanced Features
+
+#### Custom Model Configuration
+```bash
+# Use different models for different tasks
+curl -X POST http://localhost:8000/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "High Quality Session",
+    "model": "qwen3:8b",
+    "embedding_model": "Qwen/Qwen3-Embedding-4B"
+  }'
+```
+
+#### Batch Document Processing
+```bash
+# Process multiple documents at once
+python demo_batch_indexing.py --config batch_indexing_config.json
+```
+
+#### API Integration
+```python
+import requests
+
+# Chat with your documents via API
+response = requests.post('http://localhost:8000/chat', json={
+    'query': 'What are the key findings in the research papers?',
+    'session_id': 'your-session-id',
+    'search_type': 'hybrid',
+    'retrieval_k': 20
+})
+
+print(response.json()['response'])
+```
+
+---
+
+## 🔧 Configuration
+
+### Model Configuration
+
+LocalGPT supports multiple AI model providers with centralized configuration:
+
+#### Ollama Models (Local Inference)
+```python
+OLLAMA_CONFIG = {
+    "host": "http://localhost:11434",
+    "generation_model": "qwen3:8b",        # Main text generation
+    "enrichment_model": "qwen3:0.6b"       # Lightweight routing/enrichment
 }
 ```
 
-### Ingest
-
-Run the following command to ingest all the data.
-
-If you have `cuda` setup on your system.
-
-```shell
-python ingest.py
-```
-You will see an output like this:
-<img width="1110" alt="Screenshot 2023-09-14 at 3 36 27 PM" src="https://github.com/PromtEngineer/localGPT/assets/134474669/c9274e9a-842c-49b9-8d95-606c3d80011f">
-
-
-Use the device type argument to specify a given device.
-To run on `cpu`
-
-```sh
-python ingest.py --device_type cpu
+#### External Models (HuggingFace Direct)
+```python
+EXTERNAL_MODELS = {
+    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",           # 1024 dimensions
+    "reranker_model": "answerdotai/answerai-colbert-small-v1", # ColBERT reranker
+    "fallback_reranker": "BAAI/bge-reranker-base"             # Backup reranker
+}
 ```
 
-To run on `M1/M2`
+### Pipeline Configuration
 
-```sh
-python ingest.py --device_type mps
+LocalGPT offers two main pipeline configurations:
+
+#### Default Pipeline (Production-Ready)
+```python
+"default": {
+    "description": "Production-ready pipeline with hybrid search, AI reranking, and verification",
+    "storage": {
+        "lancedb_uri": "./lancedb",
+        "text_table_name": "text_pages_v3",
+        "bm25_path": "./index_store/bm25"
+    },
+    "retrieval": {
+        "retriever": "multivector",
+        "search_type": "hybrid",
+        "late_chunking": {"enabled": True},
+        "dense": {"enabled": True, "weight": 0.7},
+        "bm25": {"enabled": True}
+    },
+    "reranker": {
+        "enabled": True,
+        "type": "ai",
+        "strategy": "rerankers-lib",
+        "model_name": "answerdotai/answerai-colbert-small-v1",
+        "top_k": 10
+    },
+    "query_decomposition": {"enabled": True, "max_sub_queries": 3},
+    "verification": {"enabled": True},
+    "retrieval_k": 20,
+    "contextual_enricher": {"enabled": True, "window_size": 1}
+}
 ```
 
-Use help for a full list of supported devices.
-
-```sh
-python ingest.py --help
+#### Fast Pipeline (Speed-Optimized)
+```python
+"fast": {
+    "description": "Speed-optimized pipeline with minimal overhead",
+    "retrieval": {
+        "search_type": "vector_only",
+        "late_chunking": {"enabled": False}
+    },
+    "reranker": {"enabled": False},
+    "query_decomposition": {"enabled": False},
+    "verification": {"enabled": False},
+    "retrieval_k": 10,
+    "contextual_enricher": {"enabled": False}
+}
 ```
 
-This will create a new folder called `DB` and use it for the newly created vector store. You can ingest as many documents as you want, and all will be accumulated in the local embeddings database.
-If you want to start from an empty database, delete the `DB` and reingest your documents.
+### Search Configuration
 
-Note: When you run this for the first time, it will need internet access to download the embedding model (default: `Instructor Embedding`). In the subsequent runs, no data will leave your local environment and you can ingest data without internet connection.
-
-## Ask questions to your documents, locally!
-
-In order to chat with your documents, run the following command (by default, it will run on `cuda`).
-
-```shell
-python run_localGPT.py
+```python
+SEARCH_CONFIG = {
+    'hybrid': {
+        'dense_weight': 0.7,
+        'sparse_weight': 0.3,
+        'retrieval_k': 20,
+        'reranker_top_k': 10
+    }
+}
 ```
-You can also specify the device type just like `ingest.py`
+---
 
-```shell
-python run_localGPT.py --device_type mps # to run on Apple silicon
-```
+## 🛠️ Troubleshooting
 
-```shell
-# To run on Intel® Gaudi® hpu
-MODEL_ID = "mistralai/Mistral-7B-Instruct-v0.2" # in constants.py
-python run_localGPT.py --device_type hpu
-```
+### Common Issues
 
-This will load the ingested vector store and embedding model. You will be presented with a prompt:
+#### Installation Problems
+```bash
+# Check Python version
+python --version  # Should be 3.8+
 
-```shell
-> Enter a query:
-```
+# Check dependencies
+pip list | grep -E "(torch|transformers|lancedb)"
 
-After typing your question, hit enter. LocalGPT will take some time based on your hardware. You will get a response like this below.
-<img width="1312" alt="Screenshot 2023-09-14 at 3 33 19 PM" src="https://github.com/PromtEngineer/localGPT/assets/134474669/a7268de9-ade0-420b-a00b-ed12207dbe41">
-
-Once the answer is generated, you can then ask another question without re-running the script, just wait for the prompt again.
-
-
-***Note:*** When you run this for the first time, it will need internet connection to download the LLM (default: `TheBloke/Llama-2-7b-Chat-GGUF`). After that you can turn off your internet connection, and the script inference would still work. No data gets out of your local environment.
-
-Type `exit` to finish the script.
-
-### Extra Options with run_localGPT.py
-
-You can use the `--show_sources` flag with `run_localGPT.py` to show which chunks were retrieved by the embedding model. By default, it will show 4 different sources/chunks. You can change the number of sources/chunks
-
-```shell
-python run_localGPT.py --show_sources
+# Reinstall dependencies
+pip install -r requirements.txt --force-reinstall
 ```
 
-Another option is to enable chat history. ***Note***: This is disabled by default and can be enabled by using the  `--use_history` flag. The context window is limited so keep in mind enabling history will use it and might overflow.
+#### Model Loading Issues
+```bash
+# Check Ollama status
+ollama list
+curl http://localhost:11434/api/tags
 
-```shell
-python run_localGPT.py --use_history
+# Pull missing models
+ollama pull qwen3:0.6b
 ```
 
-You can store user questions and model responses with flag `--save_qa` into a csv file `/local_chat_history/qa_log.csv`. Every interaction will be stored. 
+#### Database Issues
+```bash
+# Check database connectivity
+python -c "from backend.database import ChatDatabase; db = ChatDatabase(); print('✅ Database OK')"
 
-```shell
-python run_localGPT.py --save_qa
+# Reset database (WARNING: This deletes all data)
+rm backend/chat_data.db
+python -c "from backend.database import ChatDatabase; ChatDatabase().init_database()"
 ```
 
-# Run the Graphical User Interface
+#### Performance Issues
+```bash
+# Check system resources
+python system_health_check.py
 
-1. Open `constants.py` in an editor of your choice and depending on choice add the LLM you want to use. By default, the following model will be used:
+# Monitor memory usage
+htop  # or Task Manager on Windows
 
-   ```shell
-   MODEL_ID = "TheBloke/Llama-2-7b-Chat-GGUF"
-   MODEL_BASENAME = "llama-2-7b-chat.Q4_K_M.gguf"
+# Optimize for low-memory systems
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+```
+
+### Getting Help
+
+1. **Check Logs**: The system creates structured logs in the `logs/` directory:
+   - `logs/system.log`: Main system events and errors
+   - `logs/ollama.log`: Ollama server logs
+   - `logs/rag-api.log`: RAG API processing logs
+   - `logs/backend.log`: Backend server logs
+   - `logs/frontend.log`: Frontend build and runtime logs
+
+2. **System Health**: Run comprehensive diagnostics:
+   ```bash
+   python system_health_check.py  # Full system diagnostics
+   python run_system.py --health  # Service status check
    ```
 
-3. Open up a terminal and activate your python environment that contains the dependencies installed from requirements.txt.
+3. **Health Endpoints**: Check individual service health:
+   - Backend: `http://localhost:8000/health`
+   - RAG API: `http://localhost:8001/health`
+   - Ollama: `http://localhost:11434/api/tags`
 
-4. Navigate to the `/LOCALGPT` directory.
+4. **Documentation**: Check the [Technical Documentation](TECHNICAL_DOCS.md)
+5. **GitHub Issues**: Report bugs and request features
+6. **Community**: Join our Discord/Slack community
 
-5. Run the following command `python run_localGPT_API.py`. The API should being to run.
+---
 
-6. Wait until everything has loaded in. You should see something like `INFO:werkzeug:Press CTRL+C to quit`.
+## 🔗 API Reference
 
-7. Open up a second terminal and activate the same python environment.
+### Core Endpoints
 
-8. Navigate to the `/LOCALGPT/localGPTUI` directory.
+#### Chat API
+```http
+# Session-based chat (recommended)
+POST /sessions/{session_id}/chat
+Content-Type: application/json
 
-9. Run the command `python localGPTUI.py`.
+{
+  "query": "What are the main topics discussed?",
+  "search_type": "hybrid",
+  "retrieval_k": 20,
+  "ai_rerank": true,
+  "context_window_size": 5
+}
 
-10. Open up a web browser and go the address `http://localhost:5111/`.
+# Legacy chat endpoint
+POST /chat
+Content-Type: application/json
 
+{
+  "query": "What are the main topics discussed?",
+  "session_id": "uuid",
+  "search_type": "hybrid",
+  "retrieval_k": 20
+}
+```
 
-# How to select different LLM models?
+#### Index Management
+```http
+# Create index
+POST /indexes
+Content-Type: application/json
+{
+  "name": "My Index",
+  "description": "Description",
+  "config": "default"
+}
 
-To change the models you will need to set both `MODEL_ID` and `MODEL_BASENAME`.
+# Get all indexes
+GET /indexes
 
-1. Open up `constants.py` in the editor of your choice.
-2. Change the `MODEL_ID` and `MODEL_BASENAME`. If you are using a quantized model (`GGML`, `GPTQ`, `GGUF`), you will need to provide `MODEL_BASENAME`. For unquantized models, set `MODEL_BASENAME` to `NONE`
-5. There are a number of example models from HuggingFace that have already been tested to be run with the original trained model (ending with HF or have a .bin in its "Files and versions"), and quantized models (ending with GPTQ or have a .no-act-order or .safetensors in its "Files and versions").
-6. For models that end with HF or have a .bin inside its "Files and versions" on its HuggingFace page.
+# Get specific index
+GET /indexes/{id}
 
-   - Make sure you have a `MODEL_ID` selected. For example -> `MODEL_ID = "TheBloke/guanaco-7B-HF"`
-   - Go to the [HuggingFace Repo](https://huggingface.co/TheBloke/guanaco-7B-HF)
+# Upload documents to index
+POST /indexes/{id}/upload
+Content-Type: multipart/form-data
+files: [file1.pdf, file2.pdf, ...]
 
-7. For models that contain GPTQ in its name and or have a .no-act-order or .safetensors extension inside its "Files and versions on its HuggingFace page.
+# Build index (process uploaded documents)
+POST /indexes/{id}/build
+Content-Type: application/json
+{
+  "config_mode": "default",
+  "enable_enrich": true,
+  "chunk_size": 512
+}
 
-   - Make sure you have a `MODEL_ID` selected. For example -> model_id = `"TheBloke/wizardLM-7B-GPTQ"`
-   - Got to the corresponding [HuggingFace Repo](https://huggingface.co/TheBloke/wizardLM-7B-GPTQ) and select "Files and versions".
-   - Pick one of the model names and set it as  `MODEL_BASENAME`. For example -> `MODEL_BASENAME = "wizardLM-7B-GPTQ-4bit.compat.no-act-order.safetensors"`
+# Delete index
+DELETE /indexes/{id}
+```
 
-8. Follow the same steps for `GGUF` and `GGML` models.
+#### Session Management
+```http
+# Create session
+POST /sessions
+Content-Type: application/json
+{
+  "title": "My Session",
+  "model": "qwen3:0.6b"
+}
 
-# GPU and VRAM Requirements
+# Get all sessions
+GET /sessions
 
-Below is the VRAM requirement for different models depending on their size (Billions of parameters). The estimates in the table does not include VRAM used by the Embedding models - which use an additional 2GB-7GB of VRAM depending on the model.
+# Get specific session
+GET /sessions/{session_id}
 
-| Mode Size (B) | float32   | float16   | GPTQ 8bit      | GPTQ 4bit          |
-| ------- | --------- | --------- | -------------- | ------------------ |
-| 7B      | 28 GB     | 14 GB     | 7 GB - 9 GB    | 3.5 GB - 5 GB      |
-| 13B     | 52 GB     | 26 GB     | 13 GB - 15 GB  | 6.5 GB - 8 GB      |
-| 32B     | 130 GB    | 65 GB     | 32.5 GB - 35 GB| 16.25 GB - 19 GB   |
-| 65B     | 260.8 GB  | 130.4 GB  | 65.2 GB - 67 GB| 32.6 GB - 35 GB    |
+# Get session documents
+GET /sessions/{session_id}/documents
 
+# Get session indexes
+GET /sessions/{session_id}/indexes
 
-# System Requirements
+# Link index to session
+POST /sessions/{session_id}/indexes/{index_id}
 
-## Python Version
+# Delete session
+DELETE /sessions/{session_id}
 
-To use this software, you must have Python 3.10 or later installed. Earlier versions of Python will not compile.
+# Rename session
+POST /sessions/{session_id}/rename
+Content-Type: application/json
+{
+  "new_title": "Updated Session Name"
+}
+```
 
-## C++ Compiler
+### Advanced Features
 
-If you encounter an error while building a wheel during the `pip install` process, you may need to install a C++ compiler on your computer.
+#### Query Decomposition
+The system can break complex queries into sub-questions for better answers:
+```http
+POST /sessions/{session_id}/chat
+Content-Type: application/json
 
-### For Windows 10/11
+{
+  "query": "Compare the methodologies and analyze their effectiveness",
+  "query_decompose": true,
+  "compose_sub_answers": true
+}
+```
 
-To install a C++ compiler on Windows 10/11, follow these steps:
+#### Answer Verification
+Independent verification pass for accuracy using a separate verification model:
+```http
+POST /sessions/{session_id}/chat
+Content-Type: application/json
 
-1. Install Visual Studio 2022.
-2. Make sure the following components are selected:
-   - Universal Windows Platform development
-   - C++ CMake tools for Windows
-3. Download the MinGW installer from the [MinGW website](https://sourceforge.net/projects/mingw/).
-4. Run the installer and select the "gcc" component.
+{
+  "query": "What are the key findings?",
+  "verify": true
+}
+```
 
-### NVIDIA Driver's Issues:
+#### Contextual Enrichment
+Document context enrichment during indexing for better understanding:
+```bash
+# Enable during index building
+POST /indexes/{id}/build
+{
+  "enable_enrich": true,
+  "window_size": 2
+}
+```
 
-Follow this [page](https://linuxconfig.org/how-to-install-the-nvidia-drivers-on-ubuntu-22-04) to install NVIDIA Drivers.
+#### Late Chunking
+Better context preservation by chunking after embedding:
+```bash
+# Configure in pipeline
+"late_chunking": {"enabled": true}
+```
+
+#### Streaming Chat
+```http
+POST /chat/stream
+Content-Type: application/json
+
+{
+  "query": "Explain the methodology",
+  "session_id": "uuid",
+  "stream": true
+}
+```
+
+#### Batch Processing
+```bash
+# Using the batch indexing script
+python demo_batch_indexing.py --config batch_indexing_config.json
+
+# Example batch configuration (batch_indexing_config.json):
+{
+  "index_name": "Sample Batch Index",
+  "index_description": "Example batch index configuration",
+  "documents": [
+    "./rag_system/documents/invoice_1039.pdf",
+    "./rag_system/documents/invoice_1041.pdf"
+  ],
+  "processing": {
+    "chunk_size": 512,
+    "chunk_overlap": 64,
+    "enable_enrich": true,
+    "enable_latechunk": true,
+    "enable_docling": true,
+    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
+    "generation_model": "qwen3:0.6b",
+    "retrieval_mode": "hybrid",
+    "window_size": 2
+  }
+}
+```
+
+```http
+# API endpoint for batch processing
+POST /batch/index
+Content-Type: application/json
+
+{
+  "file_paths": ["doc1.pdf", "doc2.pdf"],
+  "config": {
+    "chunk_size": 512,
+    "enable_enrich": true,
+    "enable_latechunk": true,
+    "enable_docling": true
+  }
+}
+```
+
+For complete API documentation, see [API_REFERENCE.md](API_REFERENCE.md).
+
+---
+
+## 🏗️ Architecture
+
+LocalGPT is built with a modular, scalable architecture:
+
+```mermaid
+graph TB
+    UI[Web Interface] --> API[Backend API]
+    API --> Agent[RAG Agent]
+    Agent --> Retrieval[Retrieval Pipeline]
+    Agent --> Generation[Generation Pipeline]
+
+    Retrieval --> Vector[Vector Search]
+    Retrieval --> BM25[BM25 Search]
+    Retrieval --> Rerank[Reranking]
+
+    Vector --> LanceDB[(LanceDB)]
+    BM25 --> BM25DB[(BM25 Index)]
+
+    Generation --> Ollama[Ollama Models]
+    Generation --> HF[Hugging Face Models]
+
+    API --> SQLite[(SQLite DB)]
+```
+
+Overview of the Retrieval Agent
+
+```mermaid
+graph TD
+    classDef llmcall fill:#e6f3ff,stroke:#007bff;
+    classDef pipeline fill:#e6ffe6,stroke:#28a745;
+    classDef cache fill:#fff3e0,stroke:#fd7e14;
+    classDef logic fill:#f8f9fa,stroke:#6c757d;
+    classDef thread stroke-dasharray: 5 5;
+
+    A(Start: Agent.run) --> B_asyncio.run(_run_async);
+    B --> C{_run_async};
+
+    C --> C1[Get Chat History];
+    C1 --> T1[Build Triage Prompt <br/> Query + Doc Overviews ];
+    T1 --> T2["(asyncio.to_thread)<br/>LLM Triage: RAG or LLM_DIRECT?"]; class T2 llmcall,thread;
+    T2 --> T3{Decision?};
+
+    T3 -- RAG --> RAG_Path;
+    T3 -- LLM_DIRECT --> LLM_Path;
+
+    subgraph RAG Path
+        RAG_Path --> R1[Format Query + History];
+        R1 --> R2["(asyncio.to_thread)<br/>Generate Query Embedding"]; class R2 pipeline,thread;
+        R2 --> R3{{Check Semantic Cache}}; class R3 cache;
+        R3 -- Hit --> R_Cache_Hit(Return Cached Result);
+        R_Cache_Hit --> R_Hist_Update;
+        R3 -- Miss --> R4{Decomposition <br/> Enabled?};
+
+        R4 -- Yes --> R5["(asyncio.to_thread)<br/>Decompose Raw Query"]; class R5 llmcall,thread;
+        R5 --> R6{{Run Sub-Queries <br/> Parallel RAG Pipeline}}; class R6 pipeline,thread;
+        R6 --> R7[Collect Results & Docs];
+        R7 --> R8["(asyncio.to_thread)<br/>Compose Final Answer"]; class R8 llmcall,thread;
+        R8 --> V1(RAG Answer);
+
+        R4 -- No --> R9["(asyncio.to_thread)<br/>Run Single Query <br/>(RAG Pipeline)"]; class R9 pipeline,thread;
+        R9 --> V1;
+
+        V1 --> V2{{Verification <br/> await verify_async}}; class V2 llmcall;
+        V2 --> V3(Final RAG Result);
+        V3 --> R_Cache_Store{{Store in Semantic Cache}}; class R_Cache_Store cache;
+        R_Cache_Store --> FinalResult;
+    end
+
+    subgraph Direct LLM Path
+        LLM_Path --> L1[Format Query + History];
+        L1 --> L2["(asyncio.to_thread)<br/>Generate Direct LLM Answer <br/> (No RAG)"]; class L2 llmcall,thread;
+        L2 --> FinalResult(Final Direct Result);
+    end
+
+    FinalResult --> R_Hist_Update(Update Chat History);
+    R_Hist_Update --> ZZZ(End: Return Result);
+```
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions from developers of all skill levels! LocalGPT is an open-source project that benefits from community involvement.
+
+### 🚀 Quick Start for Contributors
+
+```bash
+# Fork and clone the repository
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
+
+# Set up development environment
+pip install -r requirements.txt
+npm install
+
+# Install Ollama and models
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama pull qwen3:0.6b qwen3:8b
+
+# Verify setup
+python system_health_check.py
+python run_system.py --mode dev
+```
+
+### 📋 How to Contribute
+
+1. **🐛 Report Bugs**: Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
+2. **💡 Request Features**: Use our [feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
+3. **🔧 Submit Code**: Follow our [development workflow](CONTRIBUTING.md#development-workflow)
+4. **📚 Improve Docs**: Help make our documentation better
+
+### 📖 Detailed Guidelines
+
+For comprehensive contributing guidelines, including:
+- Development setup and workflow
+- Coding standards and best practices
+- Testing requirements
+- Documentation standards
+- Release process
+
+**👉 See our [CONTRIBUTING.md](CONTRIBUTING.md) guide**
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. For models, please check their respective licenses.
+
+---
+
+## 📞 Support
+
+- **Documentation**: [Technical Docs](TECHNICAL_DOCS.md)
+- **Issues**: [GitHub Issues](https://github.com/PromtEngineer/localGPT/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/PromtEngineer/localGPT/discussions)
+- **Business Deployment and Customization**: [Contact Us](https://tally.so/r/wv6R2d)
+---
+
+<div align="center">
 
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=PromtEngineer/localGPT&type=Date)](https://star-history.com/#PromtEngineer/localGPT&Date)
-
-# Disclaimer
-
-This is a test project to validate the feasibility of a fully local solution for question answering using LLMs and Vector embeddings. It is not production ready, and it is not meant to be used in production. Vicuna-7B is based on the Llama model so that has the original Llama license.
-
-# Common Errors
-
- - [Torch not compatible with CUDA enabled](https://github.com/pytorch/pytorch/issues/30664)
-
-   -  Get CUDA version
-      ```shell
-      nvcc --version
-      ```
-      ```shell
-      nvidia-smi
-      ```
-   - Try installing PyTorch depending on your CUDA version
-      ```shell
-         conda install -c pytorch torchvision cudatoolkit=10.1 pytorch
-      ```
-   - If it doesn't work, try reinstalling
-      ```shell
-         pip uninstall torch
-         pip cache purge
-         pip install torch -f https://download.pytorch.org/whl/torch_stable.html
-      ```
-
-- [ERROR: pip's dependency resolver does not currently take into account all the packages that are installed](https://stackoverflow.com/questions/72672196/error-pips-dependency-resolver-does-not-currently-take-into-account-all-the-pa/76604141#76604141)
-  ```shell
-     pip install h5py
-     pip install typing-extensions
-     pip install wheel
-  ```
-- [Failed to import transformers](https://github.com/huggingface/transformers/issues/11262)
-  - Try re-install
-    ```shell
-       conda uninstall tokenizers, transformers
-       pip install transformers
-    ```

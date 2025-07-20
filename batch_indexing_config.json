@@ -1,0 +1,19 @@
+{
+  "index_name": "Sample Batch Index",
+  "index_description": "Example batch index configuration",
+  "documents": [
+    "./rag_system/documents/invoice_1039.pdf",
+    "./rag_system/documents/invoice_1041.pdf"
+  ],
+  "processing": {
+    "chunk_size": 512,
+    "chunk_overlap": 64,
+    "enable_enrich": true,
+    "enable_latechunk": true,
+    "enable_docling": true,
+    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
+    "generation_model": "qwen3:0.6b",
+    "retrieval_mode": "hybrid",
+    "window_size": 2
+  }
+}

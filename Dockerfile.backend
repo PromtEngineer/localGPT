@@ -1,0 +1,31 @@
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies (using Docker-specific requirements)
+COPY requirements-docker.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend code and dependencies
+COPY backend/ ./backend/
+COPY rag_system/ ./rag_system/
+
+# Create necessary directories and initialize database
+RUN mkdir -p shared_uploads logs backend
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the backend server
+WORKDIR /app/backend
+CMD ["python", "server.py"]  
