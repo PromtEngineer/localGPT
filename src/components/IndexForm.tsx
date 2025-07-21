@@ -98,8 +98,8 @@ export function IndexForm({ onClose, onIndexed }: Props) {
             onDrop={(e)=>{e.preventDefault(); if(e.dataTransfer.files) setFiles(e.dataTransfer.files)}}
           >
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-2 text-white/80"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="16"/></svg>
-            <span className="text-xs text-gray-400">Drag & Drop PDFs here or click to browse</span>
-            <input id="file-upload" type="file" accept="application/pdf" multiple className="hidden" onChange={(e)=>setFiles(e.target.files)} />
+            <span className="text-xs text-gray-400">Drag & Drop documents here or click to browse</span>
+            <input id="file-upload" type="file" accept="application/pdf,.docx,.doc,.html,.htm,.md,.txt" multiple className="hidden" onChange={(e)=>setFiles(e.target.files)} />
           </label>
           {files && <p className="mt-1 text-xs text-green-400">{files.length} file(s) selected</p>}
         </div>
@@ -220,4 +220,4 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       </div>
     </div>
   );
-}      
+}                        

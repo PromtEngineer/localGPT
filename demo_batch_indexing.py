@@ -113,7 +113,7 @@ class BatchIndexingDemo:
             if os.path.exists(doc_path):
                 # Check file extension
                 ext = Path(doc_path).suffix.lower()
-                if ext in ['.pdf', '.txt', '.docx', '.md']:
+                if ext in ['.pdf', '.txt', '.docx', '.md', '.html', '.htm']:
                     valid_documents.append(doc_path)
                     print(f"  ✅ {doc_path}")
                 else:
@@ -383,4 +383,4 @@ comprehensive processing pipelines.
 
 
 if __name__ == "__main__":
-    main() 
+    main()  

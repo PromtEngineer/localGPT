@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 import os
 import networkx as nx
-from rag_system.ingestion.pdf_converter import PDFConverter
+from rag_system.ingestion.document_converter import DocumentConverter
 from rag_system.ingestion.chunking import MarkdownRecursiveChunker
 from rag_system.indexing.representations import EmbeddingGenerator, select_embedder
 from rag_system.indexing.embedders import LanceDBManager, VectorIndexer
@@ -15,7 +15,7 @@ class IndexingPipeline:
         self.config = config
         self.llm_client = ollama_client
         self.ollama_config = ollama_config
-        self.pdf_converter = PDFConverter()
+        self.document_converter = DocumentConverter()
         # Chunker selection: docling (token-based) or legacy (character-based)
         chunker_mode = config.get("chunker_mode", "docling")
         
@@ -157,7 +157,7 @@ class IndexingPipeline:
                         document_id = os.path.basename(file_path)
                         print(f"Processing: {document_id}")
                         
-                        pages_data = self.pdf_converter.convert_to_markdown(file_path)
+                        pages_data = self.document_converter.convert_to_markdown(file_path)
                         file_chunks = []
                         
                         for tpl in pages_data:

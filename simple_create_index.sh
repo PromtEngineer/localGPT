@@ -71,7 +71,7 @@ validate_documents() {
         if [ -f "$doc" ]; then
             # Check file extension
             case "${doc##*.}" in
-                pdf|txt|docx|md)
+                pdf|txt|docx|md|html|htm)
                     valid_docs+=("$doc")
                     print_status "✓ Valid document: $doc"
                     ;;
@@ -188,7 +188,7 @@ show_usage() {
     echo "  $0 \"Research Papers\" \"paper1.pdf\" \"paper2.pdf\" \"notes.txt\""
     echo "  $0 \"Invoice Collection\" ./invoices/*.pdf"
     echo ""
-    echo "Supported file types: PDF, TXT, DOCX, MD"
+    echo "Supported file types: PDF, TXT, DOCX, MD, HTML"
 }
 
 # Main script
@@ -225,4 +225,4 @@ main() {
 }
 
 # Run main function with all arguments
-main "$@" 
+main "$@"  
