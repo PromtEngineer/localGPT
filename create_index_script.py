@@ -101,7 +101,7 @@ class IndexCreator:
             elif choice == "2":
                 dir_path = self.get_user_input("Enter directory path")
                 if os.path.isdir(dir_path):
-                    supported_extensions = ['.pdf', '.txt', '.docx', '.md']
+                    supported_extensions = ['.pdf', '.txt', '.docx', '.md', '.html', '.htm']
                     found_docs = []
                     
                     for ext in supported_extensions:
@@ -369,4 +369,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()  

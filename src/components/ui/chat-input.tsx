@@ -89,8 +89,12 @@ export function ChatInput({
         lastModified: file.lastModified
       });
       
-      // Only allow PDF files for now
-      if (file.type === 'application/pdf') {
+      if (file.type === 'application/pdf' || 
+          file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+          file.type === 'text/html' ||
+          file.name.toLowerCase().endsWith('.html') ||
+          file.name.toLowerCase().endsWith('.htm') ||
+          file.name.toLowerCase().endsWith('.docx')) {
         newFiles.push({
           id: crypto.randomUUID(),
           name: file.name,
@@ -99,7 +103,7 @@ export function ChatInput({
           file: file,
         })
       } else {
-        console.log('🔧 Frontend: File rejected - not PDF:', file.type);
+        console.log('🔧 Frontend: File rejected - unsupported format:', file.type);
       }
     }
 
@@ -153,7 +157,7 @@ export function ChatInput({
 
         <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl px-5 pt-4 pb-3 space-y-2">
           {/* Hidden file input (kept for future use) */}
-          <input ref={fileInputRef} type="file" accept=".pdf" multiple onChange={handleFileChange} className="hidden" />
+          <input ref={fileInputRef} type="file" accept=".pdf,.docx,.html,.htm" multiple onChange={handleFileChange} className="hidden" />
 
           {/* Textarea */}
           <textarea
@@ -200,4 +204,4 @@ export function ChatInput({
       </form>
     </div>
   )
-} 
+}  

@@ -115,8 +115,12 @@ export function EmptyChatState({
         const newFiles: AttachedFile[] = [];
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            // Only allow PDF files for now
-            if (file.type === 'application/pdf') {
+            if (file.type === 'application/pdf' || 
+                file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                file.type === 'text/html' ||
+                file.name.toLowerCase().endsWith('.html') ||
+                file.name.toLowerCase().endsWith('.htm') ||
+                file.name.toLowerCase().endsWith('.docx')) {
                 newFiles.push({
                     id: crypto.randomUUID(),
                     name: file.name,
@@ -220,7 +224,7 @@ export function EmptyChatState({
                     <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".pdf"
+                        accept=".pdf,.docx,.html,.htm"
                         multiple
                         onChange={handleFileChange}
                         className="hidden"
@@ -278,4 +282,4 @@ export function EmptyChatState({
             </div>
         </div>
     );
-} 
+}  
