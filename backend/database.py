@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 class ChatDatabase:
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
             # Auto-detect environment and set appropriate path
             import os
@@ -25,15 +25,30 @@ class ChatDatabase:
         # Enable foreign keys
         conn.execute("PRAGMA foreign_keys = ON")
         
-        # Sessions table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                metadata TEXT DEFAULT '{}'
+            )
+        ''')
+        
+        # Sessions table - UPDATED with user_id
         conn.execute('''
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
                 title TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 model_used TEXT NOT NULL,
-                message_count INTEGER DEFAULT 0
+                message_count INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             )
         ''')
         
@@ -51,6 +66,9 @@ class ChatDatabase:
         ''')
         
         # Create indexes for better performance
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at)')
@@ -67,16 +85,17 @@ class ChatDatabase:
         ''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_session_documents_session_id ON session_documents(session_id)')
         
-        # --- NEW: Index persistence tables ---
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS indexes (
                 id TEXT PRIMARY KEY,
-                name TEXT UNIQUE,
+                user_id TEXT NOT NULL,
+                name TEXT NOT NULL,
                 description TEXT,
                 created_at TEXT,
                 updated_at TEXT,
                 vector_table_name TEXT,
-                metadata TEXT
+                metadata TEXT,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             )
         ''')
 
@@ -101,60 +120,79 @@ class ChatDatabase:
             )
         ''')
         
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_indexes_user_name ON indexes(user_id, name)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_indexes_user_id ON indexes(user_id)')
+        
         conn.commit()
         conn.close()
-        print("✅ Database initialized successfully")
+        print("✅ Database initialized successfully with multi-user support")
     
-    def create_session(self, title: str, model: str) -> str:
-        """Create a new chat session"""
+    def create_session(self, title: str, model: str, user_id: str) -> str:
+        """Create a new chat session for a specific user"""
         session_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         
         conn = sqlite3.connect(self.db_path)
         conn.execute('''
-            INSERT INTO sessions (id, title, created_at, updated_at, model_used)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (session_id, title, now, now, model))
+            INSERT INTO sessions (id, user_id, title, created_at, updated_at, model_used)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (session_id, user_id, title, now, now, model))
         conn.commit()
         conn.close()
         
-        print(f"📝 Created new session: {session_id[:8]}... - {title}")
+        print(f"📝 Created new session: {session_id[:8]}... - {title} for user {user_id[:8]}...")
         return session_id
     
-    def get_sessions(self, limit: int = 50) -> List[Dict]:
-        """Get all chat sessions, ordered by most recent"""
+    def get_sessions(self, user_id: Optional[str] = None, limit: int = 50) -> List[Dict]:
+        """Get chat sessions for a specific user, ordered by most recent"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
-        cursor = conn.execute('''
-            SELECT id, title, created_at, updated_at, model_used, message_count
-            FROM sessions
-            ORDER BY updated_at DESC
-            LIMIT ?
-        ''', (limit,))
+        if user_id:
+            cursor = conn.execute('''
+                SELECT id, user_id, title, created_at, updated_at, model_used, message_count
+                FROM sessions
+                WHERE user_id = ?
+                ORDER BY updated_at DESC
+                LIMIT ?
+            ''', (user_id, limit))
+        else:
+            cursor = conn.execute('''
+                SELECT id, user_id, title, created_at, updated_at, model_used, message_count
+                FROM sessions
+                ORDER BY updated_at DESC
+                LIMIT ?
+            ''', (limit,))
         
         sessions = [dict(row) for row in cursor.fetchall()]
         conn.close()
         
         return sessions
     
-    def get_session(self, session_id: str) -> Optional[Dict]:
-        """Get a specific session"""
+    def get_session(self, session_id: str, user_id: Optional[str] = None) -> Optional[Dict]:
+        """Get a specific session, optionally filtered by user"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
-        cursor = conn.execute('''
-            SELECT id, title, created_at, updated_at, model_used, message_count
-            FROM sessions
-            WHERE id = ?
-        ''', (session_id,))
+        if user_id:
+            cursor = conn.execute('''
+                SELECT id, user_id, title, created_at, updated_at, model_used, message_count
+                FROM sessions
+                WHERE id = ? AND user_id = ?
+            ''', (session_id, user_id))
+        else:
+            cursor = conn.execute('''
+                SELECT id, user_id, title, created_at, updated_at, model_used, message_count
+                FROM sessions
+                WHERE id = ?
+            ''', (session_id,))
         
         row = cursor.fetchone()
         conn.close()
         
         return dict(row) if row else None
     
-    def add_message(self, session_id: str, content: str, sender: str, metadata: Dict = None) -> str:
+    def add_message(self, session_id: str, content: str, sender: str, metadata: Optional[Dict] = None) -> str:
         """Add a message to a session"""
         message_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
@@ -310,7 +348,7 @@ class ChatDatabase:
         conn.commit()
         conn.close()
         print(f"📄 Added document '{file_path}' to session {session_id[:8]}...")
-        return doc_id
+        return doc_id or 0
 
     def get_documents_for_session(self, session_id: str) -> List[str]:
         """Retrieves all document file paths for a given session."""
@@ -325,18 +363,18 @@ class ChatDatabase:
 
     # -------- Index helpers ---------
 
-    def create_index(self, name: str, description: str|None = None, metadata: dict | None = None) -> str:
+    def create_index(self, name: str, user_id: str, description: str|None = None, metadata: dict | None = None) -> str:
         idx_id = str(uuid.uuid4())
         created = datetime.now().isoformat()
-        vector_table = f"text_pages_{idx_id}"
+        vector_table = f"text_pages_{user_id[:8]}_{idx_id[:8]}"
         conn = sqlite3.connect(self.db_path)
         conn.execute('''
-            INSERT INTO indexes (id, name, description, created_at, updated_at, vector_table_name, metadata)
-            VALUES (?,?,?,?,?,?,?)
-        ''', (idx_id, name, description, created, created, vector_table, json.dumps(metadata or {})))
+            INSERT INTO indexes (id, user_id, name, description, created_at, updated_at, vector_table_name, metadata)
+            VALUES (?,?,?,?,?,?,?,?)
+        ''', (idx_id, user_id, name, description, created, created, vector_table, json.dumps(metadata or {})))
         conn.commit()
         conn.close()
-        print(f"📂 Created new index '{name}' ({idx_id[:8]})")
+        print(f"📂 Created new index '{name}' ({idx_id[:8]}) for user {user_id[:8]}...")
         return idx_id
 
     def get_index(self, index_id: str) -> dict | None:
@@ -355,10 +393,15 @@ class ChatDatabase:
         conn.close()
         return idx
 
-    def list_indexes(self) -> list[dict]:
+    def list_indexes(self, user_id: Optional[str] = None) -> list[dict]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        rows = conn.execute('SELECT * FROM indexes').fetchall()
+        
+        if user_id:
+            rows = conn.execute('SELECT * FROM indexes WHERE user_id = ?', (user_id,)).fetchall()
+        else:
+            rows = conn.execute('SELECT * FROM indexes').fetchall()
+            
         res = []
         for r in rows:
             item = dict(r)
@@ -671,7 +714,7 @@ if __name__ == "__main__":
     print("🧪 Testing database...")
     
     # Create a test session
-    session_id = db.create_session("Test Chat", "llama3.2:latest")
+    session_id = db.create_session("Test Chat", "llama3.2:latest", "test-user-id")
     
     # Add some messages
     db.add_message(session_id, "Hello!", "user")
@@ -689,4 +732,4 @@ if __name__ == "__main__":
     stats = db.get_stats()
     print(f"📊 Stats: {stats}")
     
-    print("✅ Database test completed!")  
+    print("✅ Database test completed!")            

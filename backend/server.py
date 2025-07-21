@@ -24,9 +24,10 @@ except ImportError as e:
 
 from ollama_client import OllamaClient
 from database import db, generate_session_title
+from auth import AuthManager, require_auth
 import simple_pdf_processor as pdf_module
 from simple_pdf_processor import initialize_simple_pdf_processor
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import re
 
 # 🆕 Reusable TCPServer with address reuse enabled
@@ -36,6 +37,8 @@ class ReusableTCPServer(socketserver.TCPServer):
 class ChatHandler(http.server.BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         self.ollama_client = OllamaClient()
+        self.auth_manager = AuthManager()
+        self.current_user_id = None
         super().__init__(*args, **kwargs)
     
     def do_OPTIONS(self):
@@ -43,7 +46,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.end_headers()
     
     def do_GET(self):
@@ -65,6 +68,8 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.handle_get_models()
         elif parsed_path.path == '/indexes':
             self.handle_get_indexes()
+        elif parsed_path.path == '/auth/me':
+            self.handle_get_user_info()
         elif parsed_path.path.startswith('/indexes/') and parsed_path.path.count('/') == 2:
             index_id = parsed_path.path.split('/')[-1]
             self.handle_get_index(index_id)
@@ -91,6 +96,10 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.handle_create_session()
         elif parsed_path.path == '/indexes':
             self.handle_create_index()
+        elif parsed_path.path == '/auth/register':
+            self.handle_register()
+        elif parsed_path.path == '/auth/login':
+            self.handle_login()
         elif parsed_path.path.startswith('/indexes/') and parsed_path.path.endswith('/upload'):
             index_id = parsed_path.path.split('/')[-2]
             self.handle_index_file_upload(index_id)
@@ -175,9 +184,14 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             }, status_code=500)
     
     def handle_get_sessions(self):
-        """Get all chat sessions"""
+        """Get all chat sessions for the authenticated user"""
         try:
-            sessions = db.get_sessions()
+            user_id = self.get_current_user_id()
+            if not user_id:
+                self.send_json_response({'error': 'Authentication required'}, status_code=401)
+                return
+                
+            sessions = db.get_sessions(user_id)
             self.send_json_response({
                 "sessions": sessions,
                 "total": len(sessions)
@@ -201,9 +215,14 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             }, status_code=500)
     
     def handle_get_session(self, session_id: str):
-        """Get a specific session with its messages"""
+        """Get a specific session with its messages for the authenticated user"""
         try:
-            session = db.get_session(session_id)
+            user_id = self.get_current_user_id()
+            if not user_id:
+                self.send_json_response({'error': 'Authentication required'}, status_code=401)
+                return
+                
+            session = db.get_session(session_id, user_id)
             if not session:
                 self.send_json_response({
                     "error": "Session not found"
@@ -252,7 +271,12 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             title = data.get('title', 'New Chat')
             model = data.get('model', 'llama3.2:latest')
             
-            session_id = db.create_session(title, model)
+            user_id = self.get_current_user_id()
+            if not user_id:
+                self.send_json_response({'error': 'Authentication required'}, status_code=401)
+                return
+            
+            session_id = db.create_session(title, model, user_id)
             session = db.get_session(session_id)
             
             self.send_json_response({
@@ -783,7 +807,12 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
 
     def handle_get_indexes(self):
         try:
-            data = db.list_indexes()
+            user_id = self.get_current_user_id()
+            if not user_id:
+                self.send_json_response({'error': 'Authentication required'}, status_code=401)
+                return
+                
+            data = db.list_indexes(user_id)
             self.send_json_response({'indexes': data, 'total': len(data)})
         except Exception as e:
             self.send_json_response({'error': str(e)}, status_code=500)
@@ -834,7 +863,12 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
                 complete_metadata.update(metadata)
                 metadata = complete_metadata
             
-            idx_id = db.create_index(name, description, metadata)
+            user_id = self.get_current_user_id()
+            if not user_id:
+                self.send_json_response({'error': 'Authentication required'}, status_code=401)
+                return
+                
+            idx_id = db.create_index(name, user_id, description, metadata)
             self.send_json_response({'index_id': idx_id}, status_code=201)
         except Exception as e:
             self.send_json_response({'error': str(e)}, status_code=500)
@@ -1055,6 +1089,96 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
             self.send_json_response({"error": "Invalid JSON"}, status_code=400)
         except Exception as e:
             self.send_json_response({"error": f"Failed to rename session: {str(e)}"}, status_code=500)
+    def get_current_user_id(self) -> Optional[str]:
+        """Extract user_id from Authorization header"""
+        auth_header = self.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return None
+        
+        token = auth_header.split(' ')[1]
+        return self.auth_manager.verify_token(token)
+    
+    def handle_register(self):
+        """Handle user registration"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            username = data.get('username')
+            email = data.get('email')
+            password = data.get('password')
+            
+            if not all([username, email, password]):
+                self.send_json_response({'error': 'Username, email, and password are required'}, status_code=400)
+                return
+            
+            user_id = self.auth_manager.create_user(username, email, password)
+            token = self.auth_manager.generate_token(user_id)
+            
+            self.send_json_response({
+                'user_id': user_id,
+                'username': username,
+                'email': email,
+                'token': token
+            }, status_code=201)
+            
+        except ValueError as e:
+            self.send_json_response({'error': str(e)}, status_code=400)
+        except Exception as e:
+            self.send_json_response({'error': 'Registration failed'}, status_code=500)
+    
+    def handle_login(self):
+        """Handle user login"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            username = data.get('username')
+            password = data.get('password')
+            
+            if not all([username, password]):
+                self.send_json_response({'error': 'Username and password are required'}, status_code=400)
+                return
+            
+            user = self.auth_manager.authenticate_user(username, password)
+            if not user:
+                self.send_json_response({'error': 'Invalid credentials'}, status_code=401)
+                return
+            
+            token = self.auth_manager.generate_token(user['id'])
+            
+            self.send_json_response({
+                'user_id': user['id'],
+                'username': user['username'],
+                'email': user['email'],
+                'token': token
+            })
+            
+        except Exception as e:
+            self.send_json_response({'error': 'Login failed'}, status_code=500)
+    
+    def handle_get_user_info(self):
+        """Get current user information"""
+        user_id = self.get_current_user_id()
+        if not user_id:
+            self.send_json_response({'error': 'Authentication required'}, status_code=401)
+            return
+        
+        user = self.auth_manager.get_user(user_id)
+        if not user:
+            self.send_json_response({'error': 'User not found'}, status_code=404)
+            return
+        
+        self.send_json_response({
+            'user_id': user['id'],
+            'username': user['username'],
+            'email': user['email'],
+            'created_at': user['created_at']
+        })
+
+
 
     def send_json_response(self, data, status_code: int = 200):
         """Send a JSON (UTF-8) response with CORS headers. Safe against client disconnects."""
@@ -1139,4 +1263,4 @@ def main():
         print("\n🛑 Server stopped")
 
 if __name__ == "__main__":
-    main() 
+    main()                

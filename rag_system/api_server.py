@@ -6,6 +6,7 @@ import os
 import requests
 import sys
 import logging
+from typing import Optional
 
 # Add backend directory to path for database imports
 backend_dir = os.path.join(os.path.dirname(__file__), '..', 'backend')
@@ -13,6 +14,7 @@ if backend_dir not in sys.path:
     sys.path.append(backend_dir)
 
 from backend.database import ChatDatabase, generate_session_title
+from backend.auth import AuthManager
 from rag_system.main import get_agent
 from rag_system.factory import get_indexing_pipeline
 
@@ -68,7 +70,7 @@ def _apply_index_embedding_model(idx_ids):
     with open("logs/embedding_debug.log", "a") as f:
         f.write(debug_info)
 
-def _get_table_name_for_session(session_id):
+def _get_table_name_for_session(session_id, user_id=None):
     """Get the correct vector table name for a session by looking up its linked indexes."""
     logger = logging.getLogger(__name__)
     
@@ -91,6 +93,11 @@ def _get_table_name_for_session(session_id):
         
         # Use the first index's vector table name
         idx = db.get_index(idx_ids[0])
+        
+        if user_id and idx and idx.get('user_id') != user_id:
+            logger.warning(f"⚠️ Access denied: User {user_id[:8]}... cannot access index {idx_ids[0][:8]}...")
+            return None
+            
         if idx and idx.get('vector_table_name'):
             table_name = idx['vector_table_name']
             logger.info(f"📊 Using table '{table_name}' for session {session_id[:8]}...")
@@ -113,13 +120,26 @@ def _get_table_name_for_session(session_id):
         return default_table
 
 class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        self.auth_manager = AuthManager()
+        super().__init__(*args, **kwargs)
+    
     def do_OPTIONS(self):
         """Handle CORS preflight requests for frontend integration."""
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.end_headers()
+    
+    def get_current_user_id(self) -> Optional[str]:
+        """Extract user_id from Authorization header"""
+        auth_header = self.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return None
+        
+        token = auth_header.split(' ')[1]
+        return self.auth_manager.verify_token(token)
 
     def do_POST(self):
         """Handle POST requests for chat and indexing."""
@@ -145,6 +165,11 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
     def handle_chat(self):
         """Handles a chat query by calling the agentic RAG pipeline."""
         try:
+            user_id = self.get_current_user_id()
+            if not user_id:
+                self.send_json_response({"error": "Authentication required"}, status_code=401)
+                return
+            
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
@@ -213,7 +238,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             # Allow explicit table_name override
             table_name = data.get('table_name')
             if not table_name and session_id:
-                table_name = _get_table_name_for_session(session_id)
+                table_name = _get_table_name_for_session(session_id, user_id)
 
             # Decide execution path
             print(f"🔧 Force RAG flag: {force_rag}")
@@ -304,6 +329,11 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
     def handle_chat_stream(self):
         """Stream internal phases and final answer using SSE (text/event-stream)."""
         try:
+            user_id = self.get_current_user_id()
+            if not user_id:
+                self.send_json_response({"error": "Authentication required"}, status_code=401)
+                return
+            
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
@@ -372,7 +402,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             # Allow explicit table_name override
             table_name = data.get('table_name')
             if not table_name and session_id:
-                table_name = _get_table_name_for_session(session_id)
+                table_name = _get_table_name_for_session(session_id, user_id)
 
             # Prepare response headers for SSE
             self.send_response(200)
@@ -501,6 +531,11 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
     def handle_index(self):
         """Triggers the document indexing pipeline for specific files."""
         try:
+            user_id = self.get_current_user_id()
+            if not user_id:
+                self.send_json_response({"error": "Authentication required"}, status_code=401)
+                return
+            
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             data = json.loads(post_data.decode('utf-8'))
@@ -535,7 +570,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             # Allow explicit table_name override
             table_name = data.get('table_name')
             if not table_name and session_id:
-                table_name = _get_table_name_for_session(session_id)
+                table_name = _get_table_name_for_session(session_id, user_id)
 
             # The INDEXING_PIPELINE is already initialized. We just need to use it.
             # If a session-specific table is needed, we can override the config for this run.
@@ -754,4 +789,4 @@ def start_server(port=8001):
 
 if __name__ == "__main__":
     # To run this server: python -m rag_system.api_server
-    start_server() 
+    start_server()                
