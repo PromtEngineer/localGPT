@@ -25,6 +25,11 @@ class ChatDatabase:
         # Enable foreign keys
         conn.execute("PRAGMA foreign_keys = ON")
         
+        # Check if this is an existing database that needs migration
+        cursor.execute("PRAGMA table_info(sessions)")
+        sessions_columns = [column[1] for column in cursor.fetchall()]
+        needs_migration = len(sessions_columns) > 0 and 'user_id' not in sessions_columns
+        
         conn.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
@@ -65,14 +70,6 @@ class ChatDatabase:
             )
         ''')
         
-        # Create indexes for better performance
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at)')
-        
         # Documents table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS session_documents (
@@ -83,7 +80,6 @@ class ChatDatabase:
                 FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
             )
         ''')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_session_documents_session_id ON session_documents(session_id)')
         
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS indexes (
@@ -120,12 +116,80 @@ class ChatDatabase:
             )
         ''')
         
+        if needs_migration:
+            print("🔄 Migrating existing database to multi-user schema...")
+            self._migrate_to_multiuser_schema(conn, cursor)
+        else:
+            print("✅ Database already has multi-user schema")
+        
+        # Create indexes for better performance - only after migration is complete
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_session_documents_session_id ON session_documents(session_id)')
         cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_indexes_user_name ON indexes(user_id, name)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_indexes_user_id ON indexes(user_id)')
         
         conn.commit()
         conn.close()
         print("✅ Database initialized successfully with multi-user support")
+    
+    def _migrate_to_multiuser_schema(self, conn, cursor):
+        """Migrate existing database to multi-user schema"""
+        from backend.auth import AuthManager
+        
+        auth_manager = AuthManager()
+        try:
+            admin_user_id = auth_manager.create_user("admin", "admin@localgpt.local", "admin123")
+            print(f"📝 Created default admin user: {admin_user_id[:8]}...")
+        except ValueError:
+            admin_user = auth_manager.authenticate_user("admin", "admin123")
+            if admin_user:
+                admin_user_id = admin_user['id']
+                print(f"📝 Using existing admin user: {admin_user_id[:8]}...")
+            else:
+                # Fallback: create a unique admin user
+                import uuid
+                admin_user_id = str(uuid.uuid4())
+                print(f"📝 Created fallback admin user: {admin_user_id[:8]}...")
+        
+        try:
+            cursor.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT")
+            print("✅ Added user_id column to sessions table")
+        except sqlite3.OperationalError:
+            print("✅ user_id column already exists in sessions table")
+        
+        cursor.execute("UPDATE sessions SET user_id = ? WHERE user_id IS NULL", (admin_user_id,))
+        updated_sessions = cursor.rowcount
+        if updated_sessions > 0:
+            print(f"📝 Migrated {updated_sessions} existing sessions to admin user")
+        
+        # Check if indexes table exists and add user_id column if needed
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='indexes'")
+        indexes_table_exists = cursor.fetchone() is not None
+        
+        if indexes_table_exists:
+            # Check if user_id column exists in indexes table
+            cursor.execute("PRAGMA table_info(indexes)")
+            indexes_columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'user_id' not in indexes_columns:
+                try:
+                    cursor.execute("ALTER TABLE indexes ADD COLUMN user_id TEXT")
+                    print("✅ Added user_id column to indexes table")
+                except sqlite3.OperationalError:
+                    print("✅ user_id column already exists in indexes table")
+                
+                cursor.execute("UPDATE indexes SET user_id = ? WHERE user_id IS NULL", (admin_user_id,))
+                updated_indexes = cursor.rowcount
+                if updated_indexes > 0:
+                    print(f"📝 Migrated {updated_indexes} existing indexes to admin user")
+        
+        conn.commit()
+        print("✅ Database migration completed successfully")
     
     def create_session(self, title: str, model: str, user_id: str) -> str:
         """Create a new chat session for a specific user"""
@@ -732,4 +796,4 @@ if __name__ == "__main__":
     stats = db.get_stats()
     print(f"📊 Stats: {stats}")
     
-    print("✅ Database test completed!")            
+    print("✅ Database test completed!")                        
