@@ -25,7 +25,7 @@ export function IndexWizard({ onClose }: Props) {
         <div className="space-y-4">
           <div>
             <label className="block text-sm mb-1">Document files</label>
-            <input type="file" accept="application/pdf,.docx,.html,.htm" multiple onChange={handleFile} className="text-sm" />
+            <input type="file" accept="application/pdf,.docx,.doc,.html,.htm,.md,.txt" multiple onChange={handleFile} className="text-sm" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -69,4 +69,4 @@ export function IndexWizard({ onClose }: Props) {
       </div>
     </div>
   );
-}  
+}    

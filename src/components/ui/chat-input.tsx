@@ -91,10 +91,17 @@ export function ChatInput({
       
       if (file.type === 'application/pdf' || 
           file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+          file.type === 'application/msword' ||
           file.type === 'text/html' ||
+          file.type === 'text/markdown' ||
+          file.type === 'text/plain' ||
+          file.name.toLowerCase().endsWith('.pdf') ||
+          file.name.toLowerCase().endsWith('.docx') ||
+          file.name.toLowerCase().endsWith('.doc') ||
           file.name.toLowerCase().endsWith('.html') ||
           file.name.toLowerCase().endsWith('.htm') ||
-          file.name.toLowerCase().endsWith('.docx')) {
+          file.name.toLowerCase().endsWith('.md') ||
+          file.name.toLowerCase().endsWith('.txt')) {
         newFiles.push({
           id: crypto.randomUUID(),
           name: file.name,
@@ -157,7 +164,7 @@ export function ChatInput({
 
         <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl px-5 pt-4 pb-3 space-y-2">
           {/* Hidden file input (kept for future use) */}
-          <input ref={fileInputRef} type="file" accept=".pdf,.docx,.html,.htm" multiple onChange={handleFileChange} className="hidden" />
+          <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.html,.htm,.md,.txt" multiple onChange={handleFileChange} className="hidden" />
 
           {/* Textarea */}
           <textarea
@@ -204,4 +211,4 @@ export function ChatInput({
       </form>
     </div>
   )
-}  
+}    
