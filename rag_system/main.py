@@ -32,6 +32,13 @@ OLLAMA_CONFIG = {
     "enrichment_model": "qwen3:0.6b",  # Lightweight model for routing/enrichment
 }
 
+VLLM_CONFIG = {
+    "host": os.getenv("VLLM_HOST", "http://localhost:8000"),
+    "generation_model": "qwen3:8b",  # Main text generation model
+    "enrichment_model": "qwen3:0.6b",  # Lightweight model for routing/enrichment
+    "prefer_ollama": True,  # Default to Ollama when both available
+}
+
 # External Model Configuration (HuggingFace models used directly)
 EXTERNAL_MODELS = {
     "embedding_model": "Qwen/Qwen3-Embedding-0.6B",  # HuggingFace embedding model (1024 dims - fresh start)

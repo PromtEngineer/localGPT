@@ -30,3 +30,4 @@ pandas
 sentence_transformers
 rerankers
 nltk
+vllm>=0.3.0; sys_platform != "darwin"  # vLLM doesn't support macOS

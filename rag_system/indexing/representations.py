@@ -142,13 +142,60 @@ class OllamaEmbedder(EmbeddingModel):
         
         return embeddings_np
 
-def select_embedder(model_name: str, ollama_host: str | None = None):
+class VLLMEmbedder(EmbeddingModel):
+    """Call vLLM's OpenAI-compatible /v1/embeddings endpoint for each text."""
+    def __init__(self, model_name: str, host: str | None = None, timeout: int = 60):
+        self.model_name = model_name
+        self.host = (host or os.getenv("VLLM_HOST") or "http://localhost:8000").rstrip("/")
+        self.timeout = timeout
+
+    def _embed_single(self, text: str):
+        import requests, numpy as np, json
+        payload = {"model": self.model_name, "input": text}
+        r = requests.post(f"{self.host}/v1/embeddings", json=payload, timeout=self.timeout)
+        r.raise_for_status()
+        data = r.json()
+        vec = data["data"][0]["embedding"]
+        return np.array(vec, dtype="float32")
+
+    def create_embeddings(self, texts: List[str]):
+        import numpy as np
+        vectors = [self._embed_single(t) for t in texts]
+        embeddings_np = np.vstack(vectors)
+        
+        # Check for NaN or infinite values
+        if np.isnan(embeddings_np).any():
+            print(f"⚠️ Warning: NaN values detected in vLLM embeddings from {self.model_name}")
+            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
+            print(f"🔄 Replaced NaN values with zeros")
+        
+        if np.isinf(embeddings_np).any():
+            print(f"⚠️ Warning: Infinite values detected in vLLM embeddings from {self.model_name}")
+            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
+            print(f"🔄 Replaced infinite values with zeros")
+        
+        return embeddings_np
+
+def select_embedder(model_name: str, ollama_host: str | None = None, vllm_host: str | None = None, prefer_ollama: bool = True):
     """Return appropriate EmbeddingModel implementation for the given name."""
     if "/" in model_name or model_name.startswith("http"):
         # Treat as HF model path
         return QwenEmbedder(model_name=model_name)
-    # Otherwise assume it's an Ollama tag
-    return OllamaEmbedder(model_name=model_name, host=ollama_host)
+    
+    if prefer_ollama:
+        try:
+            embedder = OllamaEmbedder(model_name=model_name, host=ollama_host)
+            embedder._embed_single("test")
+            return embedder
+        except:
+            return VLLMEmbedder(model_name=model_name, host=vllm_host)
+    else:
+        try:
+            embedder = VLLMEmbedder(model_name=model_name, host=vllm_host)
+            embedder._embed_single("test")
+            return embedder
+        except:
+            return OllamaEmbedder(model_name=model_name, host=ollama_host)
 
 if __name__ == '__main__':
     print("representations.py cleaned up.")

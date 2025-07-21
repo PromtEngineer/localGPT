@@ -23,6 +23,7 @@ except ImportError as e:
     print(f"⚠️ RAG system modules not available: {e}")
 
 from ollama_client import OllamaClient
+from vllm_client import VLLMClient
 from database import db, generate_session_title
 import simple_pdf_processor as pdf_module
 from simple_pdf_processor import initialize_simple_pdf_processor
@@ -36,7 +37,26 @@ class ReusableTCPServer(socketserver.TCPServer):
 class ChatHandler(http.server.BaseHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         self.ollama_client = OllamaClient()
+        self.vllm_client = VLLMClient()
         super().__init__(*args, **kwargs)
+    
+    def _get_preferred_client(self, model: str | None = None):
+        """Get the preferred client based on availability and model prefix"""
+        # Check for explicit vLLM model prefix
+        if model and model.startswith("vllm:"):
+            if self.vllm_client.is_vllm_running():
+                return self.vllm_client, model[5:]  # Remove "vllm:" prefix
+            else:
+                # Fallback to Ollama if vLLM not available
+                return self.ollama_client, model[5:] if self.ollama_client.is_ollama_running() else None
+        
+        # Default preference: Ollama first, then vLLM
+        if self.ollama_client.is_ollama_running():
+            return self.ollama_client, model
+        elif self.vllm_client.is_vllm_running():
+            return self.vllm_client, model
+        else:
+            return None, None
     
     def do_OPTIONS(self):
         """Handle CORS preflight requests"""
@@ -51,10 +71,21 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         parsed_path = urlparse(self.path)
         
         if parsed_path.path == '/health':
+            ollama_running = self.ollama_client.is_ollama_running()
+            vllm_running = self.vllm_client.is_vllm_running()
+            
+            available_models = []
+            if ollama_running:
+                available_models.extend(self.ollama_client.list_models())
+            if vllm_running:
+                vllm_models = self.vllm_client.list_models()
+                available_models.extend([f"vllm:{model}" for model in vllm_models])
+            
             self.send_json_response({
                 "status": "ok",
-                "ollama_running": self.ollama_client.is_ollama_running(),
-                "available_models": self.ollama_client.list_models(),
+                "ollama_running": ollama_running,
+                "vllm_running": vllm_running,
+                "available_models": available_models,
                 "database_stats": db.get_stats()
             })
         elif parsed_path.path == '/sessions':
@@ -149,15 +180,15 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 }, status_code=400)
                 return
             
-            # Check if Ollama is running
-            if not self.ollama_client.is_ollama_running():
+            client, actual_model = self._get_preferred_client(model)
+            if not client or not actual_model:
                 self.send_json_response({
-                    "error": "Ollama is not running. Please start Ollama first."
+                    "error": "No LLM backend is running. Please start Ollama or vLLM first."
                 }, status_code=503)
                 return
             
-            # Get response from Ollama
-            response = self.ollama_client.chat(message, model, conversation_history)
+            # Get response from preferred client
+            response = client.chat(message, actual_model, conversation_history)
             
             self.send_json_response({
                 "response": response,
@@ -478,8 +509,12 @@ USER QUERY: "{query}"
 Respond with exactly one word: USE_RAG or DIRECT_LLM"""
 
         try:
-            # Use Ollama to make the routing decision
-            response = self.ollama_client.chat(
+            # Use preferred client to make the routing decision
+            client, _ = self._get_preferred_client()
+            if not client:
+                return False  # No backend available, fallback to simple routing
+            
+            response = client.chat(
                 message=router_prompt,
                 model="qwen3:0.6b",  # Fast model for routing
                 enable_thinking=False  # Fast routing
@@ -565,10 +600,14 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
             # Use the session's model or default
             model = session.get('model', 'qwen3:8b')  # Default to fast model
             
-            # Direct Ollama call with thinking disabled for speed
-            response_text = self.ollama_client.chat(
+            # Use preferred client with thinking disabled for speed
+            client, actual_model = self._get_preferred_client(model)
+            if not client or not actual_model:
+                return "I apologize, but no LLM backend is currently available.", []
+            
+            response_text = client.chat(
                 message=message,
-                model=model,
+                model=actual_model,
                 conversation_history=conversation_history,
                 enable_thinking=False  # ⚡ DISABLE THINKING FOR SPEED
             )
@@ -1139,4 +1178,4 @@ def main():
         print("\n🛑 Server stopped")
 
 if __name__ == "__main__":
-    main() 
+    main()        

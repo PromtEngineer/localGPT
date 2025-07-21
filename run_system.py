@@ -132,6 +132,14 @@ class ServiceManager:
                 startup_delay=5,
                 required=True
             ),
+            'vllm': ServiceConfig(
+                name='vllm',
+                command=['python', '-m', 'vllm.entrypoints.openai.api_server', 
+                        '--model', 'qwen3:8b', '--host', '0.0.0.0', '--port', '8000'],
+                port=8000,
+                startup_delay=10,
+                required=False  # Optional service
+            ),
             'rag-api': ServiceConfig(
                 name='rag-api',
                 command=[sys.executable, '-m', 'rag_system.api_server'],
@@ -197,6 +205,21 @@ class ServiceManager:
         # Check Python
         if not self._command_exists('python') and not self._command_exists('python3'):
             missing_tools.append('python')
+        
+        import platform
+        if platform.system() == "Darwin":  # macOS
+            self.logger.warning("⚠️  vLLM does not support macOS natively - vLLM service will be disabled")
+            if 'vllm' in self.services:
+                del self.services['vllm']
+        else:
+            # Check if vLLM is available on Linux
+            try:
+                import vllm
+                self.logger.info("✅ vLLM available")
+            except ImportError:
+                self.logger.warning("⚠️  vLLM not installed - vLLM service will be disabled")
+                if 'vllm' in self.services:
+                    del self.services['vllm']
         
         # Check Node.js (optional)
         if not self._command_exists('npm'):
@@ -538,4 +561,4 @@ def main():
         manager.shutdown()
 
 if __name__ == "__main__":
-    main() 
+    main()    

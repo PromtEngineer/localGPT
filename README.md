@@ -189,11 +189,18 @@ python run_system.py --stop
 ```
 
 **Service Architecture:**
-The `run_system.py` launcher manages four key services:
-- **Ollama Server** (port 11434): AI model serving
+The `run_system.py` launcher manages up to five key services:
+- **Ollama Server** (port 11434): AI model serving (primary backend)
+- **vLLM Server** (port 8000): Alternative AI model serving with OpenAI-compatible API (Linux only)
 - **RAG API Server** (port 8001): Document processing and retrieval
 - **Backend Server** (port 8000): Session management and API endpoints
 - **Frontend Server** (port 3000): React/Next.js web interface
+
+**Backend Support:**
+- **Dual Backend Support**: LocalGPT supports both Ollama and vLLM backends simultaneously
+- **Graceful Degradation**: System works with Ollama-only, vLLM-only, or both backends available
+- **Automatic Fallback**: Prefers Ollama when both are available, falls back to vLLM if Ollama unavailable
+- **macOS Limitation**: vLLM does not support macOS natively and will be automatically disabled
 
 ### Option 3: Manual Component Startup
 
@@ -248,6 +255,21 @@ ollama pull qwen3:0.6b          # Fast generation model
 ollama pull qwen3:8b            # High-quality generation model
 ```
 
+**Install vLLM (Optional - Linux Only):**
+```bash
+# Install vLLM (Linux only - automatically disabled on macOS)
+pip install vllm>=0.3.0
+
+# Start vLLM server with OpenAI-compatible API
+python -m vllm.entrypoints.openai.api_server \
+  --model qwen3:8b \
+  --host 0.0.0.0 \
+  --port 8000
+
+# Note: vLLM models must be pre-loaded when starting the server
+# The system will automatically detect and use vLLM when available
+```
+
 #### 3. Configure Environment
 
 ```bash
@@ -262,6 +284,7 @@ nano .env
 ```env
 # AI Models (referenced in rag_system/main.py)
 OLLAMA_HOST=http://localhost:11434
+VLLM_HOST=http://localhost:8000
 
 # Database Paths (used by backend and RAG system)
 DATABASE_PATH=./backend/chat_data.db
@@ -277,6 +300,9 @@ GENERATION_MODEL=qwen3:8b
 ENRICHMENT_MODEL=qwen3:0.6b
 EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
 RERANKER_MODEL=answerdotai/answerai-colbert-small-v1
+
+# Backend Preferences
+PREFER_OLLAMA=true              # Use Ollama first when both available
 ```
 
 #### 4. Initialize the System
