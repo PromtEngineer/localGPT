@@ -17,6 +17,8 @@ class DocumentConverter:
         '.docx': InputFormat.DOCX,
         '.html': InputFormat.HTML,
         '.htm': InputFormat.HTML,
+        '.md': InputFormat.MD,
+        '.txt': 'TXT',  # Special handling for plain text files
     }
     
     def __init__(self):
@@ -67,6 +69,8 @@ class DocumentConverter:
         
         if input_format == InputFormat.PDF:
             return self._convert_pdf_to_markdown(file_path)
+        elif input_format == 'TXT':
+            return self._convert_txt_to_markdown(file_path)
         else:
             return self._convert_general_to_markdown(file_path, input_format)
     
@@ -89,6 +93,22 @@ class DocumentConverter:
 
         print(f"Converting {pdf_path} to Markdown using docling {ocr_msg}...")
         return self._perform_conversion(pdf_path, converter, ocr_msg)
+    
+    def _convert_txt_to_markdown(self, file_path: str) -> List[Tuple[str, Dict[str, Any]]]:
+        """Convert plain text files to markdown by reading content directly."""
+        print(f"Converting {file_path} (TXT) to Markdown...")
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            markdown_content = f"```\n{content}\n```"
+            metadata = {"source": file_path}
+            
+            print(f"Successfully converted {file_path} (TXT) to Markdown.")
+            return [(markdown_content, metadata)]
+        except Exception as e:
+            print(f"Error processing TXT file {file_path}: {e}")
+            return []
     
     def _convert_general_to_markdown(self, file_path: str, input_format: InputFormat) -> List[Tuple[str, Dict[str, Any]]]:
         """Convert non-PDF formats using general converter."""
