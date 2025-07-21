@@ -3,6 +3,7 @@ import uuid
 import json
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
+from pathlib import Path
 
 class ChatDatabase:
     def __init__(self, db_path: str = None):
@@ -15,6 +16,10 @@ class ChatDatabase:
                 self.db_path = "backend/chat_data.db"
         else:
             self.db_path = db_path
+
+        # Ensure DB directory exists to avoid OperationalError on fresh systems
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+
         self.init_database()
     
     def init_database(self):
