@@ -1,5 +1,29 @@
 const API_BASE_URL = 'http://localhost:8000';
 
+let authToken: string | null = null;
+
+export const setAuthToken = (token: string) => {
+  authToken = token;
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('auth_token', token);
+  }
+};
+
+export const getAuthToken = (): string | null => {
+  if (authToken) return authToken;
+  if (typeof window !== 'undefined') {
+    authToken = localStorage.getItem('auth_token');
+  }
+  return authToken;
+};
+
+export const clearAuthToken = () => {
+  authToken = null;
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('auth_token');
+  }
+};
+
 // 🆕 Simple UUID generator for client-side message IDs
 export const generateUUID = () => {
   if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -82,6 +106,55 @@ export interface SessionChatResponse {
 }
 
 class ChatAPI {
+  private getHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = getAuthToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  }
+
+  async register(username: string, email: string, password: string): Promise<{ user_id: string; username: string; email: string; token: string }> {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Registration failed: ${err.error || response.statusText}`);
+    }
+    const result = await response.json();
+    setAuthToken(result.token);
+    return result;
+  }
+
+  async login(username: string, password: string): Promise<{ user_id: string; username: string; email: string; token: string }> {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Login failed: ${err.error || response.statusText}`);
+    }
+    const result = await response.json();
+    setAuthToken(result.token);
+    return result;
+  }
+
+  async getCurrentUser(): Promise<{ user_id: string; username: string; email: string; created_at: string }> {
+    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      headers: this.getHeaders(),
+    });
+    if (!response.ok) {
+      throw new Error(`Get user failed: ${response.statusText}`);
+    }
+    return response.json();
+  }
+
   async checkHealth(): Promise<HealthResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/health`);
@@ -99,9 +172,7 @@ class ChatAPI {
     try {
       const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify({
           message: request.message,
           model: request.model || 'llama3.2:latest',
@@ -134,7 +205,9 @@ class ChatAPI {
   // Session Management
   async getSessions(): Promise<SessionResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/sessions`);
+      const response = await fetch(`${API_BASE_URL}/sessions`, {
+        headers: this.getHeaders(),
+      });
       if (!response.ok) {
         throw new Error(`Failed to get sessions: ${response.status}`);
       }
@@ -149,9 +222,7 @@ class ChatAPI {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify({ title, model }),
       });
 
@@ -169,7 +240,9 @@ class ChatAPI {
 
   async getSession(sessionId: string): Promise<{ session: ChatSession; messages: ChatMessage[] }> {
     try {
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`);
+      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
+        headers: this.getHeaders(),
+      });
       if (!response.ok) {
         throw new Error(`Failed to get session: ${response.status}`);
       }
@@ -203,9 +276,7 @@ class ChatAPI {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify({
           message,
           ...(opts.model && { model: opts.model }),
@@ -241,6 +312,7 @@ class ChatAPI {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
         method: 'DELETE',
+        headers: this.getHeaders(),
       });
 
       if (!response.ok) {
@@ -259,9 +331,7 @@ class ChatAPI {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/rename`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify({ title: newTitle }),
       });
 
@@ -279,7 +349,9 @@ class ChatAPI {
 
   async cleanupEmptySessions(): Promise<{ message: string; cleanup_count: number }> {
     try {
-      const response = await fetch(`${API_BASE_URL}/sessions/cleanup`);
+      const response = await fetch(`${API_BASE_URL}/sessions/cleanup`, {
+        headers: this.getHeaders(),
+      });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -305,6 +377,7 @@ class ChatAPI {
 
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/upload`, {
         method: 'POST',
+        headers: this.getHeaders(),
         body: formData,
       });
 
@@ -323,9 +396,7 @@ class ChatAPI {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/index`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
       });
 
       if (!response.ok) {
@@ -377,6 +448,7 @@ class ChatAPI {
       
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/upload`, {
         method: 'POST',
+        headers: this.getHeaders(),
         body: formData,
       });
 
@@ -420,7 +492,9 @@ class ChatAPI {
 
   // ---------------- Models ----------------
   async getModels(): Promise<ModelsResponse> {
-    const resp = await fetch(`${API_BASE_URL}/models`);
+    const resp = await fetch(`${API_BASE_URL}/models`, {
+      headers: this.getHeaders(),
+    });
     if (!resp.ok) {
       throw new Error(`Failed to fetch models list: ${resp.status}`);
     }
@@ -428,7 +502,9 @@ class ChatAPI {
   }
 
   async getSessionDocuments(sessionId: string): Promise<{ files: string[]; file_count: number; session: ChatSession }> {
-    const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/documents`);
+    const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/documents`, {
+      headers: this.getHeaders(),
+    });
     if (!resp.ok) {
       throw new Error(`Failed to fetch session documents: ${resp.status}`);
     }
@@ -440,7 +516,7 @@ class ChatAPI {
   async createIndex(name: string, description?: string, metadata: Record<string, unknown> = {}): Promise<{ index_id: string }> {
     const resp = await fetch(`${API_BASE_URL}/indexes`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders(),
       body: JSON.stringify({ name, description, metadata }),
     });
     if (!resp.ok) {
@@ -453,7 +529,11 @@ class ChatAPI {
   async uploadFilesToIndex(indexId: string, files: File[]): Promise<{ message: string; uploaded_files: any[] }> {
     const fd = new FormData();
     files.forEach((f) => fd.append('files', f, f.name));
-    const resp = await fetch(`${API_BASE_URL}/indexes/${indexId}/upload`, { method: 'POST', body: fd });
+    const resp = await fetch(`${API_BASE_URL}/indexes/${indexId}/upload`, { 
+      method: 'POST', 
+      headers: this.getHeaders(),
+      body: fd 
+    });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       throw new Error(`Upload to index error: ${err.error || resp.statusText}`);
@@ -478,9 +558,7 @@ class ChatAPI {
     try {
       const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/build`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: this.getHeaders(),
         body: JSON.stringify({ 
           latechunk: opts.latechunk ?? false,
           doclingChunk: opts.doclingChunk ?? false,
@@ -510,7 +588,10 @@ class ChatAPI {
   }
 
   async linkIndexToSession(sessionId: string, indexId: string): Promise<{ message: string }> {
-    const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/indexes/${indexId}`, { method: 'POST' });
+    const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/indexes/${indexId}`, { 
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       throw new Error(`Link index error: ${err.error || resp.statusText}`);
@@ -519,7 +600,9 @@ class ChatAPI {
   }
 
   async listIndexes(): Promise<{ indexes: any[]; total: number }> {
-    const resp = await fetch(`${API_BASE_URL}/indexes`);
+    const resp = await fetch(`${API_BASE_URL}/indexes`, {
+      headers: this.getHeaders(),
+    });
     if (!resp.ok) {
       throw new Error(`Failed to list indexes: ${resp.status}`);
     }
@@ -527,7 +610,9 @@ class ChatAPI {
   }
 
   async getSessionIndexes(sessionId: string): Promise<{ indexes: any[]; total: number }> {
-    const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/indexes`);
+    const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/indexes`, {
+      headers: this.getHeaders(),
+    });
     if (!resp.ok) throw new Error(`Failed to get session indexes: ${resp.status}`);
     return resp.json();
   }
@@ -535,6 +620,7 @@ class ChatAPI {
   async deleteIndex(indexId: string): Promise<{ message: string }> {
     const resp = await fetch(`${API_BASE_URL}/indexes/${indexId}`, {
       method: 'DELETE',
+      headers: this.getHeaders(),
     });
     if (!resp.ok) {
       const data = await resp.json().catch(() => ({ error: 'Unknown error'}));
@@ -588,7 +674,7 @@ class ChatAPI {
 
     const resp = await fetch('http://localhost:8001/chat/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: this.getHeaders(),
       body: JSON.stringify(payload),
     });
 
@@ -630,4 +716,4 @@ class ChatAPI {
   }
 }
 
-export const chatAPI = new ChatAPI(); 
+export const chatAPI = new ChatAPI();      

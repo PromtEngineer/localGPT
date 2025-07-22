@@ -770,30 +770,39 @@ def generate_session_title(first_message: str, max_length: int = 50) -> str:
     
     return title
 
-# Global database instance
-db = ChatDatabase()
+# Global database instance - initialize lazily to avoid migration issues
+db = None
+
+def get_database():
+    """Get the global database instance, initializing it if needed"""
+    global db
+    if db is None:
+        db = ChatDatabase()
+    return db
 
 if __name__ == "__main__":
     # Test the database
     print("🧪 Testing database...")
     
+    test_db = get_database()
+    
     # Create a test session
-    session_id = db.create_session("Test Chat", "llama3.2:latest", "test-user-id")
+    session_id = test_db.create_session("Test Chat", "llama3.2:latest", "test-user-id")
     
     # Add some messages
-    db.add_message(session_id, "Hello!", "user")
-    db.add_message(session_id, "Hi there! How can I help you?", "assistant")
+    test_db.add_message(session_id, "Hello!", "user")
+    test_db.add_message(session_id, "Hi there! How can I help you?", "assistant")
     
     # Get messages
-    messages = db.get_messages(session_id)
+    messages = test_db.get_messages(session_id)
     print(f"📨 Messages: {len(messages)}")
     
     # Get sessions
-    sessions = db.get_sessions()
+    sessions = test_db.get_sessions()
     print(f"📋 Sessions: {len(sessions)}")
     
     # Get stats
-    stats = db.get_stats()
+    stats = test_db.get_stats()
     print(f"📊 Stats: {stats}")
     
-    print("✅ Database test completed!")                        
+    print("✅ Database test completed!")                                  

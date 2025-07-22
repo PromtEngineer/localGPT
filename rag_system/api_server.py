@@ -18,9 +18,12 @@ from backend.auth import AuthManager
 from rag_system.main import get_agent
 from rag_system.factory import get_indexing_pipeline
 
-# Initialize database connection once at module level
-# Use auto-detection for environment-appropriate path
-db = ChatDatabase()
+# Initialize database connection lazily to avoid migration issues
+from backend.database import get_database
+
+def get_db():
+    """Get database instance, initializing if needed"""
+    return get_database()
 
 # Get the desired agent mode from environment variables, defaulting to 'default'
 # This allows us to easily switch between 'default', 'fast', 'react', etc.
@@ -51,7 +54,7 @@ def _apply_index_embedding_model(idx_ids):
             f.write(debug_info)
         return
     try:
-        idx = db.get_index(idx_ids[0])
+        idx = get_db().get_index(idx_ids[0])
         debug_info += f"🔧 Retrieved index: {idx.get('id')} with metadata: {idx.get('metadata', {})}\n"
         model = (idx.get("metadata") or {}).get("embedding_model")
         debug_info += f"🔧 Embedding model from metadata: {model}\n"
@@ -80,7 +83,7 @@ def _get_table_name_for_session(session_id, user_id=None):
     
     try:
         # Get indexes linked to this session
-        idx_ids = db.get_indexes_for_session(session_id)
+        idx_ids = get_db().get_indexes_for_session(session_id)
         logger.info(f"🔍 Session {session_id[:8]}... has {len(idx_ids)} indexes: {idx_ids}")
         
         if not idx_ids:
@@ -92,7 +95,7 @@ def _get_table_name_for_session(session_id, user_id=None):
             return default_table
         
         # Use the first index's vector table name
-        idx = db.get_index(idx_ids[0])
+        idx = get_db().get_index(idx_ids[0])
         
         if user_id and idx and idx.get('user_id') != user_id:
             logger.warning(f"⚠️ Access denied: User {user_id[:8]}... cannot access index {idx_ids[0][:8]}...")
@@ -221,15 +224,15 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                             # Update the session title via backend API
                             # We'll need to add this endpoint to the backend, for now let's make a direct database call
                             # This is a temporary solution until we add a proper API endpoint
-                            db.update_session_title(session_id, title)
+                            get_db().update_session_title(session_id, title)
                             print(f"📝 Updated session title to: {title}")
                             
                             # 💾 STORE USER MESSAGE: Add the user message to the database
-                            user_message_id = db.add_message(session_id, query, "user")
+                            user_message_id = get_db().add_message(session_id, query, "user")
                             print(f"💾 Stored user message: {user_message_id}")
                         else:
                             # Not the first message, but still store the user message
-                            user_message_id = db.add_message(session_id, query, "user")
+                            user_message_id = get_db().add_message(session_id, query, "user")
                             print(f"💾 Stored user message: {user_message_id}")
                 except Exception as e:
                     print(f"⚠️ Failed to update session title or store user message: {e}")
@@ -262,7 +265,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
                 # 🔄 Apply embedding model for this session (same as in agent path)
                 if session_id:
-                    idx_ids = db.get_indexes_for_session(session_id)
+                    idx_ids = get_db().get_indexes_for_session(session_id)
                     _apply_index_embedding_model(idx_ids)
 
                 # Directly invoke retrieval pipeline to bypass triage
@@ -282,7 +285,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
                 # 🔄 Refresh document overviews for this session
                 if session_id:
-                    idx_ids = db.get_indexes_for_session(session_id)
+                    idx_ids = get_db().get_indexes_for_session(session_id)
                     _apply_index_embedding_model(idx_ids)
                     RAG_AGENT.load_overviews_for_indexes(idx_ids)
 
@@ -315,7 +318,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             # 💾 STORE AI RESPONSE: Add the AI response to the database
             if session_id and result and result.get("answer"):
                 try:
-                    ai_message_id = db.add_message(session_id, result["answer"], "assistant")
+                    ai_message_id = get_db().add_message(session_id, result["answer"], "assistant")
                     print(f"💾 Stored AI response: {ai_message_id}")
                 except Exception as e:
                     print(f"⚠️ Failed to store AI response: {e}")
@@ -385,15 +388,15 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                             # Update the session title via backend API
                             # We'll need to add this endpoint to the backend, for now let's make a direct database call
                             # This is a temporary solution until we add a proper API endpoint
-                            db.update_session_title(session_id, title)
+                            get_db().update_session_title(session_id, title)
                             print(f"📝 Updated session title to: {title}")
                             
                             # 💾 STORE USER MESSAGE: Add the user message to the database
-                            user_message_id = db.add_message(session_id, query, "user")
+                            user_message_id = get_db().add_message(session_id, query, "user")
                             print(f"💾 Stored user message: {user_message_id}")
                         else:
                             # Not the first message, but still store the user message
-                            user_message_id = db.add_message(session_id, query, "user")
+                            user_message_id = get_db().add_message(session_id, query, "user")
                             print(f"💾 Stored user message: {user_message_id}")
                 except Exception as e:
                     print(f"⚠️ Failed to update session title or store user message: {e}")
@@ -446,7 +449,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
                     # 🔄 Apply embedding model for this session (same as in agent path)
                     if session_id:
-                        idx_ids = db.get_indexes_for_session(session_id)
+                        idx_ids = get_db().get_indexes_for_session(session_id)
                         _apply_index_embedding_model(idx_ids)
 
                     # 🔧 Set index-specific overview path so each index writes separate file
@@ -473,7 +476,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
                     # 🔄 Refresh overviews for this session
                     if session_id:
-                        idx_ids = db.get_indexes_for_session(session_id)
+                        idx_ids = get_db().get_indexes_for_session(session_id)
                         _apply_index_embedding_model(idx_ids)
                         RAG_AGENT.load_overviews_for_indexes(idx_ids)
 
@@ -508,7 +511,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 # 💾 STORE AI RESPONSE: Add the AI response to the database
                 if session_id and final_result and final_result.get("answer"):
                     try:
-                        ai_message_id = db.add_message(session_id, final_result["answer"], "assistant")
+                        ai_message_id = get_db().add_message(session_id, final_result["answer"], "assistant")
                         print(f"💾 Stored AI response: {ai_message_id}")
                     except Exception as e:
                         print(f"⚠️ Failed to store AI response: {e}")
@@ -715,7 +718,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
             if embedding_model:
                 try:
-                    db.update_index_metadata(session_id, {"embedding_model": embedding_model})
+                    get_db().update_index_metadata(session_id, {"embedding_model": embedding_model})
                 except Exception as e:
                     print(f"⚠️ Could not update embedding_model metadata: {e}")
 
@@ -789,4 +792,4 @@ def start_server(port=8001):
 
 if __name__ == "__main__":
     # To run this server: python -m rag_system.api_server
-    start_server()                
+    start_server()                                                                

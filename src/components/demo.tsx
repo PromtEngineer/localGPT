@@ -4,12 +4,13 @@ import { useState, useEffect } from "react"
 import { LocalGPTChat } from "@/components/ui/localgpt-chat"
 import { SessionSidebar } from "@/components/ui/session-sidebar"
 import { SessionChat } from '@/components/ui/session-chat'
-import { chatAPI, ChatSession } from "@/lib/api"
+import { chatAPI, ChatSession, getAuthToken, clearAuthToken } from "@/lib/api"
 import { LandingMenu } from "@/components/LandingMenu";
 import { IndexForm } from "@/components/IndexForm";
 import SessionIndexInfo from "@/components/SessionIndexInfo";
 import IndexPicker from "@/components/IndexPicker";
 import { QuickChat } from '@/components/ui/quick-chat'
+import { AuthModal } from '@/components/ui/auth-modal'
 
 export function Demo() {
     const [currentSessionId, setCurrentSessionId] = useState<string | undefined>()
@@ -21,13 +22,36 @@ export function Demo() {
     const [showIndexInfo, setShowIndexInfo] = useState(false)
     const [showIndexPicker, setShowIndexPicker] = useState(false)
     const [sidebarOpen, setSidebarOpen] = useState(true)
+    const [isAuthenticated, setIsAuthenticated] = useState(false)
+    const [showAuthModal, setShowAuthModal] = useState(false)
+    const [currentUser, setCurrentUser] = useState<{ user_id: string; username: string; email: string } | null>(null)
 
     console.log('Demo component rendering...')
 
     useEffect(() => {
         console.log('Demo component mounted')
         checkBackendHealth()
+        checkAuthenticationStatus()
     }, [])
+
+    const checkAuthenticationStatus = async () => {
+        const token = getAuthToken()
+        if (token) {
+            try {
+                const user = await chatAPI.getCurrentUser()
+                setCurrentUser(user)
+                setIsAuthenticated(true)
+            } catch (error) {
+                console.error('Authentication check failed:', error)
+                clearAuthToken()
+                setIsAuthenticated(false)
+                setCurrentUser(null)
+            }
+        } else {
+            setIsAuthenticated(false)
+            setCurrentUser(null)
+        }
+    }
 
     const checkBackendHealth = async () => {
         try {
@@ -85,15 +109,60 @@ export function Demo() {
         }
     }
 
+    const handleAuthSuccess = (user: { user_id: string; username: string; email: string }) => {
+        setCurrentUser(user)
+        setIsAuthenticated(true)
+        setShowAuthModal(false)
+    }
+
+    const handleLogout = () => {
+        clearAuthToken()
+        setIsAuthenticated(false)
+        setCurrentUser(null)
+        setCurrentSessionId(undefined)
+        setCurrentSession(null)
+        setShowConversation(false)
+        setHomeMode('HOME')
+    }
+
+    const requireAuth = (action: () => void) => {
+        if (!isAuthenticated) {
+            setShowAuthModal(true)
+            return
+        }
+        action()
+    }
+
     return (
         <div className="flex h-full w-full flex-col bg-black">
             {/* Top App Bar */}
             <header className="h-12 relative flex items-center justify-center border-b border-gray-800 flex-shrink-0">
-                <button onClick={()=>setSidebarOpen(o=>!o)} className="absolute left-4 p-1 rounded hover:bg-gray-800 text-gray-200 focus:outline-none" title="Toggle sidebar">
+                <button onClick={()=>setSidebarOpen((o: boolean)=>!o)} className="absolute left-4 p-1 rounded hover:bg-gray-800 text-gray-200 focus:outline-none" title="Toggle sidebar">
                     {sidebarOpen ? <span className="text-xl leading-none">◀</span> : <span className="text-xl leading-none">▶</span>}
                 </button>
                 {homeMode !== 'HOME' && (
                     <h1 className="text-lg font-semibold text-white">localGPT</h1>
+                )}
+                {isAuthenticated && currentUser && (
+                    <div className="absolute right-4 flex items-center gap-3">
+                        <span className="text-sm text-gray-300">Welcome, {currentUser.username}</span>
+                        <button
+                            onClick={handleLogout}
+                            className="px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white transition-colors"
+                        >
+                            Logout
+                        </button>
+                    </div>
+                )}
+                {!isAuthenticated && (
+                    <div className="absolute right-4">
+                        <button
+                            onClick={() => setShowAuthModal(true)}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-sm text-white transition-colors"
+                        >
+                            Sign In
+                        </button>
+                    </div>
                 )}
             </header>
             {/* Main content row */}
@@ -119,13 +188,18 @@ export function Demo() {
                                 </div>
 
                                 <LandingMenu onSelect={(m)=>{
-                                    if(m==='CHAT_EXISTING'){ setShowIndexPicker(true); return; }
+                                    if(m==='CHAT_EXISTING'){ 
+                                        requireAuth(() => setShowIndexPicker(true)); 
+                                        return; 
+                                    }
                                     if(m==='QUICK_CHAT'){
-                                        setHomeMode('QUICK_CHAT');
-                                        setShowConversation(true);
+                                        requireAuth(() => {
+                                            setHomeMode('QUICK_CHAT');
+                                            setShowConversation(true);
+                                        });
                                         return;
                                     }
-                                    setHomeMode('INDEX');
+                                    requireAuth(() => setHomeMode('INDEX'));
                                 }} />
                                 <div className="flex flex-col items-center gap-3 mt-12">
                                     <div className="flex items-center gap-2 text-sm">
@@ -182,7 +256,14 @@ export function Demo() {
                     handleSessionSelect(session.id)
                   }} />
                 )}
+
+                {showAuthModal && (
+                  <AuthModal 
+                    onClose={() => setShowAuthModal(false)} 
+                    onAuthSuccess={handleAuthSuccess}
+                  />
+                )}
             </div>
         </div>
     );
-} 
+}  

@@ -23,7 +23,7 @@ except ImportError as e:
     print(f"⚠️ RAG system modules not available: {e}")
 
 from ollama_client import OllamaClient
-from database import db, generate_session_title
+from database import get_database, generate_session_title
 from auth import AuthManager, require_auth
 import simple_pdf_processor as pdf_module
 from simple_pdf_processor import initialize_simple_pdf_processor
@@ -58,7 +58,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 "status": "ok",
                 "ollama_running": self.ollama_client.is_ollama_running(),
                 "available_models": self.ollama_client.list_models(),
-                "database_stats": db.get_stats()
+                "database_stats": get_database().get_stats()
             })
         elif parsed_path.path == '/sessions':
             self.handle_get_sessions()
@@ -191,7 +191,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json_response({'error': 'Authentication required'}, status_code=401)
                 return
                 
-            sessions = db.get_sessions(user_id)
+            sessions = get_database().get_sessions(user_id)
             self.send_json_response({
                 "sessions": sessions,
                 "total": len(sessions)
@@ -204,7 +204,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
     def handle_cleanup_sessions(self):
         """Clean up empty sessions"""
         try:
-            cleanup_count = db.cleanup_empty_sessions()
+            cleanup_count = get_database().cleanup_empty_sessions()
             self.send_json_response({
                 "message": f"Cleaned up {cleanup_count} empty sessions",
                 "cleanup_count": cleanup_count
@@ -222,14 +222,14 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json_response({'error': 'Authentication required'}, status_code=401)
                 return
                 
-            session = db.get_session(session_id, user_id)
+            session = get_database().get_session(session_id, user_id)
             if not session:
                 self.send_json_response({
                     "error": "Session not found"
                 }, status_code=404)
                 return
             
-            messages = db.get_messages(session_id)
+            messages = get_database().get_messages(session_id)
             
             self.send_json_response({
                 "session": session,
@@ -243,12 +243,12 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
     def handle_get_session_documents(self, session_id: str):
         """Return documents and basic info for a session."""
         try:
-            session = db.get_session(session_id)
+            session = get_database().get_session(session_id)
             if not session:
                 self.send_json_response({"error": "Session not found"}, status_code=404)
                 return
 
-            docs = db.get_documents_for_session(session_id)
+            docs = get_database().get_documents_for_session(session_id)
 
             # Extract original filenames from stored paths
             filenames = [os.path.basename(p).split('_', 1)[-1] if '_' in os.path.basename(p) else os.path.basename(p) for p in docs]
@@ -276,8 +276,8 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json_response({'error': 'Authentication required'}, status_code=401)
                 return
             
-            session_id = db.create_session(title, model, user_id)
-            session = db.get_session(session_id)
+            session_id = get_database().create_session(title, model, user_id)
+            session = get_database().get_session(session_id)
             
             self.send_json_response({
                 "session": session,
@@ -299,7 +299,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         Intelligently routes between direct LLM (fast) and RAG pipeline (document-aware).
         """
         try:
-            session = db.get_session(session_id)
+            session = get_database().get_session(session_id)
             if not session:
                 self.send_json_response({"error": "Session not found"}, status_code=404)
                 return
@@ -315,13 +315,13 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
 
             if session['message_count'] == 0:
                 title = generate_session_title(message)
-                db.update_session_title(session_id, title)
+                get_database().update_session_title(session_id, title)
 
             # Add user message to database first
-            user_message_id = db.add_message(session_id, message, "user")
+            user_message_id = get_database().add_message(session_id, message, "user")
             
             # 🎯 SMART ROUTING: Decide between direct LLM vs RAG
-            idx_ids = db.get_indexes_for_session(session_id)
+            idx_ids = get_database().get_indexes_for_session(session_id)
             force_rag = bool(data.get("force_rag", False))
             use_rag = True if force_rag else self._should_use_rag(message, idx_ids)
             
@@ -335,9 +335,9 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 response_text, source_docs = self._handle_direct_llm_query(session_id, message, session)
 
             # Add AI response to database
-            ai_message_id = db.add_message(session_id, response_text, "assistant")
+            ai_message_id = get_database().add_message(session_id, response_text, "assistant")
             
-            updated_session = db.get_session(session_id)
+            updated_session = get_database().get_session(session_id)
             
             # Send response with proper error handling
             self.send_json_response({
@@ -584,7 +584,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
         """
         try:
             # Get conversation history for context
-            conversation_history = db.get_conversation_history(session_id)
+            conversation_history = get_database().get_conversation_history(session_id)
             
             # Use the session's model or default
             model = session.get('model', 'qwen3:8b')  # Default to fast model
@@ -671,7 +671,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
     def handle_delete_session(self, session_id: str):
         """Delete a session and its messages"""
         try:
-            deleted = db.delete_session(session_id)
+            deleted = get_database().delete_session(session_id)
             if deleted:
                 self.send_json_response({'deleted': deleted})
             else:
@@ -707,7 +707,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
                     
                     # Store the absolute path for the indexing service
                     absolute_file_path = os.path.abspath(file_path)
-                    db.add_document_to_session(session_id, absolute_file_path)
+                    get_database().add_document_to_session(session_id, absolute_file_path)
                     uploaded_files.append({"filename": file_item.filename, "stored_path": absolute_file_path})
 
         if not uploaded_files:
@@ -723,7 +723,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
         """Triggers indexing for all documents in a session."""
         print(f"🔥 Received request to index documents for session {session_id[:8]}...")
         try:
-            file_paths = db.get_documents_for_session(session_id)
+            file_paths = get_database().get_documents_for_session(session_id)
             if not file_paths:
                 self.send_json_response({"message": "No documents to index for this session."}, status_code=200)
                 return
@@ -741,7 +741,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
                     "retrieval_mode": "hybrid",
                 }
                 try:
-                    db.update_index_metadata(session_id, idx_meta)  # session_id used as index_id in text table naming
+                    get_database().update_index_metadata(session_id, idx_meta)  # session_id used as index_id in text table naming
                 except Exception as e:
                     print(f"⚠️ Failed to update index metadata for session index: {e}")
                 self.send_json_response(rag_response.json())
@@ -812,14 +812,14 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
                 self.send_json_response({'error': 'Authentication required'}, status_code=401)
                 return
                 
-            data = db.list_indexes(user_id)
+            data = get_database().list_indexes(user_id)
             self.send_json_response({'indexes': data, 'total': len(data)})
         except Exception as e:
             self.send_json_response({'error': str(e)}, status_code=500)
     
     def handle_get_index(self, index_id: str):
         try:
-            data = db.get_index(index_id)
+            data = get_database().get_index(index_id)
             if not data:
                 self.send_json_response({'error': 'Index not found'}, status_code=404)
                 return
@@ -868,7 +868,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
                 self.send_json_response({'error': 'Authentication required'}, status_code=401)
                 return
                 
-            idx_id = db.create_index(name, user_id, description, metadata)
+            idx_id = get_database().create_index(name, user_id, description, metadata)
             self.send_json_response({'index_id': idx_id}, status_code=201)
         except Exception as e:
             self.send_json_response({'error': str(e)}, status_code=500)
@@ -888,7 +888,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
                     unique=f"{uuid.uuid4()}_{f.filename}"
                     path=os.path.join(upload_dir, unique)
                     with open(path,'wb') as out: out.write(f.file.read())
-                    db.add_document_to_index(index_id, f.filename, os.path.abspath(path))
+                    get_database().add_document_to_index(index_id, f.filename, os.path.abspath(path))
                     uploaded_files.append({'filename':f.filename,'stored_path':os.path.abspath(path)})
         if not uploaded_files:
             self.send_json_response({'error':'No files uploaded'}, status_code=400); return
@@ -896,7 +896,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
     
     def handle_build_index(self, index_id: str):
         try:
-            index=db.get_index(index_id)
+            index=get_database().get_index(index_id)
             if not index:
                 self.send_json_response({'error':'Index not found'}, status_code=404); return
             file_paths=[d['stored_path'] for d in index.get('documents',[])]
@@ -993,7 +993,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
                 if overview_model:
                     meta_updates["overview_model"] = overview_model
                 try:
-                    db.update_index_metadata(index_id, meta_updates)
+                    get_database().update_index_metadata(index_id, meta_updates)
                 except Exception as e:
                     print(f"⚠️ Failed to update index metadata: {e}")
 
@@ -1021,25 +1021,25 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
     
     def handle_link_index_to_session(self, session_id: str, index_id: str):
         try:
-            db.link_index_to_session(session_id, index_id)
+            get_database().link_index_to_session(session_id, index_id)
             self.send_json_response({'message':'Index linked to session'})
         except Exception as e:
             self.send_json_response({'error':str(e)}, status_code=500)
 
     def handle_get_session_indexes(self, session_id: str):
         try:
-            idx_ids = db.get_indexes_for_session(session_id)
+            idx_ids = get_database().get_indexes_for_session(session_id)
             indexes = []
             for idx_id in idx_ids:
-                idx = db.get_index(idx_id)
+                idx = get_database().get_index(idx_id)
                 if idx:
                     # Try to populate metadata for older indexes that have empty metadata
                     if not idx.get('metadata') or len(idx['metadata']) == 0:
                         print(f"🔍 Attempting to infer metadata for index {idx_id[:8]}...")
-                        inferred_metadata = db.inspect_and_populate_index_metadata(idx_id)
+                        inferred_metadata = get_database().inspect_and_populate_index_metadata(idx_id)
                         if inferred_metadata:
                             # Refresh the index data with the new metadata
-                            idx = db.get_index(idx_id)
+                            idx = get_database().get_index(idx_id)
                     indexes.append(idx)
             self.send_json_response({'indexes': indexes, 'total': len(indexes)})
         except Exception as e:
@@ -1048,7 +1048,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
     def handle_delete_index(self, index_id: str):
         """Remove an index, its documents, links, and the underlying LanceDB table."""
         try:
-            deleted = db.delete_index(index_id)
+            deleted = get_database().delete_index(index_id)
             if deleted:
                 self.send_json_response({'message': 'Index deleted successfully', 'index_id': index_id})
             else:
@@ -1059,7 +1059,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
     def handle_rename_session(self, session_id: str):
         """Rename an existing session title"""
         try:
-            session = db.get_session(session_id)
+            session = get_database().get_session(session_id)
             if not session:
                 self.send_json_response({"error": "Session not found"}, status_code=404)
                 return
@@ -1077,8 +1077,8 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
                 self.send_json_response({"error": "Title cannot be empty"}, status_code=400)
                 return
 
-            db.update_session_title(session_id, new_title)
-            updated_session = db.get_session(session_id)
+            get_database().update_session_title(session_id, new_title)
+            updated_session = get_database().get_session(session_id)
 
             self.send_json_response({
                 "message": "Session renamed successfully",
@@ -1232,7 +1232,7 @@ def main():
         
         # Cleanup empty sessions on startup
         print("🧹 Cleaning up empty sessions...")
-        cleanup_count = db.cleanup_empty_sessions()
+        cleanup_count = get_database().cleanup_empty_sessions()
         if cleanup_count > 0:
             print(f"✨ Cleaned up {cleanup_count} empty sessions")
         else:
@@ -1263,4 +1263,4 @@ def main():
         print("\n🛑 Server stopped")
 
 if __name__ == "__main__":
-    main()                
+    main()                                                                                                                                                
