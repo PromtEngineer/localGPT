@@ -29,7 +29,7 @@ try:
     from rag_system.main import PIPELINE_CONFIGS
     from rag_system.pipelines.indexing_pipeline import IndexingPipeline
     from rag_system.utils.ollama_client import OllamaClient
-    from backend.database import ChatDatabase
+    from backend.database import get_database
 except ImportError as e:
     print(f"❌ Error importing required modules: {e}")
     print("Please ensure you're running this script from the project root directory.")
@@ -49,7 +49,7 @@ class BatchIndexingDemo:
         """Initialize the batch indexing demo."""
         self.config_path = config_path
         self.config = self._load_config()
-        self.db = ChatDatabase()
+        self.db = get_database()
         
         # Initialize Ollama client
         self.ollama_client = OllamaClient()
@@ -383,4 +383,4 @@ comprehensive processing pipelines.
 
 
 if __name__ == "__main__":
-    main()  
+    main()    

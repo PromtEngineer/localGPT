@@ -26,7 +26,7 @@ try:
     from rag_system.main import PIPELINE_CONFIGS, get_agent
     from rag_system.pipelines.indexing_pipeline import IndexingPipeline
     from rag_system.utils.ollama_client import OllamaClient
-    from backend.database import ChatDatabase
+    from backend.database import get_database
 except ImportError as e:
     print(f"❌ Error importing required modules: {e}")
     print("Please ensure you're running this script from the project root directory.")
@@ -38,7 +38,7 @@ class IndexCreator:
     
     def __init__(self, config_path: Optional[str] = None):
         """Initialize the index creator with optional custom configuration."""
-        self.db = ChatDatabase()
+        self.db = get_database()
         self.config = self._load_config(config_path)
         
         # Initialize Ollama client
@@ -369,4 +369,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()  
+    main()    

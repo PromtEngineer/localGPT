@@ -112,13 +112,13 @@ sys.path.insert(0, os.getcwd())
 from rag_system.main import PIPELINE_CONFIGS
 from rag_system.pipelines.indexing_pipeline import IndexingPipeline
 from rag_system.utils.ollama_client import OllamaClient
-from backend.database import ChatDatabase
+from backend.database import get_database
 import uuid
 
 def create_index_simple():
     try:
         # Initialize database
-        db = ChatDatabase()
+        db = get_database()
         
         # Create index record
         index_id = db.create_index(
@@ -225,4 +225,4 @@ main() {
 }
 
 # Run main function with all arguments
-main "$@"  
+main "$@"    

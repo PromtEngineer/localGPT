@@ -13,7 +13,7 @@ backend_dir = os.path.join(os.path.dirname(__file__), '..', 'backend')
 if backend_dir not in sys.path:
     sys.path.append(backend_dir)
 
-from backend.database import ChatDatabase, generate_session_title
+from backend.database import generate_session_title
 from backend.auth import AuthManager
 from rag_system.main import get_agent
 from rag_system.factory import get_indexing_pipeline
@@ -792,4 +792,4 @@ def start_server(port=8001):
 
 if __name__ == "__main__":
     # To run this server: python -m rag_system.api_server
-    start_server()                                                                
+    start_server()                                                                                
