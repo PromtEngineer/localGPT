@@ -236,6 +236,24 @@ brew install python@3.8 node npm docker docker-compose
 # Then use PowerShell or WSL2
 ```
 
+### Windows UTF-8 Support
+
+LocalGPT uses emoji characters in its logging output for better readability. On Windows systems, you may encounter Unicode encoding errors. The system automatically sets `PYTHONUTF8=1` to resolve this, but if you encounter issues, you can manually set this environment variable:
+
+**PowerShell:**
+```powershell
+$env:PYTHONUTF8=1
+python run_system.py
+```
+
+**Command Prompt:**
+```cmd
+set PYTHONUTF8=1
+python run_system.py
+```
+
+This ensures proper display of emoji characters in log messages across all system components.
+
 #### 2. Install AI Models
 
 **Install Ollama (Recommended):**
