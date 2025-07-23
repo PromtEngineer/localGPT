@@ -333,8 +333,13 @@ class IndexingPipeline:
                     documents = [chunk.get('text', '') for chunk in all_chunks if chunk.get('text')]
                     
                     if documents:
-                        self.nano_graph_adapter.insert_documents(documents)
-                        print(f"✅ nano-graphrag knowledge graph built successfully with {len(documents)} documents.")
+                        try:
+                            self.nano_graph_adapter.insert_documents(documents)
+                            print(f"✅ nano-graphrag knowledge graph built successfully with {len(documents)} documents.")
+                        except Exception as e:
+                            print(f"❌ Failed to build nano-graphrag knowledge graph: {e}")
+                            import traceback
+                            traceback.print_exc()
                     else:
                         print("⚠️ No documents to process for graph building.")
             

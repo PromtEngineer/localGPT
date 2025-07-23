@@ -1,5 +1,6 @@
 import os
 import asyncio
+import concurrent.futures
 from typing import Dict, Any, List, Optional
 import numpy as np
 import ollama
@@ -103,44 +104,57 @@ class NanoGraphRAGAdapter:
         """Insert documents into the graph RAG system."""
         try:
             print(f"📄 Inserting {len(documents)} documents into nano-graphrag...")
-            for i, doc in enumerate(documents):
-                print(f"   Processing document {i+1}/{len(documents)}")
-                self.graph_rag.insert(doc)
+            
+            try:
+                loop = asyncio.get_running_loop()
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(self._sync_insert_documents, documents)
+                    future.result()
+            except RuntimeError:
+                self._sync_insert_documents(documents)
+                
             print("✅ Document insertion completed")
         except Exception as e:
             print(f"❌ Error inserting documents: {e}")
             raise
     
+    def _sync_insert_documents(self, documents: List[str]) -> None:
+        """Synchronous document insertion helper."""
+        for i, doc in enumerate(documents):
+            print(f"   Processing document {i+1}/{len(documents)}")
+            self.graph_rag.insert(doc)
+    
     def query_local(self, query: str, **kwargs) -> str:
         """Query using local mode (entity-focused)."""
-        try:
-            param = QueryParam(mode="local", **kwargs)
-            result = self.graph_rag.query(query, param=param)
-            return result
-        except Exception as e:
-            print(f"❌ Error in local query: {e}")
-            return ""
+        return self._safe_query(query, "local", **kwargs)
     
     def query_global(self, query: str, **kwargs) -> str:
         """Query using global mode (community-focused)."""
-        try:
-            param = QueryParam(mode="global", **kwargs)
-            result = self.graph_rag.query(query, param=param)
-            return result
-        except Exception as e:
-            print(f"❌ Error in global query: {e}")
-            return ""
+        return self._safe_query(query, "global", **kwargs)
     
     def query_naive(self, query: str, **kwargs) -> str:
         """Query using naive mode (traditional RAG)."""
+        return self._safe_query(query, "naive", **kwargs)
+    
+    def _safe_query(self, query: str, mode: str, **kwargs) -> str:
+        """Safely execute query handling async context."""
         try:
-            param = QueryParam(mode="naive", **kwargs)
-            result = self.graph_rag.query(query, param=param)
-            return result
+            try:
+                loop = asyncio.get_running_loop()
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(self._sync_query, query, mode, **kwargs)
+                    return future.result()
+            except RuntimeError:
+                return self._sync_query(query, mode, **kwargs)
         except Exception as e:
-            print(f"❌ Error in naive query: {e}")
+            print(f"❌ Error in {mode} query: {e}")
             return ""
     
+    def _sync_query(self, query: str, mode: str, **kwargs) -> str:
+        """Synchronous query helper."""
+        param = QueryParam(mode=mode, **kwargs)
+        return self.graph_rag.query(query, param=param)
+
     def query(self, query: str, mode: str = "local", **kwargs) -> str:
         """Generic query method with mode selection."""
         if mode == "local":
