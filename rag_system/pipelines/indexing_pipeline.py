@@ -6,6 +6,7 @@ from rag_system.ingestion.chunking import MarkdownRecursiveChunker
 from rag_system.indexing.representations import EmbeddingGenerator, select_embedder
 from rag_system.indexing.embedders import LanceDBManager, VectorIndexer
 from rag_system.indexing.graph_extractor import GraphExtractor
+from rag_system.indexing.nano_graph_adapter import NanoGraphRAGAdapter
 from rag_system.utils.ollama_client import OllamaClient
 from rag_system.indexing.contextualizer import ContextualEnricher
 from rag_system.indexing.overview_builder import OverviewBuilder
@@ -85,6 +86,12 @@ class IndexingPipeline:
             )
 
         if retriever_configs.get("graph", {}).get("enabled"):
+            working_dir = retriever_configs["graph"].get("working_dir", "./index_store/nano_graphrag")
+            self.nano_graph_adapter = NanoGraphRAGAdapter(
+                working_dir=working_dir,
+                ollama_client=self.llm_client,
+                ollama_config=self.ollama_config
+            )
             self.graph_extractor = GraphExtractor(
                 llm_client=self.llm_client,
                 llm_model=self.ollama_config["generation_model"]
@@ -318,11 +325,23 @@ class IndexingPipeline:
 
                             print(f"✅ Late-chunk vectors indexed: {total_lc_vecs}")
                 
-            # Step 6: Knowledge Graph Extraction (Optional)
-            if hasattr(self, 'graph_extractor'):
-                with timer("Knowledge Graph Extraction"):
+            # Step 6: Knowledge Graph Extraction with nano-graphrag
+            if hasattr(self, 'nano_graph_adapter'):
+                with timer("nano-graphrag Knowledge Graph Building"):
+                    print(f"\n--- Building knowledge graph with nano-graphrag ---")
+                    
+                    documents = [chunk.get('text', '') for chunk in all_chunks if chunk.get('text')]
+                    
+                    if documents:
+                        self.nano_graph_adapter.insert_documents(documents)
+                        print(f"✅ nano-graphrag knowledge graph built successfully with {len(documents)} documents.")
+                    else:
+                        print("⚠️ No documents to process for graph building.")
+            
+            elif hasattr(self, 'graph_extractor'):
+                with timer("Legacy Knowledge Graph Extraction"):
                     graph_path = retriever_configs.get("graph", {}).get("graph_path", "./index_store/graph/default_graph.gml")
-                    print(f"\n--- Building and saving knowledge graph to: {graph_path} ---")
+                    print(f"\n--- Building and saving legacy knowledge graph to: {graph_path} ---")
                     
                     graph_data = self.graph_extractor.extract(all_chunks)
                     G = nx.DiGraph()
@@ -333,7 +352,7 @@ class IndexingPipeline:
                     
                     os.makedirs(os.path.dirname(graph_path), exist_ok=True)
                     nx.write_gml(G, graph_path)
-                    print(f"✅ Knowledge graph saved successfully.")
+                    print(f"✅ Legacy knowledge graph saved successfully.")
                     
         print("\n--- ✅ Indexing Complete ---")
         self._print_final_statistics(len(file_paths), len(all_chunks))

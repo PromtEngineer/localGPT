@@ -30,3 +30,4 @@ pandas
 sentence_transformers
 rerankers
 nltk
+nano-graphrag
