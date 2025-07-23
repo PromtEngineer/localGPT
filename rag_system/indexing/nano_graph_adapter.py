@@ -36,8 +36,8 @@ class NanoGraphRAGAdapter:
         )
         
         print(f"✅ NanoGraphRAGAdapter initialized with working_dir: {working_dir}")
-        print(f"   LLM Model: {self.llm_model}")
-        print(f"   Embedding Model: {self.embedding_model}")
+        print(f"   Using user-selected LLM Model: {self.llm_model}")
+        print(f"   Using user-selected Embedding Model: {self.embedding_model}")
     
     def _create_ollama_llm_func(self):
         """Create an async LLM function compatible with nano-graphrag."""
