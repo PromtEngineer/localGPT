@@ -243,6 +243,63 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                   )}
                 </div>
 
+                {/* Knowledge Graph section */}
+                {indexMeta.graph_enabled && (
+                  <>
+                    <div className="border-t border-white/10 pt-4">
+                      <h3 className="text-sm font-medium text-gray-300 mb-3">🔗 Knowledge Graph</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Graph mode</span>
+                          <p className="text-sm capitalize">{indexMeta.graph_mode || 'local'}</p>
+                        </div>
+                        {typeof indexMeta.graph_documents_processed === 'number' && (
+                          <div>
+                            <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Documents processed</span>
+                            <p className="text-sm">{indexMeta.graph_documents_processed.toLocaleString()}</p>
+                          </div>
+                        )}
+                        {typeof indexMeta.graph_entities_estimated === 'number' && indexMeta.graph_entities_estimated > 0 && (
+                          <div>
+                            <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Entities (estimated)</span>
+                            <p className="text-sm">{indexMeta.graph_entities_estimated.toLocaleString()}</p>
+                          </div>
+                        )}
+                        {typeof indexMeta.graph_relationships_estimated === 'number' && indexMeta.graph_relationships_estimated > 0 && (
+                          <div>
+                            <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Relationships (estimated)</span>
+                            <p className="text-sm">{indexMeta.graph_relationships_estimated.toLocaleString()}</p>
+                          </div>
+                        )}
+                        {typeof indexMeta.graph_processing_time === 'number' && (
+                          <div>
+                            <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Graph build time</span>
+                            <p className="text-sm">{indexMeta.graph_processing_time.toFixed(2)}s</p>
+                          </div>
+                        )}
+                        {indexMeta.graph_llm_model && (
+                          <div>
+                            <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Graph LLM</span>
+                            <p className="text-sm break-words">{indexMeta.graph_llm_model}</p>
+                          </div>
+                        )}
+                        {indexMeta.graph_embedding_model && (
+                          <div>
+                            <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Graph embeddings</span>
+                            <p className="text-sm break-words">{indexMeta.graph_embedding_model}</p>
+                          </div>
+                        )}
+                        {indexMeta.graph_created_at && (
+                          <div>
+                            <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Graph created</span>
+                            <p className="text-sm">{new Date(indexMeta.graph_created_at).toLocaleDateString()}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 {/* LLM Models section */}
                 {(indexMeta.enrich_model || indexMeta.overview_model) && (
                   <>
@@ -366,4 +423,4 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
       </div>
     </div>
   );
-} 
+}  

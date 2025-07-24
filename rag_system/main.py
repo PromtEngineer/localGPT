@@ -70,8 +70,12 @@ PIPELINE_CONFIGS = {
                 "index_name": "rag_bm25_index"
             },
             "graph": { 
-                "enabled": False,
-                "graph_path": "./index_store/graph/knowledge_graph.gml"
+                "enabled": True,  # Enable nano-graphrag
+                "mode": "local",  # local, global, naive, or hybrid
+                "working_dir": "./index_store/nano_graphrag",
+                "fusion_weight": 0.4,  # Weight for graph results in hybrid mode
+                "community_reports": True,
+                "graph_path": "./index_store/graph/knowledge_graph.gml"  # Keep for backward compatibility
             }
         },
         # 🎯 EMBEDDING MODEL: Uses HuggingFace Qwen model directly
@@ -145,7 +149,9 @@ PIPELINE_CONFIGS = {
         "index_name": "rag_bm25_index"
     },
     "graph_rag": {
-        "enabled": False, # Keep disabled for now unless specified
+        "enabled": True,
+        "default_mode": "local",
+        "enable_naive_fallback": True
     }
 }
 

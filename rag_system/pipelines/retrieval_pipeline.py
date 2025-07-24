@@ -119,7 +119,13 @@ class RetrievalPipeline:
 
     def _get_graph_retriever(self):
         if self._graph_retriever is None and self.retriever_configs.get("graph", {}).get("enabled"):
-            self._graph_retriever = GraphRetriever(graph_path=self.storage_config["graph_path"])
+            from rag_system.retrieval.retrievers import NanoGraphRetriever
+            working_dir = self.retriever_configs["graph"].get("working_dir", "./index_store/nano_graphrag")
+            self._graph_retriever = NanoGraphRetriever(
+                working_dir=working_dir,
+                ollama_client=self.ollama_client,
+                ollama_config=self.ollama_config
+            )
         return self._graph_retriever
 
     def _get_reranker(self):
@@ -282,6 +288,23 @@ ORIGINAL QUESTION: "{query}"
                 k=retrieval_k,
                 reranker=lancedb_reranker # Pass the reranker to enable hybrid search
             )
+
+        # ---------------------------------------------------------------
+        # Graph retrieval (optional)
+        # ---------------------------------------------------------------
+        graph_retriever = self._get_graph_retriever()
+        if graph_retriever:
+            graph_mode = self.retriever_configs.get("graph", {}).get("mode", "local")
+            try:
+                graph_docs = graph_retriever.retrieve(query, mode=graph_mode, k=retrieval_k)
+                if graph_docs:
+                    fusion_weight = self.retriever_configs.get("graph", {}).get("fusion_weight", 0.4)
+                    for doc in graph_docs:
+                        doc['score'] = doc.get('score', 1.0) * fusion_weight
+                    retrieved_docs.extend(graph_docs)
+                    print(f"Added {len(graph_docs)} graph results to retrieval.")
+            except Exception as e:
+                print(f"⚠️ Graph retrieval failed: {e}")
 
         # ---------------------------------------------------------------
         # Late-Chunk retrieval (optional)
