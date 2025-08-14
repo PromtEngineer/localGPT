@@ -6,6 +6,17 @@ import { ArrowUp, Settings as SettingsIcon, Plus, X, FileText } from "lucide-rea
 import { Button } from "@/components/ui/button"
 import { AttachedFile } from "@/lib/types"
 
+/**
+ * Props for the ChatInput component
+ * @interface ChatInputProps
+ * @property {function} onSendMessage - Callback function called when a message is sent, receives message text and optional attached files
+ * @property {boolean} [disabled] - Whether the input is disabled
+ * @property {string} [placeholder] - Placeholder text for the textarea
+ * @property {string} [className] - Additional CSS classes to apply to the container
+ * @property {function} [onOpenSettings] - Callback function called when settings button is clicked
+ * @property {function} [onAddIndex] - Callback function called when add index button is clicked
+ * @property {React.ReactNode} [leftExtras] - Additional React elements to render in the left section of the action row
+ */
 interface ChatInputProps {
   onSendMessage: (message: string, attachedFiles?: AttachedFile[]) => Promise<void>
   disabled?: boolean
@@ -16,6 +27,11 @@ interface ChatInputProps {
   leftExtras?: React.ReactNode
 }
 
+/**
+ * A chat input component with file attachment support and auto-resizing textarea
+ * @param {ChatInputProps} props - The component props
+ * @returns {JSX.Element} The rendered chat input component
+ */
 export function ChatInput({ 
   onSendMessage, 
   disabled = false,
@@ -31,6 +47,11 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  /**
+   * Handles form submission by sending the message and attached files
+   * @param {React.FormEvent} e - The form event
+   * @returns {Promise<void>}
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if ((!message.trim() && attachedFiles.length === 0) || disabled || isLoading) return
@@ -53,6 +74,10 @@ export function ChatInput({
     }
   }
 
+  /**
+   * Handles keyboard events in the textarea, submitting on Enter key press
+   * @param {React.KeyboardEvent} e - The keyboard event
+   */
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -60,6 +85,10 @@ export function ChatInput({
     }
   }
 
+  /**
+   * Handles textarea input changes and auto-resizes the textarea height
+   * @param {React.ChangeEvent<HTMLTextAreaElement>} e - The input change event
+   */
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value)
     
@@ -71,10 +100,17 @@ export function ChatInput({
     }
   }
 
+  /**
+   * Triggers the hidden file input to open the file selection dialog
+   */
   const handleFileAttach = () => {
     fileInputRef.current?.click()
   }
 
+  /**
+   * Handles file selection from the file input, filtering for supported file types
+   * @param {React.ChangeEvent<HTMLInputElement>} e - The file input change event
+   */
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files) return
@@ -122,10 +158,19 @@ export function ChatInput({
     }
   }
 
+  /**
+   * Removes a file from the attached files list by its ID
+   * @param {string} fileId - The unique identifier of the file to remove
+   */
   const removeFile = (fileId: string) => {
     setAttachedFiles(prev => prev.filter(f => f.id !== fileId))
   }
 
+  /**
+   * Formats a file size in bytes to a human-readable string
+   * @param {number} bytes - The file size in bytes
+   * @returns {string} The formatted file size string
+   */
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes'
     const k = 1024
@@ -211,4 +256,4 @@ export function ChatInput({
       </form>
     </div>
   )
-}    
+}
