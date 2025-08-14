@@ -3,6 +3,9 @@
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 
+/**
+ * Configuration option for a toggle/boolean setting
+ */
 export interface ToggleOption {
   type: 'toggle';
   label: string;
@@ -10,6 +13,9 @@ export interface ToggleOption {
   setter: (v: boolean) => void;
 }
 
+/**
+ * Configuration option for a slider/range setting
+ */
 export interface SliderOption {
   type: 'slider';
   label: string;
@@ -21,6 +27,9 @@ export interface SliderOption {
   unit?: string;
 }
 
+/**
+ * Configuration option for a dropdown/select setting
+ */
 export interface DropdownOption {
   type: 'dropdown';
   label: string;
@@ -29,13 +38,22 @@ export interface DropdownOption {
   options: { value: string; label: string }[];
 }
 
+/**
+ * Union type representing any type of setting option
+ */
 export type SettingOption = ToggleOption | SliderOption | DropdownOption;
 
+/**
+ * Props for the ChatSettingsModal component
+ */
 interface Props {
   options: SettingOption[];
   onClose: () => void;
 }
 
+/**
+ * Help text mapping for various setting options
+ */
 const optionHelp: Record<string,string> = {
   'Query decomposition':'Breaks a complex question into sub-queries to improve recall (adds latency).',
   'Compose sub-answers':'Merges answers from decomposed sub-queries into a single response.',
@@ -52,7 +70,17 @@ const optionHelp: Record<string,string> = {
   'Reranker top chunks':'Limit how many chunks are re-ranked to speed up processing.'
 };
 
+/**
+ * Modal component for configuring chat settings with various option types
+ * @param props - Component props containing options array and close handler
+ * @returns JSX element representing the settings modal
+ */
 export function ChatSettingsModal({ options, onClose }: Props) {
+  /**
+   * Renders a setting option based on its type (toggle, slider, or dropdown)
+   * @param opt - The setting option to render
+   * @returns JSX element for the specific option type or null if type is unknown
+   */
   const renderOption = (opt: SettingOption) => {
     switch (opt.type) {
       case 'toggle':
@@ -117,6 +145,9 @@ export function ChatSettingsModal({ options, onClose }: Props) {
     }
   };
 
+  /**
+   * Labels for toggle options that should be displayed in a grid layout
+   */
   const gridToggleLabels: string[] = [
     'Query decomposition',
     'Compose sub-answers',
@@ -126,8 +157,16 @@ export function ChatSettingsModal({ options, onClose }: Props) {
     'Stream phases',
   ];
 
+  /**
+   * Labels for retrieval settings that should be displayed in a grid layout
+   */
   const retrievalGridLabels = ['LLM model','Search type'];
 
+  /**
+   * Maps internal option labels to user-friendly display names
+   * @param label - The internal label to transform
+   * @returns The display-friendly version of the label
+   */
   const displayName = (label: string) => {
     if (label === 'Always search documents') return 'RAG (no-triage)';
     if (label === 'LLM model') return 'LLM';
@@ -136,6 +175,11 @@ export function ChatSettingsModal({ options, onClose }: Props) {
     return label;
   };
 
+  /**
+   * Finds and renders a setting option by its label with display name override
+   * @param label - The label of the option to find and render
+   * @returns JSX element for the option or null if not found
+   */
   const renderOptionOrdered = (label: string) => {
     const opt = options.find(o => o.label === label);
     if (!opt) return null;
@@ -164,7 +208,11 @@ export function ChatSettingsModal({ options, onClose }: Props) {
           <div>
             <h3 className="text-md font-medium text-gray-200 mb-4 flex items-center gap-1">Retrieval Settings <InfoTooltip text="Configure which LLM answers and how the system searches your indexes." /></h3>
             {/* LLM + Search type grid */}
-            {(() => {
+            {/**
+             * Creates a grid layout for retrieval settings by mapping labels to options
+             * @returns JSX element containing the grid of retrieval options
+             */
+            (() => {
               const arr: SettingOption[] = retrievalGridLabels
                 .map(lbl => {
                   const opt = options.find(o=>o.label===lbl);
@@ -201,4 +249,4 @@ export function ChatSettingsModal({ options, onClose }: Props) {
       </div>
     </div>
   );
-} 
+}
