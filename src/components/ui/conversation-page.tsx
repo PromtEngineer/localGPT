@@ -12,13 +12,23 @@ import { cn } from "@/lib/utils"
 import Markdown from "@/components/Markdown"
 import { normalizeWhitespace } from "@/utils/textNormalization"
 
+/**
+ * Props for the ConversationPage component
+ */
 interface ConversationPageProps {
+  /** Array of chat messages to display */
   messages: ChatMessage[]
+  /** Whether the conversation is currently loading */
   isLoading?: boolean
+  /** Additional CSS classes to apply */
   className?: string
+  /** Callback function triggered when an action is performed on a message */
   onAction?: (action: string, messageId: string, messageContent: string) => void
 }
 
+/**
+ * Configuration for action icons displayed on messages
+ */
 const actionIcons = [
   { icon: Copy, type: "Copy", action: "copy" },
   { icon: ThumbsUp, type: "Like", action: "like" },
@@ -28,7 +38,12 @@ const actionIcons = [
   { icon: MoreHorizontal, type: "More", action: "more" },
 ]
 
-// Citation block toggle component
+/**
+ * Renders a collapsible citation block with document preview
+ * @param doc - The document object containing text and metadata
+ * @param idx - The index of the citation for numbering
+ * @returns JSX element representing a citation
+ */
 function Citation({doc, idx}: {doc:any, idx:number}){
   const [open,setOpen]=React.useState(false);
   const preview = (doc.text||'').replace(/\s+/g,' ').trim().slice(0,160) + ((doc.text||'').length>160?'…':'');
@@ -39,7 +54,11 @@ function Citation({doc, idx}: {doc:any, idx:number}){
   );
 }
 
-// NEW: Expandable list of citations per assistant message
+/**
+ * Renders an expandable list of citations for assistant messages
+ * @param docs - Array of document objects to display as citations
+ * @returns JSX element containing the citations block or null if no citations
+ */
 function CitationsBlock({docs}:{docs:any[]}){
   const scored = docs.filter(d => d.rerank_score || d.score || d._distance)
   scored.sort((a, b) => (b.rerank_score ?? b.score ?? 1/b._distance) - (a.rerank_score ?? a.score ?? 1/a._distance))
@@ -67,6 +86,11 @@ function CitationsBlock({docs}:{docs:any[]}){
   );
 }
 
+/**
+ * Renders an icon based on the step status
+ * @param status - The current status of the step
+ * @returns JSX element with the appropriate icon or null
+ */
 function StepIcon({ status }: { status: 'pending' | 'active' | 'done' | 'error' }) {
   switch (status) {
     case 'pending':
@@ -82,6 +106,9 @@ function StepIcon({ status }: { status: 'pending' | 'active' | 'done' | 'error' 
   }
 }
 
+/**
+ * CSS classes for step status borders
+ */
 const statusBorder: Record<string, string> = {
   pending: 'border-neutral-800',
   active: 'border-blue-400 animate-pulse',
@@ -89,7 +116,11 @@ const statusBorder: Record<string, string> = {
   error: 'border-red-400'
 }
 
-// Component to handle <think> tokens and render them in a collapsible block
+/**
+ * Processes text containing <think> tags and renders them in a collapsible block
+ * @param text - The text content that may contain thinking blocks
+ * @returns JSX element with thinking blocks separated from main content
+ */
 function ThinkingText({ text }: { text: string }) {
   const regex = /<think>([\s\S]*?)<\/think>/g;
   const thinkSegments: string[] = [];
@@ -117,6 +148,11 @@ function ThinkingText({ text }: { text: string }) {
   );
 }
 
+/**
+ * Renders structured message content with steps and progress indicators
+ * @param content - Array of step objects or object containing steps array
+ * @returns JSX element displaying the structured message with timeline
+ */
 function StructuredMessageBlock({ content }: { content: Array<Record<string, any>> | { steps: any[] } }) {
   const steps: any[] = Array.isArray(content) ? content : (content as any).steps;
   // Determine if sub-query answers are present
@@ -197,6 +233,14 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
   );
 }
 
+/**
+ * Main conversation page component that displays chat messages with interactive features
+ * @param messages - Array of chat messages to display
+ * @param isLoading - Whether new messages are being loaded
+ * @param className - Additional CSS classes to apply
+ * @param onAction - Callback for handling message actions
+ * @returns JSX element representing the complete conversation interface
+ */
 export function ConversationPage({ 
   messages, 
   isLoading = false,
@@ -233,6 +277,9 @@ export function ConversationPage({
     return () => scrollContainer.removeEventListener('scroll', handleScroll)
   }, [])
 
+  /**
+   * Scrolls the conversation to the bottom using multiple fallback methods
+   */
   const scrollToBottom = () => {
     // Try multiple methods to ensure scrolling works
     if (messagesEndRef.current) {
@@ -250,6 +297,12 @@ export function ConversationPage({
     }, 100)
   }
 
+  /**
+   * Handles action button clicks on messages
+   * @param action - The type of action performed
+   * @param messageId - The ID of the message
+   * @param messageContent - The content of the message
+   */
   const handleAction = (action: string, messageId: string, messageContent: string) => {
     if (onAction) {
       // For structured messages, we'll just join the text parts for copy/paste
@@ -414,4 +467,4 @@ export function ConversationPage({
       )}
     </div>
   )
-}  
+}
