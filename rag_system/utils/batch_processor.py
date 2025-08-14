@@ -10,7 +10,14 @@ logger = logging.getLogger(__name__)
 
 @contextmanager
 def timer(operation_name: str):
-    """Context manager to time operations"""
+    """Context manager to time operations and log the duration.
+    
+    Args:
+        operation_name: Name of the operation being timed
+        
+    Yields:
+        None
+    """
     start = time.time()
     try:
         yield
@@ -22,6 +29,12 @@ class ProgressTracker:
     """Tracks progress and performance metrics for batch operations"""
     
     def __init__(self, total_items: int, operation_name: str = "Processing"):
+        """Initialize the progress tracker.
+        
+        Args:
+            total_items: Total number of items to be processed
+            operation_name: Name of the operation for logging purposes
+        """
         self.total_items = total_items
         self.operation_name = operation_name
         self.processed_items = 0
@@ -31,7 +44,12 @@ class ProgressTracker:
         self.report_interval = 10  # Report every 10 seconds
         
     def update(self, items_processed: int, errors: int = 0):
-        """Update progress with number of items processed"""
+        """Update progress with number of items processed.
+        
+        Args:
+            items_processed: Number of items that were processed in this update
+            errors: Number of errors encountered in this update
+        """
         self.processed_items += items_processed
         self.errors_encountered += errors
         
@@ -41,7 +59,7 @@ class ProgressTracker:
             self.last_report_time = current_time
             
     def _report_progress(self):
-        """Report current progress"""
+        """Report current progress including percentage, rate, and ETA."""
         elapsed = time.time() - self.start_time
         if elapsed > 0:
             rate = self.processed_items / elapsed
@@ -57,7 +75,7 @@ class ProgressTracker:
             )
             
     def finish(self):
-        """Report final statistics"""
+        """Report final statistics including total time, rate, and error count."""
         elapsed = time.time() - self.start_time
         rate = self.processed_items / elapsed if elapsed > 0 else 0
         
@@ -70,6 +88,12 @@ class BatchProcessor:
     """Generic batch processor with progress tracking and error handling"""
     
     def __init__(self, batch_size: int = 50, enable_gc: bool = True):
+        """Initialize the batch processor.
+        
+        Args:
+            batch_size: Number of items to process in each batch
+            enable_gc: Whether to enable periodic garbage collection
+        """
         self.batch_size = batch_size
         self.enable_gc = enable_gc
         
@@ -128,7 +152,14 @@ class BatchProcessor:
         return results
         
     def batch_iterator(self, items: List[Any]) -> Iterator[List[Any]]:
-        """Generate batches as an iterator for memory-efficient processing"""
+        """Generate batches as an iterator for memory-efficient processing.
+        
+        Args:
+            items: List of items to split into batches
+            
+        Yields:
+            List[Any]: Batch of items with size up to batch_size
+        """
         for i in range(0, len(items), self.batch_size):
             yield items[i:i + self.batch_size]
 
@@ -136,6 +167,11 @@ class StreamingProcessor:
     """Process items one at a time with minimal memory usage"""
     
     def __init__(self, enable_gc_interval: int = 100):
+        """Initialize the streaming processor.
+        
+        Args:
+            enable_gc_interval: Interval for triggering garbage collection (0 to disable)
+        """
         self.enable_gc_interval = enable_gc_interval
         
     def process_streaming(
@@ -187,7 +223,14 @@ class StreamingProcessor:
 
 # Utility functions for common batch operations
 def batch_chunks_by_document(chunks: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    """Group chunks by document_id for document-level batch processing"""
+    """Group chunks by document_id for document-level batch processing.
+    
+    Args:
+        chunks: List of chunk dictionaries containing metadata with document_id
+        
+    Returns:
+        Dictionary mapping document_id to list of chunks for that document
+    """
     document_batches = {}
     for chunk in chunks:
         doc_id = chunk.get('metadata', {}).get('document_id', 'unknown')
@@ -197,7 +240,14 @@ def batch_chunks_by_document(chunks: List[Dict[str, Any]]) -> Dict[str, List[Dic
     return document_batches
 
 def estimate_memory_usage(chunks: List[Dict[str, Any]]) -> float:
-    """Estimate memory usage of chunks in MB"""
+    """Estimate memory usage of chunks in MB.
+    
+    Args:
+        chunks: List of chunk dictionaries to estimate memory usage for
+        
+    Returns:
+        Estimated memory usage in megabytes
+    """
     if not chunks:
         return 0.0
         
@@ -209,6 +259,14 @@ def estimate_memory_usage(chunks: List[Dict[str, Any]]) -> float:
 if __name__ == '__main__':
     # Test the batch processor
     def dummy_process_func(batch):
+        """Simulate processing a batch of items with a delay.
+        
+        Args:
+            batch: List of items to process
+            
+        Returns:
+            List of processed items with 'processed_' prefix
+        """
         time.sleep(0.1)  # Simulate processing time
         return [f"processed_{item}" for item in batch]
     
@@ -220,4 +278,4 @@ if __name__ == '__main__':
         "Test Processing"
     )
     
-    print(f"Processed {len(results)} items") 
+    print(f"Processed {len(results)} items")
