@@ -29,15 +29,40 @@ class ContextualEnricher:
     """
     Enriches chunks with a prepended summary of their surrounding context using Ollama,
     while preserving the original text.
+    
+    This class provides functionality to enhance text chunks by adding contextual summaries
+    that help situate each chunk within its broader document context. The enrichment process
+    uses an LLM to generate concise summaries based on surrounding text.
     """
     def __init__(self, llm_client: OllamaClient, llm_model: str, batch_size: int = 10):
+        """
+        Initialize the ContextualEnricher with an Ollama client and model configuration.
+        
+        Args:
+            llm_client (OllamaClient): The Ollama client instance for LLM interactions
+            llm_model (str): The name of the Ollama model to use for generating summaries
+            batch_size (int, optional): Number of chunks to process in each batch. Defaults to 10.
+        """
         self.llm_client = llm_client
         self.llm_model = llm_model
         self.batch_size = batch_size
         logger.info(f"Initialized ContextualEnricher with Ollama model '{self.llm_model}' (batch_size={batch_size}).")
 
     def _generate_summary(self, local_context_text: str, chunk_text: str) -> str:
-        """Generates a contextual summary using a structured, multi-part prompt."""
+        """
+        Generates a contextual summary using a structured, multi-part prompt.
+        
+        This method creates a summary that situates the given chunk within its local context
+        by sending a structured prompt to the LLM and processing the response to remove
+        any chain-of-thought markers or unwanted formatting.
+        
+        Args:
+            local_context_text (str): The surrounding context text for the chunk
+            chunk_text (str): The specific chunk content to be contextualized
+            
+        Returns:
+            str: A clean contextual summary, or empty string if generation fails
+        """
         # Combine the templates to form the final content for the HumanMessage equivalent
         human_prompt_content = (
             f"{LOCAL_CONTEXT_PROMPT_TEMPLATE.format(local_context_text=local_context_text)}\n\n"
@@ -80,6 +105,20 @@ class ContextualEnricher:
             return "" # Gracefully fail by returning no summary
 
     def enrich_chunks(self, chunks: List[Dict[str, Any]], window_size: int = 1) -> List[Dict[str, Any]]:
+        """
+        Enrich chunks with contextual summaries using batch processing for improved performance.
+        
+        This method processes chunks in batches to add contextual summaries that help situate
+        each chunk within its document context. The original text is preserved while a summary
+        is prepended to provide additional context.
+        
+        Args:
+            chunks (List[Dict[str, Any]]): List of chunk dictionaries containing 'text' and 'metadata' keys
+            window_size (int, optional): Number of surrounding chunks to include in context window. Defaults to 1.
+            
+        Returns:
+            List[Dict[str, Any]]: List of enriched chunks with contextual summaries prepended to text
+        """
         if not chunks:
             return []
 
@@ -96,7 +135,15 @@ class ContextualEnricher:
         batch_processor = BatchProcessor(batch_size=self.batch_size)
         
         def process_chunk_batch(chunk_indices):
-            """Process a batch of chunk indices for contextual enrichment"""
+            """
+            Process a batch of chunk indices for contextual enrichment.
+            
+            Args:
+                chunk_indices: List of chunk indices to process in this batch
+                
+            Returns:
+                List[Dict[str, Any]]: List of enriched chunks for the given indices
+            """
             batch_results = []
             for i in chunk_indices:
                 chunk = chunks[i]
@@ -144,7 +191,19 @@ class ContextualEnricher:
         return enriched_chunks
     
     def enrich_chunks_sequential(self, chunks: List[Dict[str, Any]], window_size: int = 1) -> List[Dict[str, Any]]:
-        """Sequential enrichment method (legacy) - kept for comparison"""
+        """
+        Sequential enrichment method for processing chunks one by one.
+        
+        This is a legacy method kept for comparison purposes. It processes chunks sequentially
+        without batch processing, which may be slower but uses less memory for large datasets.
+        
+        Args:
+            chunks (List[Dict[str, Any]]): List of chunk dictionaries containing 'text' and 'metadata' keys
+            window_size (int, optional): Number of surrounding chunks to include in context window. Defaults to 1.
+            
+        Returns:
+            List[Dict[str, Any]]: List of enriched chunks with contextual summaries prepended to text
+        """
         if not chunks:
             return []
 
