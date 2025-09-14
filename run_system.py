@@ -35,7 +35,8 @@ from typing import Dict, List, Optional, TextIO
 import logging
 from dataclasses import dataclass
 import psutil
-
+import io # NEW
+import shutil  # NEW
 @dataclass
 class ServiceConfig:
     name: str
@@ -104,24 +105,49 @@ class ServiceManager:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
     
+    # def setup_logging(self):
+    #     """Setup centralized logging with colors."""
+    #     # Create main logger
+    #     self.logger = logging.getLogger('system')
+    #     self.logger.setLevel(logging.INFO)
+        
+    #     # Console handler with colors
+    #     console_handler = logging.StreamHandler(sys.stdout)
+    #     console_handler.setFormatter(ColoredFormatter())
+    #     self.logger.addHandler(console_handler)
+        
+    #     # File handler for system logs
+    #     #file_handler = logging.FileHandler(self.logs_dir / 'system.log')
+    #     file_handler = logging.FileHandler(self.logs_dir / 'system.log', encoding='utf-8')
+
+    #     file_handler.setFormatter(logging.Formatter(
+    #         '%(asctime)s [%(levelname)s] %(message)s'
+    #     ))
+    #     self.logger.addHandler(file_handler)
+    
     def setup_logging(self):
         """Setup centralized logging with colors."""
         # Create main logger
         self.logger = logging.getLogger('system')
         self.logger.setLevel(logging.INFO)
-        
-        # Console handler with colors
+
+        # Remove any existing handlers to avoid duplicates / unexpected handlers
+        if self.logger.handlers:
+            for h in list(self.logger.handlers):
+                self.logger.removeHandler(h)
+
+        # Console handler -> use sys.stdout (reconfigured to utf-8 in __main__)
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(ColoredFormatter())
         self.logger.addHandler(console_handler)
-        
-        # File handler for system logs
-        file_handler = logging.FileHandler(self.logs_dir / 'system.log')
+
+        # File handler for system logs (force UTF-8)
+        file_handler = logging.FileHandler(self.logs_dir / 'system.log', encoding='utf-8')
         file_handler.setFormatter(logging.Formatter(
             '%(asctime)s [%(levelname)s] %(message)s'
         ))
         self.logger.addHandler(file_handler)
-    
+
     def _get_service_configs(self) -> Dict[str, ServiceConfig]:
         """Define service configurations based on mode."""
         base_configs = {
@@ -210,15 +236,30 @@ class ServiceManager:
         self.logger.info("✅ All prerequisites satisfied")
         return True
     
-    def _command_exists(self, command: str) -> bool:
-        """Check if a command exists in PATH."""
-        try:
-            subprocess.run([command, '--version'], 
-                         capture_output=True, check=True, timeout=5)
-            return True
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-            return False
+    # def _command_exists(self, command: str) -> bool:
+    #     """Check if a command exists in PATH."""
+    #     try:
+    #         subprocess.run([command, '--version'], 
+    #                      capture_output=True, check=True, timeout=5)
+    #         return True
+    #     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+    #         return False
     
+    def _command_exists(self, command: str) -> bool:
+        """Check if a command exists in PATH (robust on Windows)."""
+        import shutil
+        # Fast path: is there an executable on PATH?
+        if shutil.which(command):
+            return True
+
+        # Fallback: try running "<command> --version" — allow shell for .cmd shims
+        try:
+            subprocess.run(f"{command} --version",
+                           capture_output=True, check=True, timeout=5, shell=True)
+            return True
+        except Exception:
+            return False
+        
     def ensure_models(self):
         """Ensure required Ollama models are available."""
         self.logger.info("📥 Checking required models...")
@@ -263,10 +304,17 @@ class ServiceManager:
             env = os.environ.copy()
             if config.env:
                 env.update(config.env)
-            
+            self.logger.info(f"Command: {' '.join(config.command)}")
+                        # Resolve executable on Windows (handle npm -> npm.cmd shims)
+            cmd = list(config.command)
+            if os.name == 'nt' and cmd:
+                resolved = shutil.which(cmd[0])
+                if resolved:
+                    cmd[0] = resolved
+
             # Start process
             process = subprocess.Popen(
-                config.command,
+                cmd, #config.command,
                 cwd=config.cwd,
                 env=env,
                 stdout=subprocess.PIPE,
@@ -308,7 +356,7 @@ class ServiceManager:
         service_logger.setLevel(logging.INFO)
         
         # Add file handler for this service
-        file_handler = logging.FileHandler(self.logs_dir / f'{service_name}.log')
+        file_handler = logging.FileHandler(self.logs_dir / f'{service_name}.log',encoding='utf-8')
         file_handler.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
         service_logger.addHandler(file_handler)
         
@@ -538,4 +586,6 @@ def main():
         manager.shutdown()
 
 if __name__ == "__main__":
+    import sys # NEW
+    sys.stdout.reconfigure(encoding="utf-8") # NEW
     main() 
