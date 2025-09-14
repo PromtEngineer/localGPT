@@ -76,5 +76,3 @@ rag_system/documents/
 !docker.env
 !backend/chat_data.db
 
-create_feature_branch_localGPT1.ipynb
-.gitignore
