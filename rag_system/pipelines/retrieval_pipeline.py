@@ -249,6 +249,7 @@ ORIGINAL QUESTION: "{query}"
         for tok in self.ollama_client.stream_completion(
             model=self.ollama_config["generation_model"],
             prompt=prompt,
+            max_tokens=1024
         ):
             answer_parts.append(tok)
             if event_callback:

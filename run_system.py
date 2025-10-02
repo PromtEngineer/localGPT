@@ -253,8 +253,18 @@ class ServiceManager:
         
         # Check if port is in use
         if self.is_port_in_use(config.port):
-            self.logger.warning(f"⚠️  Port {config.port} already in use, skipping {service_name}")
-            return not config.required
+            self.logger.warning(f"⚠️  Port {config.port} already in use, verifying {service_name} status")
+            if self.health_check(service_name, config):
+                self.logger.info(f"✅ {service_name} already running on port {config.port}")
+                return True
+            message = (
+                f"Port {config.port} is occupied but {service_name} is not responding on {config.health_check_path}"
+            )
+            if config.required:
+                self.logger.error(f"❌ {message}")
+                return False
+            self.logger.warning(f"⚠️  {message} (continuing without restarting)")
+            return True
         
         self.logger.info(f"🔄 Starting {service_name} on port {config.port}...")
         

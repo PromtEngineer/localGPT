@@ -14,11 +14,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import RAG system modules for complete metadata
 try:
-    from rag_system.main import PIPELINE_CONFIGS
+    from rag_system.main import PIPELINE_CONFIGS, LLM_BACKEND
     RAG_SYSTEM_AVAILABLE = True
     print("✅ RAG system modules accessible from backend")
 except ImportError as e:
     PIPELINE_CONFIGS = {}
+    LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama")
     RAG_SYSTEM_AVAILABLE = False
     print(f"⚠️ RAG system modules not available: {e}")
 
@@ -28,6 +29,8 @@ import simple_pdf_processor as pdf_module
 from simple_pdf_processor import initialize_simple_pdf_processor
 from typing import List, Dict, Any
 import re
+
+RAG_API_URL = os.getenv("RAG_API_URL", "http://localhost:8001")
 
 # 🆕 Reusable TCPServer with address reuse enabled
 class ReusableTCPServer(socketserver.TCPServer):
@@ -746,32 +749,38 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
     def handle_get_models(self):
         """Get available models from both Ollama and HuggingFace, grouped by capability"""
         try:
-            generation_models = []
-            embedding_models = []
-            
-            # Get Ollama models if available
-            if self.ollama_client.is_ollama_running():
-                all_ollama_models = self.ollama_client.list_models()
-                
-                # Very naive classification - same logic as RAG API server
-                ollama_embedding_models = [m for m in all_ollama_models if any(k in m for k in ['embed','bge','embedding','text'])]
-                ollama_generation_models = [m for m in all_ollama_models if m not in ollama_embedding_models]
-                
-                generation_models.extend(ollama_generation_models)
-                embedding_models.extend(ollama_embedding_models)
-            
-            # Add supported HuggingFace embedding models
+            generation_models: list[str] = []
+            embedding_models: list[str] = []
+            backend = (LLM_BACKEND or "ollama").lower()
+
+            if backend == "watsonx":
+                try:
+                    response = requests.get(f"{RAG_API_URL}/models", timeout=5)
+                    response.raise_for_status()
+                    data = response.json()
+                    generation_models.extend(data.get("generation_models", []))
+                    embedding_models.extend(data.get("embedding_models", []))
+                except Exception as api_err:
+                    print(f"⚠️ Could not fetch Watson X models from RAG API: {api_err}")
+
+            if backend != "watsonx" or not generation_models:
+                if self.ollama_client.is_ollama_running():
+                    all_ollama_models = self.ollama_client.list_models()
+                    ollama_embedding_models = [m for m in all_ollama_models if any(k in m for k in ['embed','bge','embedding','text'])]
+                    ollama_generation_models = [m for m in all_ollama_models if m not in ollama_embedding_models]
+                    generation_models.extend(ollama_generation_models)
+                    embedding_models.extend(ollama_embedding_models)
+
             huggingface_embedding_models = [
                 "Qwen/Qwen3-Embedding-0.6B",
-                "Qwen/Qwen3-Embedding-4B", 
+                "Qwen/Qwen3-Embedding-4B",
                 "Qwen/Qwen3-Embedding-8B"
             ]
             embedding_models.extend(huggingface_embedding_models)
-            
-            # Sort models for consistent ordering
-            generation_models.sort()
-            embedding_models.sort()
-            
+
+            generation_models = sorted({m for m in generation_models if m})
+            embedding_models = sorted({m for m in embedding_models if m})
+
             self.send_json_response({
                 "generation_models": generation_models,
                 "embedding_models": embedding_models

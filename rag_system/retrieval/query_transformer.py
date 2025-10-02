@@ -263,7 +263,7 @@ Input payload:
         )
 
         # ---- Call the LLM ----
-        response = self.llm_client.generate_completion(self.llm_model, full_prompt, format="json")
+        response = self.llm_client.generate_completion(self.llm_model, full_prompt, format="json", max_tokens=1024)
 
         response_text = response.get('response', '{}')
         try:

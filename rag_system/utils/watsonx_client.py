@@ -52,6 +52,47 @@ class WatsonXClient:
         self.client = self._APIClient(self.credentials)
         self.client.set.default_project(self.project_id)
 
+    def _extract_available_model_ids(self, specs: Dict[str, Any]) -> List[str]:
+        "Return model_id entries that are currently available."
+        model_ids: List[str] = []
+        for resource in (specs or {}).get("resources", []):
+            model_id = resource.get("model_id") or resource.get("id")
+            if not model_id:
+                continue
+            lifecycle = resource.get("lifecycle") or []
+            if lifecycle:
+                states = {item.get("id") for item in lifecycle if isinstance(item, dict)}
+                if states and "available" not in states:
+                    continue
+            model_ids.append(model_id)
+        return model_ids
+
+    def list_generation_models(self) -> List[str]:
+        "List Watson X models suitable for text generation/chat."
+        try:
+            fm = self.client.foundation_models
+            specs = fm.get_text_generation_model_specs()
+            models = set(self._extract_available_model_ids(specs))
+            try:
+                chat_specs = fm.get_chat_model_specs()
+                models.update(self._extract_available_model_ids(chat_specs))
+            except Exception:
+                pass
+            return sorted(models)
+        except Exception as exc:
+            print(f"Error listing Watson X generation models: {exc}")
+            return []
+
+    def list_embedding_models(self) -> List[str]:
+        "List Watson X embedding model identifiers."
+        try:
+            fm = self.client.foundation_models
+            specs = fm.get_embeddings_model_specs()
+            return sorted(set(self._extract_available_model_ids(specs)))
+        except Exception as exc:
+            print(f"Error listing Watson X embedding models: {exc}")
+            return []
+
     def _image_to_base64(self, image: Image.Image) -> str:
         """Converts a Pillow Image to a base64 string."""
         buffered = BytesIO()

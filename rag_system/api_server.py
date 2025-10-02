@@ -13,7 +13,7 @@ if backend_dir not in sys.path:
     sys.path.append(backend_dir)
 
 from backend.database import ChatDatabase, generate_session_title
-from rag_system.main import get_agent
+from rag_system.main import get_agent, LLM_BACKEND
 from rag_system.factory import get_indexing_pipeline
 
 # Initialize database connection once at module level
@@ -139,6 +139,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
         if parsed_path.path == '/models':
             self.handle_models()
+        elif parsed_path.path == '/health':
+            self.send_json_response({"status": "ok"})
         else:
             self.send_json_response({"error": "Not Found"}, status_code=404)
 
@@ -690,39 +692,51 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({"error": f"Failed to start indexing: {str(e)}"}, status_code=500)
 
     def handle_models(self):
-        """Return a list of locally installed Ollama models and supported HuggingFace models, grouped by capability."""
+        """Return available generation/embedding models for the active LLM backend."""
         try:
-            generation_models = []
-            embedding_models = []
-            
-            # Get Ollama models if available
-            try:
-                resp = requests.get(f"{RAG_AGENT.ollama_config['host']}/api/tags", timeout=5)
-                resp.raise_for_status()
-                data = resp.json()
+            generation_models: list[str] = []
+            embedding_models: list[str] = []
+            backend = (LLM_BACKEND or "ollama").lower()
 
-                all_ollama_models = [m.get('name') for m in data.get('models', [])]
+            if backend == "watsonx":
+                watsonx_client = getattr(RAG_AGENT, "llm_client", None)
+                if watsonx_client:
+                    gen = watsonx_client.list_generation_models()
+                    emb = watsonx_client.list_embedding_models()
+                    if gen:
+                        generation_models.extend(gen)
+                    if emb:
+                        embedding_models.extend(emb)
+            else:
+                try:
+                    host = RAG_AGENT.ollama_config.get('host') if isinstance(RAG_AGENT.ollama_config, dict) else None
+                    if host:
+                        resp = requests.get(f"{host}/api/tags", timeout=5)
+                        resp.raise_for_status()
+                        data = resp.json()
+                        all_ollama_models = [m.get('name') for m in data.get('models', [])]
+                        ollama_embedding_models = [m for m in all_ollama_models if any(k in m for k in ['embed','bge','embedding','text'])]
+                        ollama_generation_models = [m for m in all_ollama_models if m not in ollama_embedding_models]
+                        generation_models.extend(ollama_generation_models)
+                        embedding_models.extend(ollama_embedding_models)
+                except Exception as e:
+                    print(f"⚠️ Could not get Ollama models: {e}")
 
-                # Very naive classification
-                ollama_embedding_models = [m for m in all_ollama_models if any(k in m for k in ['embed','bge','embedding','text'])]
-                ollama_generation_models = [m for m in all_ollama_models if m not in ollama_embedding_models]
-                
-                generation_models.extend(ollama_generation_models)
-                embedding_models.extend(ollama_embedding_models)
-            except Exception as e:
-                print(f"⚠️ Could not get Ollama models: {e}")
-            
-            # Add supported HuggingFace embedding models
+            # Add supported HuggingFace embedding models (always available for retrieval)
             huggingface_embedding_models = [
                 "Qwen/Qwen3-Embedding-0.6B",
-                "Qwen/Qwen3-Embedding-4B", 
+                "Qwen/Qwen3-Embedding-4B",
                 "Qwen/Qwen3-Embedding-8B"
             ]
             embedding_models.extend(huggingface_embedding_models)
-            
-            # Sort models for consistent ordering
-            generation_models.sort()
-            embedding_models.sort()
+
+            # Ensure defaults appear even if discovery fails
+            default_model = RAG_AGENT.ollama_config.get('generation_model') if isinstance(RAG_AGENT.ollama_config, dict) else None
+            if default_model:
+                generation_models.append(default_model)
+
+            generation_models = sorted({m for m in generation_models if m})
+            embedding_models = sorted({m for m in embedding_models if m})
 
             self.send_json_response({
                 "generation_models": generation_models,
