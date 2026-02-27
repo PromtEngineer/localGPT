@@ -12,6 +12,7 @@ import {
     FileText,
 } from "lucide-react";
 import { AttachedFile } from "@/lib/types";
+import { generateUUID } from "@/lib/api"
 
 interface UseAutoResizeTextareaProps {
     minHeight: number;
@@ -129,7 +130,7 @@ export function EmptyChatState({
                 file.name.toLowerCase().endsWith('.md') ||
                 file.name.toLowerCase().endsWith('.txt')) {
                 newFiles.push({
-                    id: crypto.randomUUID(),
+                    id: generateUUID(),
                     name: file.name,
                     size: file.size,
                     type: file.type,

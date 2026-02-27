@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChatInput } from '@/components/ui/chat-input';
-import { chatAPI, ChatMessage } from '@/lib/api';
+import { chatAPI, ChatMessage, generateUUID } from '@/lib/api';
 import { ConversationPage } from '@/components/ui/conversation-page';
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal';
 
@@ -59,7 +59,7 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
     if (!content.trim()) return;
 
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       content,
       sender: 'user',
       timestamp: new Date().toISOString(),
@@ -88,7 +88,7 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
       const resp = await api.sendMessage({ message: content, conversation_history: history, model: selectedModel });
 
     const assistantMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
         content: resp.response,
       sender: 'assistant',
       timestamp: new Date().toISOString(),

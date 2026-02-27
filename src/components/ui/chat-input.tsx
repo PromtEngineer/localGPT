@@ -5,6 +5,7 @@ import { useState, useRef } from "react"
 import { ArrowUp, Settings as SettingsIcon, Plus, X, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AttachedFile } from "@/lib/types"
+import { generateUUID } from "@/lib/api"
 
 interface ChatInputProps {
   onSendMessage: (message: string, attachedFiles?: AttachedFile[]) => Promise<void>
@@ -103,7 +104,7 @@ export function ChatInput({
           file.name.toLowerCase().endsWith('.md') ||
           file.name.toLowerCase().endsWith('.txt')) {
         newFiles.push({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           name: file.name,
           size: file.size,
           type: file.type,
