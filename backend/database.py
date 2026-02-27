@@ -103,7 +103,7 @@ class ChatDatabase:
         
         conn.commit()
         conn.close()
-        print("✅ Database initialized successfully")
+        print(" Database initialized successfully") #✅
     
     def create_session(self, title: str, model: str) -> str:
         """Create a new chat session"""
