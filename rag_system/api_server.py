@@ -40,7 +40,11 @@ print("✅ RAG Agent initialized successfully with MAXIMUM ACCURACY.")
 # -------------- Helper ----------------
 
 def _apply_index_embedding_model(idx_ids):
-    """Ensure retrieval pipeline uses the embedding model stored with the first index."""
+    """Ensure retrieval pipeline uses the embedding model stored with the first index.
+    
+    Args:
+        idx_ids (list): List of index IDs to check for embedding model metadata.
+    """
     debug_info = f"🔧 _apply_index_embedding_model called with idx_ids: {idx_ids}\n"
     
     if not idx_ids:
@@ -69,7 +73,14 @@ def _apply_index_embedding_model(idx_ids):
         f.write(debug_info)
 
 def _get_table_name_for_session(session_id):
-    """Get the correct vector table name for a session by looking up its linked indexes."""
+    """Get the correct vector table name for a session by looking up its linked indexes.
+    
+    Args:
+        session_id (str): The session ID to look up indexes for.
+        
+    Returns:
+        str or None: The vector table name for the session, or None if not found.
+    """
     logger = logging.getLogger(__name__)
     
     if not session_id:
@@ -113,6 +124,12 @@ def _get_table_name_for_session(session_id):
         return default_table
 
 class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
+    """HTTP request handler for the RAG API server.
+    
+    Handles POST requests for chat interactions, streaming responses, and document indexing.
+    Also handles GET requests for retrieving available models.
+    """
+    
     def do_OPTIONS(self):
         """Handle CORS preflight requests for frontend integration."""
         self.send_response(200)
@@ -122,7 +139,13 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        """Handle POST requests for chat and indexing."""
+        """Handle POST requests for chat and indexing endpoints.
+        
+        Routes requests to appropriate handlers based on the URL path:
+        - /chat: Regular chat interactions
+        - /chat/stream: Streaming chat responses
+        - /index: Document indexing
+        """
         parsed_path = urlparse(self.path)
 
         if parsed_path.path == '/chat':
@@ -135,6 +158,11 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({"error": "Not Found"}, status_code=404)
 
     def do_GET(self):
+        """Handle GET requests for retrieving information.
+        
+        Routes requests to appropriate handlers based on the URL path:
+        - /models: List available models
+        """
         parsed_path = urlparse(self.path)
 
         if parsed_path.path == '/models':
@@ -143,7 +171,16 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({"error": "Not Found"}, status_code=404)
 
     def handle_chat(self):
-        """Handles a chat query by calling the agentic RAG pipeline."""
+        """Handle a chat query by calling the agentic RAG pipeline.
+        
+        Processes JSON request body containing query, session_id, and various configuration flags.
+        Updates session title for first messages and stores user/assistant messages in database.
+        Returns JSON response with the generated answer and metadata.
+        
+        Raises:
+            json.JSONDecodeError: If the request body contains invalid JSON.
+            Exception: For various server errors during processing.
+        """
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -302,7 +339,17 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({"error": f"Server error: {str(e)}"}, status_code=500)
 
     def handle_chat_stream(self):
-        """Stream internal phases and final answer using SSE (text/event-stream)."""
+        """Stream internal phases and final answer using SSE (text/event-stream).
+        
+        Similar to handle_chat but streams responses using Server-Sent Events.
+        Emits events for different processing phases and the final result.
+        Handles client disconnections gracefully.
+        
+        Raises:
+            json.JSONDecodeError: If the request body contains invalid JSON.
+            BrokenPipeError: If the client disconnects during streaming.
+            Exception: For various server errors during processing.
+        """
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -385,7 +432,15 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
             def emit(event_type: str, payload):
-                """Send a single SSE event."""
+                """Send a single SSE event.
+                
+                Args:
+                    event_type (str): The type of event to emit.
+                    payload: The data payload to send with the event.
+                    
+                Raises:
+                    BrokenPipeError: If the client has disconnected.
+                """
                 try:
                     data_str = json.dumps({"type": event_type, "data": payload})
                     self.wfile.write(f"data: {data_str}\n\n".encode('utf-8'))
@@ -499,7 +554,16 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({"error": f"Server error: {str(e)}"}, status_code=500)
 
     def handle_index(self):
-        """Triggers the document indexing pipeline for specific files."""
+        """Trigger the document indexing pipeline for specific files.
+        
+        Processes JSON request body containing file paths and indexing configuration.
+        Creates temporary pipeline instances with custom configurations for each indexing job.
+        Updates index metadata with embedding model information.
+        
+        Raises:
+            json.JSONDecodeError: If the request body contains invalid JSON.
+            Exception: For various server errors during indexing.
+        """
         try:
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -690,7 +754,15 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({"error": f"Failed to start indexing: {str(e)}"}, status_code=500)
 
     def handle_models(self):
-        """Return a list of locally installed Ollama models and supported HuggingFace models, grouped by capability."""
+        """Return a list of locally installed Ollama models and supported HuggingFace models, grouped by capability.
+        
+        Queries the Ollama API for available models and classifies them as generation or embedding models.
+        Also includes a predefined list of supported HuggingFace embedding models.
+        Returns JSON response with models grouped by capability.
+        
+        Raises:
+            Exception: If there are errors querying the Ollama API or processing model data.
+        """
         try:
             generation_models = []
             embedding_models = []
@@ -732,7 +804,12 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({"error": f"Could not list models: {e}"}, status_code=500)
 
     def send_json_response(self, data, status_code=200):
-        """Utility to send a JSON response with CORS headers."""
+        """Send a JSON response with CORS headers.
+        
+        Args:
+            data: The data to serialize as JSON and send in the response body.
+            status_code (int): HTTP status code to send. Defaults to 200.
+        """
         self.send_response(status_code)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -741,12 +818,17 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(response.encode('utf-8'))
 
 def start_server(port=8001):
-    """Starts the API server."""
+    """Start the API server on the specified port.
+    
+    Args:
+        port (int): Port number to bind the server to. Defaults to 8001.
+    """
     # Use a reusable TCP server to avoid "address in use" errors on restart
     class ReusableTCPServer(socketserver.TCPServer):
+        """TCP server that allows address reuse to prevent binding errors on restart."""
         allow_reuse_address = True
 
-    with ReusableTCPServer(("", port), AdvancedRagApiHandler) as httpd:
+    with ReusableTCPServer("", port, AdvancedRagApiHandler) as httpd:
         print(f"🚀 Starting Advanced RAG API server on port {port}")
         print(f"💬 Chat endpoint: http://localhost:{port}/chat")
         print(f"✨ Indexing endpoint: http://localhost:{port}/index")
@@ -754,4 +836,4 @@ def start_server(port=8001):
 
 if __name__ == "__main__":
     # To run this server: python -m rag_system.api_server
-    start_server() 
+    start_server()

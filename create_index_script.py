@@ -34,10 +34,16 @@ except ImportError as e:
 
 
 class IndexCreator:
-    """Interactive index creation utility."""
+    """Interactive index creation utility for LocalGPT RAG system."""
     
     def __init__(self, config_path: Optional[str] = None):
-        """Initialize the index creator with optional custom configuration."""
+        """
+        Initialize the index creator with optional custom configuration.
+        
+        Args:
+            config_path: Optional path to custom configuration file. If not provided,
+                        uses default configuration.
+        """
         self.db = ChatDatabase()
         self.config = self._load_config(config_path)
         
@@ -56,7 +62,15 @@ class IndexCreator:
         )
     
     def _load_config(self, config_path: Optional[str] = None) -> dict:
-        """Load configuration from file or use default."""
+        """
+        Load configuration from file or use default.
+        
+        Args:
+            config_path: Optional path to configuration file.
+            
+        Returns:
+            Dictionary containing configuration settings.
+        """
         if config_path and os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
@@ -68,14 +82,31 @@ class IndexCreator:
         return PIPELINE_CONFIGS.get("default", {})
     
     def get_user_input(self, prompt: str, default: str = "") -> str:
-        """Get user input with optional default value."""
+        """
+        Get user input with optional default value.
+        
+        Args:
+            prompt: The prompt message to display to the user.
+            default: Default value to use if user provides no input.
+            
+        Returns:
+            User input string or default value if no input provided.
+        """
         if default:
             user_input = input(f"{prompt} [{default}]: ").strip()
             return user_input if user_input else default
         return input(f"{prompt}: ").strip()
     
     def select_documents(self) -> List[str]:
-        """Interactive document selection."""
+        """
+        Interactive document selection interface.
+        
+        Provides options to add single documents, entire directories,
+        and manage the selected document list.
+        
+        Returns:
+            List of absolute paths to selected documents.
+        """
         print("\n📁 Document Selection")
         print("=" * 50)
         
@@ -141,7 +172,15 @@ class IndexCreator:
         return documents
     
     def configure_processing(self) -> dict:
-        """Interactive processing configuration."""
+        """
+        Interactive processing configuration interface.
+        
+        Allows users to configure document processing parameters including
+        chunk size, overlap, enrichment options, and model selection.
+        
+        Returns:
+            Dictionary containing processing configuration settings.
+        """
         print("\n⚙️  Processing Configuration")
         print("=" * 50)
         
@@ -175,7 +214,12 @@ class IndexCreator:
         }
     
     def create_index_interactive(self) -> None:
-        """Run the interactive index creation process."""
+        """
+        Run the interactive index creation process.
+        
+        Guides the user through the complete index creation workflow including
+        naming, document selection, configuration, and processing.
+        """
         print("🚀 LocalGPT Index Creation Tool")
         print("=" * 50)
         
@@ -237,7 +281,12 @@ class IndexCreator:
             traceback.print_exc()
     
     def test_index(self, index_id: str) -> None:
-        """Test the created index with a sample query."""
+        """
+        Test the created index with a sample query.
+        
+        Args:
+            index_id: The ID of the index to test.
+        """
         try:
             print("\n🧪 Testing Index")
             print("=" * 50)
@@ -258,7 +307,15 @@ class IndexCreator:
             print(f"❌ Error testing index: {e}")
     
     def batch_create_from_config(self, config_file: str) -> None:
-        """Create index from batch configuration file."""
+        """
+        Create index from batch configuration file.
+        
+        Processes a JSON configuration file containing index settings and
+        document paths for automated index creation.
+        
+        Args:
+            config_file: Path to the batch configuration JSON file.
+        """
         try:
             with open(config_file, 'r') as f:
                 batch_config = json.load(f)
@@ -312,7 +369,12 @@ class IndexCreator:
 
 
 def create_sample_batch_config():
-    """Create a sample batch configuration file."""
+    """
+    Create a sample batch configuration file.
+    
+    Generates a JSON configuration file with example settings that can be
+    used as a template for batch index creation.
+    """
     sample_config = {
         "index_name": "Sample Batch Index",
         "index_description": "Example batch index configuration",
@@ -340,7 +402,12 @@ def create_sample_batch_config():
 
 
 def main():
-    """Main entry point for the script."""
+    """
+    Main entry point for the script.
+    
+    Parses command line arguments and executes the appropriate index creation
+    workflow based on the provided options.
+    """
     parser = argparse.ArgumentParser(description="LocalGPT Index Creation Tool")
     parser.add_argument("--batch", help="Batch configuration file", type=str)
     parser.add_argument("--config", help="Custom pipeline configuration file", type=str)
@@ -369,4 +436,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()  
+    main()

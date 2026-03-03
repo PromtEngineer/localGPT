@@ -9,6 +9,14 @@ class MarkdownRecursiveChunker:
     """
 
     def __init__(self, max_chunk_size: int = 1500, min_chunk_size: int = 200, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
+        """
+        Initialize the MarkdownRecursiveChunker with specified parameters.
+
+        Args:
+            max_chunk_size: Maximum number of tokens allowed per chunk.
+            min_chunk_size: Minimum number of tokens required per chunk.
+            tokenizer_model: Name or path of the tokenizer model to use for token counting.
+        """
         self.max_chunk_size = max_chunk_size
         self.min_chunk_size = min_chunk_size
         self.split_priority = ["\n## ", "\n### ", "\n#### ", "```", "\n\n"]
@@ -27,13 +35,32 @@ class MarkdownRecursiveChunker:
             self.tokenizer = None
 
     def _token_len(self, text: str) -> int:
-        """Get token count for text using the tokenizer."""
+        """
+        Get token count for text using the tokenizer.
+        
+        Args:
+            text: The text to count tokens for.
+            
+        Returns:
+            The number of tokens in the text. If tokenizer is unavailable,
+            returns character count divided by 4 as an approximation.
+        """
         if self.tokenizer is not None:
             return len(self.tokenizer.tokenize(text))
         else:
             return max(1, len(text) // 4)
     
     def _split_text(self, text: str, separators: List[str]) -> List[str]:
+        """
+        Split text recursively using a list of separators in priority order.
+        
+        Args:
+            text: The text to split.
+            separators: List of separator strings to use for splitting, in order of priority.
+            
+        Returns:
+            List of text chunks after splitting and processing.
+        """
         final_chunks = []
         chunks_to_process = [text]
         
@@ -126,6 +153,20 @@ class MarkdownRecursiveChunker:
         return final_chunks
 
 def create_contextual_window(all_chunks: List[Dict[str, Any]], chunk_index: int, window_size: int = 1) -> str:
+    """
+    Create a contextual window around a specific chunk by combining surrounding chunks.
+    
+    Args:
+        all_chunks: List of all chunk dictionaries containing 'text' keys.
+        chunk_index: Index of the target chunk to create context around.
+        window_size: Number of chunks to include before and after the target chunk.
+        
+    Returns:
+        Combined text from the contextual window chunks.
+        
+    Raises:
+        ValueError: If chunk_index is out of bounds for the all_chunks list.
+    """
     if not (0 <= chunk_index < len(all_chunks)):
         raise ValueError("chunk_index is out of bounds.")
     start = max(0, chunk_index - window_size)

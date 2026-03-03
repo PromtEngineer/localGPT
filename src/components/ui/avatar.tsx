@@ -5,6 +5,14 @@ import * as AvatarPrimitive from "@radix-ui/react-avatar"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Avatar root component that provides the container for avatar content.
+ * Renders a circular container with default styling that can be customized.
+ * 
+ * @param className - Additional CSS classes to apply to the avatar container
+ * @param props - All other props are forwarded to the underlying Radix Avatar Root component
+ * @returns JSX element representing the avatar container
+ */
 function Avatar({
   className,
   ...props
@@ -21,6 +29,14 @@ function Avatar({
   )
 }
 
+/**
+ * Avatar image component for displaying the main avatar image.
+ * Automatically handles image loading states and fallback behavior.
+ * 
+ * @param className - Additional CSS classes to apply to the image element
+ * @param props - All other props are forwarded to the underlying Radix Avatar Image component
+ * @returns JSX element representing the avatar image
+ */
 function AvatarImage({
   className,
   ...props
@@ -34,6 +50,14 @@ function AvatarImage({
   )
 }
 
+/**
+ * Avatar fallback component that displays when the main image fails to load.
+ * Typically contains initials, icons, or other placeholder content.
+ * 
+ * @param className - Additional CSS classes to apply to the fallback element
+ * @param props - All other props are forwarded to the underlying Radix Avatar Fallback component
+ * @returns JSX element representing the avatar fallback content
+ */
 function AvatarFallback({
   className,
   ...props
