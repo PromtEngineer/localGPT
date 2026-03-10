@@ -267,18 +267,6 @@ Respond with JSON: {{"category": "<your_choice>"}}
         # 🚀 NEW: Get conversation history
         history = self.chat_histories.get(session_id, []) if session_id else []
         
-        # 🔄 Refresh overviews for this session if available
-        # if session_id and session_id != getattr(self, "_current_overview_session", None):
-        #     candidate_path = os.path.join("index_store", "overviews", f"{session_id}.jsonl")
-        #     if os.path.exists(candidate_path):
-        #         self._load_overviews(candidate_path)
-        #         self._current_overview_session = session_id
-        #     else:
-        #         # Fall back to global overviews if per-session file not found
-        #         if self._current_overview_session != "GLOBAL":
-        #             self._load_overviews(self._global_overview_path)
-        #             self._current_overview_session = "GLOBAL"
-        
         query_type = await self._triage_query_async(query, history)
         print(f"🎯 ROUTING DEBUG: Final triage decision: '{query_type}'")
         print(f"Agent Triage Decision: '{query_type}'")

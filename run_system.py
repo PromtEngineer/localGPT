@@ -499,9 +499,6 @@ def main():
                        help='Skip frontend startup')
     parser.add_argument('--health', action='store_true',
                        help='Check health of running services')
-    parser.add_argument('--stop', action='store_true',
-                       help='Stop all running services')
-    
     args = parser.parse_args()
     
     # Create service manager
@@ -511,12 +508,6 @@ def main():
         if args.health:
             # Health check mode
             manager._print_status_summary()
-            return
-        
-        if args.stop:
-            # Stop mode - kill any running processes
-            manager.logger.info("🛑 Stopping all RAG system processes...")
-            # Implementation for stopping would go here
             return
         
         if args.logs_only:

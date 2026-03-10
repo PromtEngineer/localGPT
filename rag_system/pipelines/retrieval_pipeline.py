@@ -1,4 +1,3 @@
-import pymupdf
 from typing import List, Dict, Any, Tuple, Optional
 from PIL import Image
 import concurrent.futures
@@ -17,10 +16,8 @@ from rag_system.indexing.representations import select_embedder
 from rag_system.indexing.embedders import LanceDBManager
 from rag_system.rerankers.reranker import QwenReranker
 from rag_system.rerankers.sentence_pruner import SentencePruner
-# from rag_system.indexing.chunk_store import ChunkStore
 
 import os
-from PIL import Image
 
 # ---------------------------------------------------------------------------
 # Thread-safety helpers
@@ -102,20 +99,6 @@ class RetrievalPipeline:
                 print(f"❌ Failed to initialise dense retriever: {e}")
                 self.dense_retriever = None
         return self.dense_retriever
-
-    def _get_bm25_retriever(self):
-        if self.bm25_retriever is None and self.retriever_configs.get("bm25", {}).get("enabled"):
-            try:
-                print(f"🔧 Lazily initializing BM25 retriever...")
-                self.bm25_retriever = BM25Retriever(
-                    index_path=self.storage_config["bm25_path"],
-                    index_name=self.retriever_configs["bm25"]["index_name"]
-                )
-                print("✅ BM25 retriever initialized successfully")
-            except Exception as e:
-                print(f"❌ Failed to initialize BM25 retriever on demand: {e}")
-                # Keep it None so we don't try again
-        return self.bm25_retriever
 
     def _get_graph_retriever(self):
         if self._graph_retriever is None and self.retriever_configs.get("graph", {}).get("enabled"):

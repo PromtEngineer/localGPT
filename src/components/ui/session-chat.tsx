@@ -442,6 +442,23 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 
                 return { ...m, content: { steps }, metadata: { message_type: 'complete' } };
               }
+              if (evt.type === 'error') {
+                // Server sent an error during the stream
+                const errMsg = typeof evt.data === 'object'
+                  ? evt.data.error || JSON.stringify(evt.data)
+                  : String(evt.data);
+                console.error('Stream error from server:', errMsg);
+                // Show the error in the final-answer step
+                const finalIdx = steps.findIndex(s => s.key === 'final' || s.key === 'direct');
+                if (finalIdx !== -1) {
+                  steps[finalIdx].status = 'done';
+                  steps[finalIdx].details = `⚠️ Error: ${errMsg}`;
+                }
+                // Mark any active steps as done
+                steps.forEach(s => { if (s.status === 'active' || s.status === 'pending') s.status = 'done'; });
+                setIsLoading(false);
+                return { ...m, content: { steps }, metadata: { message_type: 'complete' } };
+              }
               if (evt.type === 'direct_answer') {
                 const stepsDir: Step[] = [
                   { key: 'direct', label: 'Answering directly', status: 'active' as const, details: '' }

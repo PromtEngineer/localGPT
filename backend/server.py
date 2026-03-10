@@ -730,19 +730,6 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
             print(f"❌ Exception during indexing: {str(e)}")
             self.send_json_response({"error": f"An unexpected error occurred: {str(e)}"}, status_code=500)
             
-    def handle_pdf_upload(self, session_id: str):
-        """
-        Processes PDF files: extracts text and stores it in the database.
-        DEPRECATED: This is the old method. Use handle_file_upload instead.
-        """
-        # This function is now deprecated in favor of the new indexing workflow
-        # but is kept for potential legacy/compatibility reasons.
-        # For new functionality, it should not be used.
-        self.send_json_response({
-            "warning": "This upload method is deprecated. Use the new file upload and indexing flow.",
-            "message": "No action taken."
-        }, status_code=410) # 410 Gone
-
     def handle_get_models(self):
         """Get available models from both Ollama and HuggingFace, grouped by capability"""
         try:
@@ -907,15 +894,9 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
             # Set per-index overview file path
             overview_path = f"index_store/overviews/{index_id}.jsonl"
 
-            # Ensure config_override includes overview_path
-            def ensure_overview_path(cfg: dict):
-                cfg["overview_path"] = overview_path
-            
-            # we'll inject later when we build config_override
-
             # Delegate to advanced RAG API same as session indexing
             rag_api_url = "http://localhost:8001/index"
-            import requests, json as _json
+            import requests
             # Use the index's dedicated LanceDB table so retrieval matches
             table_name = index.get("vector_table_name")
             payload = {
@@ -1098,14 +1079,6 @@ def main():
             print(f"❌ Error initializing PDF processor: {e}")
             print("⚠️ PDF processing disabled - server will run without RAG functionality")
 
-        # Set a global reference to the initialized processor if needed elsewhere
-        global pdf_processor
-        pdf_processor = pdf_module.simple_pdf_processor
-        if pdf_processor:
-            print("✅ Global PDF processor initialized")
-        else:
-            print("⚠️ PDF processing disabled - server will run without RAG functionality")
-        
         # Cleanup empty sessions on startup
         print("🧹 Cleaning up empty sessions...")
         cleanup_count = db.cleanup_empty_sessions()

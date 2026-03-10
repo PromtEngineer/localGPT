@@ -199,16 +199,3 @@ def initialize_simple_pdf_processor():
         print(f"❌ Failed to initialize PDF processor: {str(e)}")
         simple_pdf_processor = None
 
-def get_simple_pdf_processor():
-    """Get the global PDF processor instance"""
-    global simple_pdf_processor
-    if simple_pdf_processor is None:
-        initialize_simple_pdf_processor()
-    return simple_pdf_processor
-
-if __name__ == "__main__":
-    # Test the simple PDF processor
-    print("🧪 Testing simple PDF processor...")
-    
-    processor = SimplePDFProcessor()
-    print("✅ Simple PDF processor test completed!") 

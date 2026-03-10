@@ -151,13 +151,6 @@ PIPELINE_CONFIGS = {
             "enable_progress_tracking": False
         }
     },
-    "bm25": {
-        "enabled": True,
-        "index_name": "rag_bm25_index"
-    },
-    "graph_rag": {
-        "enabled": False, # Keep disabled for now unless specified
-    }
 }
 
 # ============================================================================
@@ -280,36 +273,6 @@ def run_chat(query: str):
     result = agent.run(query)
     return json.dumps(result, indent=2, ensure_ascii=False)
 
-def show_graph():
-    """
-    Loads and displays the knowledge graph.
-    """
-    import networkx as nx
-    import matplotlib.pyplot as plt
-
-    graph_path = PIPELINE_CONFIGS["indexing"]["graph_path"]
-    if not os.path.exists(graph_path):
-        print("Knowledge graph not found. Please run the 'index' command first.")
-        return
-
-    G = nx.read_gml(graph_path)
-    print("--- Knowledge Graph ---")
-    print("Nodes:", G.nodes(data=True))
-    print("Edges:", G.edges(data=True))
-    print("---------------------")
-
-    # Optional: Visualize the graph
-    try:
-        pos = nx.spring_layout(G)
-        nx.draw(G, pos, with_labels=True, node_size=2000, node_color="skyblue", font_size=10, font_weight="bold")
-        edge_labels = nx.get_edge_attributes(G, 'label')
-        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-        plt.title("Knowledge Graph Visualization")
-        plt.show()
-    except Exception as e:
-        print(f"\nCould not visualize the graph. Matplotlib might not be installed or configured for your environment.")
-        print(f"Error: {e}")
-
 def run_api_server():
     """Starts the advanced RAG API server."""
     from rag_system.api_server import start_server
@@ -317,7 +280,7 @@ def run_api_server():
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python main.py [index|chat|show_graph|api] [query]")
+        print("Usage: python main.py [index|chat|api] [query]")
         return
 
     command = sys.argv[1]
@@ -332,8 +295,6 @@ def main():
         query = " ".join(sys.argv[2:])
         # 🆕 Print the result for command-line usage
         print(run_chat(query))
-    elif command == "show_graph":
-        show_graph()
     elif command == "api":
         run_api_server()
     else:

@@ -1,7 +1,7 @@
 import json
 import http.server
 import socketserver
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse
 import os
 import requests
 import sys
@@ -39,34 +39,23 @@ print("✅ RAG Agent initialized successfully with MAXIMUM ACCURACY.")
 # Add helper near top after db & agent init
 # -------------- Helper ----------------
 
+_embed_logger = logging.getLogger("embedding_debug")
+
 def _apply_index_embedding_model(idx_ids):
     """Ensure retrieval pipeline uses the embedding model stored with the first index."""
-    debug_info = f"🔧 _apply_index_embedding_model called with idx_ids: {idx_ids}\n"
-    
     if not idx_ids:
-        debug_info += "⚠️ No index IDs provided\n"
-        with open("logs/embedding_debug.log", "a") as f:
-            f.write(debug_info)
+        _embed_logger.debug("No index IDs provided")
         return
     try:
         idx = db.get_index(idx_ids[0])
-        debug_info += f"🔧 Retrieved index: {idx.get('id')} with metadata: {idx.get('metadata', {})}\n"
         model = (idx.get("metadata") or {}).get("embedding_model")
-        debug_info += f"🔧 Embedding model from metadata: {model}\n"
+        _embed_logger.debug("Index %s embedding_model=%s", idx_ids[0], model)
         if model:
             rp = RAG_AGENT.retrieval_pipeline
-            current_model = rp.config.get("embedding_model_name")
-            debug_info += f"🔧 Current embedding model: {current_model}\n"
             rp.update_embedding_model(model)
-            debug_info += f"🔧 Updated embedding model to: {model}\n"
-        else:
-            debug_info += "⚠️ No embedding model found in metadata\n"
+            _embed_logger.debug("Updated embedding model to: %s", model)
     except Exception as e:
-        debug_info += f"⚠️ Could not apply index embedding model: {e}\n"
-    
-    # Write debug info to file
-    with open("logs/embedding_debug.log", "a") as f:
-        f.write(debug_info)
+        _embed_logger.warning("Could not apply index embedding model: %s", e)
 
 def _get_table_name_for_session(session_id):
     """Get the correct vector table name for a session by looking up its linked indexes."""

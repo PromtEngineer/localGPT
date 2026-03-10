@@ -184,13 +184,6 @@ export function EmptyChatState({
                                         <div className="text-sm text-white truncate">{file.name}</div>
                                         <div className="text-xs text-gray-400">{formatFileSize(file.size)}</div>
                                     </div>
-                                    {/* The remove button is commented out as the parent will manage the state now */}
-                                    {/* <button
-                                        onClick={() => removeFile(file.id)}
-                                        className="p-1 hover:bg-gray-700 rounded transition-colors"
-                                    >
-                                        <X className="w-4 h-4 text-gray-400 hover:text-white" />
-                                    </button> */}
                                 </div>
                             ))}
                         </div>
