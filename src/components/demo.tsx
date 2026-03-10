@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react"
-import { LocalGPTChat } from "@/components/ui/localgpt-chat"
 import { SessionSidebar } from "@/components/ui/session-sidebar"
 import { SessionChat } from '@/components/ui/session-chat'
 import { chatAPI, ChatSession } from "@/lib/api"

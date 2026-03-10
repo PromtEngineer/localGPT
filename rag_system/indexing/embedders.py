@@ -1,4 +1,3 @@
-# from rag_system.indexing.representations import BM25Generator
 import lancedb
 import pyarrow as pa
 from typing import List, Dict, Any

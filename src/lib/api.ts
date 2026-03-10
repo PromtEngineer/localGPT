@@ -277,22 +277,6 @@ class ChatAPI {
     }
   }
 
-  async cleanupEmptySessions(): Promise<{ message: string; cleanup_count: number }> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/sessions/cleanup`);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(`Cleanup sessions error: ${errorData.error || response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Cleanup sessions failed:', error);
-      throw error;
-    }
-  }
-
   async uploadFiles(sessionId: string, files: File[]): Promise<{ 
     message: string; 
     uploaded_files: {filename: string, stored_path: string}[]; 
@@ -335,59 +319,6 @@ class ChatAPI {
       return await response.json();
     } catch (error) {
       console.error('Indexing failed:', error);
-      throw error;
-    }
-  }
-
-  // Legacy upload function - can be removed if no longer needed
-  async uploadPDFs(sessionId: string, files: File[]): Promise<{ 
-    message: string; 
-    uploaded_files: any[]; 
-    processing_results: any[];
-    session_documents: any[];
-    total_session_documents: number;
-  }> {
-    try {
-      // Test if files have content and show size info
-      let totalSize = 0;
-      for (const file of files) {
-        if (file.size === 0) {
-          throw new Error(`File ${file.name} is empty (0 bytes)`);
-        }
-        totalSize += file.size;
-        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-        console.log(`📄 File ${file.name}: ${sizeMB}MB (${file.size} bytes), type: ${file.type}`);
-      }
-      
-      const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(2);
-      console.log(`📄 Total upload size: ${totalSizeMB}MB`);
-      
-      if (totalSize > 50 * 1024 * 1024) { // 50MB limit
-        throw new Error(`Total file size ${totalSizeMB}MB exceeds 50MB limit`);
-      }
-      
-      const formData = new FormData();
-      
-      // Use a generic field name 'file' that the backend expects
-      let i = 0;
-      for (const file of files) {
-        formData.append(`file_${i}`, file, file.name);
-        i++;
-      }
-      
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(`Upload error: ${errorData.error || response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('PDF upload failed:', error);
       throw error;
     }
   }

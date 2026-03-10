@@ -1,7 +1,7 @@
 import json
 import http.server
 import socketserver
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse
 import os
 import requests
 import sys

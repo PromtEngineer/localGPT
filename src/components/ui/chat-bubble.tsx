@@ -8,14 +8,12 @@ import { MessageLoading } from "@/components/ui/message-loading";
 
 interface ChatBubbleProps {
   variant?: "sent" | "received"
-  layout?: "default" | "ai"
   className?: string
   children: React.ReactNode
 }
 
 export function ChatBubble({
   variant = "received",
-  layout = "default", // eslint-disable-line @typescript-eslint/no-unused-vars
   className,
   children,
 }: ChatBubbleProps) {
