@@ -547,7 +547,7 @@ class ChatAPI {
         try {
           const evt = JSON.parse(jsonStr);
           onEvent(evt);
-          if (evt.type === 'complete') {
+          if (evt.type === 'complete' || evt.type === 'error') {
             // Gracefully close the stream so the caller unblocks
             try { await reader.cancel(); } catch {}
             streamClosed = true;
