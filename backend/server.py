@@ -575,6 +575,7 @@ async def build_index(index_id: str, request: Request):
         batch_size_embed = int(data.get('batchSizeEmbed', 50))
         batch_size_enrich = int(data.get('batchSizeEnrich', 25))
         overview_model = data.get('overviewModel')
+        force_reindex = bool(data.get('forceReindex', False))
 
         # Set per-index overview file path
         overview_path = f"index_store/overviews/{index_id}.jsonl"
@@ -593,7 +594,8 @@ async def build_index(index_id: str, request: Request):
             "window_size": window_size,
             "enable_enrich": enable_enrich,
             "batch_size_embed": batch_size_embed,
-            "batch_size_enrich": batch_size_enrich
+            "batch_size_enrich": batch_size_enrich,
+            "force_reindex": force_reindex,
         }
         if latechunk:
             payload["enable_latechunk"] = True
@@ -609,6 +611,7 @@ async def build_index(index_id: str, request: Request):
         rag_resp = requests.post(rag_api_url, json=payload)
         if rag_resp.status_code == 200:
             meta_updates = {
+                "status": "functional",
                 "chunk_size": chunk_size,
                 "chunk_overlap": chunk_overlap,
                 "retrieval_mode": retrieval_mode,
@@ -616,6 +619,10 @@ async def build_index(index_id: str, request: Request):
                 "enable_enrich": enable_enrich,
                 "latechunk": latechunk,
                 "docling_chunk": docling_chunk,
+                "force_reindex": force_reindex,
+                "batch_size_embed": batch_size_embed,
+                "batch_size_enrich": batch_size_enrich,
+                "rebuilt_at": datetime.now().isoformat(),
             }
             if embedding_model:
                 meta_updates["embedding_model"] = embedding_model

@@ -520,11 +520,12 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             retrieval_mode = data.get("retrieval_mode", "hybrid")
             window_size = int(data.get("window_size", 2))
             enable_enrich = bool(data.get("enable_enrich", True))
-            embedding_model = data.get('embeddingModel')
-            enrich_model = data.get('enrichModel')
+            embedding_model = data.get('embedding_model') or data.get('embeddingModel')
+            enrich_model = data.get('enrich_model') or data.get('enrichModel')
             overview_model = data.get('overviewModel') or data.get('overview_model_name')
             batch_size_embed = int(data.get("batch_size_embed", 50))
             batch_size_enrich = int(data.get("batch_size_enrich", 25))
+            force_reindex = bool(data.get("force_reindex", False))
             
             if not file_paths or not isinstance(file_paths, list):
                 self.send_json_response({
@@ -591,8 +592,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 if session_id:
                     config_override["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
 
-                # 🔧 Configure late chunking
-                config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
+                config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = enable_latechunk
 
                 # Create a temporary pipeline instance with the overridden config
                 temp_pipeline = INDEXING_PIPELINE.__class__(
@@ -600,7 +600,13 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     INDEXING_PIPELINE.llm_client, 
                     INDEXING_PIPELINE.ollama_config
                 )
-                temp_pipeline.run(file_paths)
+                if force_reindex:
+                    self._clear_index_artifacts(temp_pipeline, table_name, session_id)
+                temp_pipeline.run(
+                    file_paths,
+                    index_id=session_id or table_name or "default",
+                    force_reindex=force_reindex,
+                )
             else:
                 # Use the default pipeline with overrides
                 import copy
@@ -649,8 +655,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 if session_id:
                     config_override["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
 
-                # 🔧 Configure late chunking
-                config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
+                config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = enable_latechunk
 
                 # Create temporary pipeline with overridden config
                 temp_pipeline = INDEXING_PIPELINE.__class__(
@@ -658,7 +663,13 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     INDEXING_PIPELINE.llm_client, 
                     INDEXING_PIPELINE.ollama_config
                 )
-                temp_pipeline.run(file_paths)
+                if force_reindex:
+                    self._clear_index_artifacts(temp_pipeline, table_name, session_id)
+                temp_pipeline.run(
+                    file_paths,
+                    index_id=session_id or table_name or "default",
+                    force_reindex=force_reindex,
+                )
 
             self.send_json_response({
                 "message": f"Indexing process for {len(file_paths)} file(s) completed successfully.",
@@ -674,7 +685,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     "embedding_model": embedding_model,
                     "enrich_model": enrich_model,
                     "batch_size_embed": batch_size_embed,
-                    "batch_size_enrich": batch_size_enrich
+                    "batch_size_enrich": batch_size_enrich,
+                    "force_reindex": force_reindex,
                 }
             })
 
@@ -688,6 +700,28 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({"error": "Invalid JSON"}, status_code=400)
         except Exception as e:
             self.send_json_response({"error": f"Failed to start indexing: {str(e)}"}, status_code=500)
+
+    def _clear_index_artifacts(self, pipeline, table_name: str | None, index_id: str | None):
+        """Remove old vector/overview artifacts before a force rebuild."""
+        if table_name and hasattr(pipeline, "lancedb_manager"):
+            db = pipeline.lancedb_manager.db
+            table_names = db.table_names() if hasattr(db, "table_names") else []
+            for candidate in (table_name, f"{table_name}_lc"):
+                if candidate in table_names:
+                    try:
+                        db.drop_table(candidate)
+                        print(f"🚮 Dropped existing LanceDB table '{candidate}' for force rebuild")
+                    except Exception as e:
+                        print(f"⚠️ Could not drop LanceDB table '{candidate}': {e}")
+
+        if index_id:
+            overview_path = f"index_store/overviews/{index_id}.jsonl"
+            try:
+                if os.path.exists(overview_path):
+                    os.remove(overview_path)
+                    print(f"🚮 Removed overview file '{overview_path}' for force rebuild")
+            except Exception as e:
+                print(f"⚠️ Could not remove overview file '{overview_path}': {e}")
 
     def handle_models(self):
         """Return a list of locally installed Ollama models and supported HuggingFace models, grouped by capability."""

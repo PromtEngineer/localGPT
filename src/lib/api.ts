@@ -504,6 +504,7 @@ class ChatAPI {
     overviewModel?: string;
     batchSizeEmbed?: number;
     batchSizeEnrich?: number;
+    forceReindex?: boolean;
   } = {}): Promise<{ message: string }> {
     try {
       const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/build`, {
@@ -524,6 +525,7 @@ class ChatAPI {
           overviewModel: opts.overviewModel,
           batchSizeEmbed: opts.batchSizeEmbed ?? 50,
           batchSizeEnrich: opts.batchSizeEnrich ?? 25,
+          forceReindex: opts.forceReindex ?? false,
         }),
       });
 
