@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react"
-import { LocalGPTChat } from "@/components/ui/localgpt-chat"
 import { SessionSidebar } from "@/components/ui/session-sidebar"
 import { SessionChat } from '@/components/ui/session-chat'
 import { chatAPI, ChatSession } from "@/lib/api"
@@ -13,7 +12,6 @@ import { QuickChat } from '@/components/ui/quick-chat'
 
 export function Demo() {
     const [currentSessionId, setCurrentSessionId] = useState<string | undefined>()
-    const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
     const [showConversation, setShowConversation] = useState(false)
     const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'error'>('checking')
     const [sidebarRef, setSidebarRef] = useState<{ refreshSessions: () => Promise<void> } | null>(null)
@@ -49,14 +47,11 @@ export function Demo() {
     const handleNewSession = () => {
         // Reset state and return to landing page so user can choose chat type
         setCurrentSessionId(undefined)
-        setCurrentSession(null)
         setShowConversation(false)  // Hide conversation view & sidebar
         setHomeMode('HOME')         // Show landing selector (Create index / Chat with index / LLM Chat)
     }
 
     const handleSessionChange = async (session: ChatSession) => {
-        setCurrentSession(session)
-
         // Update the current session ID if it changed (e.g., brand-new session)
         if (session.id !== currentSessionId) {
             setCurrentSessionId(session.id)
@@ -72,16 +67,6 @@ export function Demo() {
         if (currentSessionId === deletedSessionId) {
             // Stay in conversation mode but show empty state
             setCurrentSessionId(undefined)
-            setCurrentSession(null)
-        }
-    }
-
-    const handleStartConversation = () => {
-        if (backendStatus === 'connected') {
-            // Just show empty state, don't create session yet
-            handleNewSession()
-        } else {
-            setShowConversation(true)
         }
     }
 

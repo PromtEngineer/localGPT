@@ -7,8 +7,7 @@ import {
 } from "@/components/ui/chat-bubble"
 import { Copy, RefreshCcw, ThumbsUp, ThumbsDown, Volume2, MoreHorizontal, ChevronDown, Loader2, CheckCircle, XOctagon } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ChatMessage } from "@/lib/api"
-import { cn } from "@/lib/utils"
+import { ApiRecord, ChatMessage, SourceDocument, Step } from "@/lib/api"
 import Markdown from "@/components/Markdown"
 import { normalizeWhitespace } from "@/utils/textNormalization"
 
@@ -29,7 +28,12 @@ const actionIcons = [
 ]
 
 // Citation block toggle component
-function Citation({doc, idx}: {doc:any, idx:number}){
+type TimelineStep = Omit<Step, 'status'> & {
+  status: Step['status'] | 'error'
+  details: unknown
+}
+
+function Citation({doc, idx}: {doc: SourceDocument, idx:number}){
   const [open,setOpen]=React.useState(false);
   const preview = (doc.text||'').replace(/\s+/g,' ').trim().slice(0,160) + ((doc.text||'').length>160?'…':'');
   return (
@@ -40,7 +44,7 @@ function Citation({doc, idx}: {doc:any, idx:number}){
 }
 
 // NEW: Expandable list of citations per assistant message
-function CitationsBlock({docs}:{docs:any[]}){
+function CitationsBlock({docs}:{docs: SourceDocument[]}){
   const scored = docs.filter(d => d.rerank_score || d.score || d._distance)
   scored.sort((a, b) => (b.rerank_score ?? b.score ?? 1/b._distance) - (a.rerank_score ?? a.score ?? 1/a._distance))
   const [expanded, setExpanded] = useState(false);
@@ -117,10 +121,14 @@ function ThinkingText({ text }: { text: string }) {
   );
 }
 
-function StructuredMessageBlock({ content }: { content: Array<Record<string, any>> | { steps: any[] } }) {
-  const steps: any[] = Array.isArray(content) ? content : (content as any).steps;
+function asSourceDocuments(value: unknown): SourceDocument[] {
+  return Array.isArray(value) ? (value as SourceDocument[]) : []
+}
+
+function StructuredMessageBlock({ content }: { content: ApiRecord[] | { steps: Step[] } }) {
+  const steps: TimelineStep[] = Array.isArray(content) ? content as TimelineStep[] : content.steps as TimelineStep[];
   // Determine if sub-query answers are present
-  const hasSubAnswers = steps.some((s: any) => s.key === 'answer' && Array.isArray(s.details) && s.details.length > 0);
+  const hasSubAnswers = steps.some((s) => s.key === 'answer' && Array.isArray(s.details) && s.details.length > 0);
   // Compute the last index that has started (status !== 'pending') so we only
   // render steps that are in progress or completed. This avoids showing the
   // whole plan upfront and reveals each stage sequentially.
@@ -137,7 +145,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
 
   return (
     <div className="flex flex-col">
-      {visibleSteps.map((step: any, index: number) => {
+      {visibleSteps.map((step) => {
         if (step.key && step.label) {
           const borderCls = statusBorder[step.status] || statusBorder['pending']
           const statusClass = `timeline-card card my-1 py-2 pl-3 pr-2 bg-[#0d0d0d] rounded border-l-2 ${borderCls}`
@@ -152,10 +160,10 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
               {step.key === 'final' && step.details && typeof step.details === 'object' && !Array.isArray(step.details) ? (
                 <div className="space-y-3">
                   <div className="whitespace-pre-wrap text-gray-100">
-                    <ThinkingText text={normalizeWhitespace(step.details.answer)} />
+                    <ThinkingText text={normalizeWhitespace(String((step.details as ApiRecord).answer || ''))} />
                   </div>
-                  {!hasSubAnswers && step.details.source_documents && step.details.source_documents.length > 0 && (
-                    <CitationsBlock docs={step.details.source_documents} />
+                  {!hasSubAnswers && asSourceDocuments((step.details as ApiRecord).source_documents).length > 0 && (
+                    <CitationsBlock docs={asSourceDocuments((step.details as ApiRecord).source_documents)} />
                   )}
                 </div>
               ) : step.key === 'final' && step.details && typeof step.details === 'string' ? (
@@ -163,7 +171,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                   <ThinkingText text={normalizeWhitespace(step.details)} />
                 </div>
               ) : Array.isArray(step.details) ? (
-                step.key === 'decompose' && step.details.every((d: any)=> typeof d === 'string') ? (
+                step.key === 'decompose' && step.details.every((d)=> typeof d === 'string') ? (
                   // Render list of sub-query strings
                   <ul className="list-disc list-inside space-y-1 text-neutral-200">
                     {step.details.map((q: string, idx:number)=>(
@@ -173,12 +181,12 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                 ) : (
                   // Handle array of sub-answers
                   <div className="space-y-2">
-                    {step.details.map((detail: any, idx: number) => (
+                    {step.details.map((detail: ApiRecord, idx: number) => (
                       <div key={idx} className="border-l-2 border-blue-400 pl-2">
-                        <div className="font-semibold">{detail.question}</div>
-                        <div><ThinkingText text={normalizeWhitespace(detail.answer)} /></div>
-                        {detail.source_documents && detail.source_documents.length > 0 && (
-                          <CitationsBlock docs={detail.source_documents} />
+                        <div className="font-semibold">{String(detail.question || '')}</div>
+                        <div><ThinkingText text={normalizeWhitespace(String(detail.answer || ''))} /></div>
+                        {asSourceDocuments(detail.source_documents).length > 0 && (
+                          <CitationsBlock docs={asSourceDocuments(detail.source_documents)} />
                         )}
                       </div>
                     ))}
@@ -213,7 +221,7 @@ export function ConversationPage({
     if(isUserNearBottom){
     scrollToBottom()
     }
-  }, [messages, isLoading])
+  }, [messages, isLoading, isUserNearBottom])
 
   // Monitor scroll position to show/hide scroll button
   useEffect(() => {
@@ -256,13 +264,6 @@ export function ConversationPage({
       let contentToPass: string;
       if (typeof messageContent === 'string') {
         contentToPass = messageContent;
-      } else if (Array.isArray(messageContent)) {
-        contentToPass = (messageContent as any[]).map((s: any) => s.text || s.answer || '').join('\n');
-      } else if (messageContent && typeof messageContent === 'object' && Array.isArray((messageContent as any).steps)) {
-        // For {steps: Step[]} structure
-        contentToPass = (messageContent as any).steps.map((s: any) => s.label + (s.details ? (typeof s.details === 'string' ? (': ' + s.details) : '') : '')).join('\n');
-      } else {
-        contentToPass = '';
       }
       onAction(action, messageId, contentToPass)
       return
@@ -341,7 +342,7 @@ export function ConversationPage({
                           <button
                             key={action}
                             onClick={() => {
-                              const content = typeof message.content === 'string' ? message.content : (message.content as any[]).map(s => s.text || s.answer).join('\\n');
+                              const content = typeof message.content === 'string' ? message.content : Array.isArray(message.content) ? message.content.map(s => String(s.text || s.answer || '')).join('\\n') : message.content.steps.map(s => s.label).join('\\n');
                               handleAction(action, message.id, content)
                             }}
                             className="p-1.5 hover:bg-gray-700 rounded-md transition-colors text-gray-400 hover:text-gray-200"
@@ -357,9 +358,9 @@ export function ConversationPage({
                     {(!isUser &&
                       !message.isLoading &&
                       typeof message.content === 'string' &&
-                      Array.isArray((message as any).metadata?.source_documents) &&
-                      (message as any).metadata.source_documents.length > 0) && (
-                        <CitationsBlock docs={(message as any).metadata.source_documents} />
+                      Array.isArray(message.metadata?.source_documents) &&
+                      message.metadata.source_documents.length > 0) && (
+                        <CitationsBlock docs={message.metadata.source_documents as SourceDocument[]} />
                     )}
                   </div>
 

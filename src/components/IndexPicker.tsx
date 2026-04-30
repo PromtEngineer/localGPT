@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { chatAPI } from '@/lib/api';
+import { chatAPI, IndexSummary } from '@/lib/api';
 
 interface Props {
   onSelect: (indexId: string) => void;
@@ -7,7 +7,7 @@ interface Props {
 }
 
 export default function IndexPicker({ onSelect, onClose }: Props) {
-  const [indexes, setIndexes] = useState<any[]>([]);
+  const [indexes, setIndexes] = useState<IndexSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -19,24 +19,24 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       try {
         const data = await chatAPI.listIndexes();
         setIndexes(data.indexes);
-      } catch (e: any) {
-        setError(e.message || 'Failed to load indexes');
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Failed to load indexes');
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  const filtered = indexes.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = indexes.filter(i => (i.name || '').toLowerCase().includes(search.toLowerCase()));
 
   async function handleDelete(idxId: string, name: string) {
     if (!confirm(`Delete index "${name}"? This cannot be undone.`)) return;
     try {
       await chatAPI.deleteIndex(idxId);
-      setIndexes(prev => prev.filter(i => i.id!==idxId));
+      setIndexes(prev => prev.filter(i => (i.id || i.index_id)!==idxId));
       setMenuOpenId(null);
-    } catch (e:any){
-      alert(e.message || 'Failed to delete index');
+    } catch (e: unknown){
+      alert(e instanceof Error ? e.message : 'Failed to delete index');
     }
   }
 
@@ -62,21 +62,21 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
         {!loading && !error && (
           <ul className="space-y-2">
             {filtered.map(idx => (
-              <li key={idx.id}>
+              <li key={idx.id || idx.index_id}>
                 <div className="relative group">
-                  <button onClick={()=>onSelect(idx.id)} className="w-full px-4 py-3 bg-white/10 hover:bg-white/20 rounded transition flex justify-between items-center pr-10">
+                  <button onClick={()=>onSelect(idx.id || idx.index_id || '')} className="w-full px-4 py-3 bg-white/10 hover:bg-white/20 rounded transition flex justify-between items-center pr-10">
                     <span className="font-medium truncate max-w-[60%]">{idx.name}</span>
                     <span className="text-xs text-gray-400">{idx.documents?.length || 0} files</span>
                   </button>
 
-                  <button onClick={(e)=>{e.stopPropagation(); setMenuOpenId(menuOpenId===idx.id?null:idx.id);}} title="More actions" className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition text-lg leading-none font-bold">
+                  <button onClick={(e)=>{e.stopPropagation(); const id = idx.id || idx.index_id || ''; setMenuOpenId(menuOpenId===id?null:id);}} title="More actions" className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition text-lg leading-none font-bold">
                     …
                   </button>
 
-                  {menuOpenId===idx.id && (
+                  {menuOpenId===(idx.id || idx.index_id) && (
                     <div className="index-row-menu absolute right-0 top-full mt-1 bg-black/80 backdrop-blur border border-white/10 rounded shadow-lg py-1 w-32 text-sm z-50">
-                      <button onClick={()=>{onSelect(idx.id); setMenuOpenId(null);}} className="block w-full text-left px-4 py-2 hover:bg-white/10">Open</button>
-                      <button onClick={()=>handleDelete(idx.id, idx.name)} className="block w-full text-left px-4 py-2 hover:bg-white/10 text-red-400 hover:text-red-500">Delete</button>
+                      <button onClick={()=>{onSelect(idx.id || idx.index_id || ''); setMenuOpenId(null);}} className="block w-full text-left px-4 py-2 hover:bg-white/10">Open</button>
+                      <button onClick={()=>handleDelete(idx.id || idx.index_id || '', idx.name || 'Untitled index')} className="block w-full text-left px-4 py-2 hover:bg-white/10 text-red-400 hover:text-red-500">Delete</button>
                     </div>
                   )}
                 </div>

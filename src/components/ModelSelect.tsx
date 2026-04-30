@@ -36,7 +36,7 @@ export function ModelSelect({ value, onChange, type, className, placeholder }: P
     return () => {
       mounted = false;
     };
-  }, [type]);
+  }, [type, value, onChange]);
 
   if (loading) {
     return (

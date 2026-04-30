@@ -3,8 +3,7 @@
 import * as React from "react"
 import { ConversationPage } from "./conversation-page"
 import { ChatInput } from "./chat-input"
-import { EmptyChatState } from "./empty-chat-state"
-import { ChatMessage, ChatSession, chatAPI, generateUUID } from "@/lib/api"
+import { ApiRecord, ChatMessage, ChatSession, IndexSummary, SourceDocument, chatAPI, generateUUID } from "@/lib/api"
 import { AttachedFile } from "@/lib/types"
 import { useEffect, useState, forwardRef, useImperativeHandle, useCallback } from "react"
 import { normalizeStreamingToken } from "@/utils/textNormalization"
@@ -30,6 +29,14 @@ export interface SessionChatRef {
 
 // Helper to shorten long titles
 const truncate = (str: string, n: number = 18) => str.length > n ? str.slice(0, n) + '…' : str;
+
+type SubQueryDetail = {
+  question: string;
+  answer: string;
+  source_documents?: SourceDocument[];
+}
+
+const getIndexId = (index: IndexSummary) => index.index_id || index.id || null;
 
 export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({ 
   sessionId,
@@ -87,10 +94,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
       try {
         const idxResp = await apiService.getSessionIndexes(id)
         if (idxResp.indexes && idxResp.indexes.length > 0) {
-          const lastIdxObj = idxResp.indexes[idxResp.indexes.length - 1] as any
-          const idxId = (lastIdxObj.index_id ?? lastIdxObj.id) as string
+          const lastIdxObj = idxResp.indexes[idxResp.indexes.length - 1]
+          const idxId = getIndexId(lastIdxObj)
           setCurrentIndexId(idxId ?? null)
-          setCurrentIndexName(lastIdxObj.name ?? lastIdxObj.title ?? idxId.slice(0,8))
+          setCurrentIndexName(lastIdxObj.name ?? lastIdxObj.title ?? idxId?.slice(0,8) ?? null)
         }
       } catch {}
     } catch (error) {
@@ -200,10 +207,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         try {
           const idxResp = await apiService.getSessionIndexes(activeSessionId as string);
           if (idxResp.indexes && idxResp.indexes.length > 0) {
-            const lastIdxObj = idxResp.indexes[idxResp.indexes.length - 1] as any;
-            idxId = (lastIdxObj.index_id ?? lastIdxObj.id) as string;
+            const lastIdxObj = idxResp.indexes[idxResp.indexes.length - 1];
+            idxId = getIndexId(lastIdxObj);
             setCurrentIndexId(idxId ?? null);
-            setCurrentIndexName(lastIdxObj.name ?? lastIdxObj.title ?? idxId.slice(0,8));
+            setCurrentIndexName(lastIdxObj.name ?? lastIdxObj.title ?? idxId?.slice(0,8) ?? null);
           }
         } catch {}
       }
@@ -257,7 +264,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
             setMessages(prev => prev.map(m => {
               if (m.id !== placeholder.id) return m;
-              const steps = [...(m.content as any).steps];
+              const steps = [...((m.content as { steps: Step[] }).steps)];
               if (evt.type === 'analyze') {
                 steps[0].status = 'active';
                 steps[0].details = 'Analyzing your question...';
@@ -329,7 +336,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               if (evt.type === 'sub_query_result') {
                 steps[5].status = 'active';
                 const existing = Array.isArray(steps[5].details) ? steps[5].details : [];
-                if (!existing.some((d: any) => d.question === evt.data.query)) {
+                if (!existing.some((d) => (d as SubQueryDetail).question === evt.data.query)) {
                   steps[5].details = [...existing, {
                     question: evt.data.query,
                     answer: evt.data.answer,
@@ -360,7 +367,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 let current = '' as string;
                 const detHolder = steps[finalIdx].details;
                 if (detHolder && typeof detHolder === 'object' && !Array.isArray(detHolder)) {
-                  current = (detHolder as any).answer || '';
+                  current = String((detHolder as ApiRecord).answer || '');
                 } else if (typeof detHolder === 'string') {
                   current = detHolder;
                 }
@@ -389,7 +396,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 const tok: string = evt.data.text || '';
                 if (!tok.trim()) return m;
                 steps[5].status = 'active';
-                let detailsArr: any[] = Array.isArray(steps[5].details) ? steps[5].details as any[] : [];
+                const detailsArr: SubQueryDetail[] = Array.isArray(steps[5].details) ? steps[5].details as SubQueryDetail[] : [];
                 while (detailsArr.length <= idx) {
                   detailsArr.push({ question: evt.data.question || `Sub-query ${idx+1}`, answer: '' });
                 }
@@ -476,13 +483,13 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         timestamp: new Date().toISOString(),
           metadata: { 
             message_type: 'sub_answer',
-            source_documents: (response as any).source_documents || [] 
+            source_documents: response.source_documents || [] 
           }
       }
       setMessages(prev => [...prev, aiMessage])
       
-        if ((response as any).session) {
-          const sess = (response as any).session as ChatSession
+        if (response.session) {
+          const sess = response.session
           setCurrentSession(sess)
           if (onSessionChange) onSessionChange(sess)
         }
@@ -532,7 +539,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
     currentSession
   }))
 
-  const handleAction = async (action: string, messageId: string, messageContent: string | Record<string, any>[] | { steps: Step[] }) => {
+  const handleAction = async (action: string, messageId: string, messageContent: string | Record<string, unknown>[] | { steps: Step[] }) => {
     console.log(`Action ${action} on message ${messageId}`)
     
     switch (action) {

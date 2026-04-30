@@ -17,12 +17,42 @@ export interface Step {
   key: string;
   label: string;
   status: 'pending' | 'active' | 'done';
-  details: any;
+  details: unknown;
 }
+
+export type ApiRecord = Record<string, unknown>;
+
+export type SourceDocument = ApiRecord & {
+  chunk_id?: string;
+  text?: string;
+  rerank_score?: number;
+  score?: number;
+  _distance?: number;
+};
+
+export type UploadedFile = {
+  filename: string;
+  stored_path: string;
+};
+
+export type IndexDocument = {
+  filename: string;
+};
+
+export type IndexSummary = ApiRecord & {
+  id?: string;
+  index_id?: string;
+  name?: string;
+  title?: string;
+  documents?: IndexDocument[];
+  metadata?: ApiRecord;
+  session?: ChatSession;
+  model_used?: string;
+};
 
 export interface ChatMessage {
   id: string;
-  content: string | Array<Record<string, any>> | { steps: Step[] };
+  content: string | Array<ApiRecord> | { steps: Step[] };
   sender: 'user' | 'assistant';
   timestamp: string;
   isLoading?: boolean;
@@ -199,7 +229,7 @@ class ChatAPI {
       forceRag?: boolean;
       provencePrune?: boolean;
     } = {}
-  ): Promise<SessionChatResponse & { source_documents: any[] }> {
+  ): Promise<SessionChatResponse & { source_documents: SourceDocument[] }> {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -342,9 +372,9 @@ class ChatAPI {
   // Legacy upload function - can be removed if no longer needed
   async uploadPDFs(sessionId: string, files: File[]): Promise<{ 
     message: string; 
-    uploaded_files: any[]; 
-    processing_results: any[];
-    session_documents: any[];
+    uploaded_files: UploadedFile[]; 
+    processing_results: ApiRecord[];
+    session_documents: ApiRecord[];
     total_session_documents: number;
   }> {
     try {
@@ -450,7 +480,7 @@ class ChatAPI {
     return resp.json();
   }
 
-  async uploadFilesToIndex(indexId: string, files: File[]): Promise<{ message: string; uploaded_files: any[] }> {
+  async uploadFilesToIndex(indexId: string, files: File[]): Promise<{ message: string; uploaded_files: UploadedFile[] }> {
     const fd = new FormData();
     files.forEach((f) => fd.append('files', f, f.name));
     const resp = await fetch(`${API_BASE_URL}/indexes/${indexId}/upload`, { method: 'POST', body: fd });
@@ -518,7 +548,7 @@ class ChatAPI {
     return resp.json();
   }
 
-  async listIndexes(): Promise<{ indexes: any[]; total: number }> {
+  async listIndexes(): Promise<{ indexes: IndexSummary[]; total: number }> {
     const resp = await fetch(`${API_BASE_URL}/indexes`);
     if (!resp.ok) {
       throw new Error(`Failed to list indexes: ${resp.status}`);
@@ -526,7 +556,7 @@ class ChatAPI {
     return resp.json();
   }
 
-  async getSessionIndexes(sessionId: string): Promise<{ indexes: any[]; total: number }> {
+  async getSessionIndexes(sessionId: string): Promise<{ indexes: IndexSummary[]; total: number }> {
     const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/indexes`);
     if (!resp.ok) throw new Error(`Failed to get session indexes: ${resp.status}`);
     return resp.json();
@@ -564,7 +594,7 @@ class ChatAPI {
       forceRag?: boolean;
       provencePrune?: boolean;
     },
-    onEvent: (event: { type: string; data: any }) => void,
+    onEvent: (event: { type: string; data: ApiRecord }) => void,
   ): Promise<void> {
     const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune } = params;
 

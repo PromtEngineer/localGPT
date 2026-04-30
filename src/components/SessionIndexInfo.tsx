@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { chatAPI, ChatSession } from '@/lib/api';
+import { ApiRecord, chatAPI, ChatSession } from '@/lib/api';
 
 interface Props {
   sessionId: string;
@@ -8,7 +8,7 @@ interface Props {
 
 export default function SessionIndexInfo({ sessionId, onClose }: Props) {
   const [files, setFiles] = useState<string[]>([]);
-  const [indexMeta, setIndexMeta] = useState<any | null>(null);
+  const [indexMeta, setIndexMeta] = useState<ApiRecord | null>(null);
   const [session, setSession] = useState<ChatSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -20,12 +20,12 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         const first = data.indexes[0];
         if(first){
           setSession(first.session??{...first, title:first.name, model_used:first.model_used||''});
-          setFiles(first.documents?.map((d:any)=>d.filename) || []);
+          setFiles(first.documents?.map((d)=>d.filename) || []);
           setIndexMeta(first.metadata || {});
         } else {
           setError('No indexes linked to this chat');
         }
-      } catch (e:any){ setError(e.message||'Failed to load'); }
+      } catch (e: unknown){ setError(e instanceof Error ? e.message : 'Failed to load'); }
       finally{ setLoading(false);}
     })();
   }, [sessionId]);

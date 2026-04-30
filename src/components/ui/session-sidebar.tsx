@@ -33,11 +33,6 @@ export function SessionSidebar({
   const [error, setError] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
 
-  // Load sessions on mount
-  useEffect(() => {
-    loadSessions()
-  }, [])
-
   const loadSessions = React.useCallback(async () => {
     try {
       setError(null)
@@ -50,6 +45,11 @@ export function SessionSidebar({
       setIsLoading(false)
     }
   }, [])
+
+  // Load sessions on mount
+  useEffect(() => {
+    loadSessions()
+  }, [loadSessions])
 
   const handleNewSession = () => {
     // Don't create session immediately - just trigger empty state
@@ -108,20 +108,6 @@ export function SessionSidebar({
     } catch (error) {
       console.error('Failed to rename session:', error);
       setError('Failed to rename session');
-    }
-  }
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
-    
-    if (diffInHours < 24) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    } else if (diffInHours < 24 * 7) {
-      return date.toLocaleDateString([], { weekday: 'short' })
-    } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
     }
   }
 

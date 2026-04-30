@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useState, useRef } from "react"
-import { ArrowUp, Settings as SettingsIcon, Plus, X, FileText } from "lucide-react"
+import { ArrowUp, Settings as SettingsIcon, X, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AttachedFile } from "@/lib/types"
 
@@ -22,7 +22,6 @@ export function ChatInput({
   placeholder = "Message localGPT...",
   className = "",
   onOpenSettings,
-  onAddIndex,
   leftExtras
 }: ChatInputProps) {
   const [message, setMessage] = useState("")
@@ -69,10 +68,6 @@ export function ChatInput({
       textarea.style.height = 'auto'
       textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px'
     }
-  }
-
-  const handleFileAttach = () => {
-    fileInputRef.current?.click()
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {

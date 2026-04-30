@@ -2,13 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChatInput } from '@/components/ui/chat-input';
-import { chatAPI, ChatMessage } from '@/lib/api';
+import { chatAPI, ChatMessage, ChatSession } from '@/lib/api';
 import { ConversationPage } from '@/components/ui/conversation-page';
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal';
 
 interface QuickChatProps {
   sessionId?: string;
-  onSessionChange?: (s: any) => void;
+  onSessionChange?: (s: ChatSession) => void;
   className?: string;
 }
 
@@ -30,7 +30,7 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
         try {
           const data = await api.getSession(externalSessionId);
           // Convert DB messages to ChatMessage format expected by UI helper
-          const msgs: ChatMessage[] = data.messages.map((m: any) => api.convertDbMessage(m));
+          const msgs: ChatMessage[] = data.messages.map((m) => api.convertDbMessage(m as Record<string, unknown>));
           setMessages(msgs);
         } catch (err) {
           console.error('Failed to load messages for session', err);
@@ -55,7 +55,7 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
     })();
   },[api]);
 
-  const sendMessage = async (content: string, _files?: any) => {
+  const sendMessage = async (content: string) => {
     if (!content.trim()) return;
 
     const userMsg: ChatMessage = {

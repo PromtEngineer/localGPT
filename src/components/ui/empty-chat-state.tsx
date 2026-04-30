@@ -8,7 +8,6 @@ import {
     ArrowUpIcon,
     Paperclip,
     PlusIcon,
-    X,
     FileText,
 } from "lucide-react";
 import { AttachedFile } from "@/lib/types";
@@ -151,10 +150,6 @@ export function EmptyChatState({
             // Clear the local attachment state as the parent now handles it
             setAttachedFiles([]); 
         }
-    };
-
-    const removeFile = (fileId: string) => {
-        setAttachedFiles(prev => prev.filter(f => f.id !== fileId));
     };
 
     const formatFileSize = (bytes: number) => {
