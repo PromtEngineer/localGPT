@@ -3,12 +3,13 @@ import json
 import time, asyncio, os
 import numpy as np
 import concurrent.futures
-from cachetools import TTLCache, LRUCache
+from cachetools import LRUCache
 from rag_system.utils.ollama_client import OllamaClient
 from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
 from rag_system.agent.verifier import Verifier
 from rag_system.retrieval.query_transformer import QueryDecomposer, GraphQueryTranslator
 from rag_system.retrieval.retrievers import GraphRetriever
+from rag_system.utils.persistent_cache import PersistentCache
 
 class Agent:
     """
@@ -27,13 +28,16 @@ class Agent:
         self.verifier = Verifier(llm_client, gen_model)
         self.query_decomposer = QueryDecomposer(llm_client, gen_model)
         
-        # 🚀 OPTIMIZED: TTL cache now stores embeddings for semantic matching
-        self._cache_max_size = 100  # fallback size limit for manual eviction helper
-        self._query_cache: TTLCache = TTLCache(maxsize=self._cache_max_size, ttl=300)
-        self.semantic_cache_threshold = self.pipeline_configs.get("semantic_cache_threshold", 0.98)
-        # If set to "session", semantic-cache hits will be restricted to the same chat session.
-        # Otherwise (default "global") answers can be reused across sessions.
-        self.cache_scope = self.pipeline_configs.get("cache_scope", "global")  # 'global' or 'session'
+        # 🚀 PERSISTENT CACHE: Redis/file-based persistent caching with semantic matching
+        cache_dir = os.path.join("index_store", "cache")  # Store cache in index_store
+        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+        self._query_cache = PersistentCache(
+            cache_dir=cache_dir,
+            redis_url=redis_url,
+            max_size=self.pipeline_configs.get("cache_max_size", 1000),
+            semantic_threshold=self.pipeline_configs.get("semantic_cache_threshold", 0.98),
+            cache_scope=self.pipeline_configs.get("cache_scope", "global")
+        )
         
         # 🚀 NEW: In-memory store for conversational history per session
         self.chat_histories: LRUCache = LRUCache(maxsize=100) # Stores history for 100 recent sessions
@@ -100,54 +104,6 @@ class Agent:
             print(f"⚠️  No per-index overviews found for {idx_ids}. Using global overview file.")
             self._load_overviews(self._global_overview_path)
             self._current_overview_session = "GLOBAL"
-
-    def _cosine_similarity(self, v1: np.ndarray, v2: np.ndarray) -> float:
-        """Computes cosine similarity between two vectors."""
-        if not isinstance(v1, np.ndarray): v1 = np.array(v1)
-        if not isinstance(v2, np.ndarray): v2 = np.array(v2)
-        
-        if v1.shape != v2.shape:
-            raise ValueError("Vectors must have the same shape for cosine similarity.")
-
-        if np.all(v1 == 0) or np.all(v2 == 0):
-            return 0.0
-            
-        dot_product = np.dot(v1, v2)
-        norm_v1 = np.linalg.norm(v1)
-        norm_v2 = np.linalg.norm(v2)
-        
-        # Avoid division by zero
-        if norm_v1 == 0 or norm_v2 == 0:
-            return 0.0
-        
-        return dot_product / (norm_v1 * norm_v2)
-
-    def _find_in_semantic_cache(self, query_embedding: np.ndarray, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Finds a semantically similar query in the cache."""
-        if not self._query_cache or query_embedding is None:
-            return None
-
-        for key, cached_item in self._query_cache.items():
-            cached_embedding = cached_item.get('embedding')
-            if cached_embedding is None:
-                continue
-
-            # Respect cache scoping: if scope is session-level, skip results from other sessions
-            if self.cache_scope == "session" and session_id is not None:
-                if cached_item.get("session_id") != session_id:
-                    continue
-
-            try:
-                similarity = self._cosine_similarity(query_embedding, cached_embedding)
-
-                if similarity >= self.semantic_cache_threshold:
-                    print(f"🚀 Semantic cache hit! Similarity: {similarity:.3f} with cached query '{key}'")
-                    return cached_item.get('result')
-            except ValueError:
-                # In case of shape mismatch, just skip
-                continue
-
-        return None
 
     def _format_query_with_history(self, query: str, history: list) -> str:
         """Formats the user query with conversation history for context."""
@@ -229,23 +185,9 @@ Respond with JSON: {{"category": "<your_choice>"}}
         answer = ", ".join([res['details']['node_id'] for res in results])
         return {"answer": f"From the knowledge graph: {answer}", "source_documents": results}
 
-    def _get_cache_key(self, query: str, query_type: str) -> str:
-        """Generate a cache key for the query"""
-        # Simple cache key based on query and type
-        return f"{query_type}:{query.strip().lower()}"
-    
-    def _cache_result(self, cache_key: str, result: Dict[str, Any], session_id: Optional[str] = None):
-        """Cache a result with size limit"""
-        if len(self._query_cache) >= self._cache_max_size:
-            # Remove oldest entry (simple FIFO eviction)
-            oldest_key = next(iter(self._query_cache))
-            del self._query_cache[oldest_key]
-        
-        self._query_cache[cache_key] = {
-            'result': result,
-            'timestamp': time.time(),
-            'session_id': session_id
-        }
+    def chat(self, query: str, session_id: Optional[str] = None, stream: bool = False) -> Dict[str, Any]:
+        """Simple synchronous chat method"""
+        return asyncio.run(self._run_async(query, session_id=session_id))
 
     # ---------------- Public sync API (kept for backwards compatibility) --------------
     def run(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
@@ -326,7 +268,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
             print(f"🔍 Dense search weight set to: {dense_weight}")
 
         query_embedding = None
-        # 🚀 OPTIMIZED: Semantic Cache Check
+        # 🚀 PERSISTENT CACHE: Check semantic cache for similar queries
         if query_type != "direct_answer":
             text_embedder = self.retrieval_pipeline._get_text_embedder()
             if text_embedder:
@@ -338,7 +280,8 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     # Some embedders return a list – convert if necessary
                     query_embedding = np.array(query_embedding_list[0])
 
-                cached_result = self._find_in_semantic_cache(query_embedding, session_id)
+                # Check persistent cache for exact or semantic match
+                cached_result = self._query_cache.retrieve(raw_query, query_type, query_embedding, session_id)
 
                 if cached_result:
                     # Update history even on cache hit
@@ -621,14 +564,9 @@ FINAL ANSWER:
             history.append({"query": query, "answer": result['answer']})
             self.chat_histories[session_id] = history
             
-        # 🚀 OPTIMIZED: Cache the result for future queries
+        # 🚀 PERSISTENT CACHE: Store result for future queries
         if query_type != "direct_answer" and query_embedding is not None:
-            cache_key = raw_query  # Key is for logging/debugging
-            self._query_cache[cache_key] = {
-                "embedding": query_embedding,
-                "result": result,
-                "session_id": session_id,
-            }
+            self._query_cache.store(raw_query, query_type, result, query_embedding, session_id)
         
         total_time = time.time() - start_time
         print(f"🚀 Total query processing time: {total_time:.2f}s")

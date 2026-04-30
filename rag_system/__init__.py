@@ -1,6 +1,8 @@
 import logging
 import os
 
+from rag_system.utils.logging_utils import configure_logging, system_logger
+
 # ---------------------------------------------------------
 # Global logging setup for the entire `rag_system` package.
 # ---------------------------------------------------------
@@ -9,20 +11,9 @@ import os
 # If not set, we default to INFO to avoid excessive noise.
 # ---------------------------------------------------------
 _level_str = os.getenv("RAG_LOG_LEVEL", "INFO").upper()
-_level = getattr(logging, _level_str, logging.INFO)
+configure_logging(_level_str)
 
-# Only configure root logger if it hasn't been configured yet
-if not logging.getLogger().handlers:
-    logging.basicConfig(
-        level=_level,
-        format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-    )
-else:
-    logging.getLogger().setLevel(_level)
-
-logging.getLogger(__name__).debug(
-    "Initialized rag_system logging (level=%s)", _level_str
-)
+system_logger.debug("initialized_rag_system_logging", log_level=_level_str)
 
 # ---------------------------------------------------------
 # Authenticate to Hugging Face Hub if a token is provided

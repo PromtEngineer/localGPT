@@ -1,6 +1,9 @@
+import logging
 from typing import List, Dict, Any
 import json
 from rag_system.utils.ollama_client import OllamaClient
+
+logger = logging.getLogger(__name__)
 
 class GraphExtractor:
     """
@@ -9,13 +12,13 @@ class GraphExtractor:
     def __init__(self, llm_client: OllamaClient, llm_model: str):
         self.llm_client = llm_client
         self.llm_model = llm_model
-        print(f"Initialized GraphExtractor with Ollama model '{self.llm_model}'.")
+        logger.info("graph_extractor_initialized model=%s", self.llm_model)
 
     def extract(self, chunks: List[Dict[str, Any]]) -> Dict[str, List[Dict]]:
         all_entities = {}
         all_relationships = set()
 
-        print(f"Extracting graph from {len(chunks)} chunks with Ollama...")
+        logger.info("graph_extraction_started chunk_count=%s", len(chunks))
         for i, chunk in enumerate(chunks):
             # Step 1: Extract Entities
             entity_prompt = f"""
@@ -77,7 +80,7 @@ class GraphExtractor:
                         )
 
             except json.JSONDecodeError:
-                print(f"Warning: Could not decode JSON from LLM for chunk {i+1}.")
+                logger.warning("graph_extraction_json_decode_failed chunk_index=%s", i + 1)
                 continue
         
         return {

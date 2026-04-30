@@ -41,6 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 # Python
+.venv/
 __pycache__/
 *.pyc
 
@@ -75,4 +76,3 @@ rag_system/documents/
 # Ensure docker.env remains tracked
 !docker.env
 !backend/chat_data.db
-

@@ -1,6 +1,6 @@
 {
   "index_name": "Sample Batch Index",
-  "index_description": "Example batch index configuration",
+  "index_description": "Example batch index configuration with incremental indexing",
   "documents": [
     "./rag_system/documents/invoice_1039.pdf",
     "./rag_system/documents/invoice_1041.pdf"
@@ -15,5 +15,10 @@
     "generation_model": "qwen3:0.6b",
     "retrieval_mode": "hybrid",
     "window_size": 2
+  },
+  "incremental_options": {
+    "enabled": true,
+    "force_reindex": false,
+    "index_id": "sample_batch_v1"
   }
 }

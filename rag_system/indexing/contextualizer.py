@@ -4,8 +4,6 @@ from rag_system.ingestion.chunking import create_contextual_window
 import logging
 import re
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Define the structured prompt templates, adapted from the example

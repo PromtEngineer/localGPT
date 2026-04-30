@@ -22,6 +22,8 @@ from rag_system.rerankers.sentence_pruner import SentencePruner
 import os
 from PIL import Image
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Thread-safety helpers
 # ---------------------------------------------------------------------------
@@ -99,21 +101,21 @@ class RetrievalPipeline:
                     fusion_config=fusion_cfg,
                 )
             except Exception as e:
-                print(f"❌ Failed to initialise dense retriever: {e}")
+                logger.error("dense_retriever_initialization_failed error=%s", e)
                 self.dense_retriever = None
         return self.dense_retriever
 
     def _get_bm25_retriever(self):
         if self.bm25_retriever is None and self.retriever_configs.get("bm25", {}).get("enabled"):
             try:
-                print(f"🔧 Lazily initializing BM25 retriever...")
+                logger.info("bm25_retriever_initializing")
                 self.bm25_retriever = BM25Retriever(
                     index_path=self.storage_config["bm25_path"],
                     index_name=self.retriever_configs["bm25"]["index_name"]
                 )
-                print("✅ BM25 retriever initialized successfully")
+                logger.info("bm25_retriever_initialized")
             except Exception as e:
-                print(f"❌ Failed to initialize BM25 retriever on demand: {e}")
+                logger.error("bm25_retriever_initialization_failed error=%s", e)
                 # Keep it None so we don't try again
         return self.bm25_retriever
 
@@ -129,7 +131,7 @@ class RetrievalPipeline:
         if self.reranker is None and reranker_config.get("type") == "linear_combination":
             rerank_weight = reranker_config.get("weight", 0.5) 
             self.reranker = lancedb.rerankers.LinearCombinationReranker(weight=rerank_weight)
-            print(f"✅ Initialized LinearCombinationReranker with weight {rerank_weight}")
+            logger.info("linear_combination_reranker_initialized weight=%s", rerank_weight)
         return self.reranker
 
     def _get_ai_reranker(self):
@@ -146,18 +148,17 @@ class RetrievalPipeline:
                         model_name = reranker_config.get("model_name")
                         strategy = reranker_config.get("strategy", "qwen")
 
+                        logger.info("ai_reranker_initializing strategy=%s model_name=%s", strategy, model_name)
                         if strategy == "rerankers-lib":
-                            print(f"🔧 Initialising Answer.AI ColBERT reranker ({model_name}) via rerankers lib…")
                             from rerankers import Reranker
                             self.ai_reranker = Reranker(model_name, model_type="colbert")
                         else:
-                            print(f"🔧 Lazily initializing Qwen reranker ({model_name})…")
                             self.ai_reranker = QwenReranker(model_name=model_name)
 
-                        print("✅ AI reranker initialized successfully.")
+                        logger.info("ai_reranker_initialized strategy=%s model_name=%s", strategy, model_name)
                     except Exception as e:
                         # Leave as None so the pipeline can proceed without reranking
-                        print(f"❌ Failed to initialize AI reranker: {e}")
+                        logger.error("ai_reranker_initialization_failed model_name=%s error=%s", model_name, e)
         return self.ai_reranker
 
     def _get_sentence_pruner(self):
@@ -260,7 +261,6 @@ ORIGINAL QUESTION: "{query}"
         start_time = time.time()
         retrieval_k = self.config.get("retrieval_k", 10)
 
-        logger = logging.getLogger(__name__)
         logger.debug("--- Running Hybrid Search for query '%s' (table=%s) ---", query, table_name or self.storage_config.get("text_table_name"))
         
         # If a custom table_name is provided, propagate it to storage config so helper methods use it
@@ -298,7 +298,7 @@ ORIGINAL QUESTION: "{query}"
                     )
                     retrieved_docs.extend(lc_docs)
                 except Exception as e:
-                    print(f"⚠️  Late-chunk retrieval failed: {e}")
+                    logger.warning("latechunk_retrieval_failed table=%s error=%s", lc_table, e)
 
         if event_callback:
             event_callback("retrieval_done", {"count": len(retrieved_docs)})
@@ -332,16 +332,16 @@ ORIGINAL QUESTION: "{query}"
                         meta["latechunk_merged"] = True
                         merged_count += 1
                 except Exception as e:
-                    print(f"⚠️  Late-chunk merge failed for chunk {doc.get('chunk_id')}: {e}")
+                    logger.warning("latechunk_merge_failed chunk_id=%s error=%s", doc.get('chunk_id'), e)
             if merged_count:
-                print(f"🪄 Late-chunk merging applied to {merged_count} retrieved chunks.")
+                logger.info("latechunk_merge_applied merged_count=%s", merged_count)
 
         # --- AI Reranking Step ---
         ai_reranker = self._get_ai_reranker()
         if ai_reranker and retrieved_docs:
             if event_callback:
                 event_callback("rerank_started", {"count": len(retrieved_docs)})
-            print(f"\n--- Reranking top {len(retrieved_docs)} docs with AI model... ---")
+            logger.info("ai_reranking_started retrieved_count=%s", len(retrieved_docs))
             start_rerank_time = time.time()
 
             rerank_cfg = self.config.get("reranker", {})
@@ -354,7 +354,7 @@ ORIGINAL QUESTION: "{query}"
                     assert 0 < pct <= 1
                     top_k = max(1, int(len(retrieved_docs) * pct))
                 except Exception:
-                    print("⚠️  Invalid top_percent value; falling back to top_k")
+                    logger.warning("invalid_top_percent top_percent=%s", top_percent)
                     top_k = top_k_cfg or len(retrieved_docs)
             else:
                 top_k = top_k_cfg or len(retrieved_docs)
@@ -386,7 +386,7 @@ ORIGINAL QUESTION: "{query}"
                     reranked_docs = [retrieved_docs[idx] | {"rerank_score": score} for score, idx in pairs]
 
             rerank_time = time.time() - start_rerank_time
-            print(f"✅ Reranking completed in {rerank_time:.2f}s. Refined to {len(reranked_docs)} docs.")
+            logger.info("ai_reranking_completed duration_s=%s result_count=%s", round(rerank_time, 2), len(reranked_docs))
             if event_callback:
                 event_callback("rerank_done", {"count": len(reranked_docs)})
         else:
@@ -399,7 +399,7 @@ ORIGINAL QUESTION: "{query}"
         if window_size > 0 and reranked_docs:
             if event_callback:
                 event_callback("context_expand_started", {"count": len(reranked_docs)})
-            print(f"\n--- Expanding context for {len(reranked_docs)} top documents (window size: {window_size})... ---")
+            logger.info("context_expansion_started top_docs=%s window_size=%s", len(reranked_docs), window_size)
             expanded_chunks = {}
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future_to_chunk = {executor.submit(self._get_surrounding_chunks_lancedb, chunk, window_size): chunk for chunk in reranked_docs}
@@ -415,7 +415,7 @@ ORIGINAL QUESTION: "{query}"
                                     surrounding_chunk['rerank_score'] = seed_chunk['rerank_score']
                                 expanded_chunks[cid] = surrounding_chunk
                     except Exception as e:
-                        print(f"Error expanding context for a chunk: {e}")
+                        logger.error("context_expansion_chunk_failed chunk_id=%s error=%s", seed_chunk.get('chunk_id'), e)
 
             final_docs = list(expanded_chunks.values())
             # Sort by reranker score if present, otherwise by raw score/distance
@@ -430,7 +430,7 @@ ORIGINAL QUESTION: "{query}"
                 # Fallback to document order
                 final_docs.sort(key=lambda c: (c.get('document_id', ''), c.get('chunk_index', 0)))
 
-            print(f"Expanded to {len(final_docs)} unique chunks for synthesis.")
+            logger.info("context_expansion_completed unique_chunks=%s", len(final_docs))
             if event_callback:
                 event_callback("context_expand_done", {"count": len(final_docs)})
         else:
@@ -449,7 +449,7 @@ ORIGINAL QUESTION: "{query}"
             if event_callback:
                 event_callback("prune_started", {"count": len(final_docs)})
             thresh = float(prov_cfg.get("threshold", 0.1))
-            print(f"\n--- Provence pruning enabled (threshold={thresh}) ---")
+            logger.info("provence_pruning_enabled threshold=%s", thresh)
             pruner = self._get_sentence_pruner()
             final_docs = pruner.prune_documents(query, final_docs, threshold=thresh)
             # Remove any chunks that were fully pruned (empty text)
@@ -457,17 +457,19 @@ ORIGINAL QUESTION: "{query}"
             if event_callback:
                 event_callback("prune_done", {"count": len(final_docs)})
 
-        print("\n--- Final Documents for Synthesis ---")
         if not final_docs:
-            print("No documents to synthesize.")
+            logger.info("no_documents_for_synthesis")
         else:
+            logger.info("final_documents_for_synthesis document_count=%s", len(final_docs))
             for i, doc in enumerate(final_docs):
-                print(f"  [{i+1}] Chunk ID: {doc.get('chunk_id')}")
-                print(f"      Score: {doc.get('score', 'N/A')}")
-                if 'rerank_score' in doc:
-                    print(f"      Rerank Score: {doc.get('rerank_score'):.4f}")
-                print(f"      Text: \"{doc.get('text', '').strip()}\"")
-        print("------------------------------------")
+                logger.debug(
+                    "final_document_summary",
+                    position=i + 1,
+                    chunk_id=doc.get('chunk_id'),
+                    score=doc.get('score', 'N/A'),
+                    rerank_score=doc.get('rerank_score'),
+                    text_preview=doc.get('text', '').strip()[:200],
+                )
 
         if not final_docs:
             return {"answer": "I could not find an answer in the documents.", "source_documents": []}
@@ -498,12 +500,11 @@ ORIGINAL QUESTION: "{query}"
         context = "\n\n".join([doc['text'] for doc in final_docs])
 
         # 👀 DEBUG: Show the exact context passed to the LLM after pruning
-        print("\n=== Context passed to LLM (post-pruning) ===")
-        if len(context) > 2000:
-            print(context[:2000] + "…\n[truncated] (total {} chars)".format(len(context)))
-        else:
-            print(context)
-        print("=== End of context ===\n")
+        logger.debug(
+            "context_passed_to_llm",
+            length=len(context),
+            preview=(context[:2000] + f"…\n[truncated] (total {len(context)} chars)") if len(context) > 2000 else context,
+        )
 
         final_answer = self._synthesize_final_answer(query, context, event_callback=event_callback)
         
@@ -566,7 +567,11 @@ ORIGINAL QUESTION: "{query}"
         """Switch embedding model at runtime and clear cached objects so they re-initialize."""
         if self.config.get("embedding_model_name") == model_name:
             return  # nothing to do
-        print(f"🔧 RetrievalPipeline switching embedding model to '{model_name}' (was '{self.config.get('embedding_model_name')}')")
+        logger.info(
+            "embedding_model_switch",
+            new_model=model_name,
+            previous_model=self.config.get("embedding_model_name"),
+        )
         self.config["embedding_model_name"] = model_name
         # Reset caches so new instances are built on demand
         self.text_embedder = None

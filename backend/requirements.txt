@@ -1,3 +1,5 @@
 requests
 python-dotenv
-PyPDF2 
+PyPDF2
+fastapi
+uvicorn[standard] 

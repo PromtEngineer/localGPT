@@ -17,13 +17,17 @@ import sys
 import json
 import argparse
 import time
-import logging
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from datetime import datetime
 
 # Add the project root to the path so we can import rag_system modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from rag_system.utils.logging_utils import configure_logging
+
+_level_str = os.getenv("RAG_LOG_LEVEL", "INFO").upper()
+configure_logging(_level_str)
 
 try:
     from rag_system.main import PIPELINE_CONFIGS
@@ -176,9 +180,23 @@ class BatchIndexingDemo:
                 filename = os.path.basename(doc_path)
                 self.db.add_document_to_index(index_id, filename, doc_path)
             
-            # Process documents through pipeline
+            # Process documents through pipeline with incremental indexing
+            incremental_options = index_config.get("incremental_options", {})
+            incremental_enabled = incremental_options.get("enabled", True)
+            force_reindex = incremental_options.get("force_reindex", False)
+            index_id = incremental_options.get("index_id", f"batch_{int(time.time())}")
+
+            print(f"🔄 Incremental indexing: {'enabled' if incremental_enabled else 'disabled'}")
+            if force_reindex:
+                print(f"🔄 Force reindex: enabled")
+
             start_time = time.time()
-            self.pipeline.process_documents(valid_documents)
+            self.pipeline.process_documents(
+                valid_documents,
+                index_id=index_id,
+                incremental=incremental_enabled,
+                force_reindex=force_reindex
+            )
             processing_time = time.time() - start_time
             
             print(f"✅ Index '{index_name}' created successfully!")

@@ -11,20 +11,18 @@ import socketserver
 from rag_system.main import get_agent
 from rag_system.utils.batch_processor import ProgressTracker, timer
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Global progress tracking storage
 ACTIVE_PROGRESS_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 # --- Global Singleton for the RAG Agent ---
-print("🧠 Initializing RAG Agent... (This may take a moment)")
+logger.info("initializing_rag_agent Initializing RAG Agent... This may take a moment")
 RAG_AGENT = get_agent()
 if RAG_AGENT is None:
-    print("❌ Critical error: RAG Agent could not be initialized. Exiting.")
+    logger.error("rag_agent_initialization_failed Critical error: RAG Agent could not be initialized. Exiting.")
     exit(1)
-print("✅ RAG Agent initialized successfully.")
+logger.info("rag_agent_initialized RAG Agent initialized successfully.")
 
 class ServerSentEventsHandler:
     """Handler for Server-Sent Events (SSE) for real-time progress updates"""
@@ -418,12 +416,15 @@ def start_enhanced_server(port=8000):
         allow_reuse_address = True
 
     with ReusableTCPServer(("", port), EnhancedRagApiHandler) as httpd:
-        print(f"🚀 Starting Enhanced RAG API server on port {port}")
-        print(f"💬 Chat endpoint: http://localhost:{port}/chat")
-        print(f"✨ Indexing endpoint: http://localhost:{port}/index")
-        print(f"📊 Progress endpoint: http://localhost:{port}/progress")
-        print(f"🌊 Progress stream: http://localhost:{port}/stream")
-        print(f"📈 Real-time progress tracking enabled via Server-Sent Events!")
+        logger.info("server_starting port=%s", port)
+        logger.info(
+            "server_endpoints chat=%s indexing=%s progress=%s stream=%s",
+            f"http://localhost:{port}/chat",
+            f"http://localhost:{port}/index",
+            f"http://localhost:{port}/progress",
+            f"http://localhost:{port}/stream",
+        )
+        logger.info("server_progress_enabled Real-time progress tracking enabled via Server-Sent Events")
         httpd.serve_forever()
 
 if __name__ == '__main__':
@@ -432,12 +433,12 @@ if __name__ == '__main__':
     server_thread.daemon = True
     server_thread.start()
     
-    print("🚀 Enhanced RAG API server with progress tracking is running.")
-    print("Press Ctrl+C to stop.")
+    logger.info("server_running Enhanced RAG API server with progress tracking is running.")
+    logger.info("server_ready Press Ctrl+C to stop.")
     
     # Keep the main thread alive
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nStopping server...") 
+        logger.info("server_shutdown Stopping server...")

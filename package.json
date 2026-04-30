@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "lint:python": "ruff check .",
+    "format:python": "black .",
+    "test:python": "python -m unittest discover"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
