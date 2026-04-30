@@ -12,7 +12,11 @@ import requests
 
 # Add parent directory to path so we can import rag_system modules
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
+for path in (BACKEND_DIR, PROJECT_ROOT):
+    if path not in sys.path:
+        sys.path.insert(0, path)
 
 # Import RAG system modules for complete metadata
 try:
@@ -66,6 +70,15 @@ async def get_sessions():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get sessions: {str(e)}")
 
+@app.get("/sessions/cleanup")
+async def cleanup_sessions():
+    """Clean up empty sessions"""
+    try:
+        cleanup_count = db.cleanup_empty_sessions()
+        return {"message": f"Cleaned up {cleanup_count} empty sessions", "cleanup_count": cleanup_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup sessions: {str(e)}")
+
 @app.post("/sessions")
 async def create_session(request: Request):
     """Create a new chat session"""
@@ -104,7 +117,10 @@ async def delete_session(session_id: str):
         deleted = db.delete_session(session_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Session not found")
-        return {"deleted": deleted}
+        return {
+            "message": "Session deleted successfully",
+            "deleted_session_id": session_id,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -339,6 +355,7 @@ async def index_documents(session_id: str):
         print(f"❌ Exception during indexing: {str(e)}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
 
+@app.post("/sessions/{session_id}/rename")
 @app.put("/sessions/{session_id}/rename")
 async def rename_session(session_id: str, request: Request):
     """Rename an existing session title"""
@@ -365,15 +382,6 @@ async def rename_session(session_id: str, request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to rename session: {str(e)}")
-
-@app.get("/sessions/cleanup")
-async def cleanup_sessions():
-    """Clean up empty sessions"""
-    try:
-        cleanup_count = db.cleanup_empty_sessions()
-        return {"message": f"Cleaned up {cleanup_count} empty sessions", "cleanup_count": cleanup_count}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup sessions: {str(e)}")
 
 @app.post("/chat")
 async def legacy_chat(request: Request):
