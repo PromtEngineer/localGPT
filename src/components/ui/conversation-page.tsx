@@ -46,7 +46,8 @@ function Citation({doc, idx}: {doc: SourceDocument, idx:number}){
 // NEW: Expandable list of citations per assistant message
 function CitationsBlock({docs}:{docs: SourceDocument[]}){
   const scored = docs.filter(d => d.rerank_score || d.score || d._distance)
-  scored.sort((a, b) => (b.rerank_score ?? b.score ?? 1/b._distance) - (a.rerank_score ?? a.score ?? 1/a._distance))
+  const rank = (doc: SourceDocument) => doc.rerank_score ?? doc.score ?? (doc._distance ? 1 / doc._distance : 0)
+  scored.sort((a, b) => rank(b) - rank(a))
   const [expanded, setExpanded] = useState(false);
 
   if (scored.length === 0) return null;
@@ -261,7 +262,7 @@ export function ConversationPage({
   const handleAction = (action: string, messageId: string, messageContent: string) => {
     if (onAction) {
       // For structured messages, we'll just join the text parts for copy/paste
-      let contentToPass: string;
+      let contentToPass = '';
       if (typeof messageContent === 'string') {
         contentToPass = messageContent;
       }

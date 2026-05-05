@@ -393,12 +393,12 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               }
               if (evt.type === 'sub_query_token') {
                 const idx = evt.data.index as number;
-                const tok: string = evt.data.text || '';
+                const tok = String(evt.data.text || '');
                 if (!tok.trim()) return m;
                 steps[5].status = 'active';
                 const detailsArr: SubQueryDetail[] = Array.isArray(steps[5].details) ? steps[5].details as SubQueryDetail[] : [];
                 while (detailsArr.length <= idx) {
-                  detailsArr.push({ question: evt.data.question || `Sub-query ${idx+1}`, answer: '' });
+                  detailsArr.push({ question: String(evt.data.question || `Sub-query ${idx+1}`), answer: '' });
                 }
                 const curAns: string = detailsArr[idx].answer || '';
                 if (!curAns.endsWith(tok)) {

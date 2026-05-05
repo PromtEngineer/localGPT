@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { motion } from "framer-motion";
+import { motion, type Transition } from "framer-motion";
 import {
   ChevronsUpDown,
   LogOut,
@@ -54,7 +54,7 @@ const variants = {
   },
 };
 
-const transitionProps = {
+const transitionProps: Transition = {
   type: "tween",
   ease: "easeOut",
   duration: 0.2,
@@ -257,4 +257,4 @@ export function SessionNavBar() {
       </motion.div>
     </motion.div>
   );
-} 
+}

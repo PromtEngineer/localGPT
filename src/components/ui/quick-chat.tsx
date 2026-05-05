@@ -30,7 +30,7 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
         try {
           const data = await api.getSession(externalSessionId);
           // Convert DB messages to ChatMessage format expected by UI helper
-          const msgs: ChatMessage[] = data.messages.map((m) => api.convertDbMessage(m as Record<string, unknown>));
+          const msgs: ChatMessage[] = data.messages.map((m) => api.convertDbMessage(m as unknown as Record<string, unknown>));
           setMessages(msgs);
         } catch (err) {
           console.error('Failed to load messages for session', err);

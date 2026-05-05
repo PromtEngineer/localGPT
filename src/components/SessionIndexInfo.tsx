@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiRecord, chatAPI, ChatSession } from '@/lib/api';
+import { ApiRecord, chatAPI } from '@/lib/api';
 
 interface Props {
   sessionId: string;
@@ -9,7 +9,7 @@ interface Props {
 export default function SessionIndexInfo({ sessionId, onClose }: Props) {
   const [files, setFiles] = useState<string[]>([]);
   const [indexMeta, setIndexMeta] = useState<ApiRecord | null>(null);
-  const [session, setSession] = useState<ChatSession | null>(null);
+  const [sessionTitle, setSessionTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,7 +19,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         const data = await chatAPI.getSessionIndexes(sessionId);
         const first = data.indexes[0];
         if(first){
-          setSession(first.session??{...first, title:first.name, model_used:first.model_used||''});
+          setSessionTitle(first.session?.title || first.name || first.title || 'Untitled index');
           setFiles(first.documents?.map((d)=>d.filename) || []);
           setIndexMeta(first.metadata || {});
         } else {
@@ -30,9 +30,20 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
     })();
   }, [sessionId]);
 
-  const hasMetadata = indexMeta && Object.keys(indexMeta).length > 0;
-  const isInferredMetadata = indexMeta?.metadata_source === 'lancedb_inspection';
-  const indexStatus = indexMeta?.status;
+  const meta = indexMeta || {};
+  const hasMetadata = Object.keys(meta).length > 0;
+  const isInferredMetadata = meta.metadata_source === 'lancedb_inspection';
+  const indexStatus = typeof meta.status === 'string' ? meta.status : undefined;
+  const textValue = (value: unknown) => (
+    typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+  );
+  const numberValue = (value: unknown) => (typeof value === 'number' ? value : undefined);
+  const dateValue = (value: unknown) => (
+    typeof value === 'string' || typeof value === 'number' || value instanceof Date ? value : undefined
+  );
+  const stringArrayValue = (value: unknown) => (
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  );
 
   const getStatusMessage = () => {
     if (!hasMetadata) {
@@ -47,7 +58,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
       return {
         type: 'error',
         title: '❌ Index Incomplete',
-        message: indexMeta.issue || 'The index appears to be incomplete or was never properly built.'
+        message: textValue(meta.issue) || 'The index appears to be incomplete or was never properly built.'
       };
     }
     
@@ -63,7 +74,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
       return {
         type: 'warning',
         title: '⚠️ Legacy Index',
-        message: indexMeta.issue || 'This index was created before metadata tracking was implemented. Configuration details are not available.'
+        message: textValue(meta.issue) || 'This index was created before metadata tracking was implemented. Configuration details are not available.'
       };
     }
     
@@ -77,13 +88,13 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
     
     if (indexStatus === 'functional') {
       // Check if we have complete configuration metadata
-      const hasCompleteConfig = indexMeta.chunk_size && 
-                               indexMeta.chunk_overlap !== undefined &&
-                               indexMeta.retrieval_mode &&
-                               indexMeta.embedding_model;
+      const hasCompleteConfig = meta.chunk_size &&
+                               meta.chunk_overlap !== undefined &&
+                               meta.retrieval_mode &&
+                               meta.embedding_model;
       
       // Only show limited message if we truly have limited data
-      if (indexMeta.inspection_limitation && !hasCompleteConfig) {
+      if (meta.inspection_limitation && !hasCompleteConfig) {
         return {
           type: 'info',
           title: '🔍 Limited Configuration Data',
@@ -112,7 +123,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
           <>
             <div>
               <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Name</span>
-              <p className="text-sm">{session?.title}</p>
+              <p className="text-sm">{sessionTitle}</p>
             </div>
 
             {statusMessage && (
@@ -142,123 +153,123 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
               <>
                 {/* Basic Information */}
                 <div className="grid grid-cols-2 gap-4">
-                  {(indexMeta.embedding_model || indexMeta.embedding_model_inferred) && (
+                  {Boolean(meta.embedding_model || meta.embedding_model_inferred) && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Embedding model</span>
                       <p className="text-sm break-words">
-                        {indexMeta.embedding_model || indexMeta.embedding_model_inferred}
-                        {indexMeta.embedding_model_inferred && <span className="text-gray-400"> (inferred)</span>}
+                        {textValue(meta.embedding_model || meta.embedding_model_inferred)}
+                        {Boolean(meta.embedding_model_inferred) && <span className="text-gray-400"> (inferred)</span>}
                       </p>
                     </div>
                   )}
-                  {(indexMeta.retrieval_mode || indexMeta.retrieval_mode_inferred) && (
+                  {Boolean(meta.retrieval_mode || meta.retrieval_mode_inferred) && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Retrieval mode</span>
                       <p className="text-sm capitalize">
-                        {indexMeta.retrieval_mode || indexMeta.retrieval_mode_inferred}
-                        {indexMeta.retrieval_mode_inferred && <span className="text-gray-400"> (inferred)</span>}
+                        {textValue(meta.retrieval_mode || meta.retrieval_mode_inferred)}
+                        {Boolean(meta.retrieval_mode_inferred) && <span className="text-gray-400"> (inferred)</span>}
                       </p>
                     </div>
                   )}
-                  {indexMeta.vector_dimensions && (
+                  {numberValue(meta.vector_dimensions) !== undefined && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Vector dimensions</span>
-                      <p className="text-sm">{indexMeta.vector_dimensions}</p>
+                      <p className="text-sm">{numberValue(meta.vector_dimensions)}</p>
                     </div>
                   )}
-                  {indexMeta.total_chunks && (
+                  {numberValue(meta.total_chunks) !== undefined && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Total chunks</span>
-                      <p className="text-sm">{indexMeta.total_chunks.toLocaleString()}</p>
+                      <p className="text-sm">{numberValue(meta.total_chunks)?.toLocaleString()}</p>
                     </div>
                   )}
                 </div>
 
                 {/* Chunk Configuration */}
                 <div className="grid grid-cols-2 gap-4">
-                  {(typeof indexMeta.chunk_size==='number' || indexMeta.chunk_size_inferred) && (
+                  {(typeof meta.chunk_size==='number' || Boolean(meta.chunk_size_inferred)) && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Chunk size</span>
                       <p className="text-sm">
-                        {typeof indexMeta.chunk_size==='number' ? `${indexMeta.chunk_size} tokens` : indexMeta.chunk_size_inferred}
-                        {indexMeta.chunk_size_inferred && <span className="text-gray-400"> (estimated)</span>}
+                        {typeof meta.chunk_size==='number' ? `${meta.chunk_size} tokens` : textValue(meta.chunk_size_inferred)}
+                        {Boolean(meta.chunk_size_inferred) && <span className="text-gray-400"> (estimated)</span>}
                       </p>
                     </div>
                   )}
-                  {typeof indexMeta.chunk_overlap==='number' && (
+                  {typeof meta.chunk_overlap==='number' && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Chunk overlap</span>
-                      <p className="text-sm">{indexMeta.chunk_overlap} tokens</p>
+                      <p className="text-sm">{meta.chunk_overlap} tokens</p>
                     </div>
                   )}
                 </div>
 
                 {/* Context and Features */}
                 <div className="grid grid-cols-2 gap-4">
-                  {typeof indexMeta.window_size==='number' && (
+                  {typeof meta.window_size==='number' && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Context window</span>
-                      <p className="text-sm">{indexMeta.window_size}</p>
+                      <p className="text-sm">{meta.window_size}</p>
                     </div>
                   )}
-                  {typeof indexMeta.enable_enrich==='boolean' && (
+                  {typeof meta.enable_enrich==='boolean' && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Contextual enrichment</span>
-                      <p className="text-sm">{indexMeta.enable_enrich ? '✅ Enabled' : '❌ Disabled'}</p>
+                      <p className="text-sm">{meta.enable_enrich ? 'Enabled' : 'Disabled'}</p>
                     </div>
                   )}
-                  {indexMeta.has_contextual_enrichment && (
+                  {Boolean(meta.has_contextual_enrichment) && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Contextual enrichment</span>
-                      <p className="text-sm">🔍 Detected</p>
+                      <p className="text-sm">Detected</p>
                     </div>
                   )}
                 </div>
 
                 {/* Advanced features */}
                 <div className="grid grid-cols-2 gap-4">
-                  {typeof indexMeta.latechunk==='boolean' && (
+                  {typeof meta.latechunk==='boolean' && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Late-chunk vectors</span>
-                      <p className="text-sm">{indexMeta.latechunk ? '✅ Enabled' : '❌ Disabled'}</p>
+                      <p className="text-sm">{meta.latechunk ? 'Enabled' : 'Disabled'}</p>
                     </div>
                   )}
-                  {typeof indexMeta.docling_chunk==='boolean' && (
+                  {typeof meta.docling_chunk==='boolean' && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">High-recall chunking</span>
-                      <p className="text-sm">{indexMeta.docling_chunk ? '✅ Enabled' : '❌ Disabled'}</p>
+                      <p className="text-sm">{meta.docling_chunk ? 'Enabled' : 'Disabled'}</p>
                     </div>
                   )}
-                  {indexMeta.has_fts_index && (
+                  {Boolean(meta.has_fts_index) && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Full-text search</span>
-                      <p className="text-sm">🔍 Available</p>
+                      <p className="text-sm">Available</p>
                     </div>
                   )}
-                  {indexMeta.has_document_structure && (
+                  {Boolean(meta.has_document_structure) && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Document structure</span>
-                      <p className="text-sm">🔍 Organized</p>
+                      <p className="text-sm">Organized</p>
                     </div>
                   )}
                 </div>
 
                 {/* LLM Models section */}
-                {(indexMeta.enrich_model || indexMeta.overview_model) && (
+                {Boolean(meta.enrich_model || meta.overview_model) && (
                   <>
                     <div className="border-t border-white/10 pt-4">
                       <h3 className="text-sm font-medium text-gray-300 mb-3">LLM Models</h3>
                       <div className="grid grid-cols-2 gap-4">
-                        {indexMeta.enrich_model && (
+                        {Boolean(meta.enrich_model) && (
                           <div>
                             <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Enrichment LLM</span>
-                            <p className="text-sm break-words">{indexMeta.enrich_model}</p>
+                            <p className="text-sm break-words">{textValue(meta.enrich_model)}</p>
                           </div>
                         )}
-                        {indexMeta.overview_model && (
+                        {Boolean(meta.overview_model) && (
                           <div>
                             <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Overview LLM</span>
-                            <p className="text-sm break-words">{indexMeta.overview_model}</p>
+                            <p className="text-sm break-words">{textValue(meta.overview_model)}</p>
                           </div>
                         )}
                       </div>
@@ -267,21 +278,21 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                 )}
 
                 {/* Batch sizes section */}
-                {(typeof indexMeta.batch_size_embed==='number' || typeof indexMeta.batch_size_enrich==='number') && (
+                {(typeof meta.batch_size_embed==='number' || typeof meta.batch_size_enrich==='number') && (
                   <>
                     <div className="border-t border-white/10 pt-4">
                       <h3 className="text-sm font-medium text-gray-300 mb-3">Batch Configuration</h3>
                       <div className="grid grid-cols-2 gap-4">
-                        {typeof indexMeta.batch_size_embed==='number' && (
+                        {typeof meta.batch_size_embed==='number' && (
                           <div>
                             <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Embedding batch size</span>
-                            <p className="text-sm">{indexMeta.batch_size_embed}</p>
+                            <p className="text-sm">{meta.batch_size_embed}</p>
                           </div>
                         )}
-                        {typeof indexMeta.batch_size_enrich==='number' && (
+                        {typeof meta.batch_size_enrich==='number' && (
                           <div>
                             <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Enrichment batch size</span>
-                            <p className="text-sm">{indexMeta.batch_size_enrich}</p>
+                            <p className="text-sm">{meta.batch_size_enrich}</p>
                           </div>
                         )}
                       </div>
@@ -290,14 +301,14 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                 )}
 
                 {/* Metadata info */}
-                {isInferredMetadata && indexMeta.metadata_inferred_at && (
+                {isInferredMetadata && dateValue(meta.metadata_inferred_at) && (
                   <div className="border-t border-white/10 pt-4">
                     <h3 className="text-sm font-medium text-gray-300 mb-3">Metadata Information</h3>
                     <div className="text-xs text-gray-400 space-y-1">
-                      <p>Inferred at: {new Date(indexMeta.metadata_inferred_at).toLocaleString()}</p>
+                      <p>Inferred at: {new Date(dateValue(meta.metadata_inferred_at)!).toLocaleString()}</p>
                       <p>Source: LanceDB table inspection</p>
-                      {indexMeta.sample_chunk_length && (
-                        <p>Sample chunk length: {indexMeta.sample_chunk_length} characters</p>
+                      {numberValue(meta.sample_chunk_length) !== undefined && (
+                        <p>Sample chunk length: {numberValue(meta.sample_chunk_length)} characters</p>
                       )}
                     </div>
                   </div>
@@ -309,42 +320,42 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
             {hasMetadata && indexStatus === 'legacy' && (
               <>
                 <div className="grid grid-cols-2 gap-4">
-                  {typeof indexMeta.documents_count === 'number' && (
+                  {typeof meta.documents_count === 'number' && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Documents</span>
-                      <p className="text-sm">{indexMeta.documents_count}</p>
+                      <p className="text-sm">{meta.documents_count}</p>
                     </div>
                   )}
-                  {indexMeta.created_at && (
+                  {dateValue(meta.created_at) && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Created</span>
-                      <p className="text-sm">{new Date(indexMeta.created_at).toLocaleDateString()}</p>
+                      <p className="text-sm">{new Date(dateValue(meta.created_at)!).toLocaleDateString()}</p>
                     </div>
                   )}
-                  {indexMeta.vector_table_name && (
+                  {Boolean(meta.vector_table_name) && (
                     <div>
                       <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Vector table</span>
-                      <p className="text-sm text-gray-400 text-xs break-all">{indexMeta.vector_table_name}</p>
+                      <p className="text-gray-400 text-xs break-all">{textValue(meta.vector_table_name)}</p>
                     </div>
                   )}
                 </div>
                 
-                {indexMeta.note && (
+                {meta.note && (
                   <div className="border-t border-white/10 pt-4">
                     <h3 className="text-sm font-medium text-gray-300 mb-3">Technical Note</h3>
-                    <p className="text-xs text-gray-400">{indexMeta.note}</p>
+                    <p className="text-xs text-gray-400">{textValue(meta.note)}</p>
                   </div>
                 )}
               </>
             )}
 
             {/* Debug info for incomplete indexes */}
-            {indexStatus === 'incomplete' && indexMeta.available_tables && (
+            {indexStatus === 'incomplete' && stringArrayValue(meta.available_tables).length > 0 && (
               <div className="border-t border-white/10 pt-4">
                 <h3 className="text-sm font-medium text-gray-300 mb-3">Debug Information</h3>
                 <div className="text-xs text-gray-400 space-y-1">
-                  <p>Expected table: {indexMeta.vector_table_expected}</p>
-                  <p>Available tables: {indexMeta.available_tables.join(', ') || 'None'}</p>
+                  <p>Expected table: {textValue(meta.vector_table_expected)}</p>
+                  <p>Available tables: {stringArrayValue(meta.available_tables).join(', ') || 'None'}</p>
                 </div>
               </div>
             )}
