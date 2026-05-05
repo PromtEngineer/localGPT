@@ -11,12 +11,16 @@ import sys
 import threading
 import time
 from typing import Dict, Any, Optional, Union
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import uuid
 
 # Thread-local storage for correlation IDs
 _local = threading.local()
+
+def _utc_timestamp() -> str:
+    """Return an ISO-8601 UTC timestamp with a Z suffix."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 class StructuredLogger:
     """
@@ -43,7 +47,7 @@ class StructuredLogger:
         """Internal logging method with structured data"""
         # Add standard fields
         log_data = {
-            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'timestamp': _utc_timestamp(),
             'level': logging.getLevelName(level),
             'logger': self.name,
             'event': event,
@@ -156,7 +160,7 @@ class JSONLogHandler(logging.Handler):
             else:
                 # Create structured log entry
                 log_entry = json.dumps({
-                    'timestamp': datetime.fromtimestamp(record.created).isoformat() + 'Z',
+                    'timestamp': datetime.fromtimestamp(record.created, timezone.utc).isoformat().replace("+00:00", "Z"),
                     'level': record.levelname,
                     'logger': record.name,
                     'message': record.getMessage(),
