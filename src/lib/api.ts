@@ -50,6 +50,21 @@ export type IndexSummary = ApiRecord & {
   model_used?: string;
 };
 
+export type IndexingResult = {
+  total_files_considered?: number;
+  files_processed?: number;
+  chunks_generated?: number;
+  incremental?: boolean;
+  unchanged_files?: number;
+  chunk_cache_hits?: number;
+  force_reindex?: boolean;
+};
+
+export type BuildIndexResponse = {
+  message: string;
+  indexing_result?: IndexingResult | null;
+};
+
 export interface ChatMessage {
   id: string;
   content: string | Array<ApiRecord> | { steps: Step[] };
@@ -505,7 +520,7 @@ class ChatAPI {
     batchSizeEmbed?: number;
     batchSizeEnrich?: number;
     forceReindex?: boolean;
-  } = {}): Promise<{ message: string }> {
+  } = {}): Promise<BuildIndexResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/build`, {
         method: 'POST',

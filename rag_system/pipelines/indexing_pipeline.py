@@ -1,5 +1,9 @@
 from typing import List, Dict, Any
+import copy
+import hashlib
+import json
 import os
+from pathlib import Path
 import networkx as nx
 from rag_system.ingestion.document_converter import DocumentConverter
 from rag_system.ingestion.chunking import MarkdownRecursiveChunker
@@ -126,6 +130,8 @@ class IndexingPipeline:
         db_path = self.config.get("db_path", "backend/chat_data.db")
         index_store_path = self.config.get("index_store_path", "index_store")
         self.incremental_indexer = IncrementalIndexer(db_path, index_store_path)
+        self.chunk_cache_dir = Path(index_store_path) / "chunk_cache"
+        self.chunk_cache_dir.mkdir(parents=True, exist_ok=True)
 
         # ------------------------------------------------------------------
         # Late-Chunk encoder initialisation (optional)
@@ -171,15 +177,20 @@ class IndexingPipeline:
         if incremental and not force_reindex:
             indexing_logger.info("incremental_indexing", enabled=True, force_reindex=False)
             files_to_index, unchanged_files = self.incremental_indexer.get_incremental_file_list(
-                file_paths, force_reindex
+                file_paths, index_id=index_id, force_reindex=force_reindex
             )
 
             if unchanged_files:
                 indexing_logger.info("skipping_unchanged_files", count=len(unchanged_files))
             if not files_to_index:
                 indexing_logger.info("indexing_not_required", message="All files are up-to-date", total_files=len(file_paths))
-                self._print_final_statistics(len(file_paths), 0, incremental=True)
-                return
+                return self._print_final_statistics(
+                    len(file_paths),
+                    0,
+                    index_id=index_id,
+                    incremental=True,
+                    unchanged_count=len(unchanged_files),
+                )
         else:
             if force_reindex:
                 indexing_logger.info("indexing_mode", mode="force_reindex")
@@ -198,6 +209,8 @@ class IndexingPipeline:
             # Step 1: Document Processing and Chunking
             all_chunks = []
             doc_chunks_map = {}
+            pending_metadata_updates = []
+            chunk_cache_hits = 0
             with timer("Document Processing & Chunking"):
                 file_tracker = ProgressTracker(len(files_to_index), "Document Processing")
 
@@ -206,23 +219,32 @@ class IndexingPipeline:
                         document_id = os.path.basename(file_path)
                         indexing_logger.debug("processing_file", document_id=document_id, file_path=file_path)
 
-                        pages_data = self.document_converter.convert_to_markdown(file_path)
-                        file_chunks = []
+                        cache_key = self._chunk_cache_key(file_path)
+                        file_chunks = self._load_chunk_cache(cache_key)
+                        if file_chunks is not None:
+                            chunk_cache_hits += 1
+                            indexing_logger.info("chunk_cache_hit", document_id=document_id, file_path=file_path)
+                        else:
+                            pages_data = self.document_converter.convert_to_markdown(file_path)
+                            file_chunks = []
 
-                        for tpl in pages_data:
-                            if len(tpl) == 3:
-                                markdown_text, metadata, doc_obj = tpl
-                                if hasattr(self.chunker, "chunk_document"):
-                                    chunks = self.chunker.chunk_document(doc_obj, document_id=document_id, metadata=metadata)
+                            for tpl in pages_data:
+                                if len(tpl) == 3:
+                                    markdown_text, metadata, doc_obj = tpl
+                                    if hasattr(self.chunker, "chunk_document"):
+                                        chunks = self.chunker.chunk_document(doc_obj, document_id=document_id, metadata=metadata)
+                                    else:
+                                        chunks = self.chunker.chunk(markdown_text, document_id, metadata)
                                 else:
+                                    markdown_text, metadata = tpl
                                     chunks = self.chunker.chunk(markdown_text, document_id, metadata)
-                            else:
-                                markdown_text, metadata = tpl
-                                chunks = self.chunker.chunk(markdown_text, document_id, metadata)
-                            file_chunks.extend(chunks)
+                                file_chunks.extend(chunks)
+
+                            self._save_chunk_cache(cache_key, file_chunks)
 
                         # Add a sequential chunk_index to each chunk within the document
                         for i, chunk in enumerate(file_chunks):
+                            chunk.setdefault("text", "")
                             if 'metadata' not in chunk:
                                 chunk['metadata'] = {}
                             chunk['metadata']['chunk_index'] = i
@@ -233,13 +255,9 @@ class IndexingPipeline:
                         except Exception as e:
                             indexing_logger.warning("overview_creation_failed", document_id=document_id, error=str(e))
 
-                        # Update incremental indexer with chunk count
-                        self.incremental_indexer.update_document_metadata(
-                            file_path, index_id, len(file_chunks), "index"
-                        )
-
                         all_chunks.extend(file_chunks)
                         doc_chunks_map[document_id] = file_chunks  # save for late-chunk step
+                        pending_metadata_updates.append((file_path, len(file_chunks)))
                         indexing_logger.info("chunks_generated", document_id=document_id, chunk_count=len(file_chunks))
                         file_tracker.update(1)
 
@@ -252,7 +270,14 @@ class IndexingPipeline:
 
             if not all_chunks:
                 indexing_logger.warning("no_chunks_generated")
-                return
+                return self._print_final_statistics(
+                    len(files_to_index) + len(unchanged_files),
+                    0,
+                    index_id=index_id,
+                    incremental=incremental,
+                    unchanged_count=len(unchanged_files),
+                    chunk_cache_hits=chunk_cache_hits,
+                )
 
             indexing_logger.info("chunks_total", count=len(all_chunks))
             memory_mb = estimate_memory_usage(all_chunks)
@@ -302,6 +327,8 @@ class IndexingPipeline:
                     embeddings = self.embedding_generator.generate(all_chunks)
                     
                     indexing_logger.info("vector_indexing_start", vector_count=len(embeddings), table_name=table_name)
+                    if incremental and not force_reindex:
+                        self._delete_existing_documents_from_table(table_name, doc_chunks_map.keys())
                     self.vector_indexer.index(table_name, all_chunks, embeddings)
                     indexing_logger.info("vector_embeddings_indexed", vector_count=len(embeddings), table_name=table_name)
 
@@ -368,6 +395,8 @@ class IndexingPipeline:
                                     )
                                     continue
 
+                                if incremental and not force_reindex:
+                                    self._delete_existing_documents_from_table(lc_table_name, [doc_id])
                                 self.vector_indexer.index(lc_table_name, doc_chunks, lc_vecs)
                                 total_lc_vecs += len(lc_vecs)
 
@@ -389,10 +418,22 @@ class IndexingPipeline:
                     nx.write_gml(G, graph_path)
                     indexing_logger.info("knowledge_graph_saved", graph_path=graph_path, entity_count=len(graph_data.get('entities', [])), relationship_count=len(graph_data.get('relationships', [])))
                     
+        for file_path, chunk_count in pending_metadata_updates:
+            self.incremental_indexer.update_document_metadata(
+                file_path, index_id, chunk_count, "index"
+            )
+
         indexing_logger.info("indexing_complete", total_processed=len(files_to_index) + len(unchanged_files), total_chunks=len(all_chunks), unchanged_count=len(unchanged_files), incremental=incremental)
         total_processed = len(files_to_index) + len(unchanged_files)
-        self._print_final_statistics(total_processed, len(all_chunks), incremental=incremental,
-                                   unchanged_count=len(unchanged_files))
+        return self._print_final_statistics(
+            total_processed,
+            len(all_chunks),
+            index_id=index_id,
+            incremental=incremental,
+            unchanged_count=len(unchanged_files),
+            chunk_cache_hits=chunk_cache_hits,
+            force_reindex=force_reindex,
+        )
 
     def process_documents(self, file_paths: List[str], index_id: str = "default",
                          incremental: bool = True, force_reindex: bool = False):
@@ -407,7 +448,64 @@ class IndexingPipeline:
         """
         return self.run(file_paths, index_id=index_id, incremental=incremental, force_reindex=force_reindex)
     
-    def _print_final_statistics(self, num_files: int, num_chunks: int, incremental: bool = False, unchanged_count: int = 0):
+    def _chunk_cache_key(self, file_path: str) -> str:
+        """Build a stable cache key for conversion/chunking output."""
+        file_hash = self.incremental_indexer.calculate_file_hash(file_path)
+        chunking_config = self.config.get("chunking", {})
+        cache_fingerprint = {
+            "file_hash": file_hash,
+            "chunker_mode": self.config.get("chunker_mode", "docling"),
+            "chunk_size": chunking_config.get("chunk_size", self.config.get("chunk_size", 1500)),
+            "chunk_overlap": chunking_config.get("chunk_overlap", self.config.get("chunk_overlap", 200)),
+            "max_tokens": self.config.get("max_tokens", chunking_config.get("chunk_size", self.config.get("chunk_size", 1500))),
+            "overlap_sentences": self.config.get("overlap_sentences", 1),
+            "embedding_model_name": self.config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B"),
+        }
+        raw_key = json.dumps(cache_fingerprint, sort_keys=True).encode("utf-8")
+        return hashlib.sha256(raw_key).hexdigest()
+
+    def _load_chunk_cache(self, cache_key: str) -> List[Dict[str, Any]] | None:
+        cache_path = self.chunk_cache_dir / f"{cache_key}.json"
+        if not cache_path.exists():
+            return None
+        try:
+            with cache_path.open("r", encoding="utf-8") as f:
+                chunks = json.load(f)
+            return copy.deepcopy(chunks)
+        except Exception as e:
+            indexing_logger.warning("chunk_cache_load_failed", cache_key=cache_key, error=str(e))
+            return None
+
+    def _save_chunk_cache(self, cache_key: str, chunks: List[Dict[str, Any]]):
+        cache_path = self.chunk_cache_dir / f"{cache_key}.json"
+        try:
+            with cache_path.open("w", encoding="utf-8") as f:
+                json.dump(chunks, f)
+        except Exception as e:
+            indexing_logger.warning("chunk_cache_save_failed", cache_key=cache_key, error=str(e))
+
+    def _delete_existing_documents_from_table(self, table_name: str, document_ids):
+        """Remove stale vectors for changed documents before appending fresh rows."""
+        document_ids = list(document_ids)
+        if not document_ids:
+            return
+        if not hasattr(self, "lancedb_manager"):
+            return
+        db = self.lancedb_manager.db
+        if not hasattr(db, "table_names") or table_name not in db.table_names():
+            return
+        try:
+            tbl = self.lancedb_manager.get_table(table_name)
+            for document_id in document_ids:
+                safe_doc_id = str(document_id).replace("'", "''")
+                tbl.delete(f"document_id = '{safe_doc_id}'")
+            indexing_logger.info("stale_vectors_removed", table_name=table_name, document_count=len(document_ids))
+        except Exception as e:
+            indexing_logger.warning("stale_vector_removal_failed", table_name=table_name, error=str(e))
+
+    def _print_final_statistics(self, num_files: int, num_chunks: int, index_id: str = "default",
+                                incremental: bool = False, unchanged_count: int = 0,
+                                chunk_cache_hits: int = 0, force_reindex: bool = False):
         """Log final indexing statistics"""
         processed_files = num_files - unchanged_count if incremental else num_files
         stats = {
@@ -417,10 +515,12 @@ class IndexingPipeline:
             'average_chunks_per_processed_file': round(num_chunks / processed_files, 1) if processed_files > 0 else 0,
             'incremental': incremental,
             'unchanged_files': unchanged_count,
+            'chunk_cache_hits': chunk_cache_hits,
+            'force_reindex': force_reindex,
         }
 
         if hasattr(self, 'incremental_indexer'):
-            index_stats = self.incremental_indexer.get_index_stats()
+            index_stats = self.incremental_indexer.get_index_stats(index_id)
             stats.update({
                 'total_indexed_documents': index_stats['total_documents'],
                 'total_indexed_chunks': index_stats['total_chunks'],
@@ -442,3 +542,4 @@ class IndexingPipeline:
         }
 
         indexing_logger.info('final_indexing_statistics', **stats)
+        return stats

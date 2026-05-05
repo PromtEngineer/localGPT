@@ -69,6 +69,32 @@ class IncrementalIndexer:
             )
         ''')
 
+        # Index-scoped document metadata. The original document_metadata table
+        # is retained for compatibility, but new reads/writes use this table so
+        # the same file can be tracked independently across different indexes.
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS document_metadata_v2 (
+                index_id TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                file_hash TEXT NOT NULL,
+                modification_time REAL NOT NULL,
+                file_size INTEGER NOT NULL,
+                last_indexed REAL,
+                chunk_count INTEGER DEFAULT 0,
+                created_at REAL DEFAULT (strftime('%s', 'now')),
+                updated_at REAL DEFAULT (strftime('%s', 'now')),
+                PRIMARY KEY (index_id, file_path)
+            )
+        ''')
+
+        cursor.execute('''
+            INSERT OR IGNORE INTO document_metadata_v2
+            (index_id, file_path, file_hash, modification_time, file_size, last_indexed, chunk_count, created_at, updated_at)
+            SELECT COALESCE(index_id, 'default'), file_path, file_hash, modification_time, file_size,
+                   last_indexed, chunk_count, created_at, updated_at
+            FROM document_metadata
+        ''')
+
         # Index operations log for rollback/debugging
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS index_operations (
@@ -85,6 +111,8 @@ class IncrementalIndexer:
         # Create indexes for performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_doc_meta_index_id ON document_metadata(index_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_doc_meta_last_indexed ON document_metadata(last_indexed)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_doc_meta_v2_file_path ON document_metadata_v2(file_path)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_doc_meta_v2_last_indexed ON document_metadata_v2(last_indexed)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_ops_index_id ON index_operations(index_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_ops_timestamp ON index_operations(timestamp)')
 
@@ -111,14 +139,14 @@ class IncrementalIndexer:
             size=stat.st_size
         )
 
-    def get_stored_metadata(self, file_path: str) -> Optional[DocumentMetadata]:
+    def get_stored_metadata(self, file_path: str, index_id: str = "default") -> Optional[DocumentMetadata]:
         """Get stored metadata from database"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.execute('''
             SELECT file_hash, modification_time, file_size, last_indexed, chunk_count, index_id
-            FROM document_metadata
-            WHERE file_path = ?
-        ''', (file_path,))
+            FROM document_metadata_v2
+            WHERE index_id = ? AND file_path = ?
+        ''', (index_id, file_path))
 
         row = cursor.fetchone()
         conn.close()
@@ -135,7 +163,7 @@ class IncrementalIndexer:
             )
         return None
 
-    def has_document_changed(self, file_path: str) -> Tuple[bool, Optional[str]]:
+    def has_document_changed(self, file_path: str, index_id: str = "default") -> Tuple[bool, Optional[str]]:
         """
         Check if document has changed since last indexing.
 
@@ -146,7 +174,7 @@ class IncrementalIndexer:
             return False, "file does not exist"
 
         current_meta = self.get_file_metadata(file_path)
-        stored_meta = self.get_stored_metadata(file_path)
+        stored_meta = self.get_stored_metadata(file_path, index_id)
 
         if stored_meta is None:
             return True, "new document"
@@ -163,7 +191,7 @@ class IncrementalIndexer:
 
         return False, None
 
-    def detect_changes(self, file_paths: List[str]) -> Dict[str, Tuple[bool, Optional[str]]]:
+    def detect_changes(self, file_paths: List[str], index_id: str = "default") -> Dict[str, Tuple[bool, Optional[str]]]:
         """
         Detect which documents have changed.
 
@@ -172,7 +200,7 @@ class IncrementalIndexer:
         """
         changes = {}
         for file_path in file_paths:
-            has_changed, reason = self.has_document_changed(file_path)
+            has_changed, reason = self.has_document_changed(file_path, index_id)
             changes[file_path] = (has_changed, reason)
 
         return changes
@@ -186,19 +214,26 @@ class IncrementalIndexer:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        # Update or insert metadata
+        # Update or insert index-scoped metadata
         cursor.execute('''
-            INSERT OR REPLACE INTO document_metadata
-            (file_path, file_hash, modification_time, file_size, last_indexed, chunk_count, index_id, updated_at)
+            INSERT INTO document_metadata_v2
+            (index_id, file_path, file_hash, modification_time, file_size, last_indexed, chunk_count, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(index_id, file_path) DO UPDATE SET
+                file_hash = excluded.file_hash,
+                modification_time = excluded.modification_time,
+                file_size = excluded.file_size,
+                last_indexed = excluded.last_indexed,
+                chunk_count = excluded.chunk_count,
+                updated_at = excluded.updated_at
         ''', (
+            index_id,
             file_path,
             current_meta.file_hash,
             current_meta.modification_time,
             current_meta.size,
             now,
             chunk_count,
-            index_id,
             now
         ))
 
@@ -212,21 +247,27 @@ class IncrementalIndexer:
         conn.close()
 
     def get_incremental_file_list(self, file_paths: List[str],
+                                index_id: str = "default",
                                 force_reindex: bool = False) -> Tuple[List[str], List[str]]:
         """
         Get lists of files that need indexing vs those that are unchanged.
 
         Args:
             file_paths: All file paths to consider
+            index_id: Index whose metadata should be checked
             force_reindex: If True, reindex all files regardless of changes
 
         Returns:
             (files_to_index, unchanged_files)
         """
+        if isinstance(index_id, bool):
+            force_reindex = index_id
+            index_id = "default"
+
         if force_reindex:
             return file_paths, []
 
-        changes = self.detect_changes(file_paths)
+        changes = self.detect_changes(file_paths, index_id)
         files_to_index = []
         unchanged_files = []
 
@@ -249,14 +290,14 @@ class IncrementalIndexer:
             # Stats for specific index
             cursor.execute('''
                 SELECT COUNT(*), SUM(chunk_count), SUM(file_size), MAX(last_indexed)
-                FROM document_metadata
+                FROM document_metadata_v2
                 WHERE index_id = ?
             ''', (index_id,))
         else:
             # Global stats
             cursor.execute('''
                 SELECT COUNT(*), SUM(chunk_count), SUM(file_size), MAX(last_indexed)
-                FROM document_metadata
+                FROM document_metadata_v2
             ''')
 
         row = cursor.fetchone()
@@ -301,30 +342,30 @@ class IncrementalIndexer:
         cursor = conn.cursor()
 
         # Get all tracked files
-        cursor.execute('SELECT file_path FROM document_metadata')
-        tracked_files = {row[0] for row in cursor.fetchall()}
+        cursor.execute('SELECT index_id, file_path FROM document_metadata_v2')
+        tracked_files = {(row[0], row[1]) for row in cursor.fetchall()}
 
         # Find files that no longer exist
         existing_files_set = set(existing_files)
-        orphaned_files = tracked_files - existing_files_set
+        orphaned_entries = [(index_id, file_path) for index_id, file_path in tracked_files if file_path not in existing_files_set]
 
-        if orphaned_files:
+        if orphaned_entries:
             # Remove orphaned metadata
             cursor.executemany('''
-                DELETE FROM document_metadata WHERE file_path = ?
-            ''', [(f,) for f in orphaned_files])
+                DELETE FROM document_metadata_v2 WHERE index_id = ? AND file_path = ?
+            ''', orphaned_entries)
 
             # Log cleanup operations
             now = time.time()
             cursor.executemany('''
                 INSERT INTO index_operations (index_id, operation, file_path, timestamp, status)
                 VALUES (?, 'cleanup', ?, ?, 'completed')
-            ''', [('system', f, now) for f in orphaned_files])
+            ''', [(index_id, file_path, now) for index_id, file_path in orphaned_entries])
 
             conn.commit()
 
         conn.close()
-        return len(orphaned_files)
+        return len(orphaned_entries)
 
     def reset_index(self, index_id: str):
         """Reset all metadata for an index (useful for forced reindexing)"""
@@ -332,7 +373,7 @@ class IncrementalIndexer:
         cursor = conn.cursor()
 
         # Remove metadata for this index
-        cursor.execute('DELETE FROM document_metadata WHERE index_id = ?', (index_id,))
+        cursor.execute('DELETE FROM document_metadata_v2 WHERE index_id = ?', (index_id,))
 
         # Log the reset operation
         now = time.time()

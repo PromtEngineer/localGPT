@@ -532,6 +532,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     "error": "A 'file_paths' list is required."
                 }, status_code=400)
                 return
+            indexing_result = None
 
             # Allow explicit table_name override
             table_name = data.get('table_name')
@@ -602,7 +603,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 )
                 if force_reindex:
                     self._clear_index_artifacts(temp_pipeline, table_name, session_id)
-                temp_pipeline.run(
+                indexing_result = temp_pipeline.run(
                     file_paths,
                     index_id=session_id or table_name or "default",
                     force_reindex=force_reindex,
@@ -665,7 +666,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 )
                 if force_reindex:
                     self._clear_index_artifacts(temp_pipeline, table_name, session_id)
-                temp_pipeline.run(
+                indexing_result = temp_pipeline.run(
                     file_paths,
                     index_id=session_id or table_name or "default",
                     force_reindex=force_reindex,
@@ -687,7 +688,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     "batch_size_embed": batch_size_embed,
                     "batch_size_enrich": batch_size_enrich,
                     "force_reindex": force_reindex,
-                }
+                },
+                "indexing_result": indexing_result,
             })
 
             if embedding_model:
