@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ApiRecord, BuildIndexResponse, chatAPI, IndexSummary } from '@/lib/api';
+import { ApiRecord, BuildIndexResponse, chatAPI, IndexJob, IndexSummary } from '@/lib/api';
 
 interface Props {
   onSelect: (indexId: string) => void;
@@ -13,6 +13,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
   const [search, setSearch] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
+  const [buildJob, setBuildJob] = useState<IndexJob | null>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,6 +68,39 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     return `Rebuild complete: ${parts.join(', ')}.`;
   };
 
+  const waitForBuildJob = async (jobId: string): Promise<BuildIndexResponse> => {
+    while (true) {
+      const job = await chatAPI.getIndexJob(jobId);
+      setBuildJob(job);
+      setBusyMessage(job.message || 'Rebuilding index...');
+
+      if (job.status === 'completed') {
+        return job.result || { message: job.message || 'Rebuild complete.' };
+      }
+      if (job.status === 'failed') {
+        throw new Error(job.error || job.message || 'Index rebuild failed.');
+      }
+      if (job.status === 'cancelled') {
+        throw new Error('Index rebuild was cancelled.');
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  };
+
+  const rebuildInBackground = async (idxId: string, idx: IndexSummary, forceReindex: boolean) => {
+    const started = await chatAPI.startIndexBuild(idxId, buildOptions(idx, forceReindex));
+    setBuildJob({
+      id: started.job_id,
+      index_id: idxId,
+      status: 'queued',
+      stage: 'queued',
+      progress: 0,
+      message: started.message,
+    });
+    return waitForBuildJob(started.job_id);
+  };
+
   async function handleDelete(idxId: string, name: string) {
     if (!confirm(`Delete index "${name}"? This cannot be undone.`)) return;
     try {
@@ -92,7 +126,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     setBusyMessage(`${forceReindex ? 'Force rebuilding' : 'Checking changed files for'} "${idx.name || 'Untitled index'}"…`);
     setMenuOpenId(null);
     try {
-      const result = await chatAPI.buildIndex(id, buildOptions(idx, forceReindex));
+      const result = await rebuildInBackground(id, idx, forceReindex);
       const data = await chatAPI.listIndexes();
       setIndexes(data.indexes);
       alert(formatBuildSummary(result));
@@ -101,6 +135,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     } finally {
       setBusyId(null);
       setBusyMessage(null);
+      setBuildJob(null);
     }
   }
 
@@ -121,7 +156,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     try {
       await chatAPI.uploadFilesToIndex(uploadTargetId, Array.from(files));
       setBusyMessage(`Rebuilding "${idx.name || 'Untitled index'}" with the added file(s)…`);
-      const result = await chatAPI.buildIndex(uploadTargetId, buildOptions(idx, false));
+      const result = await rebuildInBackground(uploadTargetId, idx, false);
       setBusyMessage('Refreshing indexes…');
       const data = await chatAPI.listIndexes();
       setIndexes(data.indexes);
@@ -131,8 +166,20 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     } finally {
       setBusyId(null);
       setBusyMessage(null);
+      setBuildJob(null);
       setUploadTargetId(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function handleCancelBuild() {
+    if (!buildJob) return;
+    try {
+      const job = await chatAPI.cancelIndexJob(buildJob.id);
+      setBuildJob(job);
+      setBusyMessage(job.message || 'Cancel requested.');
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to cancel rebuild');
     }
   }
 
@@ -161,7 +208,28 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
           onChange={(e)=>handleUploadAndRebuild(e.target.files)}
         />
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" className="w-full px-3 py-2 rounded bg-black/30 border border-white/20 focus:outline-none" />
-        {busyId && <p className="text-xs text-green-300">{busyMessage || 'Rebuilding index…'} Keep both backend terminals running.</p>}
+        {busyId && (
+          <div className="space-y-2 text-xs text-green-300">
+            <p>{busyMessage || 'Rebuilding index…'} Keep both backend terminals running.</p>
+            {buildJob && (
+              <div className="space-y-1">
+                <div className="h-1.5 overflow-hidden rounded bg-white/10">
+                  <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.max(0, Math.min(buildJob.progress || 0, 100))}%` }} />
+                </div>
+                <div className="flex items-center justify-between text-gray-300">
+                  <span>{buildJob.stage}</span>
+                  <span>{buildJob.progress || 0}%</span>
+                </div>
+                {buildJob.cancel_requested && <p className="text-yellow-200">Cancel requested. Waiting for the active indexing step to finish.</p>}
+                {buildJob.status !== 'completed' && buildJob.status !== 'failed' && buildJob.status !== 'cancelled' && (
+                  <button onClick={handleCancelBuild} className="rounded bg-red-500/80 px-3 py-1 text-white hover:bg-red-500">
+                    Cancel rebuild
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         {loading && <p className="text-sm text-gray-300">Loading…</p>}
         {error && <p className="text-sm text-red-400">{error}</p>}
         {!loading && !error && (

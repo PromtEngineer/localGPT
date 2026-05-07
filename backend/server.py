@@ -90,6 +90,10 @@ async def health():
     """Health check endpoint"""
     return {
         "status": "ok",
+        "rag_system_available": RAG_SYSTEM_AVAILABLE,
+        "python_executable": sys.executable,
+        "python_version": sys.version.split()[0],
+        "virtual_env": os.environ.get("VIRTUAL_ENV"),
         "ollama_running": ollama_client.is_ollama_running(),
         "available_models": ollama_client.list_models(),
         "database_stats": db.get_stats()
@@ -584,6 +588,16 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...)):
     return {"message": f"Uploaded {len(uploaded_files)} files", "uploaded_files": uploaded_files}
 
 def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = None) -> Dict[str, Any]:
+    if not RAG_SYSTEM_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "RAG indexing dependencies are not available in this backend Python process. "
+                "Stop the backend, run 'source .venv/bin/activate' from the project root, "
+                "then restart with 'python backend/server.py'."
+            ),
+        )
+
     index = db.get_index(index_id)
     if not index:
         raise HTTPException(status_code=404, detail="Index not found")
@@ -690,7 +704,28 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     if job_id:
         _update_index_job(job_id, stage="indexing", progress=20, message="RAG pipeline is indexing documents")
 
-    rag_resp = requests.post(rag_api_url, json=payload)
+    try:
+        rag_resp = requests.post(rag_api_url, json=payload)
+    except requests.exceptions.ConnectionError as e:
+        detail = (
+            "Could not reach the RAG indexing server at http://localhost:8001. "
+            "Start it in Terminal 2 with 'source .venv/bin/activate' and "
+            "'python -m rag_system.api_server'."
+        )
+        db.update_index_metadata(index_id, {
+            "status": "failed",
+            "build_failed_at": datetime.now().isoformat(),
+            "build_error": detail,
+        })
+        raise HTTPException(status_code=503, detail=detail) from e
+    except requests.exceptions.RequestException as e:
+        detail = f"RAG indexing request failed before completion: {e}"
+        db.update_index_metadata(index_id, {
+            "status": "failed",
+            "build_failed_at": datetime.now().isoformat(),
+            "build_error": detail,
+        })
+        raise HTTPException(status_code=503, detail=detail) from e
     if rag_resp.status_code == 200:
         final_updates = {
             **meta_updates,
