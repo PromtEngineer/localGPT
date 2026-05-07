@@ -68,6 +68,21 @@ def _get_index_job(job_id: str) -> Optional[Dict[str, Any]]:
         job = index_jobs.get(job_id)
         return dict(job) if job else None
 
+
+@app.post("/index-jobs/{job_id}/progress")
+async def update_index_job_progress(job_id: str, request: Request):
+    job = _get_index_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Index job not found")
+    data = await request.json()
+    updates = {
+        key: data[key]
+        for key in ("stage", "progress", "message")
+        if key in data
+    }
+    _update_index_job(job_id, **updates)
+    return _get_index_job(job_id)
+
 # Routes
 
 @app.get("/health")
@@ -642,6 +657,9 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         payload["enrich_model"] = enrich_model
     if overview_model:
         payload["overview_model_name"] = overview_model
+    if job_id:
+        payload["job_id"] = job_id
+        payload["backend_base_url"] = "http://localhost:8000"
 
     meta_updates = {
         "status": "building",
@@ -685,6 +703,13 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         response_data.update(final_updates)
         return response_data
 
+    if rag_resp.status_code == 499:
+        db.update_index_metadata(index_id, {
+            "status": "cancelled",
+            "build_cancelled_at": datetime.now().isoformat(),
+        })
+        raise RuntimeError("indexing_cancelled")
+
     # Gracefully handle scenario where table already exists (idempotent build)
     try:
         err_json = rag_resp.json()
@@ -724,6 +749,12 @@ def _run_index_build_job(job_id: str):
         if status == "cancelled":
             db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
         _update_index_job(job_id, status=status, stage=status, progress=100, message=message, result=result, finished_at=datetime.now().isoformat())
+    except RuntimeError as e:
+        if str(e) == "indexing_cancelled":
+            db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
+            _update_index_job(job_id, status="cancelled", stage="cancelled", progress=100, message="Indexing cancelled", finished_at=datetime.now().isoformat())
+            return
+        raise
     except Exception as e:
         db.update_index_metadata(job["index_id"], {
             "status": "failed",

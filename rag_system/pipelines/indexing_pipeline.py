@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable
 import copy
 import hashlib
 import json
@@ -147,7 +147,9 @@ class IndexingPipeline:
                 self.latechunk_enabled = False
 
     def run(self, file_paths: List[str] | None = None, *, documents: List[str] | None = None,
-            index_id: str = "default", incremental: bool = True, force_reindex: bool = False):
+            index_id: str = "default", incremental: bool = True, force_reindex: bool = False,
+            progress_callback: Callable[[str, int, str], None] | None = None,
+            cancel_callback: Callable[[], bool] | None = None):
         """
         Processes and indexes documents based on the pipeline's configuration.
         Supports incremental indexing to avoid re-processing unchanged documents.
@@ -172,6 +174,19 @@ class IndexingPipeline:
             incremental=incremental,
             force_reindex=force_reindex,
         )
+
+        def report(stage: str, progress: int, message: str):
+            if progress_callback:
+                progress_callback(stage, max(0, min(progress, 100)), message)
+
+        def check_cancelled():
+            if cancel_callback and cancel_callback():
+                indexing_logger.warning("indexing_cancelled", index_id=index_id)
+                report("cancelled", 100, "Indexing cancelled")
+                raise RuntimeError("indexing_cancelled")
+
+        report("planning", 8, "Checking changed files")
+        check_cancelled()
 
         # Determine which files need processing
         if incremental and not force_reindex:
@@ -202,73 +217,119 @@ class IndexingPipeline:
 
         indexing_logger.info("files_to_process", files_to_index=len(files_to_index))
 
-        # Import progress tracking utilities
-        from rag_system.utils.batch_processor import timer, ProgressTracker, estimate_memory_usage
+        from rag_system.utils.batch_processor import timer, estimate_memory_usage
+
+        retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})
+        table_name = self.config["storage"].get("text_table_name") or retriever_configs.get("dense", {}).get("lancedb_table_name", "default_text_table")
+        enricher_config = self.config.get("contextual_enricher", {})
+        enricher_enabled = enricher_config.get("enabled", False)
+        total_chunks = 0
+        processed_files = 0
+        failed_files = 0
+        chunk_cache_hits = 0
+        graph_chunks = []
 
         with timer("Complete Indexing Pipeline"):
-            # Step 1: Document Processing and Chunking
-            all_chunks = []
-            doc_chunks_map = {}
-            pending_metadata_updates = []
-            chunk_cache_hits = 0
-            with timer("Document Processing & Chunking"):
-                file_tracker = ProgressTracker(len(files_to_index), "Document Processing")
+            for file_idx, file_path in enumerate(files_to_index, start=1):
+                document_id = os.path.basename(file_path)
+                file_base_progress = 10 + int(((file_idx - 1) / max(len(files_to_index), 1)) * 80)
+                file_done_progress = 10 + int((file_idx / max(len(files_to_index), 1)) * 80)
+                try:
+                    check_cancelled()
+                    report("converting", file_base_progress, f"Converting {document_id} ({file_idx}/{len(files_to_index)})")
+                    indexing_logger.debug("processing_file", document_id=document_id, file_path=file_path)
 
-                for file_path in files_to_index:
-                    try:
-                        document_id = os.path.basename(file_path)
-                        indexing_logger.debug("processing_file", document_id=document_id, file_path=file_path)
-
-                        cache_key = self._chunk_cache_key(file_path)
-                        file_chunks = self._load_chunk_cache(cache_key)
-                        if file_chunks is not None:
-                            chunk_cache_hits += 1
-                            indexing_logger.info("chunk_cache_hit", document_id=document_id, file_path=file_path)
-                        else:
-                            pages_data = self.document_converter.convert_to_markdown(file_path)
-                            file_chunks = []
-
-                            for tpl in pages_data:
-                                if len(tpl) == 3:
-                                    markdown_text, metadata, doc_obj = tpl
-                                    if hasattr(self.chunker, "chunk_document"):
-                                        chunks = self.chunker.chunk_document(doc_obj, document_id=document_id, metadata=metadata)
-                                    else:
-                                        chunks = self.chunker.chunk(markdown_text, document_id, metadata)
+                    cache_key = self._chunk_cache_key(file_path)
+                    file_chunks = self._load_chunk_cache(cache_key)
+                    if file_chunks is not None:
+                        chunk_cache_hits += 1
+                        indexing_logger.info("chunk_cache_hit", document_id=document_id, file_path=file_path)
+                    else:
+                        pages_data = self.document_converter.convert_to_markdown(file_path)
+                        check_cancelled()
+                        report("chunking", file_base_progress + 3, f"Chunking {document_id}")
+                        file_chunks = []
+                        for tpl in pages_data:
+                            if len(tpl) == 3:
+                                markdown_text, metadata, doc_obj = tpl
+                                if hasattr(self.chunker, "chunk_document"):
+                                    chunks = self.chunker.chunk_document(doc_obj, document_id=document_id, metadata=metadata)
                                 else:
-                                    markdown_text, metadata = tpl
                                     chunks = self.chunker.chunk(markdown_text, document_id, metadata)
-                                file_chunks.extend(chunks)
+                            else:
+                                markdown_text, metadata = tpl
+                                chunks = self.chunker.chunk(markdown_text, document_id, metadata)
+                            file_chunks.extend(chunks)
+                        self._save_chunk_cache(cache_key, file_chunks)
 
-                            self._save_chunk_cache(cache_key, file_chunks)
+                    for i, chunk in enumerate(file_chunks):
+                        chunk.setdefault("text", "")
+                        if 'metadata' not in chunk:
+                            chunk['metadata'] = {}
+                        chunk['metadata']['chunk_index'] = i
 
-                        # Add a sequential chunk_index to each chunk within the document
-                        for i, chunk in enumerate(file_chunks):
-                            chunk.setdefault("text", "")
-                            if 'metadata' not in chunk:
-                                chunk['metadata'] = {}
-                            chunk['metadata']['chunk_index'] = i
-
-                        # Build and persist document overview (non-blocking errors)
-                        try:
-                            self.overview_builder.build_and_store(document_id, file_chunks)
-                        except Exception as e:
-                            indexing_logger.warning("overview_creation_failed", document_id=document_id, error=str(e))
-
-                        all_chunks.extend(file_chunks)
-                        doc_chunks_map[document_id] = file_chunks  # save for late-chunk step
-                        pending_metadata_updates.append((file_path, len(file_chunks)))
-                        indexing_logger.info("chunks_generated", document_id=document_id, chunk_count=len(file_chunks))
-                        file_tracker.update(1)
-
-                    except Exception as e:
-                        indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
-                        file_tracker.update(1, errors=1)
+                    if not file_chunks:
+                        indexing_logger.warning("file_no_chunks", document_id=document_id)
+                        failed_files += 1
                         continue
 
-                file_tracker.finish()
+                    check_cancelled()
+                    report("overview", file_base_progress + 5, f"Generating overview for {document_id}")
+                    try:
+                        self.overview_builder.build_and_store(document_id, file_chunks)
+                    except Exception as e:
+                        indexing_logger.warning("overview_creation_failed", document_id=document_id, error=str(e))
 
-            if not all_chunks:
+                    check_cancelled()
+                    if hasattr(self, 'contextual_enricher') and enricher_enabled:
+                        report("enriching", file_base_progress + 8, f"Enriching {document_id}")
+                        window_size = enricher_config.get("window_size", 1)
+                        file_chunks = self.contextual_enricher.enrich_chunks(file_chunks, window_size=window_size)
+                    else:
+                        indexing_logger.warning(
+                            "contextual_enrichment_skipped",
+                            enabled=enricher_enabled,
+                            has_enricher=hasattr(self, 'contextual_enricher'),
+                        )
+
+                    check_cancelled()
+                    report("embedding", file_base_progress + 12, f"Embedding {len(file_chunks)} chunks from {document_id}")
+                    if hasattr(self, 'vector_indexer') and hasattr(self, 'embedding_generator'):
+                        embeddings = self.embedding_generator.generate(file_chunks)
+                        check_cancelled()
+                        report("storing", file_base_progress + 16, f"Storing vectors for {document_id}")
+                        if incremental and not force_reindex:
+                            self._delete_existing_documents_from_table(table_name, [document_id])
+                        self.vector_indexer.index(table_name, file_chunks, embeddings)
+
+                        if self.latechunk_enabled:
+                            lc_table_name = self.latechunk_cfg.get("lancedb_table_name", f"{table_name}_lc")
+                            lc_vecs = self._generate_latechunk_vectors(document_id, file_chunks)
+                            if lc_vecs is not None and len(lc_vecs) > 0:
+                                if incremental and not force_reindex:
+                                    self._delete_existing_documents_from_table(lc_table_name, [document_id])
+                                self.vector_indexer.index(lc_table_name, file_chunks, lc_vecs)
+
+                    self.incremental_indexer.update_document_metadata(
+                        file_path, index_id, len(file_chunks), "index"
+                    )
+                    if hasattr(self, 'graph_extractor'):
+                        graph_chunks.extend(file_chunks)
+                    total_chunks += len(file_chunks)
+                    processed_files += 1
+                    indexing_logger.info("file_indexed", document_id=document_id, chunk_count=len(file_chunks), memory_mb=estimate_memory_usage(file_chunks))
+                    report("indexing", file_done_progress, f"Indexed {document_id}")
+
+                except RuntimeError:
+                    raise
+                except Exception as e:
+                    failed_files += 1
+                    indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
+                    report("indexing", file_done_progress, f"Skipped {document_id}: {e}")
+                    continue
+
+            check_cancelled()
+            if processed_files == 0:
                 indexing_logger.warning("no_chunks_generated")
                 return self._print_final_statistics(
                     len(files_to_index) + len(unchanged_files),
@@ -277,157 +338,22 @@ class IndexingPipeline:
                     incremental=incremental,
                     unchanged_count=len(unchanged_files),
                     chunk_cache_hits=chunk_cache_hits,
+                    force_reindex=force_reindex,
                 )
 
-            indexing_logger.info("chunks_total", count=len(all_chunks))
-            memory_mb = estimate_memory_usage(all_chunks)
-            indexing_logger.info("estimated_memory_usage", memory_mb=memory_mb)
+            report("finalizing", 92, "Creating search indexes")
+            self._ensure_fts_index(table_name)
 
-            retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})
+            if hasattr(self, 'graph_extractor') and graph_chunks:
+                report("graph", 94, "Extracting knowledge graph")
+                self._extract_knowledge_graph(graph_chunks, retriever_configs)
 
-            # Step 3: Optional Contextual Enrichment (before indexing for consistency)
-            enricher_config = self.config.get("contextual_enricher", {})
-            enricher_enabled = enricher_config.get("enabled", False)
-            
-            indexing_logger.debug(
-                "contextual_enrichment_debug",
-                config_present=bool(enricher_config),
-                enabled=enricher_enabled,
-                has_enricher=hasattr(self, 'contextual_enricher'),
-            )
-            
-            if hasattr(self, 'contextual_enricher') and enricher_enabled:
-                with timer("Contextual Enrichment"):
-                    window_size = enricher_config.get("window_size", 1)
-                    indexing_logger.info(
-                        "contextual_enrichment_started",
-                        window_size=window_size,
-                        model=self.contextual_enricher.llm_model,
-                        batch_size=self.contextual_enricher.batch_size,
-                        chunk_count=len(all_chunks),
-                    )
-                    
-                    # This modifies the 'text' field in each chunk dictionary
-                    all_chunks = self.contextual_enricher.enrich_chunks(all_chunks, window_size=window_size)
-                    
-                    indexing_logger.info("contextual_enrichment_complete", enriched_chunks=len(all_chunks), window_size=window_size)
-            else:
-                indexing_logger.warning(
-                    "contextual_enrichment_skipped",
-                    enabled=enricher_enabled,
-                    has_enricher=hasattr(self, 'contextual_enricher'),
-                )
-
-            # Step 4: Create BM25 Index from enriched chunks (for consistency with vector index)
-            if hasattr(self, 'vector_indexer') and hasattr(self, 'embedding_generator'):
-                with timer("Vector Embedding & Indexing"):
-                    table_name = self.config["storage"].get("text_table_name") or retriever_configs.get("dense", {}).get("lancedb_table_name", "default_text_table")
-                    indexing_logger.info("vector_embedding_start", embedding_model=self.config.get('embedding_model_name'), vector_table=table_name)
-                    
-                    embeddings = self.embedding_generator.generate(all_chunks)
-                    
-                    indexing_logger.info("vector_indexing_start", vector_count=len(embeddings), table_name=table_name)
-                    if incremental and not force_reindex:
-                        self._delete_existing_documents_from_table(table_name, doc_chunks_map.keys())
-                    self.vector_indexer.index(table_name, all_chunks, embeddings)
-                    indexing_logger.info("vector_embeddings_indexed", vector_count=len(embeddings), table_name=table_name)
-
-                    # Create FTS index on the 'text' field after adding data
-                    indexing_logger.info("fts_index_check", table_name=table_name)
-                    try:
-                        tbl = self.lancedb_manager.get_table(table_name)
-                        # LanceDB's default index name is "text_idx" while older
-                        # revisions of this pipeline used our own name "fts_text".
-                        # Guard against both so we don't attempt to create a     
-                        # duplicate index and trigger a LanceError.
-                        existing_indices = [idx.name for idx in tbl.list_indices()]
-                        if not any(name in existing_indices for name in ("text_idx", "fts_text")):
-                            # Use LanceDB default index naming ("text_idx")
-                            tbl.create_fts_index(
-                                "text",
-                                use_tantivy=False,
-                                replace=False,
-                            )
-                            indexing_logger.info("fts_index_created", table_name=table_name)
-                        else:
-                            indexing_logger.info("fts_index_exists", table_name=table_name)
-                    except Exception as e:
-                        indexing_logger.error("fts_index_error", table_name=table_name, error=str(e))
-
-                    # ---------------------------------------------------
-                    # Late-Chunk Embedding + Indexing (optional)
-                    # ---------------------------------------------------
-                    if self.latechunk_enabled:
-                        with timer("Late-Chunk Embedding & Indexing"):
-                            lc_table_name = self.latechunk_cfg.get("lancedb_table_name", f"{table_name}_lc")
-                            indexing_logger.info("latechunk_embedding_start", table_name=lc_table_name)
-
-                            total_lc_vecs = 0
-                            for doc_id, doc_chunks in doc_chunks_map.items():
-                                # Build full text and span list
-                                full_text_parts = []
-                                spans = []
-                                current_pos = 0
-                                for ch in doc_chunks:
-                                    ch_text = ch["text"]
-                                    full_text_parts.append(ch_text)
-                                    start = current_pos
-                                    end = start + len(ch_text)
-                                    spans.append((start, end))
-                                    current_pos = end + 1  # +1 for newline to join later
-                                full_doc = "\n".join(full_text_parts)
-
-                                try:
-                                    lc_vecs = self.latechunk_encoder.encode(full_doc, spans)
-                                except Exception as e:
-                                    indexing_logger.warning("latechunk_encode_failed", doc_id=doc_id, error=str(e))
-                                    continue
-
-                                if len(doc_chunks) == 0 or len(lc_vecs) == 0:
-                                    # Nothing to index for this document
-                                    continue
-                                if len(lc_vecs) != len(doc_chunks):
-                                    indexing_logger.warning(
-                                        "latechunk_vector_mismatch",
-                                        doc_id=doc_id,
-                                        vecs=len(lc_vecs),
-                                        chunks=len(doc_chunks),
-                                    )
-                                    continue
-
-                                if incremental and not force_reindex:
-                                    self._delete_existing_documents_from_table(lc_table_name, [doc_id])
-                                self.vector_indexer.index(lc_table_name, doc_chunks, lc_vecs)
-                                total_lc_vecs += len(lc_vecs)
-
-                            indexing_logger.info("latechunk_vectors_indexed", total_lc_vecs=total_lc_vecs)
-                
-            # Step 6: Knowledge Graph Extraction (Optional)
-            if hasattr(self, 'graph_extractor'):
-                with timer("Knowledge Graph Extraction"):
-                    graph_path = retriever_configs.get("graph", {}).get("graph_path", "./index_store/graph/default_graph.gml")
-                    indexing_logger.info("knowledge_graph_extraction_start", graph_path=graph_path)
-                    graph_data = self.graph_extractor.extract(all_chunks)
-                    G = nx.DiGraph()
-                    for entity in graph_data.get('entities', []):
-                        G.add_node(entity['id'], type=entity.get('type', 'Unknown'), properties=entity.get('properties', {}))
-                    for rel in graph_data.get('relationships', []):
-                        G.add_edge(rel['source'], rel['target'], label=rel['label'])
-                    
-                    os.makedirs(os.path.dirname(graph_path), exist_ok=True)
-                    nx.write_gml(G, graph_path)
-                    indexing_logger.info("knowledge_graph_saved", graph_path=graph_path, entity_count=len(graph_data.get('entities', [])), relationship_count=len(graph_data.get('relationships', [])))
-                    
-        for file_path, chunk_count in pending_metadata_updates:
-            self.incremental_indexer.update_document_metadata(
-                file_path, index_id, chunk_count, "index"
-            )
-
-        indexing_logger.info("indexing_complete", total_processed=len(files_to_index) + len(unchanged_files), total_chunks=len(all_chunks), unchanged_count=len(unchanged_files), incremental=incremental)
+        report("completed", 100, "Indexing complete")
         total_processed = len(files_to_index) + len(unchanged_files)
+        indexing_logger.info("indexing_complete", total_processed=total_processed, total_chunks=total_chunks, unchanged_count=len(unchanged_files), incremental=incremental, failed_files=failed_files)
         return self._print_final_statistics(
             total_processed,
-            len(all_chunks),
+            total_chunks,
             index_id=index_id,
             incremental=incremental,
             unchanged_count=len(unchanged_files),
@@ -447,6 +373,70 @@ class IndexingPipeline:
             force_reindex: Force reindexing of all documents
         """
         return self.run(file_paths, index_id=index_id, incremental=incremental, force_reindex=force_reindex)
+
+    def _ensure_fts_index(self, table_name: str):
+        if not hasattr(self, "lancedb_manager"):
+            return
+        indexing_logger.info("fts_index_check", table_name=table_name)
+        try:
+            tbl = self.lancedb_manager.get_table(table_name)
+            existing_indices = [idx.name for idx in tbl.list_indices()]
+            if not any(name in existing_indices for name in ("text_idx", "fts_text")):
+                tbl.create_fts_index(
+                    "text",
+                    use_tantivy=False,
+                    replace=False,
+                )
+                indexing_logger.info("fts_index_created", table_name=table_name)
+            else:
+                indexing_logger.info("fts_index_exists", table_name=table_name)
+        except Exception as e:
+            indexing_logger.error("fts_index_error", table_name=table_name, error=str(e))
+
+    def _generate_latechunk_vectors(self, document_id: str, doc_chunks: List[Dict[str, Any]]):
+        full_text_parts = []
+        spans = []
+        current_pos = 0
+        for chunk in doc_chunks:
+            chunk_text = chunk["text"]
+            full_text_parts.append(chunk_text)
+            start = current_pos
+            end = start + len(chunk_text)
+            spans.append((start, end))
+            current_pos = end + 1
+        full_doc = "\n".join(full_text_parts)
+
+        try:
+            lc_vecs = self.latechunk_encoder.encode(full_doc, spans)
+        except Exception as e:
+            indexing_logger.warning("latechunk_encode_failed", doc_id=document_id, error=str(e))
+            return None
+
+        if len(doc_chunks) == 0 or len(lc_vecs) == 0:
+            return None
+        if len(lc_vecs) != len(doc_chunks):
+            indexing_logger.warning(
+                "latechunk_vector_mismatch",
+                doc_id=document_id,
+                vecs=len(lc_vecs),
+                chunks=len(doc_chunks),
+            )
+            return None
+        return lc_vecs
+
+    def _extract_knowledge_graph(self, chunks: List[Dict[str, Any]], retriever_configs: Dict[str, Any]):
+        graph_path = retriever_configs.get("graph", {}).get("graph_path", "./index_store/graph/default_graph.gml")
+        indexing_logger.info("knowledge_graph_extraction_start", graph_path=graph_path)
+        graph_data = self.graph_extractor.extract(chunks)
+        graph = nx.DiGraph()
+        for entity in graph_data.get('entities', []):
+            graph.add_node(entity['id'], type=entity.get('type', 'Unknown'), properties=entity.get('properties', {}))
+        for rel in graph_data.get('relationships', []):
+            graph.add_edge(rel['source'], rel['target'], label=rel['label'])
+
+        os.makedirs(os.path.dirname(graph_path), exist_ok=True)
+        nx.write_gml(graph, graph_path)
+        indexing_logger.info("knowledge_graph_saved", graph_path=graph_path, entity_count=len(graph_data.get('entities', [])), relationship_count=len(graph_data.get('relationships', [])))
     
     def _chunk_cache_key(self, file_path: str) -> str:
         """Build a stable cache key for conversion/chunking output."""

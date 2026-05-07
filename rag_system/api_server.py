@@ -526,6 +526,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             batch_size_embed = int(data.get("batch_size_embed", 50))
             batch_size_enrich = int(data.get("batch_size_enrich", 25))
             force_reindex = bool(data.get("force_reindex", False))
+            job_id = data.get("job_id")
+            backend_base_url = data.get("backend_base_url", "http://localhost:8000")
             indexing_model_warnings = []
 
             def is_large_indexing_model(model):
@@ -554,6 +556,30 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 }, status_code=400)
                 return
             indexing_result = None
+
+            def report_progress(stage, progress, message):
+                if not job_id:
+                    return
+                try:
+                    requests.post(
+                        f"{backend_base_url}/index-jobs/{job_id}/progress",
+                        json={"stage": stage, "progress": progress, "message": message},
+                        timeout=2,
+                    )
+                except Exception:
+                    pass
+
+            def is_cancelled():
+                if not job_id:
+                    return False
+                try:
+                    resp = requests.get(f"{backend_base_url}/index-jobs/{job_id}", timeout=2)
+                    if resp.status_code != 200:
+                        return False
+                    job = resp.json()
+                    return bool(job.get("cancel_requested")) or job.get("status") == "cancelled"
+                except Exception:
+                    return False
 
             # Allow explicit table_name override
             table_name = data.get('table_name')
@@ -628,6 +654,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     file_paths,
                     index_id=session_id or table_name or "default",
                     force_reindex=force_reindex,
+                    progress_callback=report_progress,
+                    cancel_callback=is_cancelled,
                 )
             else:
                 # Use the default pipeline with overrides
@@ -691,6 +719,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     file_paths,
                     index_id=session_id or table_name or "default",
                     force_reindex=force_reindex,
+                    progress_callback=report_progress,
+                    cancel_callback=is_cancelled,
                 )
 
             self.send_json_response({
@@ -722,6 +752,11 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
         except json.JSONDecodeError:
             self.send_json_response({"error": "Invalid JSON"}, status_code=400)
+        except RuntimeError as e:
+            if str(e) == "indexing_cancelled":
+                self.send_json_response({"error": "Indexing cancelled"}, status_code=499)
+            else:
+                self.send_json_response({"error": f"Failed to start indexing: {str(e)}"}, status_code=500)
         except Exception as e:
             self.send_json_response({"error": f"Failed to start indexing: {str(e)}"}, status_code=500)
 
