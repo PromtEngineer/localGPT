@@ -2,7 +2,9 @@ from typing import List, Dict, Any, Callable
 import copy
 import hashlib
 import json
+import multiprocessing as mp
 import os
+import queue
 from pathlib import Path
 import networkx as nx
 from rag_system.ingestion.document_converter import DocumentConverter
@@ -15,6 +17,54 @@ from rag_system.indexing.contextualizer import ContextualEnricher
 from rag_system.indexing.overview_builder import OverviewBuilder
 from rag_system.utils.incremental_indexer import IncrementalIndexer
 from rag_system.utils.logging_utils import indexing_logger, PerformanceTimer
+
+
+def _convert_and_chunk_worker(file_path: str, document_id: str, config: Dict[str, Any], result_queue):
+    try:
+        converter = DocumentConverter()
+        chunker_mode = config.get("chunker_mode", "docling")
+        chunking_config = config.get("chunking", {})
+        chunk_size = chunking_config.get("chunk_size", config.get("chunk_size", 1500))
+        chunk_overlap = chunking_config.get("chunk_overlap", config.get("chunk_overlap", 200))
+
+        if chunker_mode == "docling":
+            try:
+                from rag_system.ingestion.docling_chunker import DoclingChunker
+                chunker = DoclingChunker(
+                    max_tokens=config.get("max_tokens", chunk_size),
+                    overlap=config.get("overlap_sentences", 1),
+                    tokenizer_model=config.get("embedding_model_name", "qwen3-embedding-0.6b"),
+                )
+            except Exception:
+                chunker = MarkdownRecursiveChunker(
+                    max_chunk_size=chunk_size,
+                    min_chunk_size=min(chunk_overlap, chunk_size // 4),
+                    tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B"),
+                )
+        else:
+            chunker = MarkdownRecursiveChunker(
+                max_chunk_size=chunk_size,
+                min_chunk_size=min(chunk_overlap, chunk_size // 4),
+                tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B"),
+            )
+
+        pages_data = converter.convert_to_markdown(file_path)
+        file_chunks = []
+        for tpl in pages_data:
+            if len(tpl) == 3:
+                markdown_text, metadata, doc_obj = tpl
+                if hasattr(chunker, "chunk_document"):
+                    chunks = chunker.chunk_document(doc_obj, document_id=document_id, metadata=metadata)
+                else:
+                    chunks = chunker.chunk(markdown_text, document_id, metadata)
+            else:
+                markdown_text, metadata = tpl
+                chunks = chunker.chunk(markdown_text, document_id, metadata)
+            file_chunks.extend(chunks)
+        result_queue.put({"chunks": file_chunks})
+    except Exception as e:
+        result_queue.put({"error": str(e)})
+
 
 class IndexingPipeline:
     def __init__(self, config: Dict[str, Any], ollama_client: OllamaClient, ollama_config: Dict[str, str]):
@@ -68,6 +118,9 @@ class IndexingPipeline:
         self.embedding_batch_size = indexing_config.get("embedding_batch_size", 50)
         self.enrichment_batch_size = indexing_config.get("enrichment_batch_size", 10)
         self.enable_progress_tracking = indexing_config.get("enable_progress_tracking", True)
+        self.conversion_timeout_seconds = indexing_config.get("conversion_timeout_seconds", 180)
+        self.overview_timeout_seconds = indexing_config.get("overview_timeout_seconds", 60)
+        self.enrichment_timeout_seconds = indexing_config.get("enrichment_timeout_seconds", 90)
 
         # Treat dense retrieval as enabled by default unless explicitly disabled
         dense_cfg = retriever_configs.setdefault("dense", {})
@@ -114,7 +167,8 @@ class IndexingPipeline:
             self.contextual_enricher = ContextualEnricher(
                 llm_client=self.llm_client,
                 llm_model=enrichment_model,
-                batch_size=self.enrichment_batch_size
+                batch_size=self.enrichment_batch_size,
+                timeout=self.enrichment_timeout_seconds,
             )
 
         # Overview builder always enabled for triage routing
@@ -124,6 +178,7 @@ class IndexingPipeline:
             model=self.config.get("overview_model_name", self.ollama_config.get("enrichment_model", "qwen3:0.6b")),
             first_n_chunks=self.config.get("overview_first_n_chunks", 5),
             out_path=ov_path if ov_path else None,
+            timeout=self.overview_timeout_seconds,
         )
 
         # Initialize incremental indexer
@@ -245,21 +300,9 @@ class IndexingPipeline:
                         chunk_cache_hits += 1
                         indexing_logger.info("chunk_cache_hit", document_id=document_id, file_path=file_path)
                     else:
-                        pages_data = self.document_converter.convert_to_markdown(file_path)
                         check_cancelled()
                         report("chunking", file_base_progress + 3, f"Chunking {document_id}")
-                        file_chunks = []
-                        for tpl in pages_data:
-                            if len(tpl) == 3:
-                                markdown_text, metadata, doc_obj = tpl
-                                if hasattr(self.chunker, "chunk_document"):
-                                    chunks = self.chunker.chunk_document(doc_obj, document_id=document_id, metadata=metadata)
-                                else:
-                                    chunks = self.chunker.chunk(markdown_text, document_id, metadata)
-                            else:
-                                markdown_text, metadata = tpl
-                                chunks = self.chunker.chunk(markdown_text, document_id, metadata)
-                            file_chunks.extend(chunks)
+                        file_chunks = self._convert_and_chunk_file(file_path, document_id)
                         self._save_chunk_cache(cache_key, file_chunks)
 
                     for i, chunk in enumerate(file_chunks):
@@ -373,6 +416,37 @@ class IndexingPipeline:
             force_reindex: Force reindexing of all documents
         """
         return self.run(file_paths, index_id=index_id, incremental=incremental, force_reindex=force_reindex)
+
+    def _convert_and_chunk_file(self, file_path: str, document_id: str) -> List[Dict[str, Any]]:
+        # On macOS, spawn re-imports the main RAG server module in the child,
+        # which can reload heavyweight models. Fork keeps the worker bounded to
+        # conversion/chunking and lets us terminate it on timeout.
+        ctx = mp.get_context("fork" if os.name == "posix" else "spawn")
+        result_queue = ctx.Queue(maxsize=1)
+        process = ctx.Process(
+            target=_convert_and_chunk_worker,
+            args=(file_path, document_id, self.config, result_queue),
+        )
+        process.start()
+        process.join(self.conversion_timeout_seconds)
+
+        if process.is_alive():
+            process.terminate()
+            process.join(5)
+            raise TimeoutError(
+                f"Conversion timed out after {self.conversion_timeout_seconds}s for {document_id}"
+            )
+
+        try:
+            result = result_queue.get_nowait()
+        except queue.Empty:
+            if process.exitcode and process.exitcode != 0:
+                raise RuntimeError(f"Conversion worker exited with code {process.exitcode} for {document_id}")
+            return []
+
+        if result.get("error"):
+            raise RuntimeError(result["error"])
+        return result.get("chunks", [])
 
     def _ensure_fts_index(self, table_name: str):
         if not hasattr(self, "lancedb_manager"):

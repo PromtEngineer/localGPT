@@ -614,6 +614,9 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 config_override.setdefault("indexing", {})
                 config_override["indexing"]["embedding_batch_size"] = batch_size_embed
                 config_override["indexing"]["enrichment_batch_size"] = batch_size_enrich
+                config_override["indexing"].setdefault("conversion_timeout_seconds", 180)
+                config_override["indexing"].setdefault("overview_timeout_seconds", 45)
+                config_override["indexing"].setdefault("enrichment_timeout_seconds", 60)
                 
                 # 🔧 Configure chunking parameters
                 config_override.setdefault("chunking", {})
@@ -679,6 +682,9 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 config_override.setdefault("indexing", {})
                 config_override["indexing"]["embedding_batch_size"] = batch_size_embed
                 config_override["indexing"]["enrichment_batch_size"] = batch_size_enrich
+                config_override["indexing"].setdefault("conversion_timeout_seconds", 180)
+                config_override["indexing"].setdefault("overview_timeout_seconds", 45)
+                config_override["indexing"].setdefault("enrichment_timeout_seconds", 60)
                 
                 # 🔧 Configure chunking parameters
                 config_override.setdefault("chunking", {})

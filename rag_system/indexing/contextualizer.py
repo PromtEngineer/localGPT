@@ -28,11 +28,12 @@ class ContextualEnricher:
     Enriches chunks with a prepended summary of their surrounding context using Ollama,
     while preserving the original text.
     """
-    def __init__(self, llm_client: OllamaClient, llm_model: str, batch_size: int = 10):
+    def __init__(self, llm_client: OllamaClient, llm_model: str, batch_size: int = 10, timeout: int = 90):
         self.llm_client = llm_client
         self.llm_model = llm_model
         self.batch_size = batch_size
-        logger.info(f"Initialized ContextualEnricher with Ollama model '{self.llm_model}' (batch_size={batch_size}).")
+        self.timeout = timeout
+        logger.info(f"Initialized ContextualEnricher with Ollama model '{self.llm_model}' (batch_size={batch_size}, timeout={timeout}s).")
 
     def _generate_summary(self, local_context_text: str, chunk_text: str) -> str:
         """Generates a contextual summary using a structured, multi-part prompt."""
@@ -48,7 +49,12 @@ class ContextualEnricher:
             # A common way is to provide the system prompt and then the user's request.
             full_prompt = f"{SYSTEM_PROMPT}\n\n{human_prompt_content}"
             
-            response = self.llm_client.generate_completion(self.llm_model, full_prompt, enable_thinking=False)
+            response = self.llm_client.generate_completion(
+                self.llm_model,
+                full_prompt,
+                enable_thinking=False,
+                timeout=self.timeout,
+            )
             summary_raw = response.get('response', '').strip()
 
             # --- Sanitize the summary to remove chain-of-thought markers ---
