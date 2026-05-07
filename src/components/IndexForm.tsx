@@ -4,7 +4,7 @@ import { GlassInput } from '@/components/ui/GlassInput';
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { AccordionGroup } from '@/components/ui/AccordionGroup';
 import { ModelSelect } from '@/components/ModelSelect';
-import { chatAPI, ChatSession } from '@/lib/api';
+import { chatAPI, ChatSession, IndexBuildOptions, IndexJob } from '@/lib/api';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 
 interface Props {
@@ -71,6 +71,8 @@ function isLargeIndexingModel(model?: string) {
   return Boolean(model && LARGE_INDEXING_MODEL_RE.test(model));
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export function IndexForm({ onClose, onIndexed }: Props) {
   const [files, setFiles] = useState<FileList | null>(null);
   const [indexName, setIndexName] = useState('');
@@ -86,6 +88,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const [batchSizeEmbed, setBatchSizeEmbed] = useState(INDEXING_PROFILES.balanced.batchSizeEmbed);
   const [batchSizeEnrich, setBatchSizeEnrich] = useState(INDEXING_PROFILES.balanced.batchSizeEnrich);
   const [loading, setLoading] = useState(false);
+  const [buildJob, setBuildJob] = useState<IndexJob | null>(null);
   const [enableLateChunk, setEnableLateChunk] = useState(INDEXING_PROFILES.balanced.enableLateChunk);
   const [enableDoclingChunk, setEnableDoclingChunk] = useState(INDEXING_PROFILES.balanced.enableDoclingChunk);
 
@@ -114,6 +117,43 @@ export function IndexForm({ onClose, onIndexed }: Props) {
     setOverviewModel(DEFAULT_INDEXING_LLM);
   };
 
+  const buildOptions = (): IndexBuildOptions => ({
+    latechunk: enableLateChunk,
+    doclingChunk: enableDoclingChunk,
+    chunkSize,
+    chunkOverlap,
+    retrievalMode: retrievalMode === 'fts' ? 'bm25' : retrievalMode,
+    windowSize,
+    enableEnrich,
+    embeddingModel,
+    enrichModel,
+    overviewModel,
+    batchSizeEmbed,
+    batchSizeEnrich: Math.max(1, Math.min(batchSizeEnrich, 8)),
+  });
+
+  const waitForBuildJob = async (jobId: string) => {
+    while (true) {
+      const job = await chatAPI.getIndexJob(jobId);
+      setBuildJob(job);
+      if (job.status === 'completed') return job;
+      if (job.status === 'failed') throw new Error(job.error || job.message || 'Index build failed');
+      if (job.status === 'cancelled') throw new Error('Index build was cancelled');
+      await sleep(1500);
+    }
+  };
+
+  const handleCancelBuild = async () => {
+    if (!buildJob) return;
+    try {
+      const job = await chatAPI.cancelIndexJob(buildJob.id);
+      setBuildJob(job);
+    } catch (e) {
+      console.error('Cancel failed', e);
+      alert('Cancel request failed. See console for details.');
+    }
+  };
+
   const handleSubmit = async () => {
     if (!files) return;
     if (hasLargeIndexingModel) {
@@ -131,21 +171,17 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       // 2. upload files to index
       await chatAPI.uploadFilesToIndex(index_id, Array.from(files));
 
-      // 3. build index (run pipeline) with ALL OPTIONS
-      await chatAPI.buildIndex(index_id, { 
-        latechunk: enableLateChunk, 
-        doclingChunk: enableDoclingChunk,
-        chunkSize: chunkSize,
-        chunkOverlap: chunkOverlap,
-        retrievalMode: retrievalMode==='fts' ? 'bm25' : retrievalMode,
-        windowSize: windowSize,
-        enableEnrich: enableEnrich,
-        embeddingModel: embeddingModel,
-        enrichModel: enrichModel,
-        overviewModel: overviewModel,
-        batchSizeEmbed: batchSizeEmbed,
-        batchSizeEnrich: Math.max(1, Math.min(batchSizeEnrich, 8))
+      // 3. build index in the background and poll progress
+      const started = await chatAPI.startIndexBuild(index_id, buildOptions());
+      setBuildJob({
+        id: started.job_id,
+        index_id,
+        status: 'queued',
+        stage: 'queued',
+        progress: 0,
+        message: started.message,
       });
+      await waitForBuildJob(started.job_id);
 
       // 4. create chat session and link index
       const session = await chatAPI.createSession(indexName);
@@ -156,6 +192,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
     } catch (e) {
       console.error('Indexing failed', e);
       setLoading(false);
+      setBuildJob(null);
       alert('Indexing failed. See console for details.');
     }
   };
@@ -166,7 +203,24 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       {loading && (
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl z-20">
           <div className="w-10 h-10 border-4 border-white/30 border-t-transparent rounded-full animate-spin"></div>
-          <p className="mt-4 text-sm text-gray-200">Indexing… this may take a moment</p>
+          <p className="mt-4 text-sm text-gray-200">{buildJob?.message || 'Starting index build…'}</p>
+          {buildJob && (
+            <div className="mt-4 w-72">
+              <div className="h-2 rounded bg-white/10 overflow-hidden">
+                <div className="h-full bg-green-500 transition-all" style={{ width: `${Math.max(0, Math.min(buildJob.progress || 0, 100))}%` }} />
+              </div>
+              <div className="mt-2 flex justify-between text-xs text-gray-300">
+                <span>{buildJob.stage}</span>
+                <span>{buildJob.progress || 0}%</span>
+              </div>
+              {buildJob.cancel_requested && <p className="mt-2 text-xs text-yellow-200">Cancel requested. Waiting for the active indexing step to finish.</p>}
+              {buildJob.status !== 'completed' && buildJob.status !== 'failed' && buildJob.status !== 'cancelled' && (
+                <button onClick={handleCancelBuild} className="mt-4 w-full rounded bg-red-700/80 px-3 py-2 text-xs hover:bg-red-700">
+                  Cancel build
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 

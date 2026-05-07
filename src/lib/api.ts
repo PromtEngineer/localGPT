@@ -65,6 +65,37 @@ export type BuildIndexResponse = {
   indexing_result?: IndexingResult | null;
 };
 
+export type IndexBuildOptions = {
+  latechunk?: boolean;
+  doclingChunk?: boolean;
+  chunkSize?: number;
+  chunkOverlap?: number;
+  retrievalMode?: string;
+  windowSize?: number;
+  enableEnrich?: boolean;
+  embeddingModel?: string;
+  enrichModel?: string;
+  overviewModel?: string;
+  batchSizeEmbed?: number;
+  batchSizeEnrich?: number;
+  forceReindex?: boolean;
+};
+
+export type IndexJob = {
+  id: string;
+  index_id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  stage: string;
+  progress: number;
+  message?: string;
+  error?: string;
+  cancel_requested?: boolean;
+  result?: BuildIndexResponse;
+  created_at?: string;
+  updated_at?: string;
+  finished_at?: string;
+};
+
 export interface ChatMessage {
   id: string;
   content: string | Array<ApiRecord> | { steps: Step[] };
@@ -506,42 +537,33 @@ class ChatAPI {
     return resp.json();
   }
 
-  async buildIndex(indexId: string, opts: { 
-    latechunk?: boolean; 
-    doclingChunk?: boolean;
-    chunkSize?: number;
-    chunkOverlap?: number;
-    retrievalMode?: string;
-    windowSize?: number;
-    enableEnrich?: boolean;
-    embeddingModel?: string;
-    enrichModel?: string;
-    overviewModel?: string;
-    batchSizeEmbed?: number;
-    batchSizeEnrich?: number;
-    forceReindex?: boolean;
-  } = {}): Promise<BuildIndexResponse> {
+  private indexBuildPayload(opts: IndexBuildOptions & { background?: boolean } = {}) {
+    return {
+      latechunk: opts.latechunk ?? false,
+      doclingChunk: opts.doclingChunk ?? false,
+      chunkSize: opts.chunkSize ?? 512,
+      chunkOverlap: opts.chunkOverlap ?? 64,
+      retrievalMode: opts.retrievalMode ?? 'hybrid',
+      windowSize: opts.windowSize ?? 2,
+      enableEnrich: opts.enableEnrich ?? true,
+      embeddingModel: opts.embeddingModel,
+      enrichModel: opts.enrichModel,
+      overviewModel: opts.overviewModel,
+      batchSizeEmbed: opts.batchSizeEmbed ?? 50,
+      batchSizeEnrich: opts.batchSizeEnrich ?? 25,
+      forceReindex: opts.forceReindex ?? false,
+      background: opts.background ?? false,
+    };
+  }
+
+  async buildIndex(indexId: string, opts: IndexBuildOptions = {}): Promise<BuildIndexResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/build`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          latechunk: opts.latechunk ?? false,
-          doclingChunk: opts.doclingChunk ?? false,
-          chunkSize: opts.chunkSize ?? 512,
-          chunkOverlap: opts.chunkOverlap ?? 64,
-          retrievalMode: opts.retrievalMode ?? 'hybrid',
-          windowSize: opts.windowSize ?? 2,
-          enableEnrich: opts.enableEnrich ?? true,
-          embeddingModel: opts.embeddingModel,
-          enrichModel: opts.enrichModel,
-          overviewModel: opts.overviewModel,
-          batchSizeEmbed: opts.batchSizeEmbed ?? 50,
-          batchSizeEnrich: opts.batchSizeEnrich ?? 25,
-          forceReindex: opts.forceReindex ?? false,
-        }),
+        body: JSON.stringify(this.indexBuildPayload(opts)),
       });
 
       if (!response.ok) {
@@ -554,6 +576,37 @@ class ChatAPI {
       console.error('Build index failed:', error);
       throw error;
     }
+  }
+
+  async startIndexBuild(indexId: string, opts: IndexBuildOptions = {}): Promise<{ message: string; job_id: string; status: string }> {
+    const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/build`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(this.indexBuildPayload({ ...opts, background: true })),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`Start build error: ${errorData.error || errorData.detail || response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async getIndexJob(jobId: string): Promise<IndexJob> {
+    const response = await fetch(`${API_BASE_URL}/index-jobs/${jobId}`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`Index job error: ${errorData.error || errorData.detail || response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async cancelIndexJob(jobId: string): Promise<IndexJob> {
+    const response = await fetch(`${API_BASE_URL}/index-jobs/${jobId}/cancel`, { method: 'POST' });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`Cancel job error: ${errorData.error || errorData.detail || response.statusText}`);
+    }
+    return response.json();
   }
 
   async linkIndexToSession(sessionId: string, indexId: string): Promise<{ message: string }> {

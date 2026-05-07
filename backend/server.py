@@ -3,6 +3,8 @@ import os
 import uuid
 from datetime import datetime
 import re
+import threading
+import time
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -48,6 +50,23 @@ app.add_middleware(
 # Global variables
 ollama_client = OllamaClient()
 pdf_processor = None
+index_jobs_lock = threading.Lock()
+index_jobs: Dict[str, Dict[str, Any]] = {}
+
+
+def _update_index_job(job_id: str, **updates):
+    with index_jobs_lock:
+        job = index_jobs.get(job_id)
+        if not job:
+            return
+        job.update(updates)
+        job["updated_at"] = datetime.now().isoformat()
+
+
+def _get_index_job(job_id: str) -> Optional[Dict[str, Any]]:
+    with index_jobs_lock:
+        job = index_jobs.get(job_id)
+        return dict(job) if job else None
 
 # Routes
 
@@ -549,137 +568,232 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...)):
 
     return {"message": f"Uploaded {len(uploaded_files)} files", "uploaded_files": uploaded_files}
 
+def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = None) -> Dict[str, Any]:
+    index = db.get_index(index_id)
+    if not index:
+        raise HTTPException(status_code=404, detail="Index not found")
+
+    file_paths = [d['stored_path'] for d in index.get('documents', [])]
+    if not file_paths:
+        raise HTTPException(status_code=400, detail="No documents to index")
+
+    latechunk = bool(data.get('latechunk', False))
+    docling_chunk = bool(data.get('doclingChunk', False))
+    chunk_size = int(data.get('chunkSize', 512))
+    chunk_overlap = int(data.get('chunkOverlap', 64))
+    retrieval_mode = str(data.get('retrievalMode', 'hybrid'))
+    window_size = int(data.get('windowSize', 2))
+    enable_enrich = bool(data.get('enableEnrich', True))
+    embedding_model = data.get('embeddingModel')
+    enrich_model = data.get('enrichModel')
+    batch_size_embed = int(data.get('batchSizeEmbed', 50))
+    batch_size_enrich = int(data.get('batchSizeEnrich', 25))
+    overview_model = data.get('overviewModel')
+    force_reindex = bool(data.get('forceReindex', False))
+    indexing_model_warnings = []
+
+    def is_large_indexing_model(model: str | None) -> bool:
+        if not model:
+            return False
+        lowered = model.lower()
+        return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
+
+    if is_large_indexing_model(enrich_model):
+        indexing_model_warnings.append(
+            f"Replaced enrichment model '{enrich_model}' with qwen3:0.6b for indexing safety."
+        )
+        enrich_model = "qwen3:0.6b"
+    if is_large_indexing_model(overview_model):
+        indexing_model_warnings.append(
+            f"Replaced overview model '{overview_model}' with qwen3:0.6b for indexing safety."
+        )
+        overview_model = "qwen3:0.6b"
+
+    window_size = max(0, min(window_size, 2))
+    batch_size_enrich = max(1, min(batch_size_enrich, 8))
+
+    # Set per-index overview file path
+    overview_path = f"index_store/overviews/{index_id}.jsonl"
+
+    # Delegate to advanced RAG API same as session indexing
+    rag_api_url = "http://localhost:8001/index"
+    # Use the index's dedicated LanceDB table so retrieval matches
+    table_name = index.get("vector_table_name")
+    payload = {
+        "file_paths": file_paths,
+        "session_id": index_id,  # reuse index_id for progress tracking
+        "table_name": table_name,
+        "chunk_size": chunk_size,
+        "chunk_overlap": chunk_overlap,
+        "retrieval_mode": retrieval_mode,
+        "window_size": window_size,
+        "enable_enrich": enable_enrich,
+        "batch_size_embed": batch_size_embed,
+        "batch_size_enrich": batch_size_enrich,
+        "force_reindex": force_reindex,
+    }
+    if latechunk:
+        payload["enable_latechunk"] = True
+    if docling_chunk:
+        payload["enable_docling_chunk"] = True
+    if embedding_model:
+        payload["embedding_model"] = embedding_model
+    if enrich_model:
+        payload["enrich_model"] = enrich_model
+    if overview_model:
+        payload["overview_model_name"] = overview_model
+
+    meta_updates = {
+        "status": "building",
+        "chunk_size": chunk_size,
+        "chunk_overlap": chunk_overlap,
+        "retrieval_mode": retrieval_mode,
+        "window_size": window_size,
+        "enable_enrich": enable_enrich,
+        "latechunk": latechunk,
+        "docling_chunk": docling_chunk,
+        "force_reindex": force_reindex,
+        "batch_size_embed": batch_size_embed,
+        "batch_size_enrich": batch_size_enrich,
+        "build_started_at": datetime.now().isoformat(),
+    }
+    if job_id:
+        meta_updates["build_job_id"] = job_id
+    if embedding_model:
+        meta_updates["embedding_model"] = embedding_model
+    if enrich_model:
+        meta_updates["enrich_model"] = enrich_model
+    if overview_model:
+        meta_updates["overview_model"] = overview_model
+    if indexing_model_warnings:
+        meta_updates["indexing_model_warnings"] = indexing_model_warnings
+    db.update_index_metadata(index_id, meta_updates)
+
+    if job_id:
+        _update_index_job(job_id, stage="indexing", progress=20, message="RAG pipeline is indexing documents")
+
+    rag_resp = requests.post(rag_api_url, json=payload)
+    if rag_resp.status_code == 200:
+        final_updates = {
+            **meta_updates,
+            "status": "functional",
+            "rebuilt_at": datetime.now().isoformat(),
+        }
+        db.update_index_metadata(index_id, final_updates)
+
+        response_data = rag_resp.json()
+        response_data.update(final_updates)
+        return response_data
+
+    # Gracefully handle scenario where table already exists (idempotent build)
+    try:
+        err_json = rag_resp.json()
+    except Exception:
+        err_json = {}
+    err_text = err_json.get('error') if isinstance(err_json, dict) else rag_resp.text
+    if err_text and 'already exists' in err_text:
+        db.update_index_metadata(index_id, {"status": "functional", "rebuilt_at": datetime.now().isoformat()})
+        return {
+            "message": "Index already built – skipping rebuild.",
+            "note": err_text
+        }
+
+    db.update_index_metadata(index_id, {
+        "status": "failed",
+        "build_failed_at": datetime.now().isoformat(),
+        "build_error": rag_resp.text,
+    })
+    raise HTTPException(status_code=500, detail=f"RAG indexing failed: {rag_resp.text}")
+
+
+def _run_index_build_job(job_id: str):
+    job = _get_index_job(job_id)
+    if not job:
+        return
+    if job.get("cancel_requested"):
+        _update_index_job(job_id, status="cancelled", stage="cancelled", progress=100, message="Build cancelled before it started")
+        db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
+        return
+
+    _update_index_job(job_id, status="running", stage="validating", progress=5, message="Preparing index build")
+    try:
+        result = _run_index_build(job["index_id"], job["options"], job_id=job_id)
+        latest = _get_index_job(job_id) or {}
+        status = "cancelled" if latest.get("cancel_requested") else "completed"
+        message = "Build completed after cancellation request" if status == "cancelled" else "Build completed"
+        if status == "cancelled":
+            db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
+        _update_index_job(job_id, status=status, stage=status, progress=100, message=message, result=result, finished_at=datetime.now().isoformat())
+    except Exception as e:
+        db.update_index_metadata(job["index_id"], {
+            "status": "failed",
+            "build_failed_at": datetime.now().isoformat(),
+            "build_error": str(e),
+        })
+        _update_index_job(job_id, status="failed", stage="failed", progress=100, message=str(e), error=str(e), finished_at=datetime.now().isoformat())
+
+
 @app.post("/indexes/{index_id}/build")
 async def build_index(index_id: str, request: Request):
     """Build an index from uploaded documents"""
     try:
-        index = db.get_index(index_id)
-        if not index:
-            raise HTTPException(status_code=404, detail="Index not found")
-
-        file_paths = [d['stored_path'] for d in index.get('documents', [])]
-        if not file_paths:
-            raise HTTPException(status_code=400, detail="No documents to index")
-
-        # Parse request body for optional flags and configuration
-        data = await request.json() if await request.body() else {}
-        latechunk = bool(data.get('latechunk', False))
-        docling_chunk = bool(data.get('doclingChunk', False))
-        chunk_size = int(data.get('chunkSize', 512))
-        chunk_overlap = int(data.get('chunkOverlap', 64))
-        retrieval_mode = str(data.get('retrievalMode', 'hybrid'))
-        window_size = int(data.get('windowSize', 2))
-        enable_enrich = bool(data.get('enableEnrich', True))
-        embedding_model = data.get('embeddingModel')
-        enrich_model = data.get('enrichModel')
-        batch_size_embed = int(data.get('batchSizeEmbed', 50))
-        batch_size_enrich = int(data.get('batchSizeEnrich', 25))
-        overview_model = data.get('overviewModel')
-        force_reindex = bool(data.get('forceReindex', False))
-        indexing_model_warnings = []
-
-        def is_large_indexing_model(model: str | None) -> bool:
-            if not model:
-                return False
-            lowered = model.lower()
-            return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
-
-        if is_large_indexing_model(enrich_model):
-            indexing_model_warnings.append(
-                f"Replaced enrichment model '{enrich_model}' with qwen3:0.6b for indexing safety."
-            )
-            enrich_model = "qwen3:0.6b"
-        if is_large_indexing_model(overview_model):
-            indexing_model_warnings.append(
-                f"Replaced overview model '{overview_model}' with qwen3:0.6b for indexing safety."
-            )
-            overview_model = "qwen3:0.6b"
-
-        window_size = max(0, min(window_size, 2))
-        batch_size_enrich = max(1, min(batch_size_enrich, 8))
-
-        # Set per-index overview file path
-        overview_path = f"index_store/overviews/{index_id}.jsonl"
-
-        # Delegate to advanced RAG API same as session indexing
-        rag_api_url = "http://localhost:8001/index"
-        # Use the index's dedicated LanceDB table so retrieval matches
-        table_name = index.get("vector_table_name")
-        payload = {
-            "file_paths": file_paths,
-            "session_id": index_id,  # reuse index_id for progress tracking
-            "table_name": table_name,
-            "chunk_size": chunk_size,
-            "chunk_overlap": chunk_overlap,
-            "retrieval_mode": retrieval_mode,
-            "window_size": window_size,
-            "enable_enrich": enable_enrich,
-            "batch_size_embed": batch_size_embed,
-            "batch_size_enrich": batch_size_enrich,
-            "force_reindex": force_reindex,
-        }
-        if latechunk:
-            payload["enable_latechunk"] = True
-        if docling_chunk:
-            payload["enable_docling_chunk"] = True
-        if embedding_model:
-            payload["embedding_model"] = embedding_model
-        if enrich_model:
-            payload["enrich_model"] = enrich_model
-        if overview_model:
-            payload["overview_model_name"] = overview_model
-
-        rag_resp = requests.post(rag_api_url, json=payload)
-        if rag_resp.status_code == 200:
-            meta_updates = {
-                "status": "functional",
-                "chunk_size": chunk_size,
-                "chunk_overlap": chunk_overlap,
-                "retrieval_mode": retrieval_mode,
-                "window_size": window_size,
-                "enable_enrich": enable_enrich,
-                "latechunk": latechunk,
-                "docling_chunk": docling_chunk,
-                "force_reindex": force_reindex,
-                "batch_size_embed": batch_size_embed,
-                "batch_size_enrich": batch_size_enrich,
-                "rebuilt_at": datetime.now().isoformat(),
-            }
-            if embedding_model:
-                meta_updates["embedding_model"] = embedding_model
-            if enrich_model:
-                meta_updates["enrich_model"] = enrich_model
-            if overview_model:
-                meta_updates["overview_model"] = overview_model
-            if indexing_model_warnings:
-                meta_updates["indexing_model_warnings"] = indexing_model_warnings
-            try:
-                db.update_index_metadata(index_id, meta_updates)
-            except Exception as e:
-                print(f"⚠️ Failed to update index metadata: {e}")
-
-            response_data = rag_resp.json()
-            response_data.update(meta_updates)
-            return response_data
-        else:
-            # Gracefully handle scenario where table already exists (idempotent build)
-            try:
-                err_json = rag_resp.json()
-            except Exception:
-                err_json = {}
-            err_text = err_json.get('error') if isinstance(err_json, dict) else rag_resp.text
-            if err_text and 'already exists' in err_text:
-                # Treat as non-fatal; return message indicating index previously built
-                return {
-                    "message": "Index already built – skipping rebuild.",
-                    "note": err_text
+        body = await request.body()
+        data = json.loads(body.decode("utf-8")) if body else {}
+        if bool(data.get("background", False)):
+            if not db.get_index(index_id):
+                raise HTTPException(status_code=404, detail="Index not found")
+            job_id = str(uuid.uuid4())
+            now = datetime.now().isoformat()
+            with index_jobs_lock:
+                index_jobs[job_id] = {
+                    "id": job_id,
+                    "index_id": index_id,
+                    "status": "queued",
+                    "stage": "queued",
+                    "progress": 0,
+                    "message": "Build queued",
+                    "cancel_requested": False,
+                    "options": data,
+                    "created_at": now,
+                    "updated_at": now,
                 }
-            else:
-                raise HTTPException(status_code=500, detail=f"RAG indexing failed: {rag_resp.text}")
+            db.update_index_metadata(index_id, {
+                "status": "building",
+                "build_job_id": job_id,
+                "build_started_at": now,
+            })
+            thread = threading.Thread(target=_run_index_build_job, args=(job_id,), daemon=True)
+            thread.start()
+            return {"message": "Index build started", "job_id": job_id, "status": "queued"}
+
+        return _run_index_build(index_id, data)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/index-jobs/{job_id}")
+async def get_index_job(job_id: str):
+    job = _get_index_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Index job not found")
+    job.pop("options", None)
+    return job
+
+
+@app.post("/index-jobs/{job_id}/cancel")
+async def cancel_index_job(job_id: str):
+    job = _get_index_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Index job not found")
+    if job["status"] in ("completed", "failed", "cancelled"):
+        return {**job, "message": "Job is already finished"}
+    _update_index_job(job_id, cancel_requested=True, message="Cancellation requested")
+    if job["status"] == "queued":
+        _update_index_job(job_id, status="cancelled", stage="cancelled", progress=100, finished_at=datetime.now().isoformat())
+        db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
+    return _get_index_job(job_id)
 
 # Helper functions (moved from ChatHandler)
 
