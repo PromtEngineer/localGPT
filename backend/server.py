@@ -576,6 +576,27 @@ async def build_index(index_id: str, request: Request):
         batch_size_enrich = int(data.get('batchSizeEnrich', 25))
         overview_model = data.get('overviewModel')
         force_reindex = bool(data.get('forceReindex', False))
+        indexing_model_warnings = []
+
+        def is_large_indexing_model(model: str | None) -> bool:
+            if not model:
+                return False
+            lowered = model.lower()
+            return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
+
+        if is_large_indexing_model(enrich_model):
+            indexing_model_warnings.append(
+                f"Replaced enrichment model '{enrich_model}' with qwen3:0.6b for indexing safety."
+            )
+            enrich_model = "qwen3:0.6b"
+        if is_large_indexing_model(overview_model):
+            indexing_model_warnings.append(
+                f"Replaced overview model '{overview_model}' with qwen3:0.6b for indexing safety."
+            )
+            overview_model = "qwen3:0.6b"
+
+        window_size = max(0, min(window_size, 2))
+        batch_size_enrich = max(1, min(batch_size_enrich, 8))
 
         # Set per-index overview file path
         overview_path = f"index_store/overviews/{index_id}.jsonl"
@@ -630,6 +651,8 @@ async def build_index(index_id: str, request: Request):
                 meta_updates["enrich_model"] = enrich_model
             if overview_model:
                 meta_updates["overview_model"] = overview_model
+            if indexing_model_warnings:
+                meta_updates["indexing_model_warnings"] = indexing_model_warnings
             try:
                 db.update_index_metadata(index_id, meta_updates)
             except Exception as e:

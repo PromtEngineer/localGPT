@@ -21,11 +21,12 @@ class OllamaClient:
         image.save(buffered, format="PNG")
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-    def generate_embedding(self, model: str, text: str) -> List[float]:
+    def generate_embedding(self, model: str, text: str, timeout: int = 120) -> List[float]:
         try:
             response = requests.post(
                 f"{self.api_url}/embeddings",
-                json={"model": model, "prompt": text}
+                json={"model": model, "prompt": text},
+                timeout=timeout,
             )
             response.raise_for_status()
             return response.json().get("embedding", [])
@@ -41,6 +42,7 @@ class OllamaClient:
         format: str = "",
         images: List[Image.Image] | None = None,
         enable_thinking: bool | None = None,
+        timeout: int = 300,
     ) -> Dict[str, Any]:
         """
         Generates a completion, now with optional support for images.
@@ -70,7 +72,8 @@ class OllamaClient:
 
             response = requests.post(
                 f"{self.api_url}/generate",
-                json=payload
+                json=payload,
+                timeout=timeout,
             )
             response.raise_for_status()
             response_lines = response.text.strip().split('\n')

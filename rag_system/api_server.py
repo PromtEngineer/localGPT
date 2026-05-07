@@ -526,6 +526,27 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             batch_size_embed = int(data.get("batch_size_embed", 50))
             batch_size_enrich = int(data.get("batch_size_enrich", 25))
             force_reindex = bool(data.get("force_reindex", False))
+            indexing_model_warnings = []
+
+            def is_large_indexing_model(model):
+                if not model:
+                    return False
+                lowered = str(model).lower()
+                return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
+
+            if is_large_indexing_model(enrich_model):
+                indexing_model_warnings.append(
+                    f"Replaced enrichment model '{enrich_model}' with qwen3:0.6b for indexing safety."
+                )
+                enrich_model = "qwen3:0.6b"
+            if is_large_indexing_model(overview_model):
+                indexing_model_warnings.append(
+                    f"Replaced overview model '{overview_model}' with qwen3:0.6b for indexing safety."
+                )
+                overview_model = "qwen3:0.6b"
+
+            window_size = max(0, min(window_size, 2))
+            batch_size_enrich = max(1, min(batch_size_enrich, 8))
             
             if not file_paths or not isinstance(file_paths, list):
                 self.send_json_response({
@@ -690,6 +711,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     "force_reindex": force_reindex,
                 },
                 "indexing_result": indexing_result,
+                "indexing_model_warnings": indexing_model_warnings,
             })
 
             if embedding_model:

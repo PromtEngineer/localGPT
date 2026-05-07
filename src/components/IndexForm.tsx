@@ -12,26 +12,117 @@ interface Props {
   onIndexed?: (session: ChatSession) => void;
 }
 
+type IndexingProfile = 'fast' | 'balanced' | 'maximum';
+
+const DEFAULT_INDEXING_LLM = 'qwen3:0.6b';
+const LARGE_INDEXING_MODEL_RE = /(gpt-oss|120b|70b|large|cloud)/i;
+
+const INDEXING_PROFILES: Record<IndexingProfile, {
+  label: string;
+  description: string;
+  chunkSize: number;
+  chunkOverlap: number;
+  windowSize: number;
+  enableEnrich: boolean;
+  enableLateChunk: boolean;
+  enableDoclingChunk: boolean;
+  batchSizeEmbed: number;
+  batchSizeEnrich: number;
+}> = {
+  fast: {
+    label: 'Fast',
+    description: 'Lowest risk for large uploads. Skips per-chunk LLM enrichment.',
+    chunkSize: 768,
+    chunkOverlap: 96,
+    windowSize: 1,
+    enableEnrich: false,
+    enableLateChunk: false,
+    enableDoclingChunk: false,
+    batchSizeEmbed: 32,
+    batchSizeEnrich: 2,
+  },
+  balanced: {
+    label: 'Balanced',
+    description: 'Good default. Better chunking, no per-chunk LLM calls unless enabled below.',
+    chunkSize: 768,
+    chunkOverlap: 96,
+    windowSize: 1,
+    enableEnrich: false,
+    enableLateChunk: false,
+    enableDoclingChunk: true,
+    batchSizeEmbed: 32,
+    batchSizeEnrich: 4,
+  },
+  maximum: {
+    label: 'Maximum',
+    description: 'Slow, opt-in accuracy mode. Uses per-chunk LLM enrichment.',
+    chunkSize: 512,
+    chunkOverlap: 64,
+    windowSize: 1,
+    enableEnrich: true,
+    enableLateChunk: false,
+    enableDoclingChunk: true,
+    batchSizeEmbed: 24,
+    batchSizeEnrich: 2,
+  },
+};
+
+function isLargeIndexingModel(model?: string) {
+  return Boolean(model && LARGE_INDEXING_MODEL_RE.test(model));
+}
+
 export function IndexForm({ onClose, onIndexed }: Props) {
   const [files, setFiles] = useState<FileList | null>(null);
   const [indexName, setIndexName] = useState('');
-  const [chunkSize, setChunkSize] = useState(512);
-  const [chunkOverlap, setChunkOverlap] = useState(64);
-  const [windowSize, setWindowSize] = useState(5);
-  const [enableEnrich, setEnableEnrich] = useState(true);
+  const [profile, setProfile] = useState<IndexingProfile>('balanced');
+  const [chunkSize, setChunkSize] = useState(INDEXING_PROFILES.balanced.chunkSize);
+  const [chunkOverlap, setChunkOverlap] = useState(INDEXING_PROFILES.balanced.chunkOverlap);
+  const [windowSize, setWindowSize] = useState(INDEXING_PROFILES.balanced.windowSize);
+  const [enableEnrich, setEnableEnrich] = useState(INDEXING_PROFILES.balanced.enableEnrich);
   const [retrievalMode, setRetrievalMode] = useState<'hybrid' | 'vector' | 'fts'>('hybrid');
   const [embeddingModel, setEmbeddingModel] = useState<string>();
-  const DEFAULT_LLM = 'qwen3:0.6b';
-  const [enrichModel, setEnrichModel] = useState<string>(DEFAULT_LLM);
-  const [overviewModel, setOverviewModel] = useState<string>(DEFAULT_LLM);
-  const [batchSizeEmbed, setBatchSizeEmbed] = useState(64);
-  const [batchSizeEnrich, setBatchSizeEnrich] = useState(64);
+  const [enrichModel, setEnrichModel] = useState<string>(DEFAULT_INDEXING_LLM);
+  const [overviewModel, setOverviewModel] = useState<string>(DEFAULT_INDEXING_LLM);
+  const [batchSizeEmbed, setBatchSizeEmbed] = useState(INDEXING_PROFILES.balanced.batchSizeEmbed);
+  const [batchSizeEnrich, setBatchSizeEnrich] = useState(INDEXING_PROFILES.balanced.batchSizeEnrich);
   const [loading, setLoading] = useState(false);
-  const [enableLateChunk, setEnableLateChunk] = useState(false);
-  const [enableDoclingChunk, setEnableDoclingChunk] = useState(true);
+  const [enableLateChunk, setEnableLateChunk] = useState(INDEXING_PROFILES.balanced.enableLateChunk);
+  const [enableDoclingChunk, setEnableDoclingChunk] = useState(INDEXING_PROFILES.balanced.enableDoclingChunk);
+
+  const selectedFiles = files ? Array.from(files) : [];
+  const totalBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
+  const estimatedChunks = Math.max(
+    selectedFiles.length,
+    Math.ceil(totalBytes / Math.max(chunkSize * 4, 1))
+  );
+  const estimatedLlmCalls = selectedFiles.length + (enableEnrich ? estimatedChunks : 0);
+  const hasLargeIndexingModel = isLargeIndexingModel(enrichModel) || isLargeIndexingModel(overviewModel);
+  const isHighRiskJob = estimatedLlmCalls > 250 || hasLargeIndexingModel;
+
+  const applyProfile = (nextProfile: IndexingProfile) => {
+    const next = INDEXING_PROFILES[nextProfile];
+    setProfile(nextProfile);
+    setChunkSize(next.chunkSize);
+    setChunkOverlap(next.chunkOverlap);
+    setWindowSize(next.windowSize);
+    setEnableEnrich(next.enableEnrich);
+    setEnableLateChunk(next.enableLateChunk);
+    setEnableDoclingChunk(next.enableDoclingChunk);
+    setBatchSizeEmbed(next.batchSizeEmbed);
+    setBatchSizeEnrich(next.batchSizeEnrich);
+    setEnrichModel(DEFAULT_INDEXING_LLM);
+    setOverviewModel(DEFAULT_INDEXING_LLM);
+  };
 
   const handleSubmit = async () => {
     if (!files) return;
+    if (hasLargeIndexingModel) {
+      alert('Large chat models such as gpt-oss:120b-cloud are blocked for indexing enrichment/overview. Use qwen3:0.6b for indexing, then use the large model for chat.');
+      return;
+    }
+    if (isHighRiskJob && !confirm(`This index may run about ${estimatedLlmCalls.toLocaleString()} LLM call(s). Continue?`)) {
+      return;
+    }
     setLoading(true);
     try {
       // 1. create index record
@@ -53,7 +144,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
         enrichModel: enrichModel,
         overviewModel: overviewModel,
         batchSizeEmbed: batchSizeEmbed,
-        batchSizeEnrich: batchSizeEnrich
+        batchSizeEnrich: Math.max(1, Math.min(batchSizeEnrich, 8))
       });
 
       // 4. create chat session and link index
@@ -104,6 +195,50 @@ export function IndexForm({ onClose, onIndexed }: Props) {
           {files && <p className="mt-1 text-xs text-green-400">{files.length} file(s) selected</p>}
         </div>
 
+        <div>
+          <label className="block text-xs uppercase tracking-wide text-gray-300 mb-2">Indexing profile</label>
+          <div className="grid grid-cols-3 gap-2">
+            {(Object.keys(INDEXING_PROFILES) as IndexingProfile[]).map((key) => {
+              const item = INDEXING_PROFILES[key];
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => applyProfile(key)}
+                  className={`rounded border px-3 py-2 text-left transition ${
+                    profile === key ? 'border-green-400 bg-green-500/15' : 'border-white/10 bg-white/5 hover:bg-white/10'
+                  }`}
+                >
+                  <span className="block text-xs font-medium">{item.label}</span>
+                  <span className="block text-[11px] leading-4 text-gray-400">{item.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {selectedFiles.length > 0 && (
+          <div className={`rounded border p-3 text-xs ${isHighRiskJob ? 'border-yellow-500/40 bg-yellow-500/10 text-yellow-100' : 'border-white/10 bg-white/5 text-gray-300'}`}>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <span className="block text-gray-400">Size</span>
+                <span>{(totalBytes / (1024 * 1024)).toFixed(1)} MB</span>
+              </div>
+              <div>
+                <span className="block text-gray-400">Est. chunks</span>
+                <span>{estimatedChunks.toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="block text-gray-400">Est. LLM calls</span>
+                <span>{estimatedLlmCalls.toLocaleString()}</span>
+              </div>
+            </div>
+            {hasLargeIndexingModel && (
+              <p className="mt-2 text-yellow-200">Large generation models are blocked for indexing. Use {DEFAULT_INDEXING_LLM} here and keep gpt-oss:120b-cloud for chat.</p>
+            )}
+          </div>
+        )}
+
         {/* Retrieval mode & Late-chunk toggle */}
         <div>
           <label className="flex items-center gap-1 text-xs uppercase tracking-wide text-gray-300 mb-1">Retrieval mode <InfoTooltip text="Choose how chunks are found. Hybrid combines full-text search with vectors; FTS uses textual matching only; Vector relies purely on dense similarity." /></label>
@@ -149,7 +284,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
               />
             </div>
             <div>
-              <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Overview LLM <InfoTooltip text="LLM that writes the short overview paragraph per document." size={12} /></label>
+              <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Overview LLM <InfoTooltip text="Use a small model here. This runs during indexing and should not use large chat models." size={12} /></label>
               <ModelSelect 
                 value={overviewModel}
                 onChange={setOverviewModel}
@@ -196,7 +331,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
             />
           </div>
           <div>
-            <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Context retrieval batch size <InfoTooltip text="Chunks sent per request during contextual enrichment." size={12} /></label>
+              <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Context retrieval batch size <InfoTooltip text="Keep this small. Enrichment still makes one LLM call per chunk." size={12} /></label>
             <GlassInput
               type="number"
               value={batchSizeEnrich}
@@ -220,4 +355,4 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       </div>
     </div>
   );
-}                        
+}
