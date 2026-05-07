@@ -2,10 +2,11 @@ from typing import List, Dict, Any, Callable
 import copy
 import hashlib
 import json
-import multiprocessing as mp
 import os
-import queue
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import networkx as nx
 from rag_system.ingestion.document_converter import DocumentConverter
 from rag_system.ingestion.chunking import MarkdownRecursiveChunker
@@ -19,7 +20,7 @@ from rag_system.utils.incremental_indexer import IncrementalIndexer
 from rag_system.utils.logging_utils import indexing_logger, PerformanceTimer
 
 
-def _convert_and_chunk_worker(file_path: str, document_id: str, config: Dict[str, Any], result_queue):
+def convert_and_chunk_document(file_path: str, document_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
     try:
         converter = DocumentConverter()
         chunker_mode = config.get("chunker_mode", "docling")
@@ -61,9 +62,9 @@ def _convert_and_chunk_worker(file_path: str, document_id: str, config: Dict[str
                 markdown_text, metadata = tpl
                 chunks = chunker.chunk(markdown_text, document_id, metadata)
             file_chunks.extend(chunks)
-        result_queue.put({"chunks": file_chunks})
+        return {"chunks": file_chunks}
     except Exception as e:
-        result_queue.put({"error": str(e)})
+        return {"error": str(e)}
 
 
 class IndexingPipeline:
@@ -418,35 +419,68 @@ class IndexingPipeline:
         return self.run(file_paths, index_id=index_id, incremental=incremental, force_reindex=force_reindex)
 
     def _convert_and_chunk_file(self, file_path: str, document_id: str) -> List[Dict[str, Any]]:
-        # On macOS, spawn re-imports the main RAG server module in the child,
-        # which can reload heavyweight models. Fork keeps the worker bounded to
-        # conversion/chunking and lets us terminate it on timeout.
-        ctx = mp.get_context("fork" if os.name == "posix" else "spawn")
-        result_queue = ctx.Queue(maxsize=1)
-        process = ctx.Process(
-            target=_convert_and_chunk_worker,
-            args=(file_path, document_id, self.config, result_queue),
-        )
-        process.start()
-        process.join(self.conversion_timeout_seconds)
-
-        if process.is_alive():
-            process.terminate()
-            process.join(5)
-            raise TimeoutError(
-                f"Conversion timed out after {self.conversion_timeout_seconds}s for {document_id}"
+        project_root = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory(prefix="localgpt_convert_") as tmpdir:
+            input_path = Path(tmpdir) / "input.json"
+            output_path = Path(tmpdir) / "output.json"
+            input_path.write_text(
+                json.dumps(
+                    {
+                        "file_path": file_path,
+                        "document_id": document_id,
+                        "config": self.config,
+                        "output_path": str(output_path),
+                    },
+                    default=str,
+                ),
+                encoding="utf-8",
             )
 
-        try:
-            result = result_queue.get_nowait()
-        except queue.Empty:
-            if process.exitcode and process.exitcode != 0:
-                raise RuntimeError(f"Conversion worker exited with code {process.exitcode} for {document_id}")
-            return []
+            env = os.environ.copy()
+            existing_pythonpath = env.get("PYTHONPATH")
+            env["PYTHONPATH"] = (
+                f"{project_root}{os.pathsep}{existing_pythonpath}"
+                if existing_pythonpath
+                else str(project_root)
+            )
 
-        if result.get("error"):
-            raise RuntimeError(result["error"])
-        return result.get("chunks", [])
+            try:
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "rag_system.tools.convert_chunk_worker",
+                        str(input_path),
+                    ],
+                    cwd=str(project_root),
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.conversion_timeout_seconds,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired as e:
+                raise TimeoutError(
+                    f"Conversion timed out after {self.conversion_timeout_seconds}s for {document_id}"
+                ) from e
+
+            if completed.returncode != 0:
+                stderr = (completed.stderr or "").strip()
+                stdout = (completed.stdout or "").strip()
+                details = stderr or stdout or f"exit code {completed.returncode}"
+                raise RuntimeError(f"Conversion worker failed for {document_id}: {details}")
+
+            if not output_path.exists():
+                stderr = (completed.stderr or "").strip()
+                raise RuntimeError(
+                    f"Conversion worker produced no output for {document_id}"
+                    + (f": {stderr}" if stderr else "")
+                )
+
+            result = json.loads(output_path.read_text(encoding="utf-8"))
+            if result.get("error"):
+                raise RuntimeError(result["error"])
+            return result.get("chunks", [])
 
     def _ensure_fts_index(self, table_name: str):
         if not hasattr(self, "lancedb_manager"):

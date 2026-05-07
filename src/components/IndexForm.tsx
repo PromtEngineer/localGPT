@@ -193,7 +193,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       console.error('Indexing failed', e);
       setLoading(false);
       setBuildJob(null);
-      alert('Indexing failed. See console for details.');
+      alert(e instanceof Error ? `Indexing failed: ${e.message}` : 'Indexing failed. See console for details.');
     }
   };
 
