@@ -53,6 +53,106 @@ pdf_processor = None
 index_jobs_lock = threading.Lock()
 index_jobs: Dict[str, Dict[str, Any]] = {}
 STALE_BUILD_AFTER = timedelta(minutes=10)
+RAG_API_BASE_URL = "http://localhost:8001"
+
+
+def _format_bytes(size: int) -> str:
+    value = float(max(size, 0))
+    for unit in ("B", "KB", "MB", "GB"):
+        if value < 1024 or unit == "GB":
+            return f"{value:.1f} {unit}" if unit != "B" else f"{int(value)} B"
+        value /= 1024
+    return f"{value:.1f} GB"
+
+
+def _large_indexing_model(model: str | None) -> bool:
+    if not model:
+        return False
+    lowered = model.lower()
+    return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
+
+
+def _index_build_preflight(index_id: str, data: Dict[str, Any] | None = None, *, check_services: bool = True) -> Dict[str, Any]:
+    data = data or {}
+    index = db.get_index(index_id)
+    if not index:
+        raise HTTPException(status_code=404, detail="Index not found")
+
+    errors: List[str] = []
+    warnings: List[str] = []
+    missing_files: List[Dict[str, str]] = []
+    unreadable_files: List[Dict[str, str]] = []
+    document_count = 0
+    total_bytes = 0
+
+    if not RAG_SYSTEM_AVAILABLE:
+        errors.append(
+            "RAG indexing dependencies are not available in this backend Python process. "
+            "Restart with './start-localgpt' or activate .venv before starting the backend."
+        )
+
+    documents = index.get("documents", [])
+    if not documents:
+        errors.append("No documents are attached to this index.")
+
+    for doc in documents:
+        document_count += 1
+        path = str(doc.get("stored_path") or "")
+        filename = str(doc.get("filename") or os.path.basename(path) or "unknown")
+        if not path or not os.path.exists(path):
+            missing_files.append({"filename": filename, "stored_path": path})
+            continue
+        if not os.path.isfile(path) or not os.access(path, os.R_OK):
+            unreadable_files.append({"filename": filename, "stored_path": path})
+            continue
+        size = os.path.getsize(path)
+        total_bytes += size
+        if size == 0:
+            warnings.append(f"{filename} is empty and may be skipped.")
+
+    if missing_files:
+        sample = ", ".join(item["filename"] for item in missing_files[:5])
+        errors.append(f"{len(missing_files)} uploaded file(s) are missing from disk: {sample}")
+    if unreadable_files:
+        sample = ", ".join(item["filename"] for item in unreadable_files[:5])
+        errors.append(f"{len(unreadable_files)} uploaded file(s) are not readable: {sample}")
+
+    if document_count > 100:
+        warnings.append(f"This build has {document_count} files. Prefer Fast mode or smaller batches for best stability.")
+    if total_bytes > 500 * 1024 * 1024:
+        warnings.append(f"This build is {_format_bytes(total_bytes)}. Large builds can take a long time on local hardware.")
+    if bool(data.get("forceReindex")):
+        warnings.append("Force reindex will rebuild all files, including unchanged documents.")
+    if bool(data.get("enableEnrich", True)) and document_count > 50:
+        warnings.append("Context enrichment on large file sets can be slow. Fast mode is safer for the first pass.")
+
+    for key, label in (("enrichModel", "enrichment"), ("overviewModel", "overview")):
+        model = data.get(key)
+        if _large_indexing_model(model):
+            warnings.append(f"The {label} model '{model}' will be replaced with qwen3:0.6b for indexing safety.")
+
+    rag_api_available = None
+    if check_services:
+        try:
+            response = requests.get(f"{RAG_API_BASE_URL}/models", timeout=3)
+            rag_api_available = response.status_code == 200
+            if not rag_api_available:
+                errors.append(f"RAG API responded with HTTP {response.status_code} at {RAG_API_BASE_URL}.")
+        except requests.exceptions.RequestException as e:
+            rag_api_available = False
+            errors.append(f"RAG API is not reachable at {RAG_API_BASE_URL}: {e}")
+
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "document_count": document_count,
+        "total_bytes": total_bytes,
+        "total_size": _format_bytes(total_bytes),
+        "missing_files": missing_files,
+        "unreadable_files": unreadable_files,
+        "rag_api_available": rag_api_available,
+    }
 
 
 def _update_index_job(job_id: str, **updates):
@@ -668,6 +768,20 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...)):
 
     return {"message": f"Uploaded {len(uploaded_files)} files", "uploaded_files": uploaded_files}
 
+
+@app.post("/indexes/{index_id}/build/preflight")
+async def index_build_preflight(index_id: str, request: Request):
+    try:
+        body = await request.body()
+        data = json.loads(body.decode("utf-8")) if body else {}
+        check_services = bool(data.pop("checkServices", True))
+        return _index_build_preflight(index_id, data, check_services=check_services)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = None) -> Dict[str, Any]:
     if not RAG_SYSTEM_AVAILABLE:
         raise HTTPException(
@@ -687,6 +801,11 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     if not file_paths:
         raise HTTPException(status_code=400, detail="No documents to index")
 
+    preflight = _index_build_preflight(index_id, data, check_services=True)
+    if not preflight["ok"]:
+        detail = "; ".join(preflight["errors"])
+        raise HTTPException(status_code=503 if preflight.get("rag_api_available") is False else 400, detail=detail)
+
     latechunk = bool(data.get('latechunk', False))
     docling_chunk = bool(data.get('doclingChunk', False))
     chunk_size = int(data.get('chunkSize', 512))
@@ -702,18 +821,12 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     force_reindex = bool(data.get('forceReindex', False))
     indexing_model_warnings = []
 
-    def is_large_indexing_model(model: str | None) -> bool:
-        if not model:
-            return False
-        lowered = model.lower()
-        return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
-
-    if is_large_indexing_model(enrich_model):
+    if _large_indexing_model(enrich_model):
         indexing_model_warnings.append(
             f"Replaced enrichment model '{enrich_model}' with qwen3:0.6b for indexing safety."
         )
         enrich_model = "qwen3:0.6b"
-    if is_large_indexing_model(overview_model):
+    if _large_indexing_model(overview_model):
         indexing_model_warnings.append(
             f"Replaced overview model '{overview_model}' with qwen3:0.6b for indexing safety."
         )
@@ -726,7 +839,7 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     overview_path = f"index_store/overviews/{index_id}.jsonl"
 
     # Delegate to advanced RAG API same as session indexing
-    rag_api_url = "http://localhost:8001/index"
+    rag_api_url = f"{RAG_API_BASE_URL}/index"
     # Use the index's dedicated LanceDB table so retrieval matches
     table_name = index.get("vector_table_name")
     payload = {
@@ -891,6 +1004,10 @@ async def build_index(index_id: str, request: Request):
             index = db.get_index(index_id)
             if not index:
                 raise HTTPException(status_code=404, detail="Index not found")
+            preflight = _index_build_preflight(index_id, data, check_services=True)
+            if not preflight["ok"]:
+                detail = "; ".join(preflight["errors"])
+                raise HTTPException(status_code=503 if preflight.get("rag_api_available") is False else 400, detail=detail)
             job_id = str(uuid.uuid4())
             now = datetime.now().isoformat()
             db_job = db.create_index_job(job_id, index_id, data, index.get("documents", []))

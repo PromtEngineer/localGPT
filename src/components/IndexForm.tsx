@@ -181,7 +181,11 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       // 2. upload files to index
       await chatAPI.uploadFilesToIndex(index_id, Array.from(files));
 
-      // 3. build index in the background and poll progress
+      const preflight = await chatAPI.preflightIndexBuild(index_id, buildOptions());
+      if (!preflight.ok) {
+        throw new Error(preflight.errors.join(' ') || 'Index build preflight failed.');
+      }
+
       const started = await chatAPI.startIndexBuild(index_id, buildOptions());
       setBuildJob({
         id: started.job_id,
@@ -193,11 +197,9 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       });
       await waitForBuildJob(started.job_id);
 
-      // 4. create chat session and link index
       const session = await chatAPI.createSession(indexName);
       await chatAPI.linkIndexToSession(session.id, index_id);
 
-      // 5. callback
       if (onIndexed) onIndexed(session);
     } catch (e) {
       console.error('Indexing failed', e);

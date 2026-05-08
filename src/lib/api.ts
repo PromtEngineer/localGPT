@@ -65,6 +65,18 @@ export type BuildIndexResponse = {
   indexing_result?: IndexingResult | null;
 };
 
+export type IndexBuildPreflight = {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+  document_count: number;
+  total_bytes: number;
+  total_size: string;
+  missing_files: Array<{ filename: string; stored_path: string }>;
+  unreadable_files: Array<{ filename: string; stored_path: string }>;
+  rag_api_available?: boolean | null;
+};
+
 export type IndexBuildOptions = {
   latechunk?: boolean;
   doclingChunk?: boolean;
@@ -592,6 +604,19 @@ class ChatAPI {
       console.error('Build index failed:', error);
       throw error;
     }
+  }
+
+  async preflightIndexBuild(indexId: string, opts: IndexBuildOptions = {}): Promise<IndexBuildPreflight> {
+    const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/build/preflight`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(this.indexBuildPayload(opts)),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`Preflight error: ${errorData.error || errorData.detail || response.statusText}`);
+    }
+    return response.json();
   }
 
   async startIndexBuild(indexId: string, opts: IndexBuildOptions = {}): Promise<{ message: string; job_id: string; status: string }> {

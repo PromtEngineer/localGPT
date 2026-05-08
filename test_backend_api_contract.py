@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -103,6 +104,38 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertTrue(cancelled["cancel_requested"])
         self.assertEqual(cancelled["status"], "cancelled")
         self.assertEqual(cancelled["stage"], "cancelled")
+
+    def test_index_build_preflight_contract(self):
+        index_id = server.db.create_index("Preflight Contract")
+
+        empty_response = self.client.post(
+            f"/indexes/{index_id}/build/preflight",
+            json={"checkServices": False},
+        )
+        self.assertEqual(empty_response.status_code, 200)
+        empty_preflight = empty_response.json()
+        self.assertFalse(empty_preflight["ok"])
+        self.assertIn("No documents are attached", " ".join(empty_preflight["errors"]))
+
+        stored_path = os.path.join(self.temp_dir, "preflight-doc.txt")
+        with open(stored_path, "w", encoding="utf-8") as handle:
+            handle.write("preflight document")
+        server.db.add_document_to_index(index_id, "preflight-doc.txt", stored_path)
+
+        with patch("backend.server.requests.get") as mock_get:
+            mock_get.return_value.status_code = 200
+            ready_response = self.client.post(
+                f"/indexes/{index_id}/build/preflight",
+                json={"enrichModel": "gpt-oss:120b-cloud", "overviewModel": "qwen3:0.6b"},
+            )
+
+        self.assertEqual(ready_response.status_code, 200)
+        ready_preflight = ready_response.json()
+        self.assertTrue(ready_preflight["ok"])
+        self.assertEqual(ready_preflight["document_count"], 1)
+        self.assertGreater(ready_preflight["total_bytes"], 0)
+        self.assertTrue(ready_preflight["rag_api_available"])
+        self.assertTrue(any("will be replaced" in warning for warning in ready_preflight["warnings"]))
 
 
 if __name__ == "__main__":

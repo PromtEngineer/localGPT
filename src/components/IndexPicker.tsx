@@ -89,7 +89,12 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
   };
 
   const rebuildInBackground = async (idxId: string, idx: IndexSummary, forceReindex: boolean) => {
-    const started = await chatAPI.startIndexBuild(idxId, buildOptions(idx, forceReindex));
+    const options = buildOptions(idx, forceReindex);
+    const preflight = await chatAPI.preflightIndexBuild(idxId, options);
+    if (!preflight.ok) {
+      throw new Error(preflight.errors.join(' ') || 'Index build preflight failed.');
+    }
+    const started = await chatAPI.startIndexBuild(idxId, options);
     setBuildJob({
       id: started.job_id,
       index_id: idxId,
