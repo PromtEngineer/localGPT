@@ -110,6 +110,23 @@ export type IndexDiagnostics = {
   file_status_counts?: Record<string, number>;
 };
 
+export type IndexDiagnosticsSummary = {
+  index_id: string;
+  name?: string;
+  health: 'healthy' | 'warning' | 'unhealthy';
+  ok: boolean;
+  recommended_action: 'none' | 'rebuild' | 'force_rebuild' | 'fix_sources';
+  can_repair: boolean;
+  error_count: number;
+  warning_count: number;
+  document_count: number;
+  total_size: string;
+  vector_exists: boolean;
+  vector_rows?: number | null;
+  metadata_status?: string;
+  error?: string;
+};
+
 export type IndexBuildOptions = {
   latechunk?: boolean;
   doclingChunk?: boolean;
@@ -654,6 +671,15 @@ class ChatAPI {
 
   async getIndexDiagnostics(indexId: string): Promise<IndexDiagnostics> {
     const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/diagnostics`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`Diagnostics error: ${errorData.error || errorData.detail || response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async getIndexesDiagnostics(): Promise<{ diagnostics: IndexDiagnosticsSummary[]; total: number }> {
+    const response = await fetch(`${API_BASE_URL}/indexes/diagnostics`);
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       throw new Error(`Diagnostics error: ${errorData.error || errorData.detail || response.statusText}`);

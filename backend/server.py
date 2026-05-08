@@ -324,6 +324,26 @@ def _index_diagnostics(index_id: str) -> Dict[str, Any]:
     }
 
 
+def _index_diagnostics_summary(index_id: str) -> Dict[str, Any]:
+    diagnostics = _index_diagnostics(index_id)
+    vector_table = diagnostics.get("vector_table") or {}
+    return {
+        "index_id": index_id,
+        "name": diagnostics.get("name"),
+        "health": diagnostics.get("health"),
+        "ok": diagnostics.get("ok"),
+        "recommended_action": diagnostics.get("recommended_action"),
+        "can_repair": diagnostics.get("can_repair"),
+        "error_count": len(diagnostics.get("errors") or []),
+        "warning_count": len(diagnostics.get("warnings") or []),
+        "document_count": diagnostics.get("document_count"),
+        "total_size": diagnostics.get("total_size"),
+        "vector_exists": bool(vector_table.get("exists")),
+        "vector_rows": vector_table.get("row_count"),
+        "metadata_status": diagnostics.get("metadata_status"),
+    }
+
+
 def _update_index_job(job_id: str, **updates):
     db.update_index_job(job_id, updates)
     with index_jobs_lock:
@@ -846,6 +866,41 @@ async def get_indexes():
         return {"indexes": data, "total": len(data)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/indexes/diagnostics")
+async def get_indexes_diagnostics():
+    """Get compact health diagnostics for all indexes."""
+    try:
+        _recover_stale_index_builds()
+        summaries = []
+        for item in db.list_indexes():
+            idx_id = item.get("id") or item.get("index_id")
+            if not idx_id:
+                continue
+            try:
+                summaries.append(_index_diagnostics_summary(str(idx_id)))
+            except Exception as e:
+                summaries.append({
+                    "index_id": idx_id,
+                    "name": item.get("name"),
+                    "health": "unhealthy",
+                    "ok": False,
+                    "recommended_action": "force_rebuild",
+                    "can_repair": bool(item.get("documents")),
+                    "error_count": 1,
+                    "warning_count": 0,
+                    "document_count": len(item.get("documents") or []),
+                    "total_size": "unknown",
+                    "vector_exists": False,
+                    "vector_rows": None,
+                    "metadata_status": (item.get("metadata") or {}).get("status"),
+                    "error": str(e),
+                })
+        return {"diagnostics": summaries, "total": len(summaries)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/indexes")
 async def create_index(request: Request):

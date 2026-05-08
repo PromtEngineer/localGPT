@@ -156,6 +156,15 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertFalse(diagnostics["vector_table"]["exists"])
         self.assertTrue(any("Vector table is missing" in error for error in diagnostics["errors"]))
 
+        summary_response = self.client.get("/indexes/diagnostics")
+        self.assertEqual(summary_response.status_code, 200)
+        summaries = summary_response.json()["diagnostics"]
+        summary = next(item for item in summaries if item["index_id"] == index_id)
+        self.assertEqual(summary["health"], "unhealthy")
+        self.assertEqual(summary["recommended_action"], "force_rebuild")
+        self.assertEqual(summary["document_count"], 1)
+        self.assertFalse(summary["vector_exists"])
+
 
 if __name__ == "__main__":
     unittest.main()

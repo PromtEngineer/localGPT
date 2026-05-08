@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ApiRecord, BuildIndexResponse, chatAPI, IndexDiagnostics, IndexJob, IndexSummary } from '@/lib/api';
+import { ApiRecord, BuildIndexResponse, chatAPI, IndexDiagnostics, IndexDiagnosticsSummary, IndexJob, IndexSummary } from '@/lib/api';
 
 interface Props {
   onSelect: (indexId: string) => void;
@@ -15,6 +15,8 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [buildJob, setBuildJob] = useState<IndexJob | null>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
+  const [diagnosticsById, setDiagnosticsById] = useState<Record<string, IndexDiagnosticsSummary>>({});
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -24,6 +26,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       try {
         const data = await chatAPI.listIndexes();
         setIndexes(data.indexes);
+        refreshDiagnostics();
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : 'Failed to load indexes');
       } finally {
@@ -34,6 +37,22 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
 
   const filtered = indexes.filter(i => (i.name || '').toLowerCase().includes(search.toLowerCase()));
   const indexId = (idx: IndexSummary) => idx.id || idx.index_id || '';
+
+  async function refreshDiagnostics() {
+    setDiagnosticsLoading(true);
+    try {
+      const data = await chatAPI.getIndexesDiagnostics();
+      const next: Record<string, IndexDiagnosticsSummary> = {};
+      data.diagnostics.forEach((item) => {
+        next[item.index_id] = item;
+      });
+      setDiagnosticsById(next);
+    } catch (e) {
+      console.warn('Index health refresh failed', e);
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }
 
   const buildOptions = (idx: IndexSummary, forceReindex = false) => {
     const meta = (idx.metadata || {}) as ApiRecord;
@@ -129,6 +148,13 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     return `${counts.done || 0} done - ${counts.processing || 0} active - ${counts.skipped || 0} skipped - ${counts.failed || 0} failed - ${counts.pending || 0} pending`;
   };
 
+  const healthBadge = (diagnostics?: IndexDiagnosticsSummary) => {
+    if (!diagnostics) return { label: diagnosticsLoading ? 'checking' : 'unknown', className: 'bg-white/10 text-gray-300 border-white/10' };
+    if (diagnostics.health === 'healthy') return { label: 'healthy', className: 'bg-green-500/15 text-green-300 border-green-400/20' };
+    if (diagnostics.health === 'warning') return { label: 'warning', className: 'bg-yellow-500/15 text-yellow-200 border-yellow-400/20' };
+    return { label: 'unhealthy', className: 'bg-red-500/15 text-red-300 border-red-400/20' };
+  };
+
   async function handleDelete(idxId: string, name: string) {
     if (!confirm(`Delete index "${name}"? This cannot be undone.`)) return;
     try {
@@ -157,6 +183,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       const result = await rebuildInBackground(id, idx, forceReindex);
       const data = await chatAPI.listIndexes();
       setIndexes(data.indexes);
+      refreshDiagnostics();
       alert(formatBuildSummary(result));
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to rebuild index');
@@ -191,6 +218,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       const result = await rebuildInBackground(id, idx, forceReindex);
       const data = await chatAPI.listIndexes();
       setIndexes(data.indexes);
+      refreshDiagnostics();
       alert(formatBuildSummary(result));
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to inspect index');
@@ -222,6 +250,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       setBusyMessage('Refreshing indexes…');
       const data = await chatAPI.listIndexes();
       setIndexes(data.indexes);
+      refreshDiagnostics();
       alert(`Files added. ${formatBuildSummary(result)}`);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to add files and rebuild index');
@@ -269,7 +298,12 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
           className="hidden"
           onChange={(e)=>handleUploadAndRebuild(e.target.files)}
         />
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" className="w-full px-3 py-2 rounded bg-black/30 border border-white/20 focus:outline-none" />
+        <div className="flex gap-2">
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" className="min-w-0 flex-1 px-3 py-2 rounded bg-black/30 border border-white/20 focus:outline-none" />
+          <button onClick={refreshDiagnostics} disabled={diagnosticsLoading || !!busyId} className="shrink-0 rounded bg-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/20 disabled:opacity-50">
+            {diagnosticsLoading ? 'Checking' : 'Refresh health'}
+          </button>
+        </div>
         {busyId && (
           <div className="space-y-2 text-xs text-green-300">
             <p>{busyMessage || 'Rebuilding index…'} Keep both backend terminals running.</p>
@@ -300,10 +334,18 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
             {filtered.map(idx => (
               <li key={indexId(idx)}>
                 <div className="relative group">
-                  <button disabled={busyId===indexId(idx)} onClick={()=>onSelect(indexId(idx))} className="w-full px-4 py-3 bg-white/10 hover:bg-white/20 rounded transition flex justify-between items-center pr-10 disabled:opacity-50">
-                    <span className="font-medium truncate max-w-[60%]">{idx.name}</span>
-                    <span className="text-xs text-gray-400">{busyId===indexId(idx) ? 'rebuilding…' : `${idx.documents?.length || 0} files`}</span>
-                  </button>
+                  {(() => {
+                    const id = indexId(idx);
+                    const diagnostics = diagnosticsById[id];
+                    const badge = healthBadge(diagnostics);
+                    return (
+                      <button disabled={busyId===id} onClick={()=>onSelect(id)} className="w-full px-4 py-3 bg-white/10 hover:bg-white/20 rounded transition flex justify-between items-center gap-3 pr-10 disabled:opacity-50">
+                        <span className="min-w-0 flex-1 font-medium truncate">{idx.name}</span>
+                        <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] ${badge.className}`}>{badge.label}</span>
+                        <span className="shrink-0 text-xs text-gray-400">{busyId===id ? 'rebuilding...' : `${idx.documents?.length || 0} files`}</span>
+                      </button>
+                    );
+                  })()}
 
                   <button disabled={busyId===indexId(idx)} onClick={(e)=>{e.stopPropagation(); const id = indexId(idx); setMenuOpenId(menuOpenId===id?null:id);}} title="More actions" className="absolute right-4 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-white transition text-lg leading-none font-bold disabled:opacity-40">
                     …
