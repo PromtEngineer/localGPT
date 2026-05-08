@@ -155,6 +155,161 @@ def _index_build_preflight(index_id: str, data: Dict[str, Any] | None = None, *,
     }
 
 
+def _lancedb_path_candidates() -> List[str]:
+    candidates = [
+        os.environ.get("LANCEDB_PATH"),
+        os.path.join(PROJECT_ROOT, "lancedb"),
+        os.path.join(PROJECT_ROOT, "rag_system", "index_store", "lancedb"),
+    ]
+    result: List[str] = []
+    for path in candidates:
+        if path and path not in result:
+            result.append(path)
+    return result
+
+
+def _inspect_vector_table(table_name: str | None) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "expected_table": table_name,
+        "exists": False,
+        "path": None,
+        "row_count": None,
+        "latechunk_exists": False,
+        "error": None,
+    }
+    if not table_name:
+        result["error"] = "Index does not have a vector table name."
+        return result
+
+    try:
+        import lancedb
+    except Exception as e:
+        result["error"] = f"LanceDB is not importable: {e}"
+        return result
+
+    table_names: List[str] = []
+    for db_path in _lancedb_path_candidates():
+        if not os.path.exists(db_path):
+            continue
+        try:
+            conn = lancedb.connect(db_path)
+            if hasattr(conn, "list_tables"):
+                raw_names = conn.list_tables()
+                names = [item.name if hasattr(item, "name") else str(item) for item in raw_names]
+            else:
+                names = conn.table_names() if hasattr(conn, "table_names") else []
+            table_names = list(names)
+            if table_name not in table_names:
+                continue
+            table = conn.open_table(table_name)
+            row_count = None
+            if hasattr(table, "count_rows"):
+                row_count = int(table.count_rows())
+            result.update({
+                "exists": True,
+                "path": db_path,
+                "row_count": row_count,
+                "latechunk_exists": f"{table_name}_lc" in table_names,
+                "error": None,
+            })
+            return result
+        except Exception as e:
+            result["error"] = f"Could not inspect LanceDB at {db_path}: {e}"
+
+    if not result["error"]:
+        searched = ", ".join(_lancedb_path_candidates())
+        result["error"] = f"Vector table was not found in searched LanceDB paths: {searched}"
+    return result
+
+
+def _overview_diagnostics(index_id: str) -> Dict[str, Any]:
+    paths = [
+        os.path.join(PROJECT_ROOT, "index_store", "overviews", f"{index_id}.jsonl"),
+        os.path.join(PROJECT_ROOT, "rag_system", "index_store", "overviews", f"{index_id}.jsonl"),
+    ]
+    for path in paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    line_count = sum(1 for line in handle if line.strip())
+            except Exception:
+                line_count = None
+            return {"exists": True, "path": path, "line_count": line_count}
+    return {"exists": False, "path": None, "line_count": 0}
+
+
+def _index_diagnostics(index_id: str) -> Dict[str, Any]:
+    index = db.get_index(index_id)
+    if not index:
+        raise HTTPException(status_code=404, detail="Index not found")
+
+    errors: List[str] = []
+    warnings: List[str] = []
+    recommendations: List[str] = []
+    metadata = index.get("metadata") or {}
+
+    preflight = _index_build_preflight(index_id, {}, check_services=False)
+    errors.extend(preflight["errors"])
+    warnings.extend(preflight["warnings"])
+
+    vector_table = _inspect_vector_table(index.get("vector_table_name"))
+    if not vector_table["exists"]:
+        errors.append("Vector table is missing. Rebuild this index before trusting retrieval.")
+    elif vector_table["row_count"] == 0:
+        errors.append("Vector table exists but has no rows. Force rebuild this index.")
+
+    overview = _overview_diagnostics(index_id)
+    if metadata.get("enable_enrich", True) and not overview["exists"]:
+        warnings.append("Document overview file is missing. Routing quality may be weaker until the index is rebuilt.")
+
+    latest_job = db.get_latest_index_job(index_id, include_options=False, include_files=True)
+    file_status_counts: Dict[str, int] = {}
+    if latest_job and latest_job.get("files"):
+        for item in latest_job["files"]:
+            status = str(item.get("status") or "unknown")
+            file_status_counts[status] = file_status_counts.get(status, 0) + 1
+        failed_count = file_status_counts.get("failed", 0)
+        pending_count = file_status_counts.get("pending", 0)
+        if failed_count:
+            errors.append(f"{failed_count} file(s) failed in the latest build job.")
+        if pending_count and latest_job.get("status") in {"completed", "failed", "cancelled"}:
+            warnings.append(f"{pending_count} file(s) were left pending in the latest build job.")
+
+    metadata_status = metadata.get("status")
+    if metadata_status in {"failed", "incomplete", "empty"}:
+        errors.append(f"Index metadata status is '{metadata_status}'.")
+    elif metadata_status in {"building", "cancelled"}:
+        warnings.append(f"Index metadata status is '{metadata_status}'.")
+
+    if errors:
+        recommendations.append("Run Force rebuild after confirming the source files still exist.")
+    elif warnings:
+        recommendations.append("A normal rebuild is recommended when convenient.")
+    else:
+        recommendations.append("Index diagnostics look healthy.")
+
+    health = "unhealthy" if errors else "warning" if warnings else "healthy"
+    return {
+        "index_id": index_id,
+        "name": index.get("name"),
+        "health": health,
+        "ok": health == "healthy",
+        "errors": errors,
+        "warnings": warnings,
+        "recommendations": recommendations,
+        "document_count": preflight["document_count"],
+        "total_bytes": preflight["total_bytes"],
+        "total_size": preflight["total_size"],
+        "missing_files": preflight["missing_files"],
+        "unreadable_files": preflight["unreadable_files"],
+        "metadata_status": metadata_status,
+        "vector_table": vector_table,
+        "overview": overview,
+        "latest_job": latest_job,
+        "file_status_counts": file_status_counts,
+    }
+
+
 def _update_index_job(job_id: str, **updates):
     db.update_index_job(job_id, updates)
     with index_jobs_lock:
@@ -732,6 +887,18 @@ async def get_index(index_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/indexes/{index_id}/diagnostics")
+async def get_index_diagnostics(index_id: str):
+    """Validate source files, vector artifacts, and latest build state for an index."""
+    try:
+        return _index_diagnostics(index_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.delete("/indexes/{index_id}")
 async def delete_index(index_id: str):

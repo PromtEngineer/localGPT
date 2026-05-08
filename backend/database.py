@@ -650,6 +650,20 @@ class ChatDatabase:
         conn.close()
         return jobs
 
+    def get_latest_index_job(self, index_id: str, include_options: bool = False, include_files: bool = True) -> dict | None:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute('''
+            SELECT id FROM index_jobs
+            WHERE index_id=?
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (index_id,)).fetchone()
+        conn.close()
+        if not row:
+            return None
+        return self.get_index_job(row['id'], include_options=include_options, include_files=include_files)
+
     def inspect_and_populate_index_metadata(self, index_id: str) -> dict:
         """
         Inspect LanceDB table to extract metadata for older indexes.

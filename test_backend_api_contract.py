@@ -137,6 +137,23 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertTrue(ready_preflight["rag_api_available"])
         self.assertTrue(any("will be replaced" in warning for warning in ready_preflight["warnings"]))
 
+    def test_index_diagnostics_contract(self):
+        index_id = server.db.create_index("Diagnostics Contract")
+        stored_path = os.path.join(self.temp_dir, "diagnostics-doc.txt")
+        with open(stored_path, "w", encoding="utf-8") as handle:
+            handle.write("diagnostics document")
+        server.db.add_document_to_index(index_id, "diagnostics-doc.txt", stored_path)
+
+        response = self.client.get(f"/indexes/{index_id}/diagnostics")
+        self.assertEqual(response.status_code, 200)
+        diagnostics = response.json()
+        self.assertEqual(diagnostics["index_id"], index_id)
+        self.assertEqual(diagnostics["document_count"], 1)
+        self.assertGreater(diagnostics["total_bytes"], 0)
+        self.assertEqual(diagnostics["health"], "unhealthy")
+        self.assertFalse(diagnostics["vector_table"]["exists"])
+        self.assertTrue(any("Vector table is missing" in error for error in diagnostics["errors"]))
+
 
 if __name__ == "__main__":
     unittest.main()

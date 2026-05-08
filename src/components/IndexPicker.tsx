@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ApiRecord, BuildIndexResponse, chatAPI, IndexJob, IndexSummary } from '@/lib/api';
+import { ApiRecord, BuildIndexResponse, chatAPI, IndexDiagnostics, IndexJob, IndexSummary } from '@/lib/api';
 
 interface Props {
   onSelect: (indexId: string) => void;
@@ -66,6 +66,18 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       parts.push(`${stats.chunk_cache_hits} cache hits`);
     }
     return `Rebuild complete: ${parts.join(', ')}.`;
+  };
+
+  const formatDiagnostics = (diagnostics: IndexDiagnostics) => {
+    const lines = [
+      `Health: ${diagnostics.health}`,
+      `Files: ${diagnostics.document_count} (${diagnostics.total_size})`,
+      `Vectors: ${diagnostics.vector_table?.exists ? `${diagnostics.vector_table.row_count ?? 'unknown'} rows` : 'missing'}`,
+    ];
+    if (diagnostics.errors.length) lines.push(`Errors: ${diagnostics.errors.join(' ')}`);
+    if (diagnostics.warnings.length) lines.push(`Warnings: ${diagnostics.warnings.join(' ')}`);
+    if (diagnostics.recommendations.length) lines.push(`Next: ${diagnostics.recommendations.join(' ')}`);
+    return lines.join('\n');
   };
 
   const waitForBuildJob = async (jobId: string): Promise<BuildIndexResponse> => {
@@ -151,6 +163,23 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       setBusyId(null);
       setBusyMessage(null);
       setBuildJob(null);
+    }
+  }
+
+  async function handleDiagnostics(idx: IndexSummary) {
+    const id = indexId(idx);
+    if (!id) return;
+    setBusyId(id);
+    setBusyMessage(`Checking "${idx.name || 'Untitled index'}"...`);
+    setMenuOpenId(null);
+    try {
+      const diagnostics = await chatAPI.getIndexDiagnostics(id);
+      alert(formatDiagnostics(diagnostics));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to inspect index');
+    } finally {
+      setBusyId(null);
+      setBusyMessage(null);
     }
   }
 
@@ -266,6 +295,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
                     <div className="index-row-menu absolute right-0 top-full mt-1 bg-black/80 backdrop-blur border border-white/10 rounded shadow-lg py-1 w-44 text-sm z-50">
                       <button onClick={()=>{onSelect(indexId(idx)); setMenuOpenId(null);}} className="block w-full text-left px-4 py-2 hover:bg-white/10">Open</button>
                       <button onClick={()=>handleAddFiles(idx)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Add files + rebuild</button>
+                      <button onClick={()=>handleDiagnostics(idx)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Run diagnostics</button>
                       <button onClick={()=>handleRebuild(idx, false)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Rebuild changed only</button>
                       <button onClick={()=>handleRebuild(idx, true)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Force rebuild</button>
                       <button onClick={()=>handleDelete(indexId(idx), idx.name || 'Untitled index')} className="block w-full text-left px-4 py-2 hover:bg-white/10 text-red-400 hover:text-red-500">Delete</button>

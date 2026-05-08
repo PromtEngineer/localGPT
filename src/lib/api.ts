@@ -77,6 +77,37 @@ export type IndexBuildPreflight = {
   rag_api_available?: boolean | null;
 };
 
+export type IndexDiagnostics = {
+  index_id: string;
+  name?: string;
+  health: 'healthy' | 'warning' | 'unhealthy';
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+  recommendations: string[];
+  document_count: number;
+  total_bytes: number;
+  total_size: string;
+  missing_files: Array<{ filename: string; stored_path: string }>;
+  unreadable_files: Array<{ filename: string; stored_path: string }>;
+  metadata_status?: string;
+  vector_table?: {
+    expected_table?: string;
+    exists: boolean;
+    path?: string | null;
+    row_count?: number | null;
+    latechunk_exists?: boolean;
+    error?: string | null;
+  };
+  overview?: {
+    exists: boolean;
+    path?: string | null;
+    line_count?: number | null;
+  };
+  latest_job?: IndexJob | null;
+  file_status_counts?: Record<string, number>;
+};
+
 export type IndexBuildOptions = {
   latechunk?: boolean;
   doclingChunk?: boolean;
@@ -615,6 +646,15 @@ class ChatAPI {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       throw new Error(`Preflight error: ${errorData.error || errorData.detail || response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async getIndexDiagnostics(indexId: string): Promise<IndexDiagnostics> {
+    const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/diagnostics`);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`Diagnostics error: ${errorData.error || errorData.detail || response.statusText}`);
     }
     return response.json();
   }
