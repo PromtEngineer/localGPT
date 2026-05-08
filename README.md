@@ -160,7 +160,7 @@ ollama pull qwen3:8b
 ollama serve
 
 # Start the system (in a new terminal)
-python run_system.py
+./start-localgpt
 
 # Access the application
 open http://localhost:3000
@@ -172,20 +172,20 @@ open http://localhost:3000
 python system_health_check.py
 
 # Check service status and health
-python run_system.py --health
+./start-localgpt --health
 
 # Start in production mode
-python run_system.py --mode prod
+./start-localgpt --mode prod
 
 # Skip frontend (backend + RAG API only)
-python run_system.py --no-frontend
+./start-localgpt --no-frontend
 
 # View aggregated logs
-python run_system.py --logs-only
+./start-localgpt --logs-only
 
 # Stop all services
-python run_system.py --stop
-# Or press Ctrl+C in the terminal running python run_system.py
+./start-localgpt --stop
+# Or press Ctrl+C in the terminal running ./start-localgpt
 ```
 
 **Service Architecture:**
@@ -202,10 +202,12 @@ The `run_system.py` launcher manages four key services:
 ollama serve
 
 # Terminal 2: Start RAG API
+source .venv/bin/activate
 python -m rag_system.api_server
 
 # Terminal 3: Start Backend
-cd backend && python server.py
+source .venv/bin/activate
+python backend/server.py
 
 # Terminal 4: Start Frontend
 npm run dev

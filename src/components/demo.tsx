@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { SessionSidebar } from "@/components/ui/session-sidebar"
 import { SessionChat } from '@/components/ui/session-chat'
-import { chatAPI, ChatSession } from "@/lib/api"
+import { chatAPI, ChatSession, HealthResponse } from "@/lib/api"
 import { LandingMenu } from "@/components/LandingMenu";
 import { IndexForm } from "@/components/IndexForm";
 import SessionIndexInfo from "@/components/SessionIndexInfo";
@@ -14,6 +14,7 @@ export function Demo() {
     const [currentSessionId, setCurrentSessionId] = useState<string | undefined>()
     const [showConversation, setShowConversation] = useState(false)
     const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'error'>('checking')
+    const [health, setHealth] = useState<HealthResponse | null>(null)
     const [sidebarRef, setSidebarRef] = useState<{ refreshSessions: () => Promise<void> } | null>(null)
     const [homeMode, setHomeMode] = useState<'HOME' | 'INDEX' | 'CHAT_EXISTING' | 'QUICK_CHAT'>('HOME')
     const [showIndexInfo, setShowIndexInfo] = useState(false)
@@ -30,10 +31,12 @@ export function Demo() {
     const checkBackendHealth = async () => {
         try {
             const health = await chatAPI.checkHealth()
+            setHealth(health)
             setBackendStatus('connected')
             console.log('Backend connected:', health)
         } catch (error) {
             console.error('Backend health check failed:', error)
+            setHealth(null)
             setBackendStatus('error')
         }
     }
@@ -121,9 +124,16 @@ export function Demo() {
                                             </div>
                                         )}
                                         {backendStatus === 'connected' && (
-                                            <div className="flex items-center gap-2 text-green-400">
-                                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                                                Backend connected • Session-based chat ready
+                                            <div className="flex flex-col items-center gap-1 text-green-400">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                                    Backend connected • Session-based chat ready
+                                                </div>
+                                                {health && (
+                                                    <div className="text-xs text-gray-400">
+                                                        RAG {health.rag_system_available ? 'ready' : 'unavailable'} • Ollama {health.ollama_running ? 'ready' : 'offline'} • {health.available_models?.length || 0} models • {health.virtual_env ? '.venv active' : 'venv unknown'}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
                                         {backendStatus === 'error' && (

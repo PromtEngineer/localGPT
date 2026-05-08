@@ -1,0 +1,21 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT_DIR"
+
+if [[ ! -x ".venv/bin/python" ]]; then
+  echo "Project virtual environment not found at .venv/bin/python"
+  echo "Create it and install dependencies first:"
+  echo "  python3 -m venv .venv"
+  echo "  source .venv/bin/activate"
+  echo "  python -m pip install -r backend/requirements.txt"
+  echo "  python -m pip install -r rag_system/requirements.txt"
+  exit 1
+fi
+
+export VIRTUAL_ENV="$ROOT_DIR/.venv"
+export PATH="$VIRTUAL_ENV/bin:$PATH"
+export TOKENIZERS_PARALLELISM=false
+
+exec "$VIRTUAL_ENV/bin/python" "$ROOT_DIR/run_system.py" "$@"

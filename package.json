@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "app": "./start-localgpt",
+    "app:health": "./start-localgpt --health",
+    "app:no-frontend": "./start-localgpt --no-frontend",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

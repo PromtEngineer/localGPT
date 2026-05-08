@@ -131,6 +131,10 @@ export interface ChatResponse {
 
 export interface HealthResponse {
   status: string;
+  rag_system_available?: boolean;
+  python_executable?: string;
+  python_version?: string;
+  virtual_env?: string | null;
   ollama_running: boolean;
   available_models: string[];
   database_stats?: {

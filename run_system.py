@@ -36,6 +36,11 @@ import logging
 from dataclasses import dataclass
 import psutil
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+VENV_DIR = PROJECT_ROOT / ".venv"
+VENV_PYTHON = VENV_DIR / "bin" / "python"
+VENV_BIN = VENV_DIR / "bin"
+
 @dataclass
 class ServiceConfig:
     name: str
@@ -124,25 +129,40 @@ class ServiceManager:
     
     def _get_service_configs(self) -> Dict[str, ServiceConfig]:
         """Define service configurations based on mode."""
+        python_executable = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
+        base_env = {
+            "PYTHONUNBUFFERED": "1",
+            "TOKENIZERS_PARALLELISM": "false",
+        }
+        if VENV_DIR.exists():
+            base_env["VIRTUAL_ENV"] = str(VENV_DIR)
+            base_env["PATH"] = f"{VENV_BIN}{os.pathsep}{os.environ.get('PATH', '')}"
+
         base_configs = {
             'ollama': ServiceConfig(
                 name='ollama',
                 command=['ollama', 'serve'],
                 port=11434,
+                health_check_path="/api/tags",
                 startup_delay=5,
                 required=True
             ),
             'rag-api': ServiceConfig(
                 name='rag-api',
-                command=[sys.executable, '-m', 'rag_system.api_server'],
+                command=[python_executable, '-m', 'rag_system.api_server'],
                 port=8001,
+                cwd=str(PROJECT_ROOT),
+                env=base_env,
+                health_check_path="/models",
                 startup_delay=3,
                 required=True
             ),
             'backend': ServiceConfig(
                 name='backend',
-                command=[sys.executable, 'backend/server.py'],
+                command=[python_executable, 'backend/server.py'],
                 port=8000,
+                cwd=str(PROJECT_ROOT),
+                env=base_env,
                 startup_delay=2,
                 required=True
             ),
@@ -150,6 +170,8 @@ class ServiceManager:
                 name='frontend',
                 command=['npm', 'run', 'dev' if self.mode == 'dev' else 'start'],
                 port=3000,
+                cwd=str(PROJECT_ROOT),
+                health_check_path="/",
                 startup_delay=5,
                 required=False  # Optional in case Node.js not available
             )
@@ -160,8 +182,8 @@ class ServiceManager:
             # Use production build for frontend
             base_configs['frontend'].command = ['npm', 'run', 'start']
             # Add production environment variables
-            base_configs['rag-api'].env = {'NODE_ENV': 'production'}
-            base_configs['backend'].env = {'NODE_ENV': 'production'}
+            base_configs['rag-api'].env = {**base_env, 'NODE_ENV': 'production'}
+            base_configs['backend'].env = {**base_env, 'NODE_ENV': 'production'}
         
         return base_configs
     
@@ -183,12 +205,52 @@ class ServiceManager:
             import socket
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 return s.connect_ex(('localhost', port)) == 0
+
+    def find_port_listeners(self, port: int):
+        """Return psutil processes listening on a TCP port."""
+        listeners = []
+        try:
+            for conn in psutil.net_connections(kind="tcp"):
+                if conn.status != "LISTEN" or not conn.laddr or conn.laddr.port != port or not conn.pid:
+                    continue
+                try:
+                    listeners.append(psutil.Process(conn.pid))
+                except psutil.Error:
+                    continue
+        except psutil.Error:
+            pass
+        if listeners:
+            return listeners
+
+        try:
+            result = subprocess.run(
+                ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            for raw_pid in result.stdout.splitlines():
+                try:
+                    listeners.append(psutil.Process(int(raw_pid.strip())))
+                except (ValueError, psutil.Error):
+                    continue
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return []
+        return listeners
     
     def check_prerequisites(self) -> bool:
         """Check if all required tools are available."""
         self.logger.info("🔍 Checking prerequisites...")
         
         missing_tools = []
+
+        if not VENV_PYTHON.exists():
+            missing_tools.append(".venv/bin/python (run: python3 -m venv .venv && source .venv/bin/activate && python -m pip install -r backend/requirements.txt -r rag_system/requirements.txt)")
+        else:
+            try:
+                self._check_python_environment()
+            except RuntimeError:
+                return False
         
         # Check Ollama
         if not self._command_exists('ollama'):
@@ -209,6 +271,28 @@ class ServiceManager:
         
         self.logger.info("✅ All prerequisites satisfied")
         return True
+
+    def _check_python_environment(self):
+        """Verify that required Python packages are installed in the project venv."""
+        imports = ["fastapi", "uvicorn", "transformers", "torch", "lancedb", "docling"]
+        probe = "import " + ", ".join(imports)
+        result = subprocess.run(
+            [str(VENV_PYTHON), "-c", probe],
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            self.logger.error("❌ Project .venv is missing required Python packages")
+            self.logger.error("   Run: source .venv/bin/activate")
+            self.logger.error("   Then: python -m pip install -r backend/requirements.txt")
+            self.logger.error("   And:  python -m pip install -r rag_system/requirements.txt")
+            raise RuntimeError(result.stderr.strip() or "Python dependency probe failed")
+
+        if Path(sys.executable).resolve() != VENV_PYTHON.resolve():
+            self.logger.warning(f"⚠️  Launcher is running under {sys.executable}")
+            self.logger.warning(f"   Services will still use project venv: {VENV_PYTHON}")
     
     def _command_exists(self, command: str) -> bool:
         """Check if a command exists in PATH."""
@@ -253,8 +337,14 @@ class ServiceManager:
         
         # Check if port is in use
         if self.is_port_in_use(config.port):
-            self.logger.warning(f"⚠️  Port {config.port} already in use, skipping {service_name}")
-            return not config.required
+            if self.health_check(service_name, config):
+                self.logger.info(f"✅ {service_name} already running on port {config.port}")
+                return True
+            listeners = self.find_port_listeners(config.port)
+            owner = ", ".join(f"{p.pid}:{p.name()}" for p in listeners) or "unknown process"
+            self.logger.error(f"❌ Port {config.port} is in use by {owner}, but {service_name} health check failed")
+            self.logger.error("   Run './start-localgpt --stop' to clear stale LocalGPT ports, then start again.")
+            return False
         
         self.logger.info(f"🔄 Starting {service_name} on port {config.port}...")
         
@@ -292,8 +382,11 @@ class ServiceManager:
             
             # Check if process is still running
             if process.poll() is None:
-                self.logger.info(f"✅ {service_name} started successfully (PID: {process.pid})")
-                return True
+                if self._wait_for_health(service_name, config):
+                    self.logger.info(f"✅ {service_name} started successfully (PID: {process.pid})")
+                    return True
+                self.logger.error(f"❌ {service_name} started but failed health check")
+                return False
             else:
                 self.logger.error(f"❌ {service_name} failed to start")
                 return False
@@ -342,6 +435,16 @@ class ServiceManager:
             return response.status_code == 200
         except:
             return False
+
+    def _wait_for_health(self, service_name: str, config: ServiceConfig, timeout: int = 30) -> bool:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if service_name in self.processes and self.processes[service_name].poll() is not None:
+                return False
+            if self.health_check(service_name, config):
+                return True
+            time.sleep(1)
+        return False
     
     def start_all(self, skip_frontend: bool = False) -> bool:
         """Start all services in order."""
@@ -403,15 +506,21 @@ class ServiceManager:
         
         return False
     
-    def _print_status_summary(self):
+    def _print_status_summary(self, title: str = "RAG System Started!"):
         """Print system status summary."""
         self.logger.info("")
-        self.logger.info("🎉 RAG System Started!")
+        self.logger.info(f"🎉 {title}")
         self.logger.info("📊 Services Status:")
         
         for service_name, config in self.services.items():
-            if service_name in self.processes or self.is_port_in_use(config.port):
-                status = "✅ Running"
+            if self.health_check(service_name, config):
+                status = "✅ Healthy"
+                url = f"http://localhost:{config.port}"
+                self.logger.info(f"   • {service_name.capitalize():<10}: {status:<10} {url}")
+            elif service_name in self.processes or self.is_port_in_use(config.port):
+                listeners = self.find_port_listeners(config.port)
+                owner = ", ".join(f"{p.pid}:{p.name()}" for p in listeners) or "unknown process"
+                status = f"⚠️  Listening, unhealthy ({owner})"
                 url = f"http://localhost:{config.port}"
                 self.logger.info(f"   • {service_name.capitalize():<10}: {status:<10} {url}")
             else:
@@ -423,7 +532,7 @@ class ServiceManager:
         self.logger.info("📋 Useful commands:")
         self.logger.info("   • Stop system:  Ctrl+C")
         self.logger.info("   • Check logs:   tail -f logs/*.log")
-        self.logger.info("   • Health check: python run_system.py --health")
+        self.logger.info("   • Health check: ./start-localgpt --health")
     
     def shutdown(self):
         """Gracefully shutdown all services."""
@@ -465,6 +574,27 @@ class ServiceManager:
             self.logger.error(f"❌ Error stopping {service_name}: {e}")
         finally:
             del self.processes[service_name]
+
+    def stop_port_listeners(self, include_ollama: bool = False):
+        """Stop processes listening on LocalGPT service ports."""
+        service_names = list(reversed(list(self.services.keys())))
+        for service_name in service_names:
+            if service_name == "ollama" and not include_ollama:
+                continue
+            config = self.services[service_name]
+            for process in self.find_port_listeners(config.port):
+                proc_name = process.name()
+                self.logger.info(f"🔄 Stopping {service_name} listener {process.pid}:{proc_name} on port {config.port}...")
+                try:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=8)
+                    except psutil.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                    self.logger.info(f"✅ Stopped {process.pid}:{proc_name}")
+                except psutil.Error as e:
+                    self.logger.warning(f"⚠️  Could not stop process on port {config.port}: {e}")
     
     def monitor(self):
         """Monitor running services and restart if needed."""
@@ -500,7 +630,9 @@ def main():
     parser.add_argument('--health', action='store_true',
                        help='Check health of running services')
     parser.add_argument('--stop', action='store_true',
-                       help='Stop all running services')
+                       help='Stop LocalGPT frontend/backend/RAG listeners')
+    parser.add_argument('--stop-ollama', action='store_true',
+                       help='Also stop Ollama when used with --stop')
     
     args = parser.parse_args()
     
@@ -510,13 +642,13 @@ def main():
     try:
         if args.health:
             # Health check mode
-            manager._print_status_summary()
+            manager._print_status_summary("RAG System Status")
             return
         
         if args.stop:
-            # Stop mode - kill any running processes
-            manager.logger.info("🛑 Stopping all RAG system processes...")
-            # Implementation for stopping would go here
+            manager.logger.info("🛑 Stopping LocalGPT service ports...")
+            manager.stop_port_listeners(include_ollama=args.stop_ollama)
+            manager._print_status_summary("RAG System Status")
             return
         
         if args.logs_only:
