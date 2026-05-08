@@ -76,6 +76,18 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   
   const apiService = chatAPI
 
+  const ensureIndexHealthyForChat = async (idxId: string | null, indexName?: string | null) => {
+    if (!idxId) return;
+    const diagnostics = await apiService.getIndexDiagnostics(idxId);
+    const label = indexName || diagnostics.name || idxId.slice(0, 8);
+    if (diagnostics.health === 'unhealthy') {
+      throw new Error(`Cannot chat with "${label}" because its index is unhealthy. Run diagnostics and repair it before chatting.`);
+    }
+    if (diagnostics.health === 'warning' && !confirm(`"${label}" has diagnostics warnings. Continue chatting anyway?`)) {
+      throw new Error('Chat cancelled because the linked index has warnings.');
+    }
+  };
+
   // Define loadSession with useCallback before useEffect
   const loadSession = useCallback(async (id: string) => {
     try {
@@ -214,6 +226,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           }
         } catch {}
       }
+
+      await ensureIndexHealthyForChat(idxId, currentIndexName);
 
       if (enableStream) {
         // Stepwise progress structure
@@ -498,7 +512,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
 
     } catch (error) {
       console.error('Failed to send message:', error)
-      setError('Failed to send message')
+      setError(error instanceof Error ? error.message : 'Failed to send message')
     } finally {
       setIsLoading(false)
     }

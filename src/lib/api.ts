@@ -381,7 +381,8 @@ class ChatAPI {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(`Session chat error: ${errorData.error || response.statusText}`);
+        const detail = typeof errorData.detail === 'string' ? errorData.detail : errorData.detail?.message;
+        throw new Error(`Session chat error: ${errorData.error || detail || response.statusText}`);
       }
 
       return await response.json();

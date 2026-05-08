@@ -172,6 +172,17 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertIn("cannot be opened safely", link_detail["message"])
         self.assertEqual(link_detail["diagnostics"]["recommended_action"], "force_rebuild")
 
+        legacy_session_id = server.db.create_session("Legacy Guard", "test-model")
+        server.db.link_index_to_session(legacy_session_id, index_id)
+        chat_response = self.client.post(
+            f"/sessions/{legacy_session_id}/messages",
+            json={"message": "Can I trust this index?"},
+        )
+        self.assertEqual(chat_response.status_code, 409)
+        chat_detail = chat_response.json()["detail"]
+        self.assertIn("Cannot chat with unhealthy linked index", chat_detail["message"])
+        self.assertEqual(chat_detail["diagnostics"][0]["recommended_action"], "force_rebuild")
+
 
 if __name__ == "__main__":
     unittest.main()

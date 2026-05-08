@@ -344,6 +344,25 @@ def _index_diagnostics_summary(index_id: str) -> Dict[str, Any]:
     }
 
 
+def _raise_for_unhealthy_session_indexes(session_id: str) -> List[str]:
+    idx_ids = db.get_indexes_for_session(session_id)
+    unhealthy: List[Dict[str, Any]] = []
+    for idx_id in idx_ids:
+        diagnostics = _index_diagnostics(idx_id)
+        if diagnostics.get("health") == "unhealthy":
+            unhealthy.append(diagnostics)
+    if unhealthy:
+        names = ", ".join(str(item.get("name") or item.get("index_id")) for item in unhealthy)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"Cannot chat with unhealthy linked index(es): {names}. Run diagnostics and repair before chatting.",
+                "diagnostics": unhealthy,
+            },
+        )
+    return idx_ids
+
+
 def _update_index_job(job_id: str, **updates):
     db.update_index_job(job_id, updates)
     with index_jobs_lock:
@@ -610,6 +629,8 @@ async def session_chat(session_id: str, request: Request):
         if not message:
             raise HTTPException(status_code=400, detail="Message is required")
 
+        idx_ids = _raise_for_unhealthy_session_indexes(session_id)
+
         if session['message_count'] == 0:
             title = generate_session_title(message)
             db.update_session_title(session_id, title)
@@ -618,8 +639,6 @@ async def session_chat(session_id: str, request: Request):
         user_message_id = db.add_message(session_id, message, "user")
 
         # 🎯 SMART ROUTING: Decide between direct LLM vs RAG
-        idx_ids = db.get_indexes_for_session(session_id)
-
         # Get overviews for routing decision
         aggregated = []
         if idx_ids:
