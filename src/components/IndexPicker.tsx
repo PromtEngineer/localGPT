@@ -194,6 +194,60 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     }
   }
 
+  async function handleOpenIndex(idx: IndexSummary) {
+    const id = indexId(idx);
+    if (!id) return;
+    setMenuOpenId(null);
+    let summary = diagnosticsById[id];
+    if (!summary) {
+      setBusyId(id);
+      setBusyMessage(`Checking "${idx.name || 'Untitled index'}"...`);
+      try {
+        const diagnostics = await chatAPI.getIndexDiagnostics(id);
+        summary = {
+          index_id: diagnostics.index_id,
+          name: diagnostics.name,
+          health: diagnostics.health,
+          ok: diagnostics.ok,
+          recommended_action: diagnostics.recommended_action,
+          can_repair: diagnostics.can_repair,
+          error_count: diagnostics.errors.length,
+          warning_count: diagnostics.warnings.length,
+          document_count: diagnostics.document_count,
+          total_size: diagnostics.total_size,
+          vector_exists: Boolean(diagnostics.vector_table?.exists),
+          vector_rows: diagnostics.vector_table?.row_count,
+          metadata_status: diagnostics.metadata_status,
+        };
+        setDiagnosticsById((prev) => ({ ...prev, [id]: summary as IndexDiagnosticsSummary }));
+      } catch (e: unknown) {
+        alert(e instanceof Error ? e.message : 'Failed to check index health');
+        setBusyId(null);
+        setBusyMessage(null);
+        return;
+      }
+      setBusyId(null);
+      setBusyMessage(null);
+    }
+
+    if (summary.health === 'unhealthy') {
+      const canRepair = summary.can_repair;
+      const message = `"${idx.name || 'Untitled index'}" is unhealthy and should not be opened for chat.\n\nRecommended action: ${summary.recommended_action.replace('_', ' ')}.`;
+      if (canRepair && confirm(`${message}\n\nRun diagnose + repair now?`)) {
+        await handleDiagnostics(idx, true);
+      } else if (!canRepair) {
+        alert(`${message}\n\nRe-upload or fix the source files first.`);
+      }
+      return;
+    }
+
+    if (summary.health === 'warning' && !confirm(`"${idx.name || 'Untitled index'}" has diagnostics warnings. Open it anyway?`)) {
+      return;
+    }
+
+    onSelect(id);
+  }
+
   async function handleDiagnostics(idx: IndexSummary, offerRepair = false) {
     const id = indexId(idx);
     if (!id) return;
@@ -339,7 +393,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
                     const diagnostics = diagnosticsById[id];
                     const badge = healthBadge(diagnostics);
                     return (
-                      <button disabled={busyId===id} onClick={()=>onSelect(id)} className="w-full px-4 py-3 bg-white/10 hover:bg-white/20 rounded transition flex justify-between items-center gap-3 pr-10 disabled:opacity-50">
+                      <button disabled={busyId===id} onClick={()=>handleOpenIndex(idx)} className="w-full px-4 py-3 bg-white/10 hover:bg-white/20 rounded transition flex justify-between items-center gap-3 pr-10 disabled:opacity-50">
                         <span className="min-w-0 flex-1 font-medium truncate">{idx.name}</span>
                         <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] ${badge.className}`}>{badge.label}</span>
                         <span className="shrink-0 text-xs text-gray-400">{busyId===id ? 'rebuilding...' : `${idx.documents?.length || 0} files`}</span>
@@ -353,7 +407,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
 
                   {menuOpenId===indexId(idx) && (
                     <div className="index-row-menu absolute right-0 top-full mt-1 bg-black/80 backdrop-blur border border-white/10 rounded shadow-lg py-1 w-44 text-sm z-50">
-                      <button onClick={()=>{onSelect(indexId(idx)); setMenuOpenId(null);}} className="block w-full text-left px-4 py-2 hover:bg-white/10">Open</button>
+                      <button onClick={()=>handleOpenIndex(idx)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Open</button>
                       <button onClick={()=>handleAddFiles(idx)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Add files + rebuild</button>
                       <button onClick={()=>handleDiagnostics(idx)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Run diagnostics</button>
                       <button onClick={()=>handleDiagnostics(idx, true)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Diagnose + repair</button>

@@ -577,8 +577,19 @@ async def get_session_indexes(session_id: str):
 async def link_index_to_session(session_id: str, index_id: str):
     """Link an index to a session"""
     try:
+        diagnostics = _index_diagnostics(index_id)
+        if diagnostics.get("health") == "unhealthy":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Index is unhealthy and cannot be opened safely. Run diagnostics and repair it first.",
+                    "diagnostics": diagnostics,
+                },
+            )
         db.link_index_to_session(session_id, index_id)
         return {"message": "Index linked to session"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

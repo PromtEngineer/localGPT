@@ -165,6 +165,13 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertEqual(summary["document_count"], 1)
         self.assertFalse(summary["vector_exists"])
 
+        session_id = server.db.create_session("Guarded Link", "test-model")
+        link_response = self.client.post(f"/sessions/{session_id}/indexes/{index_id}")
+        self.assertEqual(link_response.status_code, 409)
+        link_detail = link_response.json()["detail"]
+        self.assertIn("cannot be opened safely", link_detail["message"])
+        self.assertEqual(link_detail["diagnostics"]["recommended_action"], "force_rebuild")
+
 
 if __name__ == "__main__":
     unittest.main()

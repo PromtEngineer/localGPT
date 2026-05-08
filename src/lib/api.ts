@@ -722,7 +722,8 @@ class ChatAPI {
     const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/indexes/${indexId}`, { method: 'POST' });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      throw new Error(`Link index error: ${err.error || resp.statusText}`);
+      const detail = typeof err.detail === 'string' ? err.detail : err.detail?.message;
+      throw new Error(`Link index error: ${err.error || detail || resp.statusText}`);
     }
     return resp.json();
   }
