@@ -56,6 +56,7 @@ STALE_BUILD_AFTER = timedelta(minutes=10)
 
 
 def _update_index_job(job_id: str, **updates):
+    db.update_index_job(job_id, updates)
     with index_jobs_lock:
         job = index_jobs.get(job_id)
         if not job:
@@ -67,7 +68,13 @@ def _update_index_job(job_id: str, **updates):
 def _get_index_job(job_id: str) -> Optional[Dict[str, Any]]:
     with index_jobs_lock:
         job = index_jobs.get(job_id)
-        return dict(job) if job else None
+        if job:
+            return dict(job)
+    return db.get_index_job(job_id, include_options=True, include_files=True)
+
+
+def _public_index_job(job_id: str) -> Optional[Dict[str, Any]]:
+    return db.get_index_job(job_id, include_options=False, include_files=True)
 
 
 def _recover_stale_index_builds() -> int:
@@ -80,8 +87,9 @@ def _recover_stale_index_builds() -> int:
             continue
 
         job_id = meta.get("build_job_id")
-        if job_id and _get_index_job(str(job_id)):
-            continue
+        with index_jobs_lock:
+            if job_id and str(job_id) in index_jobs:
+                continue
 
         started_raw = meta.get("build_started_at")
         try:
@@ -101,6 +109,25 @@ def _recover_stale_index_builds() -> int:
             ),
         })
         recovered += 1
+    for job in db.list_unfinished_index_jobs():
+        with index_jobs_lock:
+            if job["id"] in index_jobs:
+                continue
+        started_raw = job.get("updated_at") or job.get("created_at")
+        try:
+            started_at = datetime.fromisoformat(str(started_raw)) if started_raw else None
+        except ValueError:
+            started_at = None
+        if started_at and now - started_at < STALE_BUILD_AFTER:
+            continue
+        db.update_index_job(job["id"], {
+            "status": "failed",
+            "stage": "failed",
+            "progress": 100,
+            "message": "Build interrupted by backend restart",
+            "error": "Previous build was interrupted or the backend restarted before the background job could finish.",
+            "finished_at": now.isoformat(),
+        })
     return recovered
 
 
@@ -115,8 +142,26 @@ async def update_index_job_progress(job_id: str, request: Request):
         for key in ("stage", "progress", "message")
         if key in data
     }
+    if data.get("stage") == "completed":
+        updates["status"] = "completed"
+        updates["finished_at"] = datetime.now().isoformat()
+    elif data.get("stage") == "cancelled":
+        updates["status"] = "cancelled"
+        updates["finished_at"] = datetime.now().isoformat()
     _update_index_job(job_id, **updates)
-    return _get_index_job(job_id)
+    file_status = data.get("file_status")
+    file_path = data.get("file_path")
+    filename = data.get("filename") or data.get("document_id")
+    if file_status and (file_path or filename):
+        file_updates = {
+            "status": file_status,
+            "stage": data.get("stage"),
+            "error": data.get("file_error") or data.get("error"),
+        }
+        if data.get("chunks_generated") is not None:
+            file_updates["chunks_generated"] = int(data.get("chunks_generated") or 0)
+        db.update_index_job_file(job_id, stored_path=file_path, filename=filename, updates=file_updates)
+    return _public_index_job(job_id)
 
 # Routes
 
@@ -843,10 +888,12 @@ async def build_index(index_id: str, request: Request):
         body = await request.body()
         data = json.loads(body.decode("utf-8")) if body else {}
         if bool(data.get("background", False)):
-            if not db.get_index(index_id):
+            index = db.get_index(index_id)
+            if not index:
                 raise HTTPException(status_code=404, detail="Index not found")
             job_id = str(uuid.uuid4())
             now = datetime.now().isoformat()
+            db_job = db.create_index_job(job_id, index_id, data, index.get("documents", []))
             with index_jobs_lock:
                 index_jobs[job_id] = {
                     "id": job_id,
@@ -859,6 +906,7 @@ async def build_index(index_id: str, request: Request):
                     "options": data,
                     "created_at": now,
                     "updated_at": now,
+                    "files": db_job.get("files", []) if db_job else [],
                 }
             db.update_index_metadata(index_id, {
                 "status": "building",
@@ -878,10 +926,9 @@ async def build_index(index_id: str, request: Request):
 
 @app.get("/index-jobs/{job_id}")
 async def get_index_job(job_id: str):
-    job = _get_index_job(job_id)
+    job = _public_index_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Index job not found")
-    job.pop("options", None)
     return job
 
 
@@ -891,12 +938,13 @@ async def cancel_index_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Index job not found")
     if job["status"] in ("completed", "failed", "cancelled"):
-        return {**job, "message": "Job is already finished"}
+        public_job = _public_index_job(job_id) or job
+        return {**public_job, "message": "Job is already finished"}
     _update_index_job(job_id, cancel_requested=True, message="Cancellation requested")
     if job["status"] == "queued":
         _update_index_job(job_id, status="cancelled", stage="cancelled", progress=100, finished_at=datetime.now().isoformat())
         db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
-    return _get_index_job(job_id)
+    return _public_index_job(job_id)
 
 # Helper functions (moved from ChatHandler)
 

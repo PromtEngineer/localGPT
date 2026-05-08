@@ -100,6 +100,48 @@ class ChatDatabase:
                 FOREIGN KEY(index_id) REFERENCES indexes(id)
             )
         ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS index_jobs (
+                id TEXT PRIMARY KEY,
+                index_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                stage TEXT,
+                progress INTEGER DEFAULT 0,
+                message TEXT,
+                error TEXT,
+                cancel_requested INTEGER DEFAULT 0,
+                options TEXT DEFAULT '{}',
+                result TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                finished_at TEXT,
+                FOREIGN KEY(index_id) REFERENCES indexes(id)
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_jobs_index_id ON index_jobs(index_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_jobs_status ON index_jobs(status)')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS index_job_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                index_id TEXT NOT NULL,
+                stored_path TEXT NOT NULL,
+                filename TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                stage TEXT,
+                chunks_generated INTEGER DEFAULT 0,
+                error TEXT,
+                started_at TEXT,
+                finished_at TEXT,
+                updated_at TEXT,
+                FOREIGN KEY(job_id) REFERENCES index_jobs(id) ON DELETE CASCADE,
+                FOREIGN KEY(index_id) REFERENCES indexes(id)
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_job_files_job_id ON index_job_files(job_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_job_files_status ON index_job_files(status)')
         
         conn.commit()
         conn.close()
@@ -402,6 +444,8 @@ class ChatDatabase:
             # Remove child rows first due to foreign‐key constraints
             conn.execute('DELETE FROM index_documents WHERE index_id = ?', (index_id,))
             conn.execute('DELETE FROM session_indexes WHERE index_id = ?', (index_id,))
+            conn.execute('DELETE FROM index_job_files WHERE index_id = ?', (index_id,))
+            conn.execute('DELETE FROM index_jobs WHERE index_id = ?', (index_id,))
             cursor = conn.execute('DELETE FROM indexes WHERE id = ?', (index_id,))
             deleted = cursor.rowcount > 0
             conn.commit()
@@ -439,6 +483,172 @@ class ChatDatabase:
         conn.execute('UPDATE indexes SET metadata=?, updated_at=? WHERE id=?', (json.dumps(existing), datetime.now().isoformat(), index_id))
         conn.commit()
         conn.close()
+
+    # -------- Index job helpers ---------
+
+    def create_index_job(self, job_id: str, index_id: str, options: dict, documents: list[dict]) -> dict:
+        now = datetime.now().isoformat()
+        conn = sqlite3.connect(self.db_path)
+        conn.execute('''
+            INSERT INTO index_jobs (
+                id, index_id, status, stage, progress, message,
+                cancel_requested, options, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            job_id,
+            index_id,
+            'queued',
+            'queued',
+            0,
+            'Build queued',
+            0,
+            json.dumps(options or {}),
+            now,
+            now,
+        ))
+        for doc in documents:
+            conn.execute('''
+                INSERT INTO index_job_files (
+                    job_id, index_id, stored_path, filename, status, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                job_id,
+                index_id,
+                doc.get('stored_path'),
+                doc.get('filename'),
+                'pending',
+                now,
+            ))
+        conn.commit()
+        conn.close()
+        return self.get_index_job(job_id)
+
+    def get_index_job(self, job_id: str, include_options: bool = True, include_files: bool = True) -> dict | None:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute('SELECT * FROM index_jobs WHERE id=?', (job_id,)).fetchone()
+        if not row:
+            conn.close()
+            return None
+        job = dict(row)
+        job['cancel_requested'] = bool(job.get('cancel_requested'))
+        if include_options:
+            job['options'] = json.loads(job.get('options') or '{}')
+        else:
+            job.pop('options', None)
+        job['result'] = json.loads(job['result']) if job.get('result') else None
+        if include_files:
+            job['files'] = self.get_index_job_files(job_id, conn=conn)
+        conn.close()
+        return job
+
+    def update_index_job(self, job_id: str, updates: dict) -> dict | None:
+        if not updates:
+            return self.get_index_job(job_id)
+        normalized = dict(updates)
+        if 'cancel_requested' in normalized:
+            normalized['cancel_requested'] = 1 if normalized['cancel_requested'] else 0
+        if 'options' in normalized and isinstance(normalized['options'], (dict, list)):
+            normalized['options'] = json.dumps(normalized['options'])
+        if 'result' in normalized and normalized['result'] is not None:
+            normalized['result'] = json.dumps(normalized['result'])
+        normalized['updated_at'] = datetime.now().isoformat()
+
+        allowed = {
+            'status', 'stage', 'progress', 'message', 'error', 'cancel_requested',
+            'options', 'result', 'updated_at', 'finished_at'
+        }
+        assignments = []
+        values = []
+        for key, value in normalized.items():
+            if key in allowed:
+                assignments.append(f"{key}=?")
+                values.append(value)
+        if not assignments:
+            return self.get_index_job(job_id)
+        values.append(job_id)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(f"UPDATE index_jobs SET {', '.join(assignments)} WHERE id=?", values)
+        conn.commit()
+        conn.close()
+        return self.get_index_job(job_id)
+
+    def get_index_job_files(self, job_id: str, conn=None) -> list[dict]:
+        close_conn = False
+        if conn is None:
+            conn = sqlite3.connect(self.db_path)
+            close_conn = True
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute('''
+            SELECT id, job_id, index_id, stored_path, filename, status, stage,
+                   chunks_generated, error, started_at, finished_at, updated_at
+            FROM index_job_files
+            WHERE job_id=?
+            ORDER BY id
+        ''', (job_id,)).fetchall()
+        files = [dict(row) for row in rows]
+        if close_conn:
+            conn.close()
+        return files
+
+    def update_index_job_file(self, job_id: str, stored_path: str | None = None,
+                              filename: str | None = None, updates: dict | None = None) -> dict | None:
+        updates = dict(updates or {})
+        updates['updated_at'] = datetime.now().isoformat()
+        if updates.get('status') == 'processing' and not updates.get('started_at'):
+            updates['started_at'] = updates['updated_at']
+        if updates.get('status') in {'done', 'failed', 'skipped', 'cancelled'} and not updates.get('finished_at'):
+            updates['finished_at'] = updates['updated_at']
+
+        allowed = {'status', 'stage', 'chunks_generated', 'error', 'started_at', 'finished_at', 'updated_at'}
+        assignments = []
+        values = []
+        for key, value in updates.items():
+            if key in allowed:
+                assignments.append(f"{key}=?")
+                values.append(value)
+        if not assignments:
+            return None
+
+        where = 'job_id=?'
+        where_values = [job_id]
+        if stored_path:
+            where += ' AND stored_path=?'
+            where_values.append(stored_path)
+        elif filename:
+            where += ' AND filename=?'
+            where_values.append(filename)
+        else:
+            return None
+
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute(f"UPDATE index_job_files SET {', '.join(assignments)} WHERE {where}", values + where_values)
+        conn.commit()
+        row = conn.execute(f"SELECT * FROM index_job_files WHERE {where} LIMIT 1", where_values).fetchone()
+        item = dict(row) if row else None
+        conn.close()
+        return item
+
+    def list_unfinished_index_jobs(self) -> list[dict]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute('''
+            SELECT * FROM index_jobs
+            WHERE status IN ('queued', 'running')
+            ORDER BY created_at
+        ''').fetchall()
+        jobs = []
+        for row in rows:
+            job = dict(row)
+            job['cancel_requested'] = bool(job.get('cancel_requested'))
+            job['options'] = json.loads(job.get('options') or '{}')
+            job['result'] = json.loads(job['result']) if job.get('result') else None
+            jobs.append(job)
+        conn.close()
+        return jobs
 
     def inspect_and_populate_index_metadata(self, index_id: str) -> dict:
         """
@@ -689,4 +899,4 @@ if __name__ == "__main__":
     stats = db.get_stats()
     print(f"📊 Stats: {stats}")
     
-    print("✅ Database test completed!")  
+    print("✅ Database test completed!")

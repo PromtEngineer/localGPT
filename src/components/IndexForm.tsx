@@ -73,6 +73,16 @@ function isLargeIndexingModel(model?: string) {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const fileStatusSummary = (job: IndexJob | null) => {
+  const files = job?.files || [];
+  if (!files.length) return null;
+  const counts = files.reduce<Record<string, number>>((acc, file) => {
+    acc[file.status] = (acc[file.status] || 0) + 1;
+    return acc;
+  }, {});
+  return `${counts.done || 0} done - ${counts.processing || 0} active - ${counts.skipped || 0} skipped - ${counts.failed || 0} failed - ${counts.pending || 0} pending`;
+};
+
 export function IndexForm({ onClose, onIndexed }: Props) {
   const [files, setFiles] = useState<FileList | null>(null);
   const [indexName, setIndexName] = useState('');
@@ -213,6 +223,9 @@ export function IndexForm({ onClose, onIndexed }: Props) {
                 <span>{buildJob.stage}</span>
                 <span>{buildJob.progress || 0}%</span>
               </div>
+              {fileStatusSummary(buildJob) && (
+                <p className="mt-2 text-xs text-gray-300">{fileStatusSummary(buildJob)}</p>
+              )}
               {buildJob.cancel_requested && <p className="mt-2 text-xs text-yellow-200">Cancel requested. Waiting for the active indexing step to finish.</p>}
               {buildJob.status !== 'completed' && buildJob.status !== 'failed' && buildJob.status !== 'cancelled' && (
                 <button onClick={handleCancelBuild} className="mt-4 w-full rounded bg-red-700/80 px-3 py-2 text-xs hover:bg-red-700">

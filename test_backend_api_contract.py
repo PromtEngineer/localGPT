@@ -55,6 +55,55 @@ class BackendApiContractTests(unittest.TestCase):
         missing_response = self.client.get(f"/sessions/{session_id}")
         self.assertEqual(missing_response.status_code, 404)
 
+    def test_persistent_index_job_contract(self):
+        index_id = server.db.create_index("Job Contract")
+        stored_path = os.path.join(self.temp_dir, "contract-doc.txt")
+        with open(stored_path, "w", encoding="utf-8") as handle:
+            handle.write("contract document")
+        server.db.add_document_to_index(index_id, "contract-doc.txt", stored_path)
+
+        job = server.db.create_index_job(
+            "contract-job",
+            index_id,
+            {"background": True, "profile": "fast"},
+            [{"filename": "contract-doc.txt", "stored_path": stored_path}],
+        )
+        self.assertEqual(job["status"], "queued")
+
+        get_response = self.client.get("/index-jobs/contract-job")
+        self.assertEqual(get_response.status_code, 200)
+        public_job = get_response.json()
+        self.assertNotIn("options", public_job)
+        self.assertEqual(len(public_job["files"]), 1)
+        self.assertEqual(public_job["files"][0]["status"], "pending")
+
+        progress_response = self.client.post(
+            "/index-jobs/contract-job/progress",
+            json={
+                "stage": "chunking",
+                "progress": 35,
+                "message": "Chunking contract-doc.txt",
+                "file_path": stored_path,
+                "file_status": "processing",
+                "chunks_generated": 2,
+            },
+        )
+        self.assertEqual(progress_response.status_code, 200)
+
+        updated_response = self.client.get("/index-jobs/contract-job")
+        updated_job = updated_response.json()
+        self.assertEqual(updated_job["stage"], "chunking")
+        self.assertEqual(updated_job["progress"], 35)
+        self.assertEqual(updated_job["files"][0]["status"], "processing")
+        self.assertEqual(updated_job["files"][0]["chunks_generated"], 2)
+
+        cancel_response = self.client.post("/index-jobs/contract-job/cancel")
+        self.assertEqual(cancel_response.status_code, 200)
+        cancelled = cancel_response.json()
+        self.assertTrue(cancelled["cancel_requested"])
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(cancelled["stage"], "cancelled")
+
 
 if __name__ == "__main__":
     unittest.main()

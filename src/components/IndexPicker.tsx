@@ -101,6 +101,16 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     return waitForBuildJob(started.job_id);
   };
 
+  const fileStatusSummary = (job: IndexJob | null) => {
+    const files = job?.files || [];
+    if (!files.length) return null;
+    const counts = files.reduce<Record<string, number>>((acc, file) => {
+      acc[file.status] = (acc[file.status] || 0) + 1;
+      return acc;
+    }, {});
+    return `${counts.done || 0} done - ${counts.processing || 0} active - ${counts.skipped || 0} skipped - ${counts.failed || 0} failed - ${counts.pending || 0} pending`;
+  };
+
   async function handleDelete(idxId: string, name: string) {
     if (!confirm(`Delete index "${name}"? This cannot be undone.`)) return;
     try {
@@ -220,6 +230,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
                   <span>{buildJob.stage}</span>
                   <span>{buildJob.progress || 0}%</span>
                 </div>
+                {fileStatusSummary(buildJob) && <p className="text-gray-300">{fileStatusSummary(buildJob)}</p>}
                 {buildJob.cancel_requested && <p className="text-yellow-200">Cancel requested. Waiting for the active indexing step to finish.</p>}
                 {buildJob.status !== 'completed' && buildJob.status !== 'failed' && buildJob.status !== 'cancelled' && (
                   <button onClick={handleCancelBuild} className="rounded bg-red-500/80 px-3 py-1 text-white hover:bg-red-500">

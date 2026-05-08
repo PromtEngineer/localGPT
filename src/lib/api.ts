@@ -91,6 +91,18 @@ export type IndexJob = {
   error?: string;
   cancel_requested?: boolean;
   result?: BuildIndexResponse;
+  files?: Array<{
+    id?: number;
+    filename?: string;
+    stored_path?: string;
+    status: 'pending' | 'processing' | 'done' | 'failed' | 'skipped' | 'cancelled';
+    stage?: string;
+    chunks_generated?: number;
+    error?: string;
+    started_at?: string;
+    finished_at?: string;
+    updated_at?: string;
+  }>;
   created_at?: string;
   updated_at?: string;
   finished_at?: string;

@@ -227,7 +227,7 @@ class IndexingPipeline:
 
     def run(self, file_paths: List[str] | None = None, *, documents: List[str] | None = None,
             index_id: str = "default", incremental: bool = True, force_reindex: bool = False,
-            progress_callback: Callable[[str, int, str], None] | None = None,
+            progress_callback: Callable[..., None] | None = None,
             cancel_callback: Callable[[], bool] | None = None):
         """
         Processes and indexes documents based on the pipeline's configuration.
@@ -254,9 +254,9 @@ class IndexingPipeline:
             force_reindex=force_reindex,
         )
 
-        def report(stage: str, progress: int, message: str):
+        def report(stage: str, progress: int, message: str, **extra):
             if progress_callback:
-                progress_callback(stage, max(0, min(progress, 100)), message)
+                progress_callback(stage, max(0, min(progress, 100)), message, **extra)
 
         def check_cancelled():
             if cancel_callback and cancel_callback():
@@ -276,6 +276,17 @@ class IndexingPipeline:
 
             if unchanged_files:
                 indexing_logger.info("skipping_unchanged_files", count=len(unchanged_files))
+                for unchanged_path in unchanged_files:
+                    unchanged_doc = os.path.basename(unchanged_path)
+                    report(
+                        "planning",
+                        8,
+                        f"Skipped unchanged {unchanged_doc}",
+                        file_path=unchanged_path,
+                        filename=unchanged_doc,
+                        document_id=unchanged_doc,
+                        file_status="skipped",
+                    )
             if not files_to_index:
                 indexing_logger.info("indexing_not_required", message="All files are up-to-date", total_files=len(file_paths))
                 return self._print_final_statistics(
@@ -315,7 +326,15 @@ class IndexingPipeline:
                 file_done_progress = 10 + int((file_idx / max(len(files_to_index), 1)) * 80)
                 try:
                     check_cancelled()
-                    report("converting", file_base_progress, f"Converting {document_id} ({file_idx}/{len(files_to_index)})")
+                    report(
+                        "converting",
+                        file_base_progress,
+                        f"Converting {document_id} ({file_idx}/{len(files_to_index)})",
+                        file_path=file_path,
+                        filename=document_id,
+                        document_id=document_id,
+                        file_status="processing",
+                    )
                     indexing_logger.debug("processing_file", document_id=document_id, file_path=file_path)
 
                     cache_key = self._chunk_cache_key(file_path)
@@ -325,7 +344,15 @@ class IndexingPipeline:
                         indexing_logger.info("chunk_cache_hit", document_id=document_id, file_path=file_path)
                     else:
                         check_cancelled()
-                        report("chunking", file_base_progress + 3, f"Chunking {document_id}")
+                        report(
+                            "chunking",
+                            file_base_progress + 3,
+                            f"Chunking {document_id}",
+                            file_path=file_path,
+                            filename=document_id,
+                            document_id=document_id,
+                            file_status="processing",
+                        )
                         file_chunks = self._convert_and_chunk_file(file_path, document_id)
                         self._save_chunk_cache(cache_key, file_chunks)
 
@@ -338,10 +365,29 @@ class IndexingPipeline:
                     if not file_chunks:
                         indexing_logger.warning("file_no_chunks", document_id=document_id)
                         failed_files += 1
+                        report(
+                            "indexing",
+                            file_done_progress,
+                            f"Skipped {document_id}: no chunks generated",
+                            file_path=file_path,
+                            filename=document_id,
+                            document_id=document_id,
+                            file_status="skipped",
+                            chunks_generated=0,
+                            file_error="No chunks generated",
+                        )
                         continue
 
                     check_cancelled()
-                    report("overview", file_base_progress + 5, f"Generating overview for {document_id}")
+                    report(
+                        "overview",
+                        file_base_progress + 5,
+                        f"Generating overview for {document_id}",
+                        file_path=file_path,
+                        filename=document_id,
+                        document_id=document_id,
+                        file_status="processing",
+                    )
                     try:
                         self.overview_builder.build_and_store(document_id, file_chunks)
                     except Exception as e:
@@ -349,7 +395,15 @@ class IndexingPipeline:
 
                     check_cancelled()
                     if hasattr(self, 'contextual_enricher') and enricher_enabled:
-                        report("enriching", file_base_progress + 8, f"Enriching {document_id}")
+                        report(
+                            "enriching",
+                            file_base_progress + 8,
+                            f"Enriching {document_id}",
+                            file_path=file_path,
+                            filename=document_id,
+                            document_id=document_id,
+                            file_status="processing",
+                        )
                         window_size = enricher_config.get("window_size", 1)
                         file_chunks = self.contextual_enricher.enrich_chunks(file_chunks, window_size=window_size)
                     else:
@@ -360,11 +414,29 @@ class IndexingPipeline:
                         )
 
                     check_cancelled()
-                    report("embedding", file_base_progress + 12, f"Embedding {len(file_chunks)} chunks from {document_id}")
+                    report(
+                        "embedding",
+                        file_base_progress + 12,
+                        f"Embedding {len(file_chunks)} chunks from {document_id}",
+                        file_path=file_path,
+                        filename=document_id,
+                        document_id=document_id,
+                        file_status="processing",
+                        chunks_generated=len(file_chunks),
+                    )
                     if hasattr(self, 'vector_indexer') and hasattr(self, 'embedding_generator'):
                         embeddings = self.embedding_generator.generate(file_chunks)
                         check_cancelled()
-                        report("storing", file_base_progress + 16, f"Storing vectors for {document_id}")
+                        report(
+                            "storing",
+                            file_base_progress + 16,
+                            f"Storing vectors for {document_id}",
+                            file_path=file_path,
+                            filename=document_id,
+                            document_id=document_id,
+                            file_status="processing",
+                            chunks_generated=len(file_chunks),
+                        )
                         if incremental and not force_reindex:
                             self._delete_existing_documents_from_table(table_name, [document_id])
                         self.vector_indexer.index(table_name, file_chunks, embeddings)
@@ -385,19 +457,46 @@ class IndexingPipeline:
                     total_chunks += len(file_chunks)
                     processed_files += 1
                     indexing_logger.info("file_indexed", document_id=document_id, chunk_count=len(file_chunks), memory_mb=estimate_memory_usage(file_chunks))
-                    report("indexing", file_done_progress, f"Indexed {document_id}")
+                    report(
+                        "indexing",
+                        file_done_progress,
+                        f"Indexed {document_id}",
+                        file_path=file_path,
+                        filename=document_id,
+                        document_id=document_id,
+                        file_status="done",
+                        chunks_generated=len(file_chunks),
+                    )
 
                 except RuntimeError as e:
                     if str(e) == "indexing_cancelled":
                         raise
                     failed_files += 1
                     indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
-                    report("indexing", file_done_progress, f"Skipped {document_id}: {e}")
+                    report(
+                        "indexing",
+                        file_done_progress,
+                        f"Skipped {document_id}: {e}",
+                        file_path=file_path,
+                        filename=document_id,
+                        document_id=document_id,
+                        file_status="failed",
+                        file_error=str(e),
+                    )
                     continue
                 except Exception as e:
                     failed_files += 1
                     indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
-                    report("indexing", file_done_progress, f"Skipped {document_id}: {e}")
+                    report(
+                        "indexing",
+                        file_done_progress,
+                        f"Skipped {document_id}: {e}",
+                        file_path=file_path,
+                        filename=document_id,
+                        document_id=document_id,
+                        file_status="failed",
+                        file_error=str(e),
+                    )
                     continue
 
             check_cancelled()

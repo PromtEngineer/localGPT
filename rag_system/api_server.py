@@ -557,13 +557,15 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 return
             indexing_result = None
 
-            def report_progress(stage, progress, message):
+            def report_progress(stage, progress, message, **extra):
                 if not job_id:
                     return
                 try:
+                    payload = {"stage": stage, "progress": progress, "message": message}
+                    payload.update({k: v for k, v in extra.items() if v is not None})
                     requests.post(
                         f"{backend_base_url}/index-jobs/{job_id}/progress",
-                        json={"stage": stage, "progress": progress, "message": message},
+                        json=payload,
                         timeout=2,
                     )
                 except Exception:
