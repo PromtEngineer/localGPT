@@ -281,7 +281,19 @@ def _index_diagnostics(index_id: str) -> Dict[str, Any]:
     elif metadata_status in {"building", "cancelled"}:
         warnings.append(f"Index metadata status is '{metadata_status}'.")
 
-    if errors:
+    source_blockers = bool(preflight["missing_files"] or preflight["unreadable_files"] or preflight["document_count"] == 0)
+    if source_blockers:
+        recommended_action = "fix_sources"
+    elif errors:
+        recommended_action = "force_rebuild"
+    elif warnings:
+        recommended_action = "rebuild"
+    else:
+        recommended_action = "none"
+
+    if source_blockers:
+        recommendations.append("Re-upload missing or unreadable files before rebuilding.")
+    elif errors:
         recommendations.append("Run Force rebuild after confirming the source files still exist.")
     elif warnings:
         recommendations.append("A normal rebuild is recommended when convenient.")
@@ -297,6 +309,8 @@ def _index_diagnostics(index_id: str) -> Dict[str, Any]:
         "errors": errors,
         "warnings": warnings,
         "recommendations": recommendations,
+        "recommended_action": recommended_action,
+        "can_repair": recommended_action in {"force_rebuild", "rebuild"},
         "document_count": preflight["document_count"],
         "total_bytes": preflight["total_bytes"],
         "total_size": preflight["total_size"],

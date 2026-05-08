@@ -151,6 +151,8 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertEqual(diagnostics["document_count"], 1)
         self.assertGreater(diagnostics["total_bytes"], 0)
         self.assertEqual(diagnostics["health"], "unhealthy")
+        self.assertEqual(diagnostics["recommended_action"], "force_rebuild")
+        self.assertTrue(diagnostics["can_repair"])
         self.assertFalse(diagnostics["vector_table"]["exists"])
         self.assertTrue(any("Vector table is missing" in error for error in diagnostics["errors"]))
 

@@ -85,6 +85,8 @@ export type IndexDiagnostics = {
   errors: string[];
   warnings: string[];
   recommendations: string[];
+  recommended_action: 'none' | 'rebuild' | 'force_rebuild' | 'fix_sources';
+  can_repair: boolean;
   document_count: number;
   total_bytes: number;
   total_size: string;

@@ -73,6 +73,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       `Health: ${diagnostics.health}`,
       `Files: ${diagnostics.document_count} (${diagnostics.total_size})`,
       `Vectors: ${diagnostics.vector_table?.exists ? `${diagnostics.vector_table.row_count ?? 'unknown'} rows` : 'missing'}`,
+      `Recommended action: ${diagnostics.recommended_action.replace('_', ' ')}`,
     ];
     if (diagnostics.errors.length) lines.push(`Errors: ${diagnostics.errors.join(' ')}`);
     if (diagnostics.warnings.length) lines.push(`Warnings: ${diagnostics.warnings.join(' ')}`);
@@ -166,7 +167,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     }
   }
 
-  async function handleDiagnostics(idx: IndexSummary) {
+  async function handleDiagnostics(idx: IndexSummary, offerRepair = false) {
     const id = indexId(idx);
     if (!id) return;
     setBusyId(id);
@@ -174,12 +175,29 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     setMenuOpenId(null);
     try {
       const diagnostics = await chatAPI.getIndexDiagnostics(id);
-      alert(formatDiagnostics(diagnostics));
+      const details = formatDiagnostics(diagnostics);
+      if (!offerRepair || diagnostics.recommended_action === 'none') {
+        alert(details);
+        return;
+      }
+      if (!diagnostics.can_repair) {
+        alert(details);
+        return;
+      }
+      const forceReindex = diagnostics.recommended_action === 'force_rebuild';
+      const repairLabel = forceReindex ? 'Force rebuild now?' : 'Rebuild changed files now?';
+      if (!confirm(`${details}\n\n${repairLabel}`)) return;
+      setBusyMessage(`${forceReindex ? 'Force rebuilding' : 'Rebuilding'} "${idx.name || 'Untitled index'}"...`);
+      const result = await rebuildInBackground(id, idx, forceReindex);
+      const data = await chatAPI.listIndexes();
+      setIndexes(data.indexes);
+      alert(formatBuildSummary(result));
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to inspect index');
     } finally {
       setBusyId(null);
       setBusyMessage(null);
+      setBuildJob(null);
     }
   }
 
@@ -296,6 +314,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
                       <button onClick={()=>{onSelect(indexId(idx)); setMenuOpenId(null);}} className="block w-full text-left px-4 py-2 hover:bg-white/10">Open</button>
                       <button onClick={()=>handleAddFiles(idx)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Add files + rebuild</button>
                       <button onClick={()=>handleDiagnostics(idx)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Run diagnostics</button>
+                      <button onClick={()=>handleDiagnostics(idx, true)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Diagnose + repair</button>
                       <button onClick={()=>handleRebuild(idx, false)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Rebuild changed only</button>
                       <button onClick={()=>handleRebuild(idx, true)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Force rebuild</button>
                       <button onClick={()=>handleDelete(indexId(idx), idx.name || 'Untitled index')} className="block w-full text-left px-4 py-2 hover:bg-white/10 text-red-400 hover:text-red-500">Delete</button>
