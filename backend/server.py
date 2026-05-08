@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 import threading
 import time
@@ -52,6 +52,7 @@ ollama_client = OllamaClient()
 pdf_processor = None
 index_jobs_lock = threading.Lock()
 index_jobs: Dict[str, Dict[str, Any]] = {}
+STALE_BUILD_AFTER = timedelta(minutes=10)
 
 
 def _update_index_job(job_id: str, **updates):
@@ -67,6 +68,40 @@ def _get_index_job(job_id: str) -> Optional[Dict[str, Any]]:
     with index_jobs_lock:
         job = index_jobs.get(job_id)
         return dict(job) if job else None
+
+
+def _recover_stale_index_builds() -> int:
+    """Mark orphaned in-progress builds as failed after backend/RAG restarts."""
+    recovered = 0
+    now = datetime.now()
+    for idx in db.list_indexes():
+        meta = idx.get("metadata") or {}
+        if meta.get("status") != "building":
+            continue
+
+        job_id = meta.get("build_job_id")
+        if job_id and _get_index_job(str(job_id)):
+            continue
+
+        started_raw = meta.get("build_started_at")
+        try:
+            started_at = datetime.fromisoformat(str(started_raw)) if started_raw else None
+        except ValueError:
+            started_at = None
+
+        if started_at and now - started_at < STALE_BUILD_AFTER:
+            continue
+
+        db.update_index_metadata(idx["id"], {
+            "status": "failed",
+            "build_failed_at": now.isoformat(),
+            "build_error": (
+                "Previous build was interrupted or the backend restarted before the "
+                "background job could finish. Start a rebuild to continue."
+            ),
+        })
+        recovered += 1
+    return recovered
 
 
 @app.post("/index-jobs/{job_id}/progress")
@@ -492,6 +527,7 @@ async def get_models():
 async def get_indexes():
     """Get all indexes"""
     try:
+        _recover_stale_index_builds()
         data = db.list_indexes()
         return {"indexes": data, "total": len(data)}
     except Exception as e:
@@ -803,6 +839,7 @@ def _run_index_build_job(job_id: str):
 async def build_index(index_id: str, request: Request):
     """Build an index from uploaded documents"""
     try:
+        _recover_stale_index_builds()
         body = await request.body()
         data = json.loads(body.decode("utf-8")) if body else {}
         if bool(data.get("background", False)):

@@ -22,13 +22,13 @@ from rag_system.utils.logging_utils import indexing_logger, PerformanceTimer
 
 def convert_and_chunk_document(file_path: str, document_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
     try:
-        converter = DocumentConverter()
         chunker_mode = config.get("chunker_mode", "docling")
         chunking_config = config.get("chunking", {})
         chunk_size = chunking_config.get("chunk_size", config.get("chunk_size", 1500))
         chunk_overlap = chunking_config.get("chunk_overlap", config.get("chunk_overlap", 200))
 
         if chunker_mode == "docling":
+            converter = DocumentConverter()
             try:
                 from rag_system.ingestion.docling_chunker import DoclingChunker
                 chunker = DoclingChunker(
@@ -42,14 +42,15 @@ def convert_and_chunk_document(file_path: str, document_id: str, config: Dict[st
                     min_chunk_size=min(chunk_overlap, chunk_size // 4),
                     tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B"),
                 )
+            pages_data = converter.convert_to_markdown(file_path)
         else:
             chunker = MarkdownRecursiveChunker(
                 max_chunk_size=chunk_size,
                 min_chunk_size=min(chunk_overlap, chunk_size // 4),
                 tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B"),
             )
+            pages_data = _convert_file_to_plain_markdown(file_path)
 
-        pages_data = converter.convert_to_markdown(file_path)
         file_chunks = []
         for tpl in pages_data:
             if len(tpl) == 3:
@@ -65,6 +66,28 @@ def convert_and_chunk_document(file_path: str, document_id: str, config: Dict[st
         return {"chunks": file_chunks}
     except Exception as e:
         return {"error": str(e)}
+
+
+def _convert_file_to_plain_markdown(file_path: str):
+    """Low-risk conversion path for Fast indexing that avoids Docling/OCR."""
+    file_ext = Path(file_path).suffix.lower()
+    metadata = {"source": file_path}
+
+    if file_ext in {".txt", ".md"}:
+        return [(Path(file_path).read_text(encoding="utf-8", errors="replace"), metadata)]
+
+    if file_ext == ".pdf":
+        try:
+            import fitz
+            doc = fitz.open(file_path)
+            text = "\n\n".join(page.get_text("text") for page in doc)
+            doc.close()
+            return [(text, metadata)] if text.strip() else []
+        except Exception as e:
+            return [(f"PDF text extraction failed for {file_path}: {e}", metadata)]
+
+    converter = DocumentConverter()
+    return converter.convert_to_markdown(file_path)
 
 
 class IndexingPipeline:
@@ -364,8 +387,13 @@ class IndexingPipeline:
                     indexing_logger.info("file_indexed", document_id=document_id, chunk_count=len(file_chunks), memory_mb=estimate_memory_usage(file_chunks))
                     report("indexing", file_done_progress, f"Indexed {document_id}")
 
-                except RuntimeError:
-                    raise
+                except RuntimeError as e:
+                    if str(e) == "indexing_cancelled":
+                        raise
+                    failed_files += 1
+                    indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
+                    report("indexing", file_done_progress, f"Skipped {document_id}: {e}")
+                    continue
                 except Exception as e:
                     failed_files += 1
                     indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
