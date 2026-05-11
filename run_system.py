@@ -367,7 +367,7 @@ class ServiceManager:
             )
             
             self.processes[service_name] = process
-            
+
             # Start log monitoring thread
             log_thread = threading.Thread(
                 target=self._monitor_service_logs,
@@ -376,11 +376,9 @@ class ServiceManager:
             )
             log_thread.start()
             self.log_threads[service_name] = log_thread
-            
-            # Wait for startup
-            time.sleep(config.startup_delay)
-            
-            # Check if process is still running
+
+            # Poll immediately — no fixed sleep. _wait_for_health retries every
+            # second until the service responds or the timeout expires.
             if process.poll() is None:
                 if self._wait_for_health(service_name, config):
                     self.logger.info(f"✅ {service_name} started successfully (PID: {process.pid})")
@@ -447,47 +445,49 @@ class ServiceManager:
         return False
     
     def start_all(self, skip_frontend: bool = False) -> bool:
-        """Start all services in order."""
+        """Start all services. Ollama must be ready first; everything else starts in parallel."""
         self.logger.info("🚀 Starting RAG System Components...")
-        
+
         if not self.check_prerequisites():
             return False
-        
+
         self.running = True
-        failed_services = []
-        
-        # Start services in dependency order
-        service_order = ['ollama', 'rag-api', 'backend']
+
+        # Ollama is a hard prerequisite — start it synchronously first.
+        if not self._start_ollama():
+            self.logger.error("❌ Failed to start required service: ollama")
+            return False
+
+        # rag-api, backend, and frontend have no startup dependency on each other,
+        # so launch them concurrently and wait for all to report healthy.
+        parallel_services = [s for s in ('rag-api', 'backend') if s in self.services]
         if not skip_frontend and 'frontend' in self.services:
-            service_order.append('frontend')
-        
-        for service_name in service_order:
-            if service_name not in self.services:
-                continue
-                
-            config = self.services[service_name]
-            
-            # Special handling for Ollama
-            if service_name == 'ollama':
-                if not self._start_ollama():
-                    if config.required:
-                        failed_services.append(service_name)
-                        continue
-                    else:
-                        self.logger.warning(f"⚠️  Skipping optional service: {service_name}")
-                        continue
-            else:
-                if not self.start_service(service_name, config):
-                    if config.required:
-                        failed_services.append(service_name)
-                    else:
-                        self.logger.warning(f"⚠️  Skipping optional service: {service_name}")
-        
+            parallel_services.append('frontend')
+
+        results: Dict[str, bool] = {}
+
+        def _start_one(name: str) -> None:
+            results[name] = self.start_service(name, self.services[name])
+
+        threads = [threading.Thread(target=_start_one, args=(name,), daemon=True)
+                   for name in parallel_services]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        failed_services = [
+            name for name in parallel_services
+            if not results.get(name) and self.services[name].required
+        ]
+        for name in parallel_services:
+            if not results.get(name) and not self.services[name].required:
+                self.logger.warning(f"⚠️  Optional service failed to start: {name}")
+
         if failed_services:
             self.logger.error(f"❌ Failed to start required services: {', '.join(failed_services)}")
             return False
-        
-        # Print status summary
+
         self._print_status_summary()
         return True
     

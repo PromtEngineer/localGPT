@@ -3,6 +3,36 @@ import uuid
 import json
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class DatabaseTransaction:
+    """Context manager for safe database transactions with automatic rollback on error."""
+
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+        self.conn = None
+
+    def __enter__(self):
+        """Open connection and enable foreign key constraints."""
+        self.conn = sqlite3.connect(self.db_path)
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Commit on success, rollback on error, then close."""
+        try:
+            if exc_type is None:
+                self.conn.commit()
+            else:
+                self.conn.rollback()
+        finally:
+            if self.conn:
+                self.conn.close()
+        return False  # Re-raise exceptions
+
 
 class ChatDatabase:
     def __init__(self, db_path: str = None):
@@ -136,6 +166,8 @@ class ChatDatabase:
                 started_at TEXT,
                 finished_at TEXT,
                 updated_at TEXT,
+                attempt_count INTEGER DEFAULT 0,
+                last_error_code TEXT,
                 FOREIGN KEY(job_id) REFERENCES index_jobs(id) ON DELETE CASCADE,
                 FOREIGN KEY(index_id) REFERENCES indexes(id)
             )
@@ -143,9 +175,30 @@ class ChatDatabase:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_job_files_job_id ON index_job_files(job_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_index_job_files_status ON index_job_files(status)')
         
+        # Stage-by-stage tracking for resumable indexing
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS index_job_file_stages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id INTEGER NOT NULL,
+                job_id TEXT NOT NULL,
+                stage_name TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                started_at TEXT,
+                finished_at TEXT,
+                duration_seconds REAL,
+                error TEXT,
+                output_hash TEXT,
+                FOREIGN KEY(file_id) REFERENCES index_job_files(id) ON DELETE CASCADE,
+                FOREIGN KEY(job_id) REFERENCES index_jobs(id) ON DELETE CASCADE
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_job_file_stages_job_id ON index_job_file_stages(job_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_job_file_stages_file_id ON index_job_file_stages(file_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_job_file_stages_stage ON index_job_file_stages(stage_name)')
+        
         conn.commit()
         conn.close()
-        print("✅ Database initialized successfully")
+        logger.info("Database initialized successfully")
     
     def create_session(self, title: str, model: str) -> str:
         """Create a new chat session"""
@@ -159,8 +212,8 @@ class ChatDatabase:
         ''', (session_id, title, now, now, model))
         conn.commit()
         conn.close()
-        
-        print(f"📝 Created new session: {session_id[:8]}... - {title}")
+
+        logger.info(f"Created new session: {session_id[:8]}... - {title}")
         return session_id
     
     def get_sessions(self, limit: int = 50) -> List[Dict]:
@@ -570,7 +623,9 @@ class ChatDatabase:
             return self.get_index_job(job_id)
         values.append(job_id)
         conn = sqlite3.connect(self.db_path)
-        conn.execute(f"UPDATE index_jobs SET {', '.join(assignments)} WHERE id=?", values)
+        # Safe SQL construction: all assignments are validated through allowlist
+        sql = "UPDATE index_jobs SET " + ", ".join(assignments) + " WHERE id=?"
+        conn.execute(sql, values)
         conn.commit()
         conn.close()
         return self.get_index_job(job_id)
@@ -625,9 +680,13 @@ class ChatDatabase:
 
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        conn.execute(f"UPDATE index_job_files SET {', '.join(assignments)} WHERE {where}", values + where_values)
+        # Safe SQL construction: assignments validated through allowlist, where clause parameterized
+        sql_update = "UPDATE index_job_files SET " + ", ".join(assignments) + " WHERE " + where
+        conn.execute(sql_update, values + where_values)
         conn.commit()
-        row = conn.execute(f"SELECT * FROM index_job_files WHERE {where} LIMIT 1", where_values).fetchone()
+        # Safe SQL construction: where clause parameterized
+        sql_select = "SELECT * FROM index_job_files WHERE " + where + " LIMIT 1"
+        row = conn.execute(sql_select, where_values).fetchone()
         item = dict(row) if row else None
         conn.close()
         return item
@@ -714,9 +773,8 @@ class ChatDatabase:
                     
                     # Get a sample record to inspect - use correct LanceDB API
                     try:
-                        # Try to get sample data using proper LanceDB methods
-                        sample_df = table.to_pandas()
-                        if len(sample_df) == 0:
+                        row_count = table.count_rows()
+                        if row_count == 0:
                             inferred_metadata = {
                                 'status': 'empty',
                                 'issue': 'Vector table exists but contains no data',
@@ -725,17 +783,16 @@ class ChatDatabase:
                             }
                             self.update_index_metadata(index_id, inferred_metadata)
                             return inferred_metadata
-                        
-                        # Take only first row for inspection
-                        sample_df = sample_df.head(1)
+
+                        sample_df = table.head(1).to_pandas()
                     except Exception as e:
                         print(f"⚠️ Could not read data from table {vector_table_name}: {e}")
                         return {}
-                    
+
                     # Infer metadata from table structure
                     inferred_metadata = {
                         'status': 'functional',
-                        'total_chunks': len(table.to_pandas()),  # Get total count
+                        'total_chunks': row_count,
                     }
                     
                     # Check vector dimensions

@@ -29,9 +29,77 @@ class OverviewBuilder:
         self.timeout = timeout
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-    def build_and_store(self, doc_id: str, chunks: List[Dict[str, Any]]):
+    def _read_all(self) -> list[dict]:
+        """Return all valid records from the JSONL file."""
+        if not os.path.exists(self.out_path):
+            return []
+        records = []
+        try:
+            with open(self.out_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            pass
+        return records
+
+    def _doc_id_exists(self, doc_id: str) -> bool:
+        return any(r.get("doc_id") == doc_id for r in self._read_all())
+
+    def _remove_entry(self, doc_id: str) -> None:
+        """Rewrite the JSONL omitting any record whose doc_id matches."""
+        records = [r for r in self._read_all() if r.get("doc_id") != doc_id]
+        try:
+            with open(self.out_path, "w", encoding="utf-8") as f:
+                for r in records:
+                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        except OSError as e:
+            logger.warning(f"Could not rewrite overviews file: {e}")
+
+    def compact(self) -> int:
+        """Deduplicate the JSONL in-place, keeping the last entry per doc_id.
+
+        Returns the number of duplicate lines removed.
+        """
+        records = self._read_all()
+        seen: dict[str, dict] = {}
+        for r in records:
+            doc_id = r.get("doc_id")
+            if doc_id:
+                seen[doc_id] = r  # last one wins
+        duplicates = len(records) - len(seen)
+        if duplicates > 0:
+            try:
+                with open(self.out_path, "w", encoding="utf-8") as f:
+                    for r in seen.values():
+                        f.write(json.dumps(r, ensure_ascii=False) + "\n")
+                logger.info(f"Compacted overviews: removed {duplicates} duplicate(s)")
+            except OSError as e:
+                logger.warning(f"Could not compact overviews file: {e}")
+        return duplicates
+
+    def build_and_store(self, doc_id: str, chunks: List[Dict[str, Any]],
+                        force: bool = False) -> None:
+        """Generate and persist an overview for ``doc_id``.
+
+        Args:
+            force: When True, replace any existing entry for this doc_id
+                   (used when the source file has changed content).
+                   When False, skip generation if an entry already exists.
+        """
         if not chunks:
             return
+        if force:
+            self._remove_entry(doc_id)
+        elif self._doc_id_exists(doc_id):
+            logger.debug(f"Overview already exists for {doc_id}, skipping.")
+            return
+
         head_text = "\n".join(c["text"] for c in chunks[: self.first_n] if c.get("text"))
         prompt = self.DEFAULT_PROMPT.format(text=head_text[:5000])  # safety cap
         try:
@@ -42,12 +110,12 @@ class OverviewBuilder:
                 timeout=self.timeout,
             )
             summary_raw = resp.get("response", "")
-            # Remove any lingering <think>...</think> blocks just in case
             summary = re.sub(r'<think[^>]*>.*?</think>', '', summary_raw, flags=re.IGNORECASE | re.DOTALL).strip()
         except Exception as e:
             summary = f"Failed to generate overview: {e}"
+
         record = {"doc_id": doc_id, "overview": summary.strip()}
         with open(self.out_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-        logger.info(f"📄 Overview generated for {doc_id} (stored in {self.out_path})")
+        logger.info(f"Overview generated for {doc_id} (stored in {self.out_path})")

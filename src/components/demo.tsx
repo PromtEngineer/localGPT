@@ -21,10 +21,7 @@ export function Demo() {
     const [showIndexPicker, setShowIndexPicker] = useState(false)
     const [sidebarOpen, setSidebarOpen] = useState(true)
 
-    console.log('Demo component rendering...')
-
     useEffect(() => {
-        console.log('Demo component mounted')
         checkBackendHealth()
     }, [])
 

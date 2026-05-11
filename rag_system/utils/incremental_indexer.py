@@ -173,21 +173,24 @@ class IncrementalIndexer:
         if not os.path.exists(file_path):
             return False, "file does not exist"
 
-        current_meta = self.get_file_metadata(file_path)
         stored_meta = self.get_stored_metadata(file_path, index_id)
 
         if stored_meta is None:
             return True, "new document"
 
-        # Check for changes
-        if current_meta.file_hash != stored_meta.file_hash:
-            return True, "content changed"
-
-        if current_meta.modification_time != stored_meta.modification_time:
+        # Fast-path: compare mtime and size without reading the file.
+        # If both match, the content is almost certainly unchanged and we skip hashing.
+        stat = os.stat(file_path)
+        if stat.st_mtime != stored_meta.modification_time:
             return True, "modification time changed"
-
-        if current_meta.size != stored_meta.size:
+        if stat.st_size != stored_meta.size:
             return True, "file size changed"
+
+        # Slow-path: mtime/size match but verify with a content hash to catch
+        # same-mtime rewrites (e.g. copied files or NFS timestamp rounding).
+        current_hash = self.calculate_file_hash(file_path)
+        if current_hash != stored_meta.file_hash:
+            return True, "content changed"
 
         return False, None
 
@@ -206,9 +209,16 @@ class IncrementalIndexer:
         return changes
 
     def update_document_metadata(self, file_path: str, index_id: str,
-                               chunk_count: int, operation: str = "index"):
-        """Update document metadata after indexing"""
-        current_meta = self.get_file_metadata(file_path)
+                               chunk_count: int, operation: str = "index",
+                               file_hash: Optional[str] = None):
+        """Update document metadata after indexing.
+
+        Pass ``file_hash`` when it was already computed earlier in the pipeline
+        to avoid reading and hashing the file a second time.
+        """
+        stat = os.stat(file_path)
+        if file_hash is None:
+            file_hash = self.calculate_file_hash(file_path)
         now = time.time()
 
         conn = sqlite3.connect(self.db_path)
@@ -229,9 +239,9 @@ class IncrementalIndexer:
         ''', (
             index_id,
             file_path,
-            current_meta.file_hash,
-            current_meta.modification_time,
-            current_meta.size,
+            file_hash,
+            stat.st_mtime,
+            stat.st_size,
             now,
             chunk_count,
             now

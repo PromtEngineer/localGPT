@@ -35,6 +35,20 @@ from database import db, generate_session_title
 import simple_pdf_processor as pdf_module
 from simple_pdf_processor import initialize_simple_pdf_processor
 
+# Import maintenance tools
+try:
+    from rag_system.maintenance import MaintenanceTools
+    MAINTENANCE_TOOLS_AVAILABLE = True
+except ImportError:
+    MAINTENANCE_TOOLS_AVAILABLE = False
+
+# Import job persistence
+try:
+    from rag_system.job_persistence import JobProgressTracker
+    JOB_PERSISTENCE_AVAILABLE = True
+except ImportError:
+    JOB_PERSISTENCE_AVAILABLE = False
+
 # Initialize FastAPI app
 app = FastAPI(title="LocalGPT Backend", version="1.0.0")
 
@@ -54,6 +68,39 @@ index_jobs_lock = threading.Lock()
 index_jobs: Dict[str, Dict[str, Any]] = {}
 STALE_BUILD_AFTER = timedelta(minutes=10)
 RAG_API_BASE_URL = "http://localhost:8001"
+
+# Upload safety limits
+_MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB per file
+_ALLOWED_UPLOAD_EXTENSIONS = {
+    ".pdf", ".txt", ".md", ".rst", ".tex",
+    ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
+    ".html", ".htm", ".csv", ".json", ".xml", ".yaml", ".yml",
+}
+
+# Initialize maintenance tools
+maintenance_tools = None
+if MAINTENANCE_TOOLS_AVAILABLE:
+    try:
+        maintenance_tools = MaintenanceTools(
+            db_path="backend/chat_data.db",
+            project_root=PROJECT_ROOT,
+            lancedb_path="lancedb",
+            uploads_path="shared_uploads",
+            index_store_path="index_store"
+        )
+    except Exception as e:
+        print(f"⚠️ Failed to initialize maintenance tools: {e}")
+        maintenance_tools = None
+
+# Initialize job persistence tracker
+job_progress_tracker = None
+if JOB_PERSISTENCE_AVAILABLE:
+    try:
+        job_progress_tracker = JobProgressTracker(db_path="backend/chat_data.db")
+        print("✅ Job persistence tracker initialized")
+    except Exception as e:
+        print(f"⚠️ Failed to initialize job persistence: {e}")
+        job_progress_tracker = None
 
 
 def _format_bytes(size: int) -> str:
@@ -665,9 +712,8 @@ async def session_chat(session_id: str, request: Request):
                                         continue  # skip malformed lines
                         except Exception as e:
                             print(f"⚠️ Error reading {p}: {e}")
-                            break  # Stop after the first existing path for this idx
-                    break  # Stop after the first existing path for this idx
-                break  # Stop after the first existing path for this idx
+                            continue  # try next path variant on error
+                        break  # found and read this path; stop trying variants for this index
 
         # 2️⃣  Fall back to legacy global file if no per-index overviews found
         if not aggregated:
@@ -733,19 +779,23 @@ async def upload_files(session_id: str, files: List[UploadFile] = File(...)):
     os.makedirs(upload_dir, exist_ok=True)
 
     for file in files:
-        if file.filename:
-            # Create a unique filename to avoid overwrites
-            unique_filename = f"{uuid.uuid4()}_{file.filename}"
-            file_path = os.path.join(upload_dir, unique_filename)
+        if not file.filename:
+            continue
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
+            raise HTTPException(status_code=415, detail=f"'{file.filename}': unsupported file type '{ext}'")
+        content = await file.read()
+        if len(content) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"'{file.filename}' exceeds the 500 MB upload limit")
 
-            with open(file_path, 'wb') as f:
-                content = await file.read()
-                f.write(content)
+        unique_filename = f"{uuid.uuid4()}_{file.filename}"
+        file_path = os.path.join(upload_dir, unique_filename)
+        with open(file_path, 'wb') as f:
+            f.write(content)
 
-            # Store the absolute path for the indexing service
-            absolute_file_path = os.path.abspath(file_path)
-            db.add_document_to_session(session_id, absolute_file_path)
-            uploaded_files.append({"filename": file.filename, "stored_path": absolute_file_path})
+        absolute_file_path = os.path.abspath(file_path)
+        db.add_document_to_session(session_id, absolute_file_path)
+        uploaded_files.append({"filename": file.filename, "stored_path": absolute_file_path})
 
     if not uploaded_files:
         raise HTTPException(status_code=400, detail="No files were uploaded")
@@ -771,15 +821,6 @@ async def index_documents(session_id: str):
 
         if rag_response.status_code == 200:
             print("✅ RAG API successfully indexed documents.")
-            # Merge key config values into index metadata
-            idx_meta = {
-                "session_linked": True,
-                "retrieval_mode": "hybrid",
-            }
-            try:
-                db.update_index_metadata(session_id, idx_meta)  # session_id used as index_id in text table naming
-            except Exception as e:
-                print(f"⚠️ Failed to update index metadata for session index: {e}")
             return rag_response.json()
         else:
             error_info = rag_response.text
@@ -1020,14 +1061,21 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...)):
     os.makedirs(upload_dir, exist_ok=True)
 
     for f in files:
-        if f.filename:
-            unique = f"{uuid.uuid4()}_{f.filename}"
-            path = os.path.join(upload_dir, unique)
-            with open(path, 'wb') as out:
-                content = await f.read()
-                out.write(content)
-            db.add_document_to_index(index_id, f.filename, os.path.abspath(path))
-            uploaded_files.append({'filename': f.filename, 'stored_path': os.path.abspath(path)})
+        if not f.filename:
+            continue
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
+            raise HTTPException(status_code=415, detail=f"'{f.filename}': unsupported file type '{ext}'")
+        content = await f.read()
+        if len(content) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"'{f.filename}' exceeds the 500 MB upload limit")
+
+        unique = f"{uuid.uuid4()}_{f.filename}"
+        path = os.path.join(upload_dir, unique)
+        with open(path, 'wb') as out:
+            out.write(content)
+        db.add_document_to_index(index_id, f.filename, os.path.abspath(path))
+        uploaded_files.append({'filename': f.filename, 'stored_path': os.path.abspath(path)})
 
     if not uploaded_files:
         raise HTTPException(status_code=400, detail="No files uploaded")
@@ -1534,7 +1582,7 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
         print(f"❌ RAG processing error: {e}")
 
     # Strip any <think>/<thinking> tags that might slip through
-    response_text = re.sub(r'<(think|thinking)>.*?</\\1>', '', response_text, flags=re.DOTALL | re.IGNORECASE).strip()
+    response_text = re.sub(r'<(think|thinking)>.*?</\1>', '', response_text, flags=re.DOTALL | re.IGNORECASE).strip()
 
     return response_text, source_docs
 
@@ -1595,6 +1643,229 @@ def main():
 
     except KeyboardInterrupt:
         print("\n🛑 Server stopped")
+
+
+# ============================================================================
+# MAINTENANCE ENDPOINTS
+# ============================================================================
+
+@app.post("/maintenance/repair-stuck-builds")
+async def repair_stuck_builds(older_than_minutes: int = 30):
+    """Repair stuck/stale build jobs"""
+    if not maintenance_tools:
+        raise HTTPException(status_code=503, detail="Maintenance tools not available")
+    
+    try:
+        result = maintenance_tools.repair_stuck_builds(older_than_minutes)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error repairing stuck builds: {str(e)}")
+
+
+@app.post("/maintenance/remove-orphan-files")
+async def remove_orphan_files(dry_run: bool = True):
+    """Find and remove uploaded files not associated with any index"""
+    if not maintenance_tools:
+        raise HTTPException(status_code=503, detail="Maintenance tools not available")
+    
+    try:
+        result = maintenance_tools.remove_orphan_files(dry_run)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error removing orphan files: {str(e)}")
+
+
+@app.post("/maintenance/delete-broken-indexes")
+async def delete_broken_indexes(dry_run: bool = True, health_status: str = "unhealthy"):
+    """Find and delete broken/unhealthy indexes"""
+    if not maintenance_tools:
+        raise HTTPException(status_code=503, detail="Maintenance tools not available")
+    
+    try:
+        result = maintenance_tools.delete_broken_indexes(dry_run, health_status)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting broken indexes: {str(e)}")
+
+
+@app.get("/maintenance/failed-files/{index_id}")
+async def get_failed_files(index_id: str):
+    """Get list of files that failed in the latest build job"""
+    if not maintenance_tools:
+        raise HTTPException(status_code=503, detail="Maintenance tools not available")
+    
+    try:
+        result = maintenance_tools.get_failed_files_for_index(index_id)
+        if result.get("error"):
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting failed files: {str(e)}")
+
+
+@app.post("/maintenance/rebuild-failed-files/{index_id}")
+async def rebuild_failed_files(index_id: str, force: bool = False):
+    """Mark failed files to be rebuilt on next indexing job"""
+    if not maintenance_tools:
+        raise HTTPException(status_code=503, detail="Maintenance tools not available")
+    
+    try:
+        result = maintenance_tools.rebuild_failed_files_only(index_id, force)
+        if result.get("error"):
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error rebuilding failed files: {str(e)}")
+
+
+@app.get("/maintenance/index-health")
+async def get_index_health(index_id: Optional[str] = None):
+    """Get detailed health report for one or all indexes"""
+    if not maintenance_tools:
+        raise HTTPException(status_code=503, detail="Maintenance tools not available")
+    
+    try:
+        result = maintenance_tools.get_index_health_report(index_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting index health: {str(e)}")
+
+
+@app.post("/maintenance/export-diagnostics")
+async def export_diagnostics(
+    output_path: Optional[str] = None,
+    include_logs: bool = True,
+    include_config: bool = True
+):
+    """Export complete diagnostics bundle (logs, configs, state)"""
+    if not maintenance_tools:
+        raise HTTPException(status_code=503, detail="Maintenance tools not available")
+    
+    try:
+        result = maintenance_tools.export_diagnostics_bundle(output_path, include_logs, include_config)
+        if result.get("errors"):
+            return {"warning": "Bundle created with errors", **result}
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting diagnostics: {str(e)}")
+
+
+# ============================================================================
+# JOB PERSISTENCE & RESUMABLE INDEXING ENDPOINTS
+# ============================================================================
+
+@app.post("/index-jobs/{job_id}/resume")
+async def resume_index_job(job_id: str):
+    """Resume an indexing job that was paused or crashed"""
+    if not job_progress_tracker:
+        raise HTTPException(status_code=503, detail="Job persistence not available")
+    
+    try:
+        result = job_progress_tracker.mark_job_resuming(job_id)
+        if result.get("error"):
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error resuming job: {str(e)}")
+
+
+@app.get("/index-jobs/{job_id}/timeline")
+async def get_job_timeline(job_id: str):
+    """Get complete timeline of events for a job"""
+    if not job_progress_tracker:
+        raise HTTPException(status_code=503, detail="Job persistence not available")
+    
+    try:
+        result = job_progress_tracker.get_job_timeline(job_id)
+        if result.get("error"):
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting timeline: {str(e)}")
+
+
+@app.get("/index-jobs/{job_id}/file-status")
+async def get_job_file_status(job_id: str):
+    """Get detailed per-file status for a job"""
+    if not job_progress_tracker:
+        raise HTTPException(status_code=503, detail="Job persistence not available")
+    
+    try:
+        result = job_progress_tracker.get_job_timeline(job_id)
+        if result.get("error"):
+            raise HTTPException(status_code=404, detail=result["error"])
+        
+        # Return file status with per-stage breakdown
+        return {
+            "job_id": job_id,
+            "files": result.get("files", []),
+            "summary": {
+                "total_files": result.get("total_files", 0),
+                "completed_files": result.get("completed_files", 0),
+                "failed_files": result.get("failed_files", 0),
+                "pending_files": result.get("pending_files", 0),
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting file status: {str(e)}")
+
+
+@app.get("/index-jobs/{job_id}/statistics")
+async def get_job_statistics(job_id: str):
+    """Get performance statistics for a job"""
+    if not job_progress_tracker:
+        raise HTTPException(status_code=503, detail="Job persistence not available")
+    
+    try:
+        result = job_progress_tracker.get_job_statistics(job_id)
+        if result.get("error"):
+            raise HTTPException(status_code=404, detail=result["error"])
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting statistics: {str(e)}")
+
+
+@app.get("/index-jobs/{job_id}/audit-trail")
+async def get_job_audit_trail(job_id: str):
+    """Get complete audit trail (all stage events) for a job"""
+    if not job_progress_tracker:
+        raise HTTPException(status_code=503, detail="Job persistence not available")
+    
+    try:
+        result = job_progress_tracker.export_audit_trail(job_id)
+        return {
+            "job_id": job_id,
+            "events": result,
+            "total_events": len(result)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting audit trail: {str(e)}")
+
+
+@app.post("/index-jobs/recover-stale")
+async def recover_stale_jobs(older_than_minutes: int = 5):
+    """Recover jobs that crashed (auto-run on backend startup)"""
+    if not job_progress_tracker:
+        raise HTTPException(status_code=503, detail="Job persistence not available")
+    
+    try:
+        result = job_progress_tracker.recover_stale_jobs(older_than_minutes)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error recovering jobs: {str(e)}")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Auto-recover stale jobs on backend startup"""
+    if job_progress_tracker:
+        try:
+            result = job_progress_tracker.recover_stale_jobs(older_than_minutes=5)
+            if result.get("recovered", 0) > 0:
+                print(f"✅ Auto-recovered {result['recovered']} stale indexing job(s)")
+        except Exception as e:
+            print(f"⚠️ Error during stale job recovery: {e}")
+
 
 if __name__ == "__main__":
     main()

@@ -15,9 +15,20 @@ _MODEL_CACHE = {}
 class QwenEmbedder(EmbeddingModel):
     """
     An embedding model that uses a local Hugging Face transformer model.
+    Model weights are loaded on the first create_embeddings() call so that
+    importing this module (and creating Agent instances) doesn't block startup.
     """
     def __init__(self, model_name: str = "Qwen/Qwen3-Embedding-0.6B"):
         self.model_name = model_name
+        # Weights and device are resolved on first use.
+        self._loaded = False
+        self.tokenizer = None
+        self.model = None
+        self.device = None
+
+    def _ensure_loaded(self) -> None:
+        if self._loaded:
+            return
         # Auto-select the best available device: CUDA > MPS > CPU
         if torch.cuda.is_available():
             self.device = "cuda"
@@ -26,23 +37,24 @@ class QwenEmbedder(EmbeddingModel):
         else:
             self.device = "cpu"
 
-        # Use model-specific cache
-        if model_name not in _MODEL_CACHE:
-            print(f"Initializing HF Embedder with model '{model_name}' on device '{self.device}'. (first load)")
-            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, padding_side="left")
+        if self.model_name not in _MODEL_CACHE:
+            print(f"Initializing HF Embedder with model '{self.model_name}' on device '{self.device}'. (first load)")
+            tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True, padding_side="left")
             model = AutoModel.from_pretrained(
-                model_name,
+                self.model_name,
                 trust_remote_code=True,
                 torch_dtype=torch.float16 if self.device != "cpu" else None,
             ).to(self.device).eval()
-            _MODEL_CACHE[model_name] = (tokenizer, model)
-            print(f"QwenEmbedder weights loaded and cached for {model_name}.")
+            _MODEL_CACHE[self.model_name] = (tokenizer, model)
+            print(f"QwenEmbedder weights loaded and cached for {self.model_name}.")
         else:
-            print(f"Reusing cached QwenEmbedder weights for {model_name}.")
-        
-        self.tokenizer, self.model = _MODEL_CACHE[model_name]
+            print(f"Reusing cached QwenEmbedder weights for {self.model_name}.")
+
+        self.tokenizer, self.model = _MODEL_CACHE[self.model_name]
+        self._loaded = True
 
     def create_embeddings(self, texts: List[str]) -> np.ndarray:
+        self._ensure_loaded()
         print(f"Generating {len(texts)} embeddings with {self.model_name} model...")
         inputs = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt").to(self.device)
         with torch.no_grad():

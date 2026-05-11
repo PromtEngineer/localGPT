@@ -1,12 +1,14 @@
-from typing import List, Dict, Any, Callable
+from typing import List, Dict, Any, Callable, Optional
 import copy
 import hashlib
 import json
 import os
 from pathlib import Path
+import queue
 import subprocess
 import sys
 import tempfile
+import threading
 import networkx as nx
 from rag_system.ingestion.document_converter import DocumentConverter
 from rag_system.ingestion.chunking import MarkdownRecursiveChunker
@@ -319,6 +321,7 @@ class IndexingPipeline:
         chunk_cache_hits = 0
         graph_chunks = []
 
+        self._start_persistent_worker()
         with timer("Complete Indexing Pipeline"):
             for file_idx, file_path in enumerate(files_to_index, start=1):
                 document_id = os.path.basename(file_path)
@@ -337,9 +340,11 @@ class IndexingPipeline:
                     )
                     indexing_logger.debug("processing_file", document_id=document_id, file_path=file_path)
 
-                    cache_key = self._chunk_cache_key(file_path)
+                    _file_hash = self.incremental_indexer.calculate_file_hash(file_path)
+                    cache_key = self._chunk_cache_key(file_path, file_hash=_file_hash)
                     file_chunks = self._load_chunk_cache(cache_key)
-                    if file_chunks is not None:
+                    _chunk_cache_hit = file_chunks is not None
+                    if _chunk_cache_hit:
                         chunk_cache_hits += 1
                         indexing_logger.info("chunk_cache_hit", document_id=document_id, file_path=file_path)
                     else:
@@ -389,7 +394,9 @@ class IndexingPipeline:
                         file_status="processing",
                     )
                     try:
-                        self.overview_builder.build_and_store(document_id, file_chunks)
+                        self.overview_builder.build_and_store(
+                            document_id, file_chunks, force=not _chunk_cache_hit
+                        )
                     except Exception as e:
                         indexing_logger.warning("overview_creation_failed", document_id=document_id, error=str(e))
 
@@ -405,7 +412,15 @@ class IndexingPipeline:
                             file_status="processing",
                         )
                         window_size = enricher_config.get("window_size", 1)
-                        file_chunks = self.contextual_enricher.enrich_chunks(file_chunks, window_size=window_size)
+                        _pre_enrich_chunks = file_chunks
+                        try:
+                            file_chunks = self.contextual_enricher.enrich_chunks(file_chunks, window_size=window_size)
+                            if not file_chunks:
+                                indexing_logger.warning("enrichment_returned_empty", document_id=document_id, reverting=True)
+                                file_chunks = _pre_enrich_chunks
+                        except Exception as _enrich_err:
+                            indexing_logger.error("enrichment_failed", document_id=document_id, error=str(_enrich_err), reverting=True)
+                            file_chunks = _pre_enrich_chunks
                     else:
                         indexing_logger.warning(
                             "contextual_enrichment_skipped",
@@ -450,7 +465,7 @@ class IndexingPipeline:
                                 self.vector_indexer.index(lc_table_name, file_chunks, lc_vecs)
 
                     self.incremental_indexer.update_document_metadata(
-                        file_path, index_id, len(file_chunks), "index"
+                        file_path, index_id, len(file_chunks), "index", file_hash=_file_hash
                     )
                     if hasattr(self, 'graph_extractor'):
                         graph_chunks.extend(file_chunks)
@@ -502,6 +517,7 @@ class IndexingPipeline:
             check_cancelled()
             if processed_files == 0:
                 indexing_logger.warning("no_chunks_generated")
+                self._stop_persistent_worker()
                 return self._print_final_statistics(
                     len(files_to_index) + len(unchanged_files),
                     0,
@@ -520,6 +536,7 @@ class IndexingPipeline:
                 self._extract_knowledge_graph(graph_chunks, retriever_configs)
 
         report("completed", 100, "Indexing complete")
+        self._stop_persistent_worker()
         total_processed = len(files_to_index) + len(unchanged_files)
         indexing_logger.info("indexing_complete", total_processed=total_processed, total_chunks=total_chunks, unchanged_count=len(unchanged_files), incremental=incremental, failed_files=failed_files)
         return self._print_final_statistics(
@@ -545,7 +562,101 @@ class IndexingPipeline:
         """
         return self.run(file_paths, index_id=index_id, incremental=incremental, force_reindex=force_reindex)
 
+    # ------------------------------------------------------------------
+    # Persistent conversion worker
+    # ------------------------------------------------------------------
+
+    def _start_persistent_worker(self) -> None:
+        """Start a long-lived conversion subprocess that keeps Docling models hot."""
+        self._worker: Optional[subprocess.Popen] = None
+        project_root = Path(__file__).resolve().parents[2]
+        env = os.environ.copy()
+        existing_pp = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = f"{project_root}{os.pathsep}{existing_pp}" if existing_pp else str(project_root)
+        try:
+            self._worker = subprocess.Popen(
+                [sys.executable, "-m", "rag_system.tools.persistent_convert_worker"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=str(project_root),
+                env=env,
+                text=True,
+                bufsize=1,
+            )
+            indexing_logger.info("persistent_worker_started", pid=self._worker.pid)
+        except Exception as e:
+            indexing_logger.warning("persistent_worker_start_failed", error=str(e))
+            self._worker = None
+
+    def _stop_persistent_worker(self) -> None:
+        """Gracefully shut down the persistent conversion worker."""
+        worker = getattr(self, "_worker", None)
+        if worker is None:
+            return
+        try:
+            worker.stdin.close()
+            worker.wait(timeout=10)
+        except Exception:
+            worker.kill()
+        self._worker = None
+        indexing_logger.info("persistent_worker_stopped")
+
+    def _read_worker_response(self, timeout_s: float) -> str:
+        """Read one response line from the worker with a hard timeout."""
+        result_q: queue.Queue = queue.Queue()
+
+        def _reader() -> None:
+            try:
+                line = self._worker.stdout.readline()
+                result_q.put(("ok", line))
+            except Exception as exc:
+                result_q.put(("err", exc))
+
+        threading.Thread(target=_reader, daemon=True).start()
+        try:
+            kind, value = result_q.get(timeout=timeout_s)
+        except queue.Empty:
+            self._worker.kill()
+            self._worker = None
+            raise TimeoutError(f"Conversion worker timed out after {timeout_s}s")
+        if kind == "err":
+            raise value  # type: ignore[misc]
+        return value  # type: ignore[return-value]
+
+    def _convert_via_worker(self, file_path: str, document_id: str) -> List[Dict[str, Any]]:
+        """Send one conversion request to the persistent worker; restart if needed."""
+        if getattr(self, "_worker", None) is None or self._worker.poll() is not None:
+            indexing_logger.warning("persistent_worker_dead_restarting")
+            self._start_persistent_worker()
+
+        request = json.dumps(
+            {"file_path": file_path, "document_id": document_id, "config": self.config},
+            default=str,
+        )
+        try:
+            self._worker.stdin.write(request + "\n")
+            self._worker.stdin.flush()
+        except BrokenPipeError:
+            self._start_persistent_worker()
+            self._worker.stdin.write(request + "\n")
+            self._worker.stdin.flush()
+
+        raw = self._read_worker_response(self.conversion_timeout_seconds)
+        if not raw:
+            raise RuntimeError(f"Worker closed stdout unexpectedly for {document_id}")
+        result = json.loads(raw)
+        if result.get("error"):
+            raise RuntimeError(result["error"])
+        return result.get("chunks", [])
+
+    # ------------------------------------------------------------------
+
     def _convert_and_chunk_file(self, file_path: str, document_id: str) -> List[Dict[str, Any]]:
+        # Use persistent worker when available (models stay loaded between files).
+        if getattr(self, "_worker", None) is not None:
+            return self._convert_via_worker(file_path, document_id)
+
         project_root = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory(prefix="localgpt_convert_") as tmpdir:
             input_path = Path(tmpdir) / "input.json"
@@ -673,9 +784,10 @@ class IndexingPipeline:
         nx.write_gml(graph, graph_path)
         indexing_logger.info("knowledge_graph_saved", graph_path=graph_path, entity_count=len(graph_data.get('entities', [])), relationship_count=len(graph_data.get('relationships', [])))
     
-    def _chunk_cache_key(self, file_path: str) -> str:
+    def _chunk_cache_key(self, file_path: str, file_hash: str | None = None) -> str:
         """Build a stable cache key for conversion/chunking output."""
-        file_hash = self.incremental_indexer.calculate_file_hash(file_path)
+        if file_hash is None:
+            file_hash = self.incremental_indexer.calculate_file_hash(file_path)
         chunking_config = self.config.get("chunking", {})
         cache_fingerprint = {
             "file_hash": file_hash,

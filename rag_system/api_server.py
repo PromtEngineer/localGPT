@@ -23,18 +23,14 @@ db = ChatDatabase()
 # Get the desired agent mode from environment variables, defaulting to 'default'
 # This allows us to easily switch between 'default', 'fast', 'react', etc.
 AGENT_MODE = os.getenv("RAG_CONFIG_MODE", "default")
+print("🧠 Initializing RAG Agent... (This may take a moment)")
 RAG_AGENT = get_agent(AGENT_MODE)
 INDEXING_PIPELINE = get_indexing_pipeline(AGENT_MODE)
 
-# --- Global Singleton for the RAG Agent ---
-# The agent is initialized once when the server starts.
-# This avoids reloading all the models on every request.
-print("🧠 Initializing RAG Agent with MAXIMUM ACCURACY... (This may take a moment)")
 if RAG_AGENT is None:
     print("❌ Critical error: RAG Agent could not be initialized. Exiting.")
     exit(1)
-print("✅ RAG Agent initialized successfully with MAXIMUM ACCURACY.")
-# ---
+print("✅ RAG Agent initialized successfully.")
 
 # Add helper near top after db & agent init
 # -------------- Helper ----------------
@@ -142,78 +138,68 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_json_response({"error": "Not Found"}, status_code=404)
 
+    def _parse_chat_request(self):
+        """Parse and validate a chat POST body. Returns a params dict, or None if a response was already sent."""
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+
+        requested_model = data.get('model')
+        if isinstance(requested_model, str) and requested_model:
+            RAG_AGENT.ollama_config['generation_model'] = requested_model
+
+        query = data.get('query')
+        if not query:
+            self.send_json_response({"error": "Query is required"}, status_code=400)
+            return None
+
+        session_id = data.get('session_id')
+        table_name = data.get('table_name')
+        if not table_name and session_id:
+            table_name = _get_table_name_for_session(session_id)
+
+        return {
+            "query": query,
+            "session_id": session_id,
+            "table_name": table_name,
+            "compose_flag": data.get('compose_sub_answers'),
+            "decomp_flag": data.get('query_decompose'),
+            "ai_rerank_flag": data.get('ai_rerank'),
+            "ctx_expand_flag": data.get('context_expand'),
+            "verify_flag": data.get('verify'),
+            "retrieval_k": data.get('retrieval_k', 20),
+            "context_window_size": data.get('context_window_size', 1),
+            "reranker_top_k": data.get('reranker_top_k', 10),
+            "search_type": data.get('search_type', 'hybrid'),
+            "dense_weight": data.get('dense_weight', 0.7),
+            "force_rag": bool(data.get('force_rag', False)),
+            "provence_prune": data.get('provence_prune'),
+            "provence_threshold": data.get('provence_threshold'),
+        }
+
     def handle_chat(self):
         """Handles a chat query by calling the agentic RAG pipeline."""
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-            
-            query = data.get('query')
-            session_id = data.get('session_id')
-            compose_flag = data.get('compose_sub_answers')
-            decomp_flag = data.get('query_decompose')
-            ai_rerank_flag = data.get('ai_rerank')
-            ctx_expand_flag = data.get('context_expand')
-            verify_flag = data.get('verify')
-            
-            # ✨ NEW RETRIEVAL PARAMETERS
-            retrieval_k = data.get('retrieval_k', 20)
-            context_window_size = data.get('context_window_size', 1)
-            reranker_top_k = data.get('reranker_top_k', 10)
-            search_type = data.get('search_type', 'hybrid')
-            dense_weight = data.get('dense_weight', 0.7)
-            
-            # 🚩 NEW: Force RAG override from frontend
-            force_rag = bool(data.get('force_rag', False))
-            
-            # 🌿 Provence sentence pruning
-            provence_prune = data.get('provence_prune')
-            provence_threshold = data.get('provence_threshold')
-            
-            # User-selected generation model
-            requested_model = data.get('model')
-            if isinstance(requested_model,str) and requested_model:
-                RAG_AGENT.ollama_config['generation_model']=requested_model
-            
-            if not query:
-                self.send_json_response({"error": "Query is required"}, status_code=400)
+            params = self._parse_chat_request()
+            if params is None:
                 return
 
-            # 🔄 UPDATE SESSION TITLE: If this is the first message in the session, update the title
-            if session_id:
-                try:
-                    # Check if this is the first message by calling the backend server
-                    backend_url = f"http://localhost:8000/sessions/{session_id}"
-                    session_resp = requests.get(backend_url)
-                    if session_resp.status_code == 200:
-                        session_data = session_resp.json()
-                        session = session_data.get('session', {})
-                        # If message_count is 0, this is the first message
-                        if session.get('message_count', 0) == 0:
-                            # Generate a title from the first message
-                            title = generate_session_title(query)
-                            # Update the session title via backend API
-                            # We'll need to add this endpoint to the backend, for now let's make a direct database call
-                            # This is a temporary solution until we add a proper API endpoint
-                            db.update_session_title(session_id, title)
-                            print(f"📝 Updated session title to: {title}")
-                            
-                            # 💾 STORE USER MESSAGE: Add the user message to the database
-                            user_message_id = db.add_message(session_id, query, "user")
-                            print(f"💾 Stored user message: {user_message_id}")
-                        else:
-                            # Not the first message, but still store the user message
-                            user_message_id = db.add_message(session_id, query, "user")
-                            print(f"💾 Stored user message: {user_message_id}")
-                except Exception as e:
-                    print(f"⚠️ Failed to update session title or store user message: {e}")
-                    # Continue with the request even if title update fails
-
-            # Allow explicit table_name override
-            table_name = data.get('table_name')
-            if not table_name and session_id:
-                table_name = _get_table_name_for_session(session_id)
+            query = params["query"]
+            session_id = params["session_id"]
+            table_name = params["table_name"]
+            compose_flag = params["compose_flag"]
+            decomp_flag = params["decomp_flag"]
+            ai_rerank_flag = params["ai_rerank_flag"]
+            ctx_expand_flag = params["ctx_expand_flag"]
+            verify_flag = params["verify_flag"]
+            retrieval_k = params["retrieval_k"]
+            context_window_size = params["context_window_size"]
+            reranker_top_k = params["reranker_top_k"]
+            search_type = params["search_type"]
+            dense_weight = params["dense_weight"]
+            force_rag = params["force_rag"]
+            provence_prune = params["provence_prune"]
+            provence_threshold = params["provence_threshold"]
 
             # Decide execution path
             print(f"🔧 Force RAG flag: {force_rag}")
@@ -286,15 +272,6 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             
             # The result is a dict, so we need to dump it to a JSON string
             self.send_json_response(result)
-            
-            # 💾 STORE AI RESPONSE: Add the AI response to the database
-            if session_id and result and result.get("answer"):
-                try:
-                    ai_message_id = db.add_message(session_id, result["answer"], "assistant")
-                    print(f"💾 Stored AI response: {ai_message_id}")
-                except Exception as e:
-                    print(f"⚠️ Failed to store AI response: {e}")
-                    # Continue even if storage fails
 
         except json.JSONDecodeError:
             self.send_json_response({"error": "Invalid JSON"}, status_code=400)
@@ -304,75 +281,26 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
     def handle_chat_stream(self):
         """Stream internal phases and final answer using SSE (text/event-stream)."""
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-
-            query = data.get('query')
-            session_id = data.get('session_id')
-            compose_flag = data.get('compose_sub_answers')
-            decomp_flag = data.get('query_decompose')
-            ai_rerank_flag = data.get('ai_rerank')
-            ctx_expand_flag = data.get('context_expand')
-            verify_flag = data.get('verify')
-            
-            # ✨ NEW RETRIEVAL PARAMETERS
-            retrieval_k = data.get('retrieval_k', 20)
-            context_window_size = data.get('context_window_size', 1)
-            reranker_top_k = data.get('reranker_top_k', 10)
-            search_type = data.get('search_type', 'hybrid')
-            dense_weight = data.get('dense_weight', 0.7)
-
-            # 🚩 NEW: Force RAG override from frontend
-            force_rag = bool(data.get('force_rag', False))
-
-            # 🌿 Provence sentence pruning
-            provence_prune = data.get('provence_prune')
-            provence_threshold = data.get('provence_threshold')
-
-            # User-selected generation model
-            requested_model = data.get('model')
-            if isinstance(requested_model,str) and requested_model:
-                RAG_AGENT.ollama_config['generation_model']=requested_model
-
-            if not query:
-                self.send_json_response({"error": "Query is required"}, status_code=400)
+            params = self._parse_chat_request()
+            if params is None:
                 return
 
-            # 🔄 UPDATE SESSION TITLE: If this is the first message in the session, update the title
-            if session_id:
-                try:
-                    # Check if this is the first message by calling the backend server
-                    backend_url = f"http://localhost:8000/sessions/{session_id}"
-                    session_resp = requests.get(backend_url)
-                    if session_resp.status_code == 200:
-                        session_data = session_resp.json()
-                        session = session_data.get('session', {})
-                        # If message_count is 0, this is the first message
-                        if session.get('message_count', 0) == 0:
-                            # Generate a title from the first message
-                            title = generate_session_title(query)
-                            # Update the session title via backend API
-                            # We'll need to add this endpoint to the backend, for now let's make a direct database call
-                            # This is a temporary solution until we add a proper API endpoint
-                            db.update_session_title(session_id, title)
-                            print(f"📝 Updated session title to: {title}")
-                            
-                            # 💾 STORE USER MESSAGE: Add the user message to the database
-                            user_message_id = db.add_message(session_id, query, "user")
-                            print(f"💾 Stored user message: {user_message_id}")
-                        else:
-                            # Not the first message, but still store the user message
-                            user_message_id = db.add_message(session_id, query, "user")
-                            print(f"💾 Stored user message: {user_message_id}")
-                except Exception as e:
-                    print(f"⚠️ Failed to update session title or store user message: {e}")
-                    # Continue with the request even if title update fails
-
-            # Allow explicit table_name override
-            table_name = data.get('table_name')
-            if not table_name and session_id:
-                table_name = _get_table_name_for_session(session_id)
+            query = params["query"]
+            session_id = params["session_id"]
+            table_name = params["table_name"]
+            compose_flag = params["compose_flag"]
+            decomp_flag = params["decomp_flag"]
+            ai_rerank_flag = params["ai_rerank_flag"]
+            ctx_expand_flag = params["ctx_expand_flag"]
+            verify_flag = params["verify_flag"]
+            retrieval_k = params["retrieval_k"]
+            context_window_size = params["context_window_size"]
+            reranker_top_k = params["reranker_top_k"]
+            search_type = params["search_type"]
+            dense_weight = params["dense_weight"]
+            force_rag = params["force_rag"]
+            provence_prune = params["provence_prune"]
+            provence_threshold = params["provence_threshold"]
 
             # Prepare response headers for SSE
             self.send_response(200)
@@ -474,15 +402,6 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
                 # Ensure the final answer is sent (in case callback missed it)
                 emit("complete", final_result)
-                
-                # 💾 STORE AI RESPONSE: Add the AI response to the database
-                if session_id and final_result and final_result.get("answer"):
-                    try:
-                        ai_message_id = db.add_message(session_id, final_result["answer"], "assistant")
-                        print(f"💾 Stored AI response: {ai_message_id}")
-                    except Exception as e:
-                        print(f"⚠️ Failed to store AI response: {e}")
-                        # Continue even if storage fails
             except BrokenPipeError:
                 print("🔌 Client disconnected from SSE stream.")
             except Exception as e:
@@ -844,8 +763,9 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 def start_server(port=8001):
     """Starts the API server."""
     # Use a reusable TCP server to avoid "address in use" errors on restart
-    class ReusableTCPServer(socketserver.TCPServer):
+    class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
         allow_reuse_address = True
+        daemon_threads = True
 
     with ReusableTCPServer(("", port), AdvancedRagApiHandler) as httpd:
         print(f"🚀 Starting Advanced RAG API server on port {port}")
