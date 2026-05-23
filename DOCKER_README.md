@@ -13,7 +13,6 @@ curl -fsSL https://ollama.ai/install.sh | sh
 ollama serve
 
 # 3. Install required models (in another terminal)
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 
 # 4. Clone and start LocalGPT
@@ -112,7 +111,7 @@ UPLOADS_PATH=/app/shared_uploads
 ### Model Configuration
 The system uses these models by default:
 - **Embedding**: `Qwen/Qwen3-Embedding-0.6B` (1024 dimensions)
-- **Generation**: `qwen3:0.6b` (fast) or `qwen3:8b` (high quality)
+- **Generation**: `qwen3:8b` by default for local quality
 - **Reranking**: Built-in cross-encoder
 
 ## 🎯 Management Commands
@@ -254,7 +253,7 @@ free -h  # On host
 # Docker Desktop → Settings → Resources → Memory → 8GB+
 
 # Use smaller models
-ollama pull qwen3:0.6b  # Instead of qwen3:8b
+ollama pull llama3.2      # Smaller fallback option
 ```
 
 #### Frontend Build Errors
@@ -284,7 +283,7 @@ docker compose exec backend sqlite3 /app/backend/chat_data.db ".tables"
 ### Performance Issues
 
 #### Slow Response Times
-- Use faster models: `qwen3:0.6b` instead of `qwen3:8b`
+- For lower-memory machines, install and select a smaller Ollama model for chat/enrichment.
 - Increase Docker memory allocation
 - Ensure SSD storage for databases
 - Monitor with `docker stats`

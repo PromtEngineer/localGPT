@@ -58,8 +58,7 @@ curl -fsSL https://ollama.ai/install.sh | sh
 ollama serve
 
 # Install required models (in another terminal)
-ollama pull qwen3:0.6b      # Fast model (650MB)
-ollama pull qwen3:8b        # High-quality model (4.7GB)
+ollama pull qwen3:8b      # Default local model
 
 # Verify models are installed
 ollama list
@@ -271,8 +270,7 @@ ollama serve
 curl http://localhost:11434/api/tags
 
 # Install models
-ollama pull qwen3:0.6b      # Fast model
-ollama pull qwen3:8b        # High-quality model
+ollama pull qwen3:8b      # Default local model
 
 # List installed models
 ollama list
@@ -287,7 +285,7 @@ docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
 # Test Ollama connection
 curl -X POST http://localhost:11434/api/generate \
   -H "Content-Type: application/json" \
-  -d '{"model": "qwen3:0.6b", "prompt": "Hello", "stream": false}'
+  -d '{"model": "qwen3:8b", "prompt": "Hello", "stream": false}'
 
 # Monitor Ollama logs (if running with logs)
 # Ollama logs appear in the terminal where you ran 'ollama serve'
@@ -297,14 +295,13 @@ curl -X POST http://localhost:11434/api/generate \
 
 ```bash
 # Update models
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 
 # Remove unused models
 ollama rm old-model-name
 
 # Check model information
-ollama show qwen3:0.6b
+ollama show qwen3:8b
 ```
 
 ---

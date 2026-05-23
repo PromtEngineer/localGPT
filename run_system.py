@@ -307,7 +307,7 @@ class ServiceManager:
         """Ensure required Ollama models are available."""
         self.logger.info("📥 Checking required models...")
         
-        required_models = ['qwen3:8b', 'qwen3:0.6b']
+        required_models = ['qwen3:8b']
         
         try:
             # Get list of installed models

@@ -177,7 +177,7 @@ EXTERNAL_MODELS = {
 
 OLLAMA_CONFIG = {
     "generation_model": "qwen3:8b",  # High-quality generation
-    "enrichment_model": "qwen3:0.6b",  # Fast enrichment/routing
+    "enrichment_model": "qwen3:8b",  # Quality local enrichment/routing
     "host": "http://localhost:11434"
 }
 ```
@@ -194,7 +194,7 @@ OLLAMA_CONFIG = {
 
 #### **Generation Models** (via Ollama)
 - `qwen3:8b` - Primary generation model (high quality)
-- `qwen3:0.6b` - Fast enrichment and routing model
+- `qwen3:8b` - Default local enrichment, routing, and generation model
 
 #### **Reranking Models**
 - `answerdotai/answerai-colbert-small-v1` - Primary ColBERT reranker
@@ -314,7 +314,7 @@ EXTERNAL_MODELS = {
 # Generation model configuration
 OLLAMA_CONFIG = {
     "generation_model": "qwen3:8b",  # Your LLM model
-    "enrichment_model": "qwen3:0.6b",  # Your fast model
+    "enrichment_model": "qwen3:8b",  # Default local model
 }
 ```
 

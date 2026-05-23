@@ -176,7 +176,7 @@ def _index_build_preflight(index_id: str, data: Dict[str, Any] | None = None, *,
     for key, label in (("enrichModel", "enrichment"), ("overviewModel", "overview")):
         model = data.get(key)
         if _large_indexing_model(model):
-            warnings.append(f"The {label} model '{model}' will be replaced with qwen3:0.6b for indexing safety.")
+            warnings.append(f"The {label} model '{model}' will be replaced with qwen3:8b for indexing safety.")
 
     rag_api_available = None
     if check_services:
@@ -995,8 +995,8 @@ async def create_index(request: Request):
                 'retrieval_mode': 'hybrid',  # From default config
                 'window_size': 5,  # From default config
                 'embedding_model': 'Qwen/Qwen3-Embedding-0.6B',  # From default config
-                'enrich_model': 'qwen3:0.6b',  # From default config
-                'overview_model': 'qwen3:0.6b',  # From default config
+                'enrich_model': 'qwen3:8b',  # From default config
+                'overview_model': 'qwen3:8b',  # From default config
                 'enable_enrich': True,  # From default config
                 'latechunk': True,  # From default config
                 'docling_chunk': True,  # From default config
@@ -1138,14 +1138,14 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     # Guard only applies to local Ollama models; cloud providers manage their own quotas
     if enrich_provider == 'ollama' and _large_indexing_model(enrich_model):
         indexing_model_warnings.append(
-            f"Replaced enrichment model '{enrich_model}' with qwen3:0.6b for indexing safety."
+            f"Replaced enrichment model '{enrich_model}' with qwen3:8b for indexing safety."
         )
-        enrich_model = "qwen3:0.6b"
+        enrich_model = "qwen3:8b"
     if _large_indexing_model(overview_model):
         indexing_model_warnings.append(
-            f"Replaced overview model '{overview_model}' with qwen3:0.6b for indexing safety."
+            f"Replaced overview model '{overview_model}' with qwen3:8b for indexing safety."
         )
-        overview_model = "qwen3:0.6b"
+        overview_model = "qwen3:8b"
 
     window_size = max(0, min(window_size, 2))
     batch_size_enrich = max(1, min(batch_size_enrich, 8))
@@ -1428,7 +1428,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
         # Use Ollama to make the routing decision
         response = ollama_client.chat(
             message=router_prompt,
-            model="qwen3:0.6b",  # Fast model for routing
+            model="qwen3:8b",  # Quality local model for routing
             enable_thinking=False  # Fast routing
         )
 
@@ -1510,7 +1510,7 @@ async def _handle_direct_llm_query(session_id: str, message: str, session: dict)
         conversation_history = db.get_conversation_history(session_id)
 
         # Use the session's model or default
-        model = session.get('model', 'qwen3:8b')  # Default to fast model
+        model = session.get('model', 'qwen3:8b')  # Default local model
 
         # Direct Ollama call with thinking disabled for speed
         response_text = ollama_client.chat(

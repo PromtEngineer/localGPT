@@ -460,14 +460,14 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             # Guard only applies to Ollama local models; cloud providers manage their own limits
             if enrich_provider == 'ollama' and is_large_indexing_model(enrich_model):
                 indexing_model_warnings.append(
-                    f"Replaced enrichment model '{enrich_model}' with qwen3:0.6b for indexing safety."
+                    f"Replaced enrichment model '{enrich_model}' with qwen3:8b for indexing safety."
                 )
-                enrich_model = "qwen3:0.6b"
+                enrich_model = "qwen3:8b"
             if is_large_indexing_model(overview_model):
                 indexing_model_warnings.append(
-                    f"Replaced overview model '{overview_model}' with qwen3:0.6b for indexing safety."
+                    f"Replaced overview model '{overview_model}' with qwen3:8b for indexing safety."
                 )
-                overview_model = "qwen3:0.6b"
+                overview_model = "qwen3:8b"
 
             window_size = max(0, min(window_size, 2))
             batch_size_enrich = max(1, min(batch_size_enrich, 8))

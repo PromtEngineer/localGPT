@@ -58,6 +58,6 @@ curl http://localhost:8001/models
 The current default model family is Qwen-based:
 - Embedding: `Qwen/Qwen3-Embedding-0.6B`
 - Generation: `qwen3:8b`
-- Fast enrichment/routing: `qwen3:0.6b`
+- Routing/enrichment: `qwen3:8b`
 
 Older references to `llama3`, `qwen2.5vl`, `Qwen2-7B-instruct`, or mandatory image embeddings are legacy documentation and should not be treated as the current default system state.

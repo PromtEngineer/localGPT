@@ -44,7 +44,7 @@ flowchart TD
 | `chunkSize` / `chunkOverlap` | Standard fixed slicing | 512 / 64 |
 | `enableEnrich` | Run contextual summaries | true |
 | `embeddingModel` | Override embedder | `Qwen/Qwen3-Embedding-0.6B` |
-| `overviewModel` | Model used in `OverviewBuilder` | `qwen3:0.6b` |
+| `overviewModel` | Model used in `OverviewBuilder` | `qwen3:8b` |
 | `batchSizeEmbed / Enrich` | Batch sizes | 50 / 25 |
 
 ## Error Handling
@@ -287,7 +287,7 @@ def _generate_context_summary(self, chunk_text: str, surrounding_context: str) -
     
     response = self.llm_client.complete(
         prompt=prompt,
-        model=self.ollama_config["enrichment_model"]  # qwen3:0.6b
+        model=self.ollama_config["enrichment_model"]  # qwen3:8b
     )
     
     return response.strip()
@@ -409,7 +409,7 @@ class OverviewBuilder:
         
         overview = self.llm_client.complete(
             prompt=overview_prompt,
-            model=self.overview_model  # qwen3:0.6b for speed
+            model=self.overview_model  # qwen3:8b for quality
         )
         
         return {
@@ -558,13 +558,13 @@ DEFAULT_CONFIG = {
     },
     "enrichment": {
         "enabled": True,
-        "model": "qwen3:0.6b",
+        "model": "qwen3:8b",
         "batch_size": 16
     },
     "overview": {
         "enabled": True,
         "max_chunks": 5,
-        "model": "qwen3:0.6b"
+        "model": "qwen3:8b"
     },
     "storage": {
         "create_index": True,
@@ -609,7 +609,7 @@ class IndexingPipeline:
 - DocLing-based PDF processing with OCR fallback
 - Multiple chunking strategies (DocLing, Recursive, Fixed-size)
 - Qwen3-Embedding-0.6B integration
-- Contextual enrichment with qwen3:0.6b
+- Contextual enrichment with qwen3:8b
 - LanceDB storage with vector indexing
 - Overview generation for query routing
 - Batch processing and parallel execution

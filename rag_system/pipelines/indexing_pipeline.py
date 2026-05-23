@@ -218,7 +218,7 @@ class IndexingPipeline:
         ov_path = self.config.get("overview_path")
         self.overview_builder = OverviewBuilder(
             llm_client=self.llm_client,
-            model=self.config.get("overview_model_name", self.ollama_config.get("enrichment_model", "qwen3:0.6b")),
+            model=self.config.get("overview_model_name", self.ollama_config.get("enrichment_model", "qwen3:8b")),
             first_n_chunks=self.config.get("overview_first_n_chunks", 5),
             out_path=ov_path if ov_path else None,
             timeout=self.overview_timeout_seconds,

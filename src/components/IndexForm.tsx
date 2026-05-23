@@ -14,11 +14,11 @@ interface Props {
 
 type IndexingProfile = 'fast' | 'balanced' | 'maximum';
 
-const DEFAULT_INDEXING_LLM = 'qwen3:0.6b';
+const DEFAULT_INDEXING_LLM = 'qwen3:8b';
 const LARGE_INDEXING_MODEL_RE = /(gpt-oss|120b|70b|large|cloud)/i;
 
 const ENRICH_PROVIDERS: { id: EnrichProvider; label: string; defaultModel: string; hint: string }[] = [
-  { id: 'ollama',    label: 'Ollama',   defaultModel: 'qwen3:0.6b',               hint: 'Local model, no API key needed' },
+  { id: 'ollama',    label: 'Ollama',   defaultModel: 'qwen3:8b',               hint: 'Local model, no API key needed' },
   { id: 'groq',     label: 'Groq',     defaultModel: 'llama-3.1-8b-instant',      hint: 'Free cloud tier, very fast' },
   { id: 'openai',   label: 'ChatGPT',  defaultModel: 'gpt-4o-mini',               hint: 'OpenAI API key required' },
   { id: 'anthropic', label: 'Claude',  defaultModel: 'claude-haiku-4-5-20251001', hint: 'Anthropic API key required' },
@@ -185,7 +185,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const handleSubmit = async () => {
     if (!files) return;
     if (hasLargeIndexingModel) {
-      alert('Large chat models such as gpt-oss:120b-cloud are blocked for indexing enrichment/overview. Use qwen3:0.6b for indexing, then use the large model for chat.');
+      alert('Large chat models such as gpt-oss:120b-cloud are blocked for indexing enrichment/overview. Use qwen3:8b for indexing, then use the large model for chat.');
       return;
     }
     if (isHighRiskJob && !confirm(`This index may run about ${estimatedLlmCalls.toLocaleString()} LLM call(s). Continue?`)) {

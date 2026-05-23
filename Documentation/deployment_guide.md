@@ -115,7 +115,6 @@ curl -fsSL https://ollama.ai/install.sh | sh
 ollama serve
 
 # In another terminal, install models
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 ```
 
@@ -212,7 +211,6 @@ curl -fsSL https://ollama.ai/install.sh | sh
 ollama serve
 
 # In another terminal, install models
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 ```
 
@@ -349,10 +347,9 @@ EMBEDDING_MODELS = [
     "Qwen/Qwen3-Embedding-4B",    # High quality, 2048 dimensions
 ]
 
-# Generation Models  
+# Generation Models
 GENERATION_MODELS = [
-    "qwen3:0.6b",  # Fast responses
-    "qwen3:8b",    # High quality
+    "qwen3:8b",  # Default local quality model
 ]
 ```
 
@@ -498,7 +495,6 @@ pkill ollama
 ollama serve
 
 # Reinstall models
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 ```
 
@@ -514,7 +510,7 @@ docker stats      # Docker containers
 # Solutions:
 # 1. Increase system RAM
 # 2. Reduce batch sizes in configuration
-# 3. Use smaller models (qwen3:0.6b instead of qwen3:8b)
+# 3. Use a smaller Ollama model than qwen3:8b if memory is tight
 ```
 
 #### **Slow Response Times**

@@ -51,7 +51,7 @@ curl http://localhost:8000/health
 
 The current docs and launch scripts use Qwen/Ollama defaults such as:
 - Generation: `qwen3:8b`
-- Fast enrichment/routing: `qwen3:0.6b`
+- Routing/enrichment: `qwen3:8b`
 - Embeddings: `Qwen/Qwen3-Embedding-0.6B`
 
 Do not use this README as the model registry; check [system_overview.md](../Documentation/system_overview.md) and runtime configuration for the authoritative values.

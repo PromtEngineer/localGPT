@@ -106,7 +106,6 @@ curl http://localhost:11434/api/tags
 ollama serve
 
 # Install required models
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 ```
 
@@ -215,7 +214,7 @@ docker stats --no-stream
 docker stats
 
 # Use smaller models if needed
-ollama pull qwen3:0.6b  # Instead of qwen3:8b
+ollama pull llama3.2      # Smaller fallback option
 ```
 
 #### Problem: System running slow
@@ -512,7 +511,7 @@ top   # macOS/Windows
 ### Performance Tuning
 ```bash
 # Use smaller models for better performance
-ollama pull qwen3:0.6b  # Instead of qwen3:8b
+ollama pull llama3.2      # Smaller fallback option
 
 # Reduce Docker memory if needed
 # Docker Desktop → Settings → Resources → Memory

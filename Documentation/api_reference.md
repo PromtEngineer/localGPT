@@ -79,8 +79,8 @@ _Last updated: 2025-01-07_
   "window_size": 2,                           // Optional – context window
   "enable_enrich": true,                      // Optional – enable enrichment
   "embedding_model": "Qwen/Qwen3-Embedding-0.6B",  // Optional – embedding model
-  "enrich_model": "qwen3:0.6b",               // Optional – enrichment model
-  "overview_model_name": "qwen3:0.6b",        // Optional – overview model
+  "enrich_model": "qwen3:8b",               // Optional – enrichment model
+  "overview_model_name": "qwen3:8b",        // Optional – overview model
   "batch_size_embed": 50,                     // Optional – embedding batch size
   "batch_size_enrich": 25                     // Optional – enrichment batch size
 }
@@ -149,8 +149,8 @@ The React/Next.js frontend calls the backend via a typed wrapper. Important meth
   "windowSize": 2,
   "enableEnrich": true,
   "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
-  "enrichModel": "qwen3:0.6b",
-  "overviewModel": "qwen3:0.6b",
+  "enrichModel": "qwen3:8b",
+  "overviewModel": "qwen3:8b",
   "batchSizeEmbed": 64,
   "batchSizeEnrich": 32
 }

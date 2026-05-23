@@ -46,7 +46,6 @@ curl -fsSL https://ollama.ai/install.sh | sh
 ollama serve
 
 # Install models (in another terminal)
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 ```
 
@@ -109,7 +108,6 @@ curl -fsSL https://ollama.ai/install.sh | sh
 ollama serve
 
 # Install models (in another terminal)
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 ```
 

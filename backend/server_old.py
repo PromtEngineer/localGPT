@@ -445,7 +445,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
             # Use Ollama to make the routing decision
             response = self.ollama_client.chat(
                 message=router_prompt,
-                model="qwen3:0.6b",  # Fast model for routing
+                model="qwen3:8b",  # Quality local model for routing
                 enable_thinking=False  # Fast routing
             )
             
@@ -527,7 +527,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
             conversation_history = db.get_conversation_history(session_id)
             
             # Use the session's model or default
-            model = session.get('model', 'qwen3:8b')  # Default to fast model
+            model = session.get('model', 'qwen3:8b')  # Default local model
             
             # Direct Ollama call with thinking disabled for speed
             response_text = self.ollama_client.chat(
@@ -787,8 +787,8 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
                     'retrieval_mode': 'hybrid',  # From default config
                     'window_size': 5,  # From default config
                     'embedding_model': 'Qwen/Qwen3-Embedding-0.6B',  # From default config
-                    'enrich_model': 'qwen3:0.6b',  # From default config
-                    'overview_model': 'qwen3:0.6b',  # From default config
+                    'enrich_model': 'qwen3:8b',  # From default config
+                    'overview_model': 'qwen3:8b',  # From default config
                     'enable_enrich': True,  # From default config
                     'latechunk': True,  # From default config
                     'docling_chunk': True,  # From default config

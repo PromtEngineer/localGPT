@@ -29,7 +29,7 @@ from rag_system.utils.ollama_client import OllamaClient
 OLLAMA_CONFIG = {
     "host": os.getenv("OLLAMA_HOST", "http://localhost:11434"),
     "generation_model": "qwen3:8b",  # Main text generation model
-    "enrichment_model": "qwen3:0.6b",  # Lightweight model for routing/enrichment
+    "enrichment_model": "qwen3:8b",  # Quality local model for routing/enrichment
 }
 
 # External Model Configuration (HuggingFace models used directly)

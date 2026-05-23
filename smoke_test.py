@@ -32,6 +32,7 @@ BACKEND  = "http://localhost:8000"
 RAG_API  = "http://localhost:8001"
 OLLAMA   = "http://localhost:11434"
 FRONTEND = "http://localhost:3000"
+DEFAULT_GENERATION_MODEL = "qwen3:8b"
 
 # ---------------------------------------------------------------------------
 # Result state
@@ -157,7 +158,7 @@ def _pick_model(state: RunState) -> str | None:
     try:
         models = _health(state).get("available_models") or []
         if models:
-            state.first_model = models[0]
+            state.first_model = DEFAULT_GENERATION_MODEL if DEFAULT_GENERATION_MODEL in models else models[0]
             return state.first_model
     except Exception:
         pass
@@ -291,7 +292,8 @@ def _section_sessions(state: RunState) -> None:
 
     def chk_get():
         r = _get(f"{BACKEND}/sessions/{sid}")
-        ok = r.status_code == 200 and r.json().get("id") == sid
+        body = r.json() if r.status_code == 200 else {}
+        ok = r.status_code == 200 and body.get("session", {}).get("id") == sid
         return ok, "" if ok else f"HTTP {r.status_code}"
 
     def chk_list():

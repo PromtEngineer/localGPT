@@ -36,7 +36,7 @@ flowchart TD
    * Re-evaluates using richer features (e.g., token count, query type).
 3. **Overviews Phase** (`_route_using_overviews()`)
    * Loads JSONL overviews file per index.
-   * Calls enrichment model (`qwen3:0.6b`) with prompt: _"Does this overview mention … ? "_ → returns yes/no.
+   * Calls enrichment model (`qwen3:8b`) with prompt: _"Does this overview mention … ? "_ → returns yes/no.
 4. **LLM Router** (prompt lines 648-665)
    * JSON-only response `{ "route": "RAG" | "DIRECT" }`.
 

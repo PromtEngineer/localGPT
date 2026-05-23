@@ -236,7 +236,7 @@ class QueryDecomposer:
         
         response = self.llm_client.complete(
             prompt=decomposition_prompt,
-            model=self.enrichment_model  # qwen3:0.6b for speed
+            model=self.enrichment_model  # qwen3:8b for quality
         )
         
         # Parse response into list of sub-queries
@@ -553,7 +553,7 @@ RETRIEVAL_CONFIG = {
 MODEL_CONFIG = {
     "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
     "generation_model": "qwen3:8b",
-    "enrichment_model": "qwen3:0.6b",
+    "enrichment_model": "qwen3:8b",
     "reranker_model": "answerdotai/answerai-colbert-small-v1",
     "fallback_reranker": "BAAI/bge-reranker-base"
 }

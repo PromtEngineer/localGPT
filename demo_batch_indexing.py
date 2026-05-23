@@ -64,8 +64,8 @@ class BatchIndexingDemo:
             self.pipeline_config,
             self.ollama_client,
             self.config.get("ollama_config", {
-                "generation_model": "qwen3:0.6b",
-                "embedding_model": "qwen3:0.6b"
+                "generation_model": "qwen3:8b",
+                "enrichment_model": "qwen3:8b"
             })
         )
     
@@ -283,7 +283,7 @@ def create_sample_config():
             "contextual_enricher": {
                 "enabled": True,
                 "window_size": 2,
-                "model_name": "qwen3:0.6b"
+                "model_name": "qwen3:8b"
             },
             "chunking": {
                 "chunk_size": 512,
@@ -307,8 +307,8 @@ def create_sample_config():
             }
         },
         "ollama_config": {
-            "generation_model": "qwen3:0.6b",
-            "embedding_model": "qwen3:0.6b"
+            "generation_model": "qwen3:8b",
+            "enrichment_model": "qwen3:8b"
         },
         "indexes": [
             {

@@ -77,14 +77,13 @@ ollama --version
 ollama serve
 
 # In another terminal, install required models
-ollama pull qwen3:0.6b      # Fast model (650MB)
-ollama pull qwen3:8b        # High-quality model (4.7GB)
+ollama pull qwen3:8b      # Default local model
 
 # Verify models are installed
 ollama list
 
 # Test Ollama
-ollama run qwen3:0.6b "Hello, how are you?"
+ollama run qwen3:8b "Hello, how are you?"
 ```
 
 **⚠️ Important**: Keep Ollama running (`ollama serve`) for the entire setup process.
@@ -281,7 +280,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 #### **Model Configuration**
 The system defaults to these models:
 - **Embedding**: `Qwen/Qwen3-Embedding-0.6B` (1024 dimensions)
-- **Generation**: `qwen3:0.6b` for fast responses, `qwen3:8b` for quality
+- **Generation**: `qwen3:8b` for the default local quality model
 - **Reranking**: Built-in cross-encoder
 
 ### 5.3 Database Initialization
@@ -380,7 +379,6 @@ pkill ollama
 ollama serve
 
 # Reinstall models if needed
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 ```
 
@@ -432,7 +430,7 @@ vm_stat  # macOS
 # Docker Desktop → Settings → Resources → Memory → 8GB+
 
 # Use smaller models
-ollama pull qwen3:0.6b  # Instead of qwen3:8b
+ollama pull llama3.2      # Smaller fallback option
 ```
 
 #### **Slow Performance:**

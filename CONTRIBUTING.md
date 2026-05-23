@@ -32,7 +32,6 @@ Thank you for your interest in contributing to LocalGPT! This guide will help yo
    
    # Install Ollama and models
    curl -fsSL https://ollama.ai/install.sh | sh
-   ollama pull qwen3:0.6b
    ollama pull qwen3:8b
    ```
 

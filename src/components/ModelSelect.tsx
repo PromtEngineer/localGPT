@@ -22,9 +22,9 @@ export function ModelSelect({ value, onChange, type, className, placeholder }: P
         if (!mounted) return;
         const list = type === 'generation' ? res.generation_models : res.embedding_models;
         setModels(list);
-        // Auto-select default qwen3:0.6b if available and not chosen yet
-        if(!value && list.includes('qwen3:0.6b')){
-          onChange('qwen3:0.6b');
+        // Auto-select the default local model if available and not chosen yet
+        if(!value && list.includes('qwen3:8b')){
+          onChange('qwen3:8b');
         }
         setLoading(false);
       })

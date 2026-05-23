@@ -126,7 +126,7 @@ class BackendApiContractTests(unittest.TestCase):
             mock_get.return_value.status_code = 200
             ready_response = self.client.post(
                 f"/indexes/{index_id}/build/preflight",
-                json={"enrichModel": "gpt-oss:120b-cloud", "overviewModel": "qwen3:0.6b"},
+                json={"enrichModel": "gpt-oss:120b-cloud", "overviewModel": "qwen3:8b"},
             )
 
         self.assertEqual(ready_response.status_code, 200)

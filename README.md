@@ -107,7 +107,6 @@ cd localGPT
 
 # Install Ollama locally (required even for Docker)
 curl -fsSL https://ollama.ai/install.sh | sh
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 
 # Start Ollama
@@ -155,7 +154,6 @@ npm install
 
 # Install and start Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
-ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 ollama serve
 
@@ -245,9 +243,8 @@ brew install python@3.8 node npm docker docker-compose
 # Install Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
 
-# Pull recommended models
-ollama pull qwen3:0.6b          # Fast generation model
-ollama pull qwen3:8b            # High-quality generation model
+# Pull recommended model
+ollama pull qwen3:8b          # Default local generation/routing model
 ```
 
 #### 3. Configure Environment
@@ -276,7 +273,7 @@ RAG_API_PORT=8001
 
 # Optional: Override default models
 GENERATION_MODEL=qwen3:8b
-ENRICHMENT_MODEL=qwen3:0.6b
+ENRICHMENT_MODEL=qwen3:8b
 EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
 RERANKER_MODEL=answerdotai/answerai-colbert-small-v1
 ```
@@ -393,7 +390,7 @@ LocalGPT supports multiple AI model providers with centralized configuration:
 OLLAMA_CONFIG = {
     "host": "http://localhost:11434",
     "generation_model": "qwen3:8b",        # Main text generation
-    "enrichment_model": "qwen3:0.6b"       # Lightweight routing/enrichment
+    "enrichment_model": "qwen3:8b"       # Quality local routing/enrichment
 }
 ```
 
@@ -493,7 +490,7 @@ ollama list
 curl http://localhost:11434/api/tags
 
 # Pull missing models
-ollama pull qwen3:0.6b
+ollama pull qwen3:8b
 ```
 
 #### Database Issues
@@ -616,7 +613,7 @@ POST /sessions
 Content-Type: application/json
 {
   "title": "My Session",
-  "model": "qwen3:0.6b"
+  "model": "qwen3:8b"
 }
 
 # Get all sessions
@@ -722,7 +719,7 @@ python demo_batch_indexing.py --config batch_indexing_config.json
     "enable_latechunk": true,
     "enable_docling": true,
     "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
-    "generation_model": "qwen3:0.6b",
+    "generation_model": "qwen3:8b",
     "retrieval_mode": "hybrid",
     "window_size": 2
   }
@@ -846,7 +843,7 @@ npm install
 
 # Install Ollama and models
 curl -fsSL https://ollama.ai/install.sh | sh
-ollama pull qwen3:0.6b qwen3:8b
+ollama pull qwen3:8b
 
 # Verify setup
 python system_health_check.py
