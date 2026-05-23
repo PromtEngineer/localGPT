@@ -696,7 +696,7 @@ class ChatDatabase:
         conn.row_factory = sqlite3.Row
         rows = conn.execute('''
             SELECT * FROM index_jobs
-            WHERE status IN ('queued', 'running')
+            WHERE status IN ('queued', 'running', 'building')
             ORDER BY created_at
         ''').fetchall()
         jobs = []

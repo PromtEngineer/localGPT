@@ -456,11 +456,11 @@ def _recover_stale_index_builds() -> int:
             continue
 
         db.update_index_metadata(idx["id"], {
-            "status": "failed",
-            "build_failed_at": now.isoformat(),
+            "status": "paused",
+            "build_paused_at": now.isoformat(),
             "build_error": (
                 "Previous build was interrupted or the backend restarted before the "
-                "background job could finish. Start a rebuild to continue."
+                "background job could finish. Resume the build to continue."
             ),
         })
         recovered += 1
@@ -476,12 +476,10 @@ def _recover_stale_index_builds() -> int:
         if started_at and now - started_at < STALE_BUILD_AFTER:
             continue
         db.update_index_job(job["id"], {
-            "status": "failed",
-            "stage": "failed",
-            "progress": 100,
-            "message": "Build interrupted by backend restart",
+            "status": "paused",
+            "stage": "paused",
+            "message": "Build interrupted by backend restart; resume to continue.",
             "error": "Previous build was interrupted or the backend restarted before the background job could finish.",
-            "finished_at": now.isoformat(),
         })
     return recovered
 
@@ -1129,13 +1127,16 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     enable_enrich = bool(data.get('enableEnrich', True))
     embedding_model = data.get('embeddingModel')
     enrich_model = data.get('enrichModel')
+    enrich_provider = data.get('enrichProvider', 'ollama')
+    enrich_api_key = data.get('enrichApiKey')  # never stored in DB
     batch_size_embed = int(data.get('batchSizeEmbed', 50))
     batch_size_enrich = int(data.get('batchSizeEnrich', 25))
     overview_model = data.get('overviewModel')
     force_reindex = bool(data.get('forceReindex', False))
     indexing_model_warnings = []
 
-    if _large_indexing_model(enrich_model):
+    # Guard only applies to local Ollama models; cloud providers manage their own quotas
+    if enrich_provider == 'ollama' and _large_indexing_model(enrich_model):
         indexing_model_warnings.append(
             f"Replaced enrichment model '{enrich_model}' with qwen3:0.6b for indexing safety."
         )
@@ -1177,6 +1178,10 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         payload["embedding_model"] = embedding_model
     if enrich_model:
         payload["enrich_model"] = enrich_model
+    if enrich_provider and enrich_provider != 'ollama':
+        payload["enrich_provider"] = enrich_provider
+        if enrich_api_key:
+            payload["enrich_api_key"] = enrich_api_key
     if overview_model:
         payload["overview_model_name"] = overview_model
     if job_id:
@@ -1761,10 +1766,33 @@ async def resume_index_job(job_id: str):
         raise HTTPException(status_code=503, detail="Job persistence not available")
     
     try:
+        job = _get_index_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Index job not found")
+        if job.get("status") in {"queued", "running"}:
+            return {
+                "job_id": job_id,
+                "status": job.get("status"),
+                "message": "Job is already queued or running",
+            }
+
         result = job_progress_tracker.mark_job_resuming(job_id)
         if result.get("error"):
             raise HTTPException(status_code=404, detail=result["error"])
+        with index_jobs_lock:
+            index_jobs[job_id] = {
+                **job,
+                "status": "queued",
+                "stage": "queued",
+                "progress": max(int(job.get("progress") or 0), 0),
+                "message": "Resume queued",
+                "cancel_requested": False,
+            }
+        thread = threading.Thread(target=_run_index_build_job, args=(job_id,), daemon=True)
+        thread.start()
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error resuming job: {str(e)}")
 

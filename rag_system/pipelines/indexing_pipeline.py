@@ -21,6 +21,11 @@ from rag_system.indexing.overview_builder import OverviewBuilder
 from rag_system.utils.incremental_indexer import IncrementalIndexer
 from rag_system.utils.logging_utils import indexing_logger, PerformanceTimer
 
+try:
+    from rag_system.job_persistence import JobProgressTracker
+except Exception:  # pragma: no cover - job persistence is optional for standalone runs
+    JobProgressTracker = None
+
 
 def convert_and_chunk_document(file_path: str, document_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
     try:
@@ -141,7 +146,7 @@ class IndexingPipeline:
         
         # Get batch processing configuration
         indexing_config = self.config.get("indexing", {})
-        self.embedding_batch_size = indexing_config.get("embedding_batch_size", 50)
+        self.embedding_batch_size = indexing_config.get("embedding_batch_size", 8)
         self.enrichment_batch_size = indexing_config.get("enrichment_batch_size", 10)
         self.enable_progress_tracking = indexing_config.get("enable_progress_tracking", True)
         self.conversion_timeout_seconds = indexing_config.get("conversion_timeout_seconds", 180)
@@ -189,9 +194,21 @@ class IndexingPipeline:
                 self.ollama_config["generation_model"]  # Final fallback
             )
             indexing_logger.info("enrichment_model", model=enrichment_model)
-            
+
+            enrich_provider = self.config.get("enrich_provider", "ollama")
+            if enrich_provider != "ollama":
+                from rag_system.utils.cloud_clients import create_enrichment_client
+                enrichment_client = create_enrichment_client(
+                    provider=enrich_provider,
+                    api_key=self.config.get("enrich_api_key"),
+                    ollama_client=self.llm_client,
+                )
+                indexing_logger.info("enrichment_provider", provider=enrich_provider)
+            else:
+                enrichment_client = self.llm_client
+
             self.contextual_enricher = ContextualEnricher(
-                llm_client=self.llm_client,
+                llm_client=enrichment_client,
                 llm_model=enrichment_model,
                 batch_size=self.enrichment_batch_size,
                 timeout=self.enrichment_timeout_seconds,
@@ -230,7 +247,8 @@ class IndexingPipeline:
     def run(self, file_paths: List[str] | None = None, *, documents: List[str] | None = None,
             index_id: str = "default", incremental: bool = True, force_reindex: bool = False,
             progress_callback: Callable[..., None] | None = None,
-            cancel_callback: Callable[[], bool] | None = None):
+            cancel_callback: Callable[[], bool] | None = None,
+            job_id: str | None = None):
         """
         Processes and indexes documents based on the pipeline's configuration.
         Supports incremental indexing to avoid re-processing unchanged documents.
@@ -265,6 +283,39 @@ class IndexingPipeline:
                 indexing_logger.warning("indexing_cancelled", index_id=index_id)
                 report("cancelled", 100, "Indexing cancelled")
                 raise RuntimeError("indexing_cancelled")
+
+        tracker = None
+        if job_id and JobProgressTracker is not None:
+            try:
+                tracker = JobProgressTracker(db_path=self.config.get("db_path", "backend/chat_data.db"))
+            except Exception as e:
+                indexing_logger.warning("job_progress_tracker_unavailable", job_id=job_id, error=str(e))
+
+        def stage_output_hash(value: Any) -> str:
+            try:
+                payload = json.dumps(value, sort_keys=True, default=str)
+            except Exception:
+                payload = str(value)
+            return hashlib.sha256(payload.encode("utf-8", errors="replace")).hexdigest()
+
+        def start_tracked_stage(file_id: Optional[int], stage: str) -> bool:
+            if not tracker or not job_id or file_id is None:
+                return False
+            if not force_reindex and tracker.should_skip_stage(file_id, stage):
+                return True
+            tracker.start_stage(file_id, job_id, stage)
+            return False
+
+        def complete_tracked_stage(file_id: Optional[int], stage: str, output: Any = None) -> None:
+            if tracker and file_id is not None:
+                tracker.complete_stage(file_id, stage, output_hash=stage_output_hash(output) if output is not None else None)
+
+        def fail_tracked_stage(file_id: Optional[int], stage: Optional[str], error: Exception | str) -> None:
+            if tracker and file_id is not None and stage:
+                try:
+                    tracker.fail_stage(file_id, stage, str(error))
+                except Exception as track_error:
+                    indexing_logger.warning("stage_failure_tracking_failed", stage=stage, error=str(track_error))
 
         report("planning", 8, "Checking changed files")
         check_cancelled()
@@ -318,6 +369,7 @@ class IndexingPipeline:
         total_chunks = 0
         processed_files = 0
         failed_files = 0
+        skipped_completed_files = 0
         chunk_cache_hits = 0
         graph_chunks = []
 
@@ -327,8 +379,26 @@ class IndexingPipeline:
                 document_id = os.path.basename(file_path)
                 file_base_progress = 10 + int(((file_idx - 1) / max(len(files_to_index), 1)) * 80)
                 file_done_progress = 10 + int((file_idx / max(len(files_to_index), 1)) * 80)
+                file_id = None
+                active_stage = None
                 try:
                     check_cancelled()
+                    if tracker and job_id:
+                        file_id = tracker.get_or_create_file_record(job_id, index_id, file_path, document_id)
+                        if file_id is not None and not force_reindex and tracker.should_skip_stage(file_id, "storage"):
+                            skipped_completed_files += 1
+                            indexing_logger.info("skipping_previously_completed_file", document_id=document_id, job_id=job_id)
+                            report(
+                                "indexing",
+                                file_done_progress,
+                                f"Skipped previously indexed {document_id}",
+                                file_path=file_path,
+                                filename=document_id,
+                                document_id=document_id,
+                                file_status="done",
+                            )
+                            continue
+
                     report(
                         "converting",
                         file_base_progress,
@@ -347,8 +417,20 @@ class IndexingPipeline:
                     if _chunk_cache_hit:
                         chunk_cache_hits += 1
                         indexing_logger.info("chunk_cache_hit", document_id=document_id, file_path=file_path)
+                        if file_id is not None:
+                            if not tracker.should_skip_stage(file_id, "conversion"):
+                                active_stage = "conversion"
+                                tracker.start_stage(file_id, job_id, active_stage)
+                                complete_tracked_stage(file_id, active_stage, {"file_hash": _file_hash, "cache": True})
+                            if not tracker.should_skip_stage(file_id, "chunking"):
+                                active_stage = "chunking"
+                                tracker.start_stage(file_id, job_id, active_stage)
+                                complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks), "cache": True})
+                            active_stage = None
                     else:
                         check_cancelled()
+                        active_stage = "conversion"
+                        conversion_completed = start_tracked_stage(file_id, active_stage)
                         report(
                             "chunking",
                             file_base_progress + 3,
@@ -358,8 +440,15 @@ class IndexingPipeline:
                             document_id=document_id,
                             file_status="processing",
                         )
+                        if conversion_completed:
+                            indexing_logger.info("conversion_stage_marked_complete_but_cache_missing", document_id=document_id)
                         file_chunks = self._convert_and_chunk_file(file_path, document_id)
+                        complete_tracked_stage(file_id, "conversion", {"file_hash": _file_hash})
+                        active_stage = "chunking"
+                        if not start_tracked_stage(file_id, active_stage):
+                            complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
                         self._save_chunk_cache(cache_key, file_chunks)
+                        active_stage = None
 
                     for i, chunk in enumerate(file_chunks):
                         chunk.setdefault("text", "")
@@ -370,6 +459,8 @@ class IndexingPipeline:
                     if not file_chunks:
                         indexing_logger.warning("file_no_chunks", document_id=document_id)
                         failed_files += 1
+                        if tracker and file_id is not None:
+                            tracker.mark_file_failed(file_id, "No chunks generated", error_code="chunking_empty")
                         report(
                             "indexing",
                             file_done_progress,
@@ -384,24 +475,32 @@ class IndexingPipeline:
                         continue
 
                     check_cancelled()
-                    report(
-                        "overview",
-                        file_base_progress + 5,
-                        f"Generating overview for {document_id}",
-                        file_path=file_path,
-                        filename=document_id,
-                        document_id=document_id,
-                        file_status="processing",
-                    )
-                    try:
-                        self.overview_builder.build_and_store(
-                            document_id, file_chunks, force=not _chunk_cache_hit
+                    active_stage = "overview"
+                    overview_completed = start_tracked_stage(file_id, active_stage)
+                    if not overview_completed:
+                        report(
+                            "overview",
+                            file_base_progress + 5,
+                            f"Generating overview for {document_id}",
+                            file_path=file_path,
+                            filename=document_id,
+                            document_id=document_id,
+                            file_status="processing",
                         )
-                    except Exception as e:
-                        indexing_logger.warning("overview_creation_failed", document_id=document_id, error=str(e))
+                        try:
+                            self.overview_builder.build_and_store(
+                                document_id, file_chunks, force=not _chunk_cache_hit
+                            )
+                            complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
+                        except Exception as e:
+                            fail_tracked_stage(file_id, active_stage, e)
+                            indexing_logger.warning("overview_creation_failed", document_id=document_id, error=str(e))
+                    active_stage = None
 
                     check_cancelled()
                     if hasattr(self, 'contextual_enricher') and enricher_enabled:
+                        active_stage = "enrichment"
+                        enrichment_completed = start_tracked_stage(file_id, active_stage)
                         report(
                             "enriching",
                             file_base_progress + 8,
@@ -414,13 +513,18 @@ class IndexingPipeline:
                         window_size = enricher_config.get("window_size", 1)
                         _pre_enrich_chunks = file_chunks
                         try:
+                            if enrichment_completed:
+                                indexing_logger.info("enrichment_stage_completed_previously_rerunning_for_chunks", document_id=document_id)
                             file_chunks = self.contextual_enricher.enrich_chunks(file_chunks, window_size=window_size)
                             if not file_chunks:
                                 indexing_logger.warning("enrichment_returned_empty", document_id=document_id, reverting=True)
                                 file_chunks = _pre_enrich_chunks
+                            complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
                         except Exception as _enrich_err:
+                            fail_tracked_stage(file_id, active_stage, _enrich_err)
                             indexing_logger.error("enrichment_failed", document_id=document_id, error=str(_enrich_err), reverting=True)
                             file_chunks = _pre_enrich_chunks
+                        active_stage = None
                     else:
                         indexing_logger.warning(
                             "contextual_enrichment_skipped",
@@ -429,6 +533,8 @@ class IndexingPipeline:
                         )
 
                     check_cancelled()
+                    active_stage = "embedding"
+                    embedding_completed = start_tracked_stage(file_id, active_stage)
                     report(
                         "embedding",
                         file_base_progress + 12,
@@ -440,8 +546,13 @@ class IndexingPipeline:
                         chunks_generated=len(file_chunks),
                     )
                     if hasattr(self, 'vector_indexer') and hasattr(self, 'embedding_generator'):
+                        if embedding_completed:
+                            indexing_logger.info("embedding_stage_completed_previously_rerunning_for_storage", document_id=document_id)
                         embeddings = self.embedding_generator.generate(file_chunks)
+                        complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
                         check_cancelled()
+                        active_stage = "storage"
+                        storage_completed = start_tracked_stage(file_id, active_stage)
                         report(
                             "storing",
                             file_base_progress + 16,
@@ -452,17 +563,20 @@ class IndexingPipeline:
                             file_status="processing",
                             chunks_generated=len(file_chunks),
                         )
-                        if incremental and not force_reindex:
-                            self._delete_existing_documents_from_table(table_name, [document_id])
-                        self.vector_indexer.index(table_name, file_chunks, embeddings)
+                        if not storage_completed:
+                            if incremental and not force_reindex:
+                                self._delete_existing_documents_from_table(table_name, [document_id])
+                            self.vector_indexer.index(table_name, file_chunks, embeddings)
 
-                        if self.latechunk_enabled:
-                            lc_table_name = self.latechunk_cfg.get("lancedb_table_name", f"{table_name}_lc")
-                            lc_vecs = self._generate_latechunk_vectors(document_id, file_chunks)
-                            if lc_vecs is not None and len(lc_vecs) > 0:
-                                if incremental and not force_reindex:
-                                    self._delete_existing_documents_from_table(lc_table_name, [document_id])
-                                self.vector_indexer.index(lc_table_name, file_chunks, lc_vecs)
+                            if self.latechunk_enabled:
+                                lc_table_name = self.latechunk_cfg.get("lancedb_table_name", f"{table_name}_lc")
+                                lc_vecs = self._generate_latechunk_vectors(document_id, file_chunks)
+                                if lc_vecs is not None and len(lc_vecs) > 0:
+                                    if incremental and not force_reindex:
+                                        self._delete_existing_documents_from_table(lc_table_name, [document_id])
+                                    self.vector_indexer.index(lc_table_name, file_chunks, lc_vecs)
+                            complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks), "table": table_name})
+                        active_stage = None
 
                     self.incremental_indexer.update_document_metadata(
                         file_path, index_id, len(file_chunks), "index", file_hash=_file_hash
@@ -471,6 +585,8 @@ class IndexingPipeline:
                         graph_chunks.extend(file_chunks)
                     total_chunks += len(file_chunks)
                     processed_files += 1
+                    if tracker and file_id is not None:
+                        tracker.mark_file_done(file_id, chunks_generated=len(file_chunks))
                     indexing_logger.info("file_indexed", document_id=document_id, chunk_count=len(file_chunks), memory_mb=estimate_memory_usage(file_chunks))
                     report(
                         "indexing",
@@ -487,6 +603,9 @@ class IndexingPipeline:
                     if str(e) == "indexing_cancelled":
                         raise
                     failed_files += 1
+                    fail_tracked_stage(file_id, active_stage, e)
+                    if tracker and file_id is not None:
+                        tracker.mark_file_failed(file_id, str(e), error_code=f"{active_stage or 'processing'}_failed")
                     indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
                     report(
                         "indexing",
@@ -501,6 +620,9 @@ class IndexingPipeline:
                     continue
                 except Exception as e:
                     failed_files += 1
+                    fail_tracked_stage(file_id, active_stage, e)
+                    if tracker and file_id is not None:
+                        tracker.mark_file_failed(file_id, str(e), error_code=f"{active_stage or 'processing'}_failed")
                     indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
                     report(
                         "indexing",
@@ -643,9 +765,9 @@ class IndexingPipeline:
             self._worker.stdin.flush()
 
         raw = self._read_worker_response(self.conversion_timeout_seconds)
-        if not raw:
+        if not raw or not raw.strip():
             raise RuntimeError(f"Worker closed stdout unexpectedly for {document_id}")
-        result = json.loads(raw)
+        result = json.loads(raw.strip())
         if result.get("error"):
             raise RuntimeError(result["error"])
         return result.get("chunks", [])
@@ -715,7 +837,10 @@ class IndexingPipeline:
                     + (f": {stderr}" if stderr else "")
                 )
 
-            result = json.loads(output_path.read_text(encoding="utf-8"))
+            content = output_path.read_text(encoding="utf-8").strip()
+            if not content:
+                raise RuntimeError(f"Conversion worker produced empty output for {document_id} (process may have been OOM-killed)")
+            result = json.loads(content)
             if result.get("error"):
                 raise RuntimeError(result["error"])
             return result.get("chunks", [])

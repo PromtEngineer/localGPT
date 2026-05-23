@@ -1,0 +1,152 @@
+#!/bin/bash
+
+# LocalGPT Maintenance Tools Wrapper
+# Provides easy access to system maintenance functions
+
+set -e
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="$PROJECT_ROOT/maintenance_cli.py"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+show_usage() {
+    cat << EOF
+${BLUE}LocalGPT Maintenance Tools${NC}
+
+${GREEN}Usage:${NC}
+  $(basename $0) <command> [options]
+
+${GREEN}Commands:${NC}
+
+  ${YELLOW}repair-stuck-builds${NC}
+    Recover indexing jobs that are stuck/stale
+    Options: --older-than MINUTES (default: 30)
+    Example: $(basename $0) repair-stuck-builds --older-than 60
+
+  ${YELLOW}remove-orphan-files${NC}
+    Find and remove uploaded files not in any index
+    Options: --execute (default is dry-run)
+    Example: $(basename $0) remove-orphan-files --execute
+
+  ${YELLOW}delete-broken-indexes${NC}
+    Remove indexes with failed/empty status
+    Options: --execute, --health-status [unhealthy|warning|unhealthy_only]
+    Example: $(basename $0) delete-broken-indexes --execute
+
+  ${YELLOW}get-failed-files${NC} INDEX_ID
+    List files that failed in the latest build
+    Example: $(basename $0) get-failed-files my_index_id
+
+  ${YELLOW}rebuild-failed-files${NC} INDEX_ID
+    Prepare failed files for rebuild
+    Options: --force (rebuild all even if no failures)
+    Example: $(basename $0) rebuild-failed-files my_index_id
+
+  ${YELLOW}list-health${NC} [INDEX_ID]
+    View detailed health of all indexes or specific one
+    Example: $(basename $0) list-health
+    Example: $(basename $0) list-health my_index_id
+
+  ${YELLOW}export-diagnostics${NC}
+    Export logs, configs, and state for troubleshooting
+    Options: --output PATH, --no-logs, --no-config
+    Example: $(basename $0) export-diagnostics
+
+  ${YELLOW}help${NC}
+    Show this help message
+
+${GREEN}Common Tasks:${NC}
+
+  # Quick health check
+  $(basename $0) list-health
+
+  # Weekly maintenance (safe)
+  $(basename $0) repair-stuck-builds --older-than 120
+  $(basename $0) remove-orphan-files --execute
+  $(basename $0) list-health
+
+  # Troubleshoot an index
+  $(basename $0) get-failed-files my_index
+  $(basename $0) rebuild-failed-files my_index
+
+  # Collect diagnostics for support
+  $(basename $0) export-diagnostics
+
+${GREEN}More information:${NC}
+  See Documentation/maintenance_tools.md for detailed documentation
+
+EOF
+}
+
+# Check if help is requested
+if [[ "$1" == "help" ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ -z "$1" ]]; then
+    show_usage
+    exit 0
+fi
+
+# Convert command to Python format
+case "$1" in
+    repair-stuck-builds)
+        shift
+        python3 "$SCRIPT_PATH" repair-stuck-builds "$@"
+        ;;
+    remove-orphan-files)
+        shift
+        # Convert --execute to --mode execute
+        args=()
+        while [[ $# -gt 0 ]]; do
+            if [[ "$1" == "--execute" ]]; then
+                args+=(--mode execute)
+            elif [[ "$1" == "--dry-run" ]]; then
+                args+=(--mode dry_run)
+            else
+                args+=("$1")
+            fi
+            shift
+        done
+        python3 "$SCRIPT_PATH" remove-orphan-files "${args[@]}"
+        ;;
+    delete-broken-indexes)
+        shift
+        args=()
+        while [[ $# -gt 0 ]]; do
+            if [[ "$1" == "--execute" ]]; then
+                args+=(--mode execute)
+            elif [[ "$1" == "--dry-run" ]]; then
+                args+=(--mode dry_run)
+            else
+                args+=("$1")
+            fi
+            shift
+        done
+        python3 "$SCRIPT_PATH" delete-broken-indexes "${args[@]}"
+        ;;
+    get-failed-files)
+        shift
+        python3 "$SCRIPT_PATH" get-failed-files "$@"
+        ;;
+    rebuild-failed-files)
+        shift
+        python3 "$SCRIPT_PATH" rebuild-failed-files "$@"
+        ;;
+    list-health)
+        shift
+        python3 "$SCRIPT_PATH" list-health "$@"
+        ;;
+    export-diagnostics)
+        shift
+        python3 "$SCRIPT_PATH" export-diagnostics "$@"
+        ;;
+    *)
+        echo -e "${RED}Unknown command: $1${NC}"
+        echo ""
+        show_usage
+        exit 1
+        ;;
+esac

@@ -27,7 +27,15 @@ class VectorIndexer:
     def __init__(self, db_manager: LanceDBManager):
         self.db_manager = db_manager
 
-    def index(self, table_name: str, chunks: List[Dict[str, Any]], embeddings: np.ndarray):
+    def index(self, table_name: str, chunks: List[Dict[str, Any]], embeddings):
+        # Drop None placeholders left by OOM-killed embedding batches.
+        none_count = sum(1 for e in embeddings if e is None)
+        if none_count > 0:
+            print(f"⚠️ {none_count} chunks have no embedding (OOM batch failure); skipping them")
+            pairs = [(c, e) for c, e in zip(chunks, embeddings) if e is not None]
+            chunks = [p[0] for p in pairs]
+            embeddings = [p[1] for p in pairs]
+
         if len(chunks) != len(embeddings):
             raise ValueError("The number of chunks and embeddings must be the same.")
         if not chunks:

@@ -1,6 +1,5 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from rag_system.utils.ollama_client import OllamaClient
 from rag_system.ingestion.chunking import create_contextual_window
 import logging
 import re
@@ -29,17 +28,19 @@ Answer *only* with the succinct context and nothing else."""
 
 class ContextualEnricher:
     """
-    Enriches chunks with a prepended summary of their surrounding context using Ollama,
-    while preserving the original text.
+    Enriches chunks with a prepended summary of their surrounding context.
+    Works with any LLM backend (Ollama, Anthropic, OpenAI, Groq) as long as
+    the client implements generate_completion(model, prompt, **kwargs) -> {"response": str}.
     """
-    def __init__(self, llm_client: OllamaClient, llm_model: str, batch_size: int = 10,
+    def __init__(self, llm_client, llm_model: str, batch_size: int = 10,
                  timeout: int = 90, max_workers: int = 4):
         self.llm_client = llm_client
         self.llm_model = llm_model
         self.batch_size = batch_size
         self.timeout = timeout
         self.max_workers = max_workers
-        logger.info(f"Initialized ContextualEnricher with Ollama model '{self.llm_model}' (batch_size={batch_size}, timeout={timeout}s, max_workers={max_workers}).")
+        provider = type(llm_client).__name__
+        logger.info(f"Initialized ContextualEnricher with {provider} model '{self.llm_model}' (batch_size={batch_size}, timeout={timeout}s, max_workers={max_workers}).")
 
     def _generate_summary(self, local_context_text: str, chunk_text: str) -> str:
         """Generates a contextual summary using a structured, multi-part prompt."""

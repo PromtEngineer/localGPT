@@ -50,7 +50,7 @@ Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT.
 - **GPU, CPU, HPU & MPS Support**: Supports multiple platforms out of the box, Chat with your data using `CUDA`, `CPU`, `HPU (Intel® Gaudi®)` or `MPS` and more!
 
 ### 📖 Document Processing
-- **Multi-format Support**: PDF, DOCX, TXT, Markdown, and more (Currently only PDF is supported)
+- **Document Format Support**: PDF, TXT, Markdown, DOCX, and HTML are the primary supported indexing formats. Additional upload extensions may be accepted by the UI/API, but should be treated as experimental until conversion is validated for your files.
 - **Contextual Enrichment**: Enhanced document understanding with AI-generated context, inspired by [Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)
 - **Batch Processing**: Handle multiple documents simultaneously
 
@@ -308,7 +308,7 @@ An **index** is a collection of processed documents that you can chat with.
 #### Using the Web Interface:
 1. Open http://localhost:3000
 2. Click "Create New Index"
-3. Upload your documents (PDF, DOCX, TXT)
+3. Upload your documents (PDF, TXT, Markdown, DOCX, or HTML)
 4. Configure processing options
 5. Click "Build Index"
 

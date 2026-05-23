@@ -1,93 +1,57 @@
-# localGPT Backend
+# LocalGPT Backend
 
-Simple Python backend that connects your frontend to Ollama for local LLM chat.
+The backend is the API gateway for the current LocalGPT application. It runs on port `8000` and sits between the Next.js frontend, the RAG API server, Ollama, and the SQLite metadata database.
 
-## Prerequisites
+For the full architecture, start with:
+- [System overview](../Documentation/system_overview.md)
+- [API reference](../Documentation/api_reference.md)
+- [Quick start](../Documentation/quick_start.md)
 
-1. **Install Ollama** (if not already installed):
-   ```bash
-   # Visit https://ollama.ai or run:
-   curl -fsSL https://ollama.ai/install.sh | sh
-   ```
+## Role
 
-2. **Start Ollama**:
-   ```bash
-   ollama serve
-   ```
+`backend/server.py` is responsible for:
+- Chat session and message persistence
+- Index metadata, document uploads, and session/index linking
+- Background index build jobs and job progress endpoints
+- Maintenance endpoints for index repair, cleanup, and diagnostics
+- Routing chat requests to direct Ollama responses or the RAG API
 
-3. **Pull a model** (optional, server will suggest if needed):
-   ```bash
-   ollama pull llama3.2
-   ```
+The backend does not perform the heavy RAG indexing work itself. It delegates document processing and retrieval to the RAG API on port `8001`.
 
-## Setup
+## Main Services
 
-1. **Install Python dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+| Service | Port | Purpose |
+|---------|------|---------|
+| Frontend | `3000` | Next.js UI |
+| Backend | `8000` | API gateway, sessions, jobs, metadata |
+| RAG API | `8001` | Indexing, retrieval, generation pipeline |
+| Ollama | `11434` | Local model serving |
 
-2. **Test Ollama connection**:
-   ```bash
-   python ollama_client.py
-   ```
+## Start
 
-3. **Start the backend server**:
-   ```bash
-   python server.py
-   ```
+From the project root:
 
-Server will run on `http://localhost:8000`
-
-## API Endpoints
-
-### Health Check
 ```bash
-GET /health
+./start-localgpt
 ```
-Returns server status and available models.
 
-### Chat
+Or start only the backend after activating the Python environment:
+
 ```bash
-POST /chat
-Content-Type: application/json
-
-{
-  "message": "Hello!",
-  "model": "llama3.2:latest",
-  "conversation_history": []
-}
+python backend/server.py
 ```
 
-Returns:
-```json
-{
-  "response": "Hello! How can I help you?",
-  "model": "llama3.2:latest",
-  "message_count": 1
-}
-```
+## Health Check
 
-## Testing
-
-Test the chat endpoint:
 ```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Hello!", "model": "llama3.2:latest"}'
+curl http://localhost:8000/health
 ```
 
-## Frontend Integration
+## Current Model Defaults
 
-Your React frontend should connect to:
-- **Backend**: `http://localhost:8000`
-- **Chat endpoint**: `http://localhost:8000/chat`
+The current docs and launch scripts use Qwen/Ollama defaults such as:
+- Generation: `qwen3:8b`
+- Fast enrichment/routing: `qwen3:0.6b`
+- Embeddings: `Qwen/Qwen3-Embedding-0.6B`
 
-## What's Next
-
-This simple backend is ready for:
-- ✅ **Real-time chat** with local LLMs
-- 🔜 **Document upload** for RAG
-- 🔜 **Vector database** integration
-- 🔜 **Streaming responses**
-- 🔜 **Chat history** persistence 
+Do not use this README as the model registry; check [system_overview.md](../Documentation/system_overview.md) and runtime configuration for the authoritative values.

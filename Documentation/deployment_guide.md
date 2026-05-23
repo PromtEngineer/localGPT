@@ -102,8 +102,8 @@ brew install --cask docker
 
 #### **Step 2: Clone Repository**
 ```bash
-git clone https://github.com/your-org/rag-system.git
-cd rag-system
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 ```
 
 #### **Step 3: Install Ollama**
@@ -186,8 +186,8 @@ docker compose exec rag-api python -c "print('Hello')"
 **Python Dependencies:**
 ```bash
 # Clone repository
-git clone https://github.com/your-org/rag-system.git
-cd rag-system
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Create virtual environment (recommended)
 python -m venv venv
@@ -438,7 +438,7 @@ cp -r index_store backups/$(date +%Y%m%d)/
 
 # For Docker: also backup volumes
 docker compose down
-docker run --rm -v rag_system_old_ollama_data:/data -v $(pwd)/backups:/backup alpine tar czf /backup/ollama_models_$(date +%Y%m%d).tar.gz -C /data .
+docker run --rm -v localgpt_ollama_data:/data -v $(pwd)/backups:/backup alpine tar czf /backup/ollama_models_$(date +%Y%m%d).tar.gz -C /data .
 ```
 
 #### **Data Restore**

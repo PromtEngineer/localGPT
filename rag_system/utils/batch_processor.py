@@ -115,7 +115,9 @@ class BatchProcessor:
                 except Exception as e:
                     logger.error(f"Error in batch {batch_num}: {e}")
                     tracker.update(len(batch), errors=len(batch))
-                    # Continue processing other batches
+                    # Preserve length invariant: add None placeholders so callers
+                    # can zip(chunks, embeddings) and skip None entries.
+                    results.extend([None] * len(batch))
                     continue
                 
                 # Optional garbage collection to manage memory

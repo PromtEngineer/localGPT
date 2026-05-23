@@ -4,7 +4,7 @@ import { GlassInput } from '@/components/ui/GlassInput';
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { AccordionGroup } from '@/components/ui/AccordionGroup';
 import { ModelSelect } from '@/components/ModelSelect';
-import { chatAPI, ChatSession, IndexBuildOptions, IndexJob } from '@/lib/api';
+import { chatAPI, ChatSession, EnrichProvider, IndexBuildOptions, IndexJob } from '@/lib/api';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 
 interface Props {
@@ -16,6 +16,13 @@ type IndexingProfile = 'fast' | 'balanced' | 'maximum';
 
 const DEFAULT_INDEXING_LLM = 'qwen3:0.6b';
 const LARGE_INDEXING_MODEL_RE = /(gpt-oss|120b|70b|large|cloud)/i;
+
+const ENRICH_PROVIDERS: { id: EnrichProvider; label: string; defaultModel: string; hint: string }[] = [
+  { id: 'ollama',    label: 'Ollama',   defaultModel: 'qwen3:0.6b',               hint: 'Local model, no API key needed' },
+  { id: 'groq',     label: 'Groq',     defaultModel: 'llama-3.1-8b-instant',      hint: 'Free cloud tier, very fast' },
+  { id: 'openai',   label: 'ChatGPT',  defaultModel: 'gpt-4o-mini',               hint: 'OpenAI API key required' },
+  { id: 'anthropic', label: 'Claude',  defaultModel: 'claude-haiku-4-5-20251001', hint: 'Anthropic API key required' },
+];
 
 const INDEXING_PROFILES: Record<IndexingProfile, {
   label: string;
@@ -101,6 +108,8 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const [buildJob, setBuildJob] = useState<IndexJob | null>(null);
   const [enableLateChunk, setEnableLateChunk] = useState(INDEXING_PROFILES.balanced.enableLateChunk);
   const [enableDoclingChunk, setEnableDoclingChunk] = useState(INDEXING_PROFILES.balanced.enableDoclingChunk);
+  const [enrichProvider, setEnrichProvider] = useState<EnrichProvider>('ollama');
+  const [enrichApiKey, setEnrichApiKey] = useState('');
 
   const selectedFiles = files ? Array.from(files) : [];
   const totalBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
@@ -127,6 +136,13 @@ export function IndexForm({ onClose, onIndexed }: Props) {
     setOverviewModel(DEFAULT_INDEXING_LLM);
   };
 
+  const handleProviderChange = (p: EnrichProvider) => {
+    setEnrichProvider(p);
+    setEnrichApiKey('');
+    const providerDef = ENRICH_PROVIDERS.find(x => x.id === p);
+    if (providerDef) setEnrichModel(providerDef.defaultModel);
+  };
+
   const buildOptions = (): IndexBuildOptions => ({
     latechunk: enableLateChunk,
     doclingChunk: enableDoclingChunk,
@@ -137,6 +153,8 @@ export function IndexForm({ onClose, onIndexed }: Props) {
     enableEnrich,
     embeddingModel,
     enrichModel,
+    enrichProvider,
+    enrichApiKey: enrichApiKey || undefined,
     overviewModel,
     batchSizeEmbed,
     batchSizeEnrich: Math.max(1, Math.min(batchSizeEnrich, 8)),
@@ -370,21 +388,88 @@ export function IndexForm({ onClose, onIndexed }: Props) {
             <span className="text-xs text-gray-400">Enable</span>
             <GlassToggle checked={enableEnrich} onChange={setEnableEnrich} />
           </div>
-          <div className="grid grid-cols-2 gap-4 mt-3">
-            <div>
-              <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Context window <InfoTooltip text="Number of neighbour chunks included when enriching context." size={12} /></label>
-              <GlassInput type="number" value={windowSize} onChange={(e)=>setWindowSize(parseInt(e.target.value))} />
+
+          {enableEnrich && (
+            <div className="mt-3 space-y-3">
+              {/* Provider selector */}
+              <div>
+                <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">
+                  Enrichment provider
+                  <InfoTooltip text="Ollama runs locally (free, slower). Cloud providers are fast and offload GPU usage so embedding stays fast. API key is used only during indexing." size={12} />
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  {ENRICH_PROVIDERS.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      title={p.hint}
+                      onClick={() => handleProviderChange(p.id)}
+                      className={`px-3 py-1.5 rounded text-xs font-medium transition ${
+                        enrichProvider === p.id
+                          ? 'bg-green-500/25 border border-green-400 text-white'
+                          : 'bg-white/5 border border-white/10 text-gray-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                {enrichProvider !== 'ollama' && (
+                  <p className="mt-1 text-[11px] text-green-300">
+                    {ENRICH_PROVIDERS.find(p => p.id === enrichProvider)?.hint}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Context window <InfoTooltip text="Number of neighbour chunks included when enriching context." size={12} /></label>
+                  <GlassInput type="number" value={windowSize} onChange={(e)=>setWindowSize(parseInt(e.target.value))} />
+                </div>
+                <div>
+                  <label className="block text-xs mb-1 text-gray-400">Model</label>
+                  {enrichProvider === 'ollama' ? (
+                    <ModelSelect
+                      value={enrichModel}
+                      onChange={setEnrichModel}
+                      type="generation"
+                      placeholder="Select retrieval LLM"
+                    />
+                  ) : (
+                    <GlassInput
+                      value={enrichModel}
+                      onChange={(e) => setEnrichModel(e.target.value)}
+                      placeholder={ENRICH_PROVIDERS.find(p => p.id === enrichProvider)?.defaultModel}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {enrichProvider !== 'ollama' && (
+                <div>
+                  <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">
+                    API key
+                    <InfoTooltip text="Used only during indexing. Not stored in the database." size={12} />
+                  </label>
+                  <GlassInput
+                    type="password"
+                    value={enrichApiKey}
+                    onChange={(e) => setEnrichApiKey(e.target.value)}
+                    placeholder={`${enrichProvider.toUpperCase()}_API_KEY (or set env var)`}
+                  />
+                </div>
+              )}
             </div>
-            <div>
-              <label className="block text-xs mb-1 text-gray-400">Retrieval LLM</label>
-              <ModelSelect 
-                value={enrichModel}
-                onChange={setEnrichModel}
-                type="generation"
-                placeholder="Select retrieval LLM"
-              />
+          )}
+
+          {!enableEnrich && (
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <div>
+                <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Context window <InfoTooltip text="Number of neighbour chunks included when enriching context." size={12} /></label>
+                <GlassInput type="number" value={windowSize} onChange={(e)=>setWindowSize(parseInt(e.target.value))} />
+              </div>
             </div>
-          </div>
+          )}
         </AccordionGroup>
       </div>
 

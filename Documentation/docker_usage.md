@@ -39,8 +39,8 @@ This guide provides practical Docker commands and procedures for running the RAG
 
 ```bash
 # Clone repository
-git clone <your-repository-url>
-cd rag_system_old
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Verify Docker is running
 docker version
@@ -321,7 +321,7 @@ docker volume ls
 docker system df -v
 
 # Backup volumes
-docker run --rm -v rag_system_old_lancedb:/data -v $(pwd)/backup:/backup alpine tar czf /backup/lancedb_backup.tar.gz -C /data .
+docker run --rm -v localgpt_lancedb:/data -v $(pwd)/backup:/backup alpine tar czf /backup/lancedb_backup.tar.gz -C /data .
 
 # Clean unused volumes
 docker volume prune
@@ -467,7 +467,7 @@ docker compose up -d --scale backend=2 --scale rag-api=2
 
 # Use Docker Swarm for clustering
 docker swarm init
-docker stack deploy -c docker-compose.yml rag-system
+docker stack deploy -c docker-compose.yml localgpt
 ```
 
 ### 8.3 Security

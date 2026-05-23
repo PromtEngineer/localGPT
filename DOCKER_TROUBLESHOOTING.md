@@ -117,7 +117,7 @@ docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
 
 # If this fails, check Docker network settings
 docker network ls
-docker network inspect rag_system_old_default
+docker network inspect localgpt_default
 ```
 
 #### Solution C: Alternative Ollama Host

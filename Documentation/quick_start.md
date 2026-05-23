@@ -27,8 +27,8 @@ Best for: Development, customization, debugging, faster iteration
 
 ```bash
 # Clone repository
-git clone <your-repository-url>
-cd rag_system_old
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Ensure Docker is running
 docker version
@@ -89,8 +89,8 @@ Open your browser to: **http://localhost:3000**
 
 ```bash
 # Clone repository
-git clone <your-repository-url>
-cd rag_system_old
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 
 # Install Python dependencies
 pip install -r requirements.txt
@@ -313,7 +313,7 @@ You're ready to start using LocalGPT!
 ### 📁 Key Files
 
 ```
-rag-system/
+localGPT/
 ├── 🐳 start-docker.sh           # Docker deployment script
 ├── 🏃 run_system.py             # Direct development launcher
 ├── 🩺 system_health_check.py    # System verification
@@ -355,7 +355,9 @@ For quick document indexing without the UI:
 ./simple_create_index.sh "Invoice Collection" ./invoices/*.pdf
 ```
 
-**Supported file types**: PDF, TXT, DOCX, MD
+**Primary supported indexing formats**: PDF, TXT, Markdown/MD, DOCX, HTML/HTM.
+
+Other upload extensions may be accepted by the API, but treat them as experimental until you confirm conversion works for your files.
 
 ### Batch Indexing Script
 

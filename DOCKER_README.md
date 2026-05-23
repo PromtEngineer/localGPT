@@ -17,8 +17,8 @@ ollama pull qwen3:0.6b
 ollama pull qwen3:8b
 
 # 4. Clone and start LocalGPT
-git clone https://github.com/your-org/rag-system.git
-cd rag-system
+git clone https://github.com/PromtEngineer/localGPT.git
+cd localGPT
 ./start-docker.sh
 
 # 5. Access the application

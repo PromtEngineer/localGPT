@@ -442,6 +442,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             embedding_model = data.get('embedding_model') or data.get('embeddingModel')
             enrich_model = data.get('enrich_model') or data.get('enrichModel')
             overview_model = data.get('overviewModel') or data.get('overview_model_name')
+            enrich_provider = data.get('enrich_provider', 'ollama')
+            enrich_api_key = data.get('enrich_api_key')  # never logged or stored
             batch_size_embed = int(data.get("batch_size_embed", 50))
             batch_size_enrich = int(data.get("batch_size_enrich", 25))
             force_reindex = bool(data.get("force_reindex", False))
@@ -455,7 +457,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 lowered = str(model).lower()
                 return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
 
-            if is_large_indexing_model(enrich_model):
+            # Guard only applies to Ollama local models; cloud providers manage their own limits
+            if enrich_provider == 'ollama' and is_large_indexing_model(enrich_model):
                 indexing_model_warnings.append(
                     f"Replaced enrichment model '{enrich_model}' with qwen3:0.6b for indexing safety."
                 )
@@ -548,9 +551,13 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 if embedding_model:
                     config_override["embedding_model_name"] = embedding_model
                 
-                # 🔧 Configure enrichment model if specified
+                # 🔧 Configure enrichment model and provider if specified
                 if enrich_model:
                     config_override["enrich_model"] = enrich_model
+                if enrich_provider and enrich_provider != 'ollama':
+                    config_override["enrich_provider"] = enrich_provider
+                    if enrich_api_key:
+                        config_override["enrich_api_key"] = enrich_api_key
                 
                 # 🔧 Overview model (can differ from enrichment)
                 if overview_model:
@@ -580,6 +587,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     force_reindex=force_reindex,
                     progress_callback=report_progress,
                     cancel_callback=is_cancelled,
+                    job_id=job_id,
                 )
             else:
                 # Use the default pipeline with overrides
@@ -616,9 +624,13 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 if embedding_model:
                     config_override["embedding_model_name"] = embedding_model
                 
-                # 🔧 Configure enrichment model if specified
+                # 🔧 Configure enrichment model and provider if specified
                 if enrich_model:
                     config_override["enrich_model"] = enrich_model
+                if enrich_provider and enrich_provider != 'ollama':
+                    config_override["enrich_provider"] = enrich_provider
+                    if enrich_api_key:
+                        config_override["enrich_api_key"] = enrich_api_key
                 
                 # 🔧 Overview model (can differ from enrichment)
                 if overview_model:
@@ -648,6 +660,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     force_reindex=force_reindex,
                     progress_callback=report_progress,
                     cancel_callback=is_cancelled,
+                    job_id=job_id,
                 )
 
             self.send_json_response({

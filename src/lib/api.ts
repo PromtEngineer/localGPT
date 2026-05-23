@@ -127,6 +127,8 @@ export type IndexDiagnosticsSummary = {
   error?: string;
 };
 
+export type EnrichProvider = 'ollama' | 'anthropic' | 'openai' | 'groq';
+
 export type IndexBuildOptions = {
   latechunk?: boolean;
   doclingChunk?: boolean;
@@ -137,6 +139,8 @@ export type IndexBuildOptions = {
   enableEnrich?: boolean;
   embeddingModel?: string;
   enrichModel?: string;
+  enrichProvider?: EnrichProvider;
+  enrichApiKey?: string;
   overviewModel?: string;
   batchSizeEmbed?: number;
   batchSizeEnrich?: number;
@@ -627,6 +631,8 @@ class ChatAPI {
       enableEnrich: opts.enableEnrich ?? true,
       embeddingModel: opts.embeddingModel,
       enrichModel: opts.enrichModel,
+      enrichProvider: opts.enrichProvider ?? 'ollama',
+      enrichApiKey: opts.enrichApiKey,
       overviewModel: opts.overviewModel,
       batchSizeEmbed: opts.batchSizeEmbed ?? 50,
       batchSizeEnrich: opts.batchSizeEnrich ?? 25,
