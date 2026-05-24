@@ -4,7 +4,7 @@ import { GlassInput } from '@/components/ui/GlassInput';
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { AccordionGroup } from '@/components/ui/AccordionGroup';
 import { ModelSelect } from '@/components/ModelSelect';
-import { chatAPI, ChatSession, EnrichProvider, IndexBuildOptions, IndexJob } from '@/lib/api';
+import { chatAPI, streamIndexJob, ChatSession, EnrichProvider, IndexBuildOptions, IndexJob } from '@/lib/api';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 
 interface Props {
@@ -161,14 +161,20 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   });
 
   const waitForBuildJob = async (jobId: string) => {
-    while (true) {
-      const job = await chatAPI.getIndexJob(jobId);
-      setBuildJob(job);
-      if (job.status === 'completed') return job;
-      if (job.status === 'failed') throw new Error(job.error || job.message || 'Index build failed');
-      if (job.status === 'cancelled') throw new Error('Index build was cancelled');
-      await sleep(1500);
-    }
+    return new Promise<IndexJob>((resolve, reject) => {
+      let lastJob: IndexJob | null = null;
+      const { cancel, promise } = streamIndexJob(jobId, (data) => {
+        const job: IndexJob = { id: jobId, index_id: lastJob?.index_id ?? '', ...data } as IndexJob;
+        lastJob = job;
+        setBuildJob(job);
+        if (data.status === 'completed') { cancel(); resolve(job); }
+        if (data.status === 'failed') { cancel(); reject(new Error(data.message || 'Index build failed')); }
+        if (data.status === 'cancelled') { cancel(); reject(new Error('Index build was cancelled')); }
+      });
+      promise.catch((err) => {
+        if ((err as Error).name !== 'AbortError') reject(err);
+      });
+    });
   };
 
   const handleCancelBuild = async () => {

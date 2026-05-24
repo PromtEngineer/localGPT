@@ -17,7 +17,7 @@ class DatabaseTransaction:
 
     def __enter__(self):
         """Open connection and enable foreign key constraints."""
-        self.conn = sqlite3.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, timeout=30)
         self.conn.execute("PRAGMA foreign_keys = ON")
         return self.conn
 
@@ -47,12 +47,30 @@ class ChatDatabase:
             self.db_path = db_path
         self.init_database()
     
+    def _ensure_wal_mode(self):
+        """Switch the database to WAL journal mode.
+
+        Must use isolation_level=None (autocommit) because PRAGMA journal_mode
+        is silently ignored inside any open transaction, including Python's
+        implicit ones.
+        """
+        try:
+            wal_conn = sqlite3.connect(self.db_path, timeout=30, isolation_level=None)
+            mode = wal_conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            wal_conn.close()
+            if mode != "wal":
+                logger.warning(f"WAL mode not set; current mode: {mode}")
+        except Exception as e:
+            logger.warning(f"Could not enable WAL mode: {e}")
+
     def init_database(self):
         """Initialize the SQLite database with required tables"""
-        conn = sqlite3.connect(self.db_path)
+        # Enable WAL before opening the DDL connection so the pragma runs
+        # outside any transaction (isolation_level=None = autocommit).
+        self._ensure_wal_mode()
+
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.cursor()
-        
-        # Enable foreign keys
         conn.execute("PRAGMA foreign_keys = ON")
         
         # Sessions table
@@ -195,7 +213,19 @@ class ChatDatabase:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_job_file_stages_job_id ON index_job_file_stages(job_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_job_file_stages_file_id ON index_job_file_stages(file_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_job_file_stages_stage ON index_job_file_stages(stage_name)')
-        
+
+        # Schema migrations: add columns that were added after initial deployment.
+        # ALTER TABLE IF NOT EXISTS is not supported in SQLite <3.37, so we catch errors.
+        _migrations = [
+            "ALTER TABLE index_job_files ADD COLUMN attempt_count INTEGER DEFAULT 0",
+            "ALTER TABLE index_job_files ADD COLUMN last_error_code TEXT",
+        ]
+        for _sql in _migrations:
+            try:
+                cursor.execute(_sql)
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
         conn.commit()
         conn.close()
         logger.info("Database initialized successfully")
@@ -205,7 +235,7 @@ class ChatDatabase:
         session_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute('''
             INSERT INTO sessions (id, title, created_at, updated_at, model_used)
             VALUES (?, ?, ?, ?, ?)
@@ -218,7 +248,7 @@ class ChatDatabase:
     
     def get_sessions(self, limit: int = 50) -> List[Dict]:
         """Get all chat sessions, ordered by most recent"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
@@ -235,7 +265,7 @@ class ChatDatabase:
     
     def get_session(self, session_id: str) -> Optional[Dict]:
         """Get a specific session"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
@@ -255,7 +285,7 @@ class ChatDatabase:
         now = datetime.now().isoformat()
         metadata_json = json.dumps(metadata or {})
         
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         
         # Add the message
         conn.execute('''
@@ -278,7 +308,7 @@ class ChatDatabase:
     
     def get_messages(self, session_id: str, limit: int = 100) -> List[Dict]:
         """Get all messages for a session"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
@@ -313,7 +343,7 @@ class ChatDatabase:
     
     def update_session_title(self, session_id: str, title: str):
         """Update session title"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute('''
             UPDATE sessions 
             SET title = ?, updated_at = ?
@@ -324,7 +354,7 @@ class ChatDatabase:
     
     def delete_session(self, session_id: str) -> bool:
         """Delete a session and all its messages"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.execute('DELETE FROM sessions WHERE id = ?', (session_id,))
         deleted = cursor.rowcount > 0
         conn.commit()
@@ -337,7 +367,7 @@ class ChatDatabase:
     
     def cleanup_empty_sessions(self) -> int:
         """Remove sessions with no messages"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         
         # Find sessions with no messages
         cursor = conn.execute('''
@@ -366,7 +396,7 @@ class ChatDatabase:
     
     def get_stats(self) -> Dict:
         """Get database statistics"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         
         # Get session count
         cursor = conn.execute('SELECT COUNT(*) FROM sessions')
@@ -396,7 +426,7 @@ class ChatDatabase:
 
     def add_document_to_session(self, session_id: str, file_path: str) -> int:
         """Adds a document file path to a session."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.execute(
             "INSERT INTO session_documents (session_id, file_path) VALUES (?, ?)",
             (session_id, file_path)
@@ -409,7 +439,7 @@ class ChatDatabase:
 
     def get_documents_for_session(self, session_id: str) -> List[str]:
         """Retrieves all document file paths for a given session."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.execute(
             "SELECT file_path FROM session_documents WHERE session_id = ?",
             (session_id,)
@@ -424,7 +454,7 @@ class ChatDatabase:
         idx_id = str(uuid.uuid4())
         created = datetime.now().isoformat()
         vector_table = f"text_pages_{idx_id}"
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute('''
             INSERT INTO indexes (id, name, description, created_at, updated_at, vector_table_name, metadata)
             VALUES (?,?,?,?,?,?,?)
@@ -435,7 +465,7 @@ class ChatDatabase:
         return idx_id
 
     def get_index(self, index_id: str) -> dict | None:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         cur = conn.execute('SELECT * FROM indexes WHERE id=?', (index_id,))
         row = cur.fetchone()
@@ -451,7 +481,7 @@ class ChatDatabase:
         return idx
 
     def list_indexes(self) -> list[dict]:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         rows = conn.execute('SELECT * FROM indexes').fetchall()
         res = []
@@ -467,19 +497,19 @@ class ChatDatabase:
         return res
 
     def add_document_to_index(self, index_id: str, filename: str, stored_path: str):
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute('INSERT INTO index_documents (index_id, original_filename, stored_path) VALUES (?,?,?)', (index_id, filename, stored_path))
         conn.commit()
         conn.close()
 
     def link_index_to_session(self, session_id: str, index_id: str):
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute('INSERT INTO session_indexes (session_id, index_id, linked_at) VALUES (?,?,?)', (session_id, index_id, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
     def get_indexes_for_session(self, session_id: str) -> list[str]:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.execute('SELECT index_id FROM session_indexes WHERE session_id=? ORDER BY linked_at', (session_id,))
         ids = [r[0] for r in cursor.fetchall()]
         conn.close()
@@ -487,7 +517,7 @@ class ChatDatabase:
 
     def delete_index(self, index_id: str) -> bool:
         """Delete an index and its related records (documents, session links). Returns True if deleted."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         try:
             # Get vector table name before deletion (optional, for LanceDB cleanup)
             cur = conn.execute('SELECT vector_table_name FROM indexes WHERE id = ?', (index_id,))
@@ -524,7 +554,7 @@ class ChatDatabase:
 
     def update_index_metadata(self, index_id: str, updates: dict):
         """Merge new key/values into an index's metadata JSON column."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         cur = conn.execute('SELECT metadata FROM indexes WHERE id=?', (index_id,))
         row = cur.fetchone()
@@ -541,7 +571,7 @@ class ChatDatabase:
 
     def create_index_job(self, job_id: str, index_id: str, options: dict, documents: list[dict]) -> dict:
         now = datetime.now().isoformat()
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute('''
             INSERT INTO index_jobs (
                 id, index_id, status, stage, progress, message,
@@ -579,7 +609,7 @@ class ChatDatabase:
         return self.get_index_job(job_id)
 
     def get_index_job(self, job_id: str, include_options: bool = True, include_files: bool = True) -> dict | None:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         row = conn.execute('SELECT * FROM index_jobs WHERE id=?', (job_id,)).fetchone()
         if not row:
@@ -622,7 +652,7 @@ class ChatDatabase:
         if not assignments:
             return self.get_index_job(job_id)
         values.append(job_id)
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         # Safe SQL construction: all assignments are validated through allowlist
         sql = "UPDATE index_jobs SET " + ", ".join(assignments) + " WHERE id=?"
         conn.execute(sql, values)
@@ -633,7 +663,7 @@ class ChatDatabase:
     def get_index_job_files(self, job_id: str, conn=None) -> list[dict]:
         close_conn = False
         if conn is None:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, timeout=30)
             close_conn = True
         conn.row_factory = sqlite3.Row
         rows = conn.execute('''
@@ -678,7 +708,7 @@ class ChatDatabase:
         else:
             return None
 
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         # Safe SQL construction: assignments validated through allowlist, where clause parameterized
         sql_update = "UPDATE index_job_files SET " + ", ".join(assignments) + " WHERE " + where
@@ -692,7 +722,7 @@ class ChatDatabase:
         return item
 
     def list_unfinished_index_jobs(self) -> list[dict]:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         rows = conn.execute('''
             SELECT * FROM index_jobs
@@ -710,7 +740,7 @@ class ChatDatabase:
         return jobs
 
     def get_latest_index_job(self, index_id: str, include_options: bool = False, include_files: bool = True) -> dict | None:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         row = conn.execute('''
             SELECT id FROM index_jobs
@@ -802,13 +832,10 @@ class ChatDatabase:
                             inferred_metadata['vector_dimensions'] = len(vector_data)
                             
                             # Try to infer embedding model from vector dimensions
-                            dim_to_model = {
-                                384: 'BAAI/bge-small-en-v1.5 (or similar)',
-                                512: 'sentence-transformers/all-MiniLM-L6-v2 (or similar)',
-                                768: 'BAAI/bge-base-en-v1.5 (or similar)', 
-                                1024: 'Qwen/Qwen3-Embedding-0.6B (or similar)',
-                                1536: 'text-embedding-ada-002 (or similar)'
-                            }
+                            try:
+                                from rag_system.model_registry import DIMS_TO_LABEL as dim_to_model
+                            except ImportError:
+                                dim_to_model = {}
                             if len(vector_data) in dim_to_model:
                                 inferred_metadata['embedding_model_inferred'] = dim_to_model[len(vector_data)]
                     

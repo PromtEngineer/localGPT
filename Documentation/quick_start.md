@@ -52,11 +52,25 @@ ollama pull qwen3:8b
 ### Step 3: Start Docker Containers
 
 ```bash
-# Start all containers
+# Start all containers (Ollama runs locally on host)
 ./start-docker.sh
 
 # Or manually:
 docker compose --env-file docker.env up --build -d
+```
+
+**Option: Skip local Ollama — run it in a container instead**
+
+```bash
+# Update docker.env to use the containerized Ollama service
+sed -i '' 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # macOS
+# sed -i 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # Linux
+
+# Start including the Ollama container (enabled via compose profile)
+docker compose --profile with-ollama --env-file docker.env up --build -d
+
+# Pull models into the container (first run only)
+docker compose exec ollama ollama pull qwen3:8b
 ```
 
 ### Step 4: Verify Deployment

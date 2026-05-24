@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional
+import hashlib
 import json
 import time, asyncio, os
 import numpy as np
@@ -41,6 +42,8 @@ class Agent:
         
         # 🚀 NEW: In-memory store for conversational history per session
         self.chat_histories: LRUCache = LRUCache(maxsize=100) # Stores history for 100 recent sessions
+        # Routing memo: keyed by "session_id:query_hash" to avoid re-triaging identical queries
+        self._route_cache: LRUCache = LRUCache(maxsize=2000)
 
         graph_config = self.pipeline_configs.get("graph_strategy", {})
         if graph_config.get("enabled"):
@@ -221,7 +224,16 @@ Respond with JSON: {{"category": "<your_choice>"}}
         #             self._load_overviews(self._global_overview_path)
         #             self._current_overview_session = "GLOBAL"
         
-        query_type = await self._triage_query_async(query, history)
+        # Check routing memo before calling the (potentially LLM-backed) triage
+        _q_hash = hashlib.md5(query[:200].encode("utf-8", errors="replace")).hexdigest()[:8]
+        _route_key = f"{session_id or ''}:{_q_hash}"
+        _cached_route = self._route_cache.get(_route_key)
+        if _cached_route:
+            print(f"🗂️ ROUTING DEBUG: routing_memo_hit for key {_route_key!r} → '{_cached_route}'")
+            query_type = _cached_route
+        else:
+            query_type = await self._triage_query_async(query, history)
+            self._route_cache[_route_key] = query_type
         print(f"🎯 ROUTING DEBUG: Final triage decision: '{query_type}'")
         print(f"Agent Triage Decision: '{query_type}'")
         
@@ -340,6 +352,10 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 sub_queries = self.query_decomposer.decompose(raw_query, recent_history)
                 if event_callback:
                     event_callback("decomposition", {"sub_queries": sub_queries})
+
+                # KG-based query expansion: append 1-hop neighbor labels (≤5 terms) per sub-query
+                sub_queries = self._expand_queries_with_kg(sub_queries)
+
                 print(f"Original query: '{query}' (Contextual: '{contextual_query}')")
                 print(f"Decomposed into {len(sub_queries)} sub-queries: {sub_queries}")
                 
@@ -574,45 +590,99 @@ FINAL ANSWER:
         return result
 
     # ------------------------------------------------------------------
-    def _route_via_overviews(self, query: str) -> str | None:
-        """Use document overviews and a small model to decide routing.
-        Returns 'rag_query', 'direct_answer', or None if unsure/disabled."""
-        if not self.doc_overviews:
-            print(f"📖 ROUTING DEBUG: No document overviews available, returning None")
-            return None
-        
-        print(f"📖 ROUTING DEBUG: Found {len(self.doc_overviews)} document overviews, using LLM routing...")
+    def _expand_queries_with_kg(self, queries: list[str]) -> list[str]:
+        """Append 1-hop KG neighbor labels to each query (capped at 5 extra terms).
 
-        # Keep prompt concise: if more than 40 overviews, take first 40
-        overviews_snip = self.doc_overviews[:40]
-        overviews_block = "\n".join(f"[{i+1}] {ov}" for i, ov in enumerate(overviews_snip))
+        Only runs when a knowledge-graph file exists for the active index.
+        Returns the original queries unchanged if KG is unavailable.
+        """
+        graph_path = self.pipeline_configs.get("storage", {}).get("graph_path", "")
+        if not graph_path or not os.path.exists(graph_path):
+            return queries
 
-        router_prompt = f"""Task: Route query to correct system.
-
-Documents available: Invoices, DeepSeek-V3 research papers
-
-Query: "{query}"
-
-Is this query asking about:
-A) Greetings/social: "Hi", "Hello", "Thanks", "What's up", "How are you"
-B) General knowledge: "CEO of Tesla", "capital of France", "what is 2+2"  
-C) Document content: invoice amounts, DeepSeek-V3 details, companies mentioned
-
-If A or B → {{"category": "direct_answer"}}
-If C → {{"category": "rag_query"}}
-
-Response:"""
-        
-        resp = self.llm_client.generate_completion(
-            model=self.ollama_config["generation_model"], prompt=router_prompt, format="json"
-        )
         try:
-            raw_response = resp.get("response", "{}")
-            print(f"📖 ROUTING DEBUG: Overview LLM raw response: '{raw_response[:200]}...'")
-            data = json.loads(raw_response)
-            decision = data.get("category", "rag_query")
-            print(f"📖 ROUTING DEBUG: Overview routing final decision: '{decision}'")
-            return decision
-        except json.JSONDecodeError as e:
-            print(f"❌ ROUTING DEBUG: Overview routing JSON parsing failed: {e}, defaulting to 'rag_query'")
+            import networkx as nx
+            from rapidfuzz import process  # same dep used in GraphRetriever
+            G = nx.read_gml(graph_path)
+            node_list = list(G.nodes())
+        except Exception:
+            return queries
+
+        expanded = []
+        for q in queries:
+            extra_terms: list[str] = []
+            for word in q.split():
+                if len(word) < 3:
+                    continue
+                match = process.extractOne(word, node_list, score_cutoff=80)
+                if match and isinstance(match[0], str):
+                    entity = match[0]
+                    for neighbor in list(G.neighbors(entity))[:3]:
+                        if str(neighbor) not in extra_terms:
+                            extra_terms.append(str(neighbor))
+                if len(extra_terms) >= 5:
+                    break
+            if extra_terms:
+                expanded.append(f"{q} {' '.join(extra_terms[:5])}")
+                print(f"🔗 KG expansion: added terms {extra_terms[:5]} to query")
+            else:
+                expanded.append(q)
+        return expanded
+
+    # ------------------------------------------------------------------
+    # Module-level cache: overview_file_path+mtime → numpy embeddings array
+    _overview_embedding_cache: dict = {}
+
+    def _route_via_overviews(self, query: str) -> str | None:
+        """Route by cosine similarity between the query and precomputed overview embeddings.
+
+        Returns 'rag_query' when max similarity > 0.3, 'direct_answer' when < 0.1,
+        or None (fall through to LLM triage) when in the ambiguous band.
+        """
+        if not self.doc_overviews:
+            print("📖 ROUTING DEBUG: No document overviews available, returning None")
+            return None
+
+        print(f"📖 ROUTING DEBUG: Found {len(self.doc_overviews)} overviews; using cosine similarity routing")
+
+        try:
+            embedder = self.retrieval_pipeline._get_text_embedder()
+        except Exception as e:
+            print(f"⚠️ ROUTING DEBUG: Could not get embedder for overview routing: {e}")
+            return None
+
+        # Cache overview embeddings keyed by (overview_count, first_overview_hash)
+        cache_key = (len(self.doc_overviews), self.doc_overviews[0][:80])
+        if cache_key not in Agent._overview_embedding_cache:
+            try:
+                overview_embs = embedder.create_embeddings(self.doc_overviews)
+                norms = np.linalg.norm(overview_embs, axis=1, keepdims=True)
+                Agent._overview_embedding_cache[cache_key] = overview_embs / np.maximum(norms, 1e-9)
+                print(f"📖 ROUTING DEBUG: Cached {len(self.doc_overviews)} overview embeddings")
+            except Exception as e:
+                print(f"⚠️ ROUTING DEBUG: Failed to embed overviews: {e}")
+                return None
+
+        norm_overviews = Agent._overview_embedding_cache[cache_key]
+
+        try:
+            q_emb = embedder.create_embeddings([query])[0]
+            q_norm = np.linalg.norm(q_emb)
+            if q_norm > 1e-9:
+                q_emb = q_emb / q_norm
+            sims = norm_overviews @ q_emb
+            max_sim = float(np.max(sims))
+        except Exception as e:
+            print(f"⚠️ ROUTING DEBUG: Cosine similarity computation failed: {e}")
+            return None
+
+        print(f"📖 ROUTING DEBUG: max cosine similarity = {max_sim:.3f}")
+        if max_sim > 0.3:
+            print("📖 ROUTING DEBUG: similarity > 0.3 → rag_query")
             return "rag_query"
+        if max_sim < 0.1:
+            print("📖 ROUTING DEBUG: similarity < 0.1 → direct_answer")
+            return "direct_answer"
+        # Ambiguous band — fall through to LLM triage
+        print("📖 ROUTING DEBUG: similarity in ambiguous band; returning None for LLM triage")
+        return None

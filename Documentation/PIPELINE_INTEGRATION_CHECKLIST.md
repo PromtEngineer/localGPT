@@ -1,7 +1,7 @@
 # 📋 Pipeline Integration Checklist - Feature #11
 
-**Phase**: Pipeline Integration
-**Status**: Implemented
+**Phase**: Pipeline Integration — Complete
+**Status**: ✅ Implemented and integrated (commit `a114e6d`)
 **Blocking**: No - per-stage tracking is wired into the indexing pipeline
 
 ## Overview
@@ -295,6 +295,8 @@ else:
 
 ## Testing Checklist
 
+> Pipeline integration is in production code. End-to-end validation below is pending.
+
 - [ ] **Unit Test**: Verify tracker methods work in isolation
 - [ ] **Integration Test**: Run full pipeline with tracking enabled
 - [ ] **Crash Recovery Test**: Kill backend mid-job, restart, verify auto-recovery
@@ -337,16 +339,14 @@ curl http://localhost:8000/index-jobs/{job_id}/timeline
 - `rag_system/job_persistence.py` - JobProgressTracker class (complete)
 - `backend/database.py` - Database schema (complete)
 - `backend/server.py` - REST API endpoints (complete)
-- `rag_system/pipelines/indexing_pipeline.py` - Pipeline implementation (needs integration)
+- `rag_system/pipelines/indexing_pipeline.py` - Pipeline implementation ✅ integrated
 
-## Estimated Effort
+## Remaining Effort
 
-- **Review pipeline structure**: 30 min
-- **Add stage tracking calls**: 2 hours (6 stages × ~20 min each)
-- **Testing**: 1-2 hours
-- **Documentation**: 30 min
-
-**Total**: ~4-5 hours for full implementation
+- ~~Review pipeline structure~~ ✅ done
+- ~~Add stage tracking calls~~ ✅ done
+- **End-to-end testing**: 1-2 hours (crash/resume/error-handling validation)
+- **UI integration** (Phase 3): 4-6 hours (timeline view, resume button)
 
 ---
 

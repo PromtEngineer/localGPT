@@ -280,7 +280,10 @@ ollama list
 
 ```bash
 # Check model status from container
+# macOS / Windows:
 docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+# Linux:
+docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
 
 # Test Ollama connection
 curl -X POST http://localhost:11434/api/generate \
@@ -302,6 +305,33 @@ ollama rm old-model-name
 
 # Check model information
 ollama show qwen3:8b
+```
+
+### 5.4 Option: Containerized Ollama (No Local Install)
+
+The compose file includes an optional `ollama` service. Enable it instead of running
+Ollama locally:
+
+```bash
+# 1. Point OLLAMA_HOST at the service name (in-network resolution)
+sed -i '' 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # macOS
+# sed -i 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # Linux
+
+# 2. Start everything including the Ollama container
+docker compose --profile with-ollama --env-file docker.env up --build -d
+
+# 3. Pull models into the running container
+docker compose exec ollama ollama pull qwen3:8b
+
+# 4. Monitor Ollama container logs
+docker compose logs -f ollama
+```
+
+To revert to local Ollama:
+```bash
+sed -i '' 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://172.18.0.1:11434|' docker.env  # macOS/Linux
+docker compose down
+./start-docker.sh
 ```
 
 ---
@@ -387,7 +417,10 @@ pkill ollama
 ollama serve
 
 # Check from container
+# macOS / Windows:
 docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+# Linux:
+docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
 ```
 
 #### Performance Issues
@@ -489,13 +522,23 @@ The system uses `docker.env` for configuration:
 
 ```bash
 # Ollama configuration
-OLLAMA_HOST=http://host.docker.internal:11434
+# Linux — Docker bridge gateway IP (default in docker.env)
+OLLAMA_HOST=http://172.18.0.1:11434
+# macOS / Windows — use this instead:
+# OLLAMA_HOST=http://host.docker.internal:11434
+# Containerized Ollama (--profile with-ollama) — use this instead:
+# OLLAMA_HOST=http://ollama:11434
 
 # Service configuration
 NODE_ENV=production
 RAG_API_URL=http://rag-api:8001
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
+> **Platform note**: `host.docker.internal` resolves on macOS/Windows Docker Desktop
+> but not on Linux. The default `docker.env` uses `172.18.0.1` (Docker bridge gateway)
+> for Linux compatibility. Find your gateway:
+> `docker network inspect localgpt_rag-network --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'`
 
 ### 9.2 Custom Configuration
 

@@ -149,7 +149,7 @@ class IndexingPipeline:
         self.embedding_batch_size = indexing_config.get("embedding_batch_size", 8)
         self.enrichment_batch_size = indexing_config.get("enrichment_batch_size", 10)
         self.enable_progress_tracking = indexing_config.get("enable_progress_tracking", True)
-        self.conversion_timeout_seconds = indexing_config.get("conversion_timeout_seconds", 180)
+        self.conversion_timeout_seconds = indexing_config.get("conversion_timeout_seconds", 360)
         self.overview_timeout_seconds = indexing_config.get("overview_timeout_seconds", 60)
         self.enrichment_timeout_seconds = indexing_config.get("enrichment_timeout_seconds", 90)
 
@@ -638,7 +638,21 @@ class IndexingPipeline:
 
             check_cancelled()
             if processed_files == 0:
-                indexing_logger.warning("no_chunks_generated")
+                if skipped_completed_files > 0:
+                    # All files were already complete from a prior run — validate the
+                    # existing table so a corrupted index isn't silently reported healthy.
+                    try:
+                        from rag_system.model_registry import get_dims
+                        embedding_model = self.config.get("embedding_model_name")
+                        expected_dim = get_dims(embedding_model) if embedding_model else None
+                        self._validate_built_index(table_name, expected_dim=expected_dim)
+                    except RuntimeError as val_err:
+                        indexing_logger.error("post_build_validation_failed", error=str(val_err))
+                        report("failed", 100, str(val_err))
+                        self._stop_persistent_worker()
+                        raise
+                else:
+                    indexing_logger.warning("no_chunks_generated")
                 self._stop_persistent_worker()
                 return self._print_final_statistics(
                     len(files_to_index) + len(unchanged_files),
@@ -656,6 +670,18 @@ class IndexingPipeline:
             if hasattr(self, 'graph_extractor') and graph_chunks:
                 report("graph", 94, "Extracting knowledge graph")
                 self._extract_knowledge_graph(graph_chunks, retriever_configs)
+
+        # Post-build validation: ensure the table exists, is non-empty, and has correct dims
+        try:
+            from rag_system.model_registry import get_dims
+            embedding_model = self.config.get("embedding_model_name")
+            expected_dim = get_dims(embedding_model) if embedding_model else None
+            self._validate_built_index(table_name, expected_dim=expected_dim)
+        except RuntimeError as val_err:
+            indexing_logger.error("post_build_validation_failed", error=str(val_err))
+            report("failed", 100, str(val_err))
+            self._stop_persistent_worker()
+            raise
 
         report("completed", 100, "Indexing complete")
         self._stop_persistent_worker()
@@ -710,6 +736,47 @@ class IndexingPipeline:
         except Exception as e:
             indexing_logger.warning("persistent_worker_start_failed", error=str(e))
             self._worker = None
+
+    def _validate_built_index(self, table_name: str, expected_dim: Optional[int] = None) -> None:
+        """Raise RuntimeError if the freshly-built vector table is empty or has a dimension mismatch."""
+        try:
+            import lancedb
+        except Exception:
+            return  # LanceDB not importable; skip validation
+
+        storage = self.config.get("storage", {})
+        lancedb_uri = (
+            storage.get("db_path")
+            or storage.get("lancedb_path")
+            or storage.get("lancedb_uri")
+            or "./lancedb"
+        )
+        try:
+            conn = lancedb.connect(lancedb_uri)
+            table = conn.open_table(table_name)
+        except Exception as e:
+            raise RuntimeError(f"Post-build validation: could not open table '{table_name}': {e}") from e
+
+        row_count = table.count_rows() if hasattr(table, "count_rows") else None
+        if row_count is not None and row_count == 0:
+            raise RuntimeError(f"Post-build validation failed: table '{table_name}' is empty after indexing")
+
+        if expected_dim is not None and row_count:
+            try:
+                sample = table.head(1).to_pydict()
+                vec = sample.get("vector", [[]])[0]
+                actual_dim = len(vec) if vec else None
+                if actual_dim and actual_dim != expected_dim:
+                    raise RuntimeError(
+                        f"Post-build validation failed: dimension mismatch in '{table_name}' "
+                        f"(expected {expected_dim}, got {actual_dim})"
+                    )
+            except RuntimeError:
+                raise
+            except Exception:
+                pass  # Can't read sample; skip dim check
+
+        indexing_logger.info("post_build_validation_passed", table=table_name, row_count=row_count)
 
     def _stop_persistent_worker(self) -> None:
         """Gracefully shut down the persistent conversion worker."""

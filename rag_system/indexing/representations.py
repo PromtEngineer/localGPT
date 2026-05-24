@@ -3,6 +3,7 @@ import numpy as np
 from transformers import AutoModel, AutoTokenizer
 import torch
 import os
+from rag_system.model_registry import get_dtype as _registry_get_dtype
 
 # We keep the protocol to ensure a consistent interface
 class EmbeddingModel(Protocol):
@@ -43,7 +44,7 @@ class QwenEmbedder(EmbeddingModel):
             model = AutoModel.from_pretrained(
                 self.model_name,
                 trust_remote_code=True,
-                torch_dtype=torch.float16 if self.device != "cpu" else None,
+                torch_dtype=_registry_get_dtype(self.model_name, self.device),
             ).to(self.device).eval()
             _MODEL_CACHE[self.model_name] = (tokenizer, model)
             print(f"QwenEmbedder weights loaded and cached for {self.model_name}.")

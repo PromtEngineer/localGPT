@@ -1,7 +1,7 @@
-# ✅ Feature #11 Phase 1 - Validation Checklist
+# ✅ Feature #11 - Validation Checklist
 
-**Date**: May 2025
-**Status**: PIPELINE INTEGRATED - READY FOR END-TO-END TESTING
+**Date**: May 2025 (updated 2026-05-23)
+**Status**: PIPELINE INTEGRATED ✅ — END-TO-END TESTING PENDING
 
 ## Code Components - Verified ✅
 
@@ -182,50 +182,48 @@ Ready to test:
 - ✅ Call resume endpoint
 - ✅ Verify skip logic
 
-## Integration Readiness ✅
+## Integration Status ✅
 
-Ready to integrate with pipeline:
-- ✅ JobProgressTracker fully functional
+Pipeline integration complete (commit `a114e6d`):
+- ✅ JobProgressTracker imported and instantiated in `indexing_pipeline.py`
+- ✅ `should_skip_stage` / `start_stage` / `complete_stage` / `fail_stage` wired at each stage
 - ✅ API endpoints ready
 - ✅ Database schema ready
-- ✅ Integration guide provided (PIPELINE_INTEGRATION_CHECKLIST.md)
-- ✅ Code templates provided
-- ✅ Error handling patterns clear
+- ✅ Auto-recovery startup hook active
 
 ## Completeness Metrics
 
 | Aspect | Status | Evidence |
 |--------|--------|----------|
-| Code | ✅ 100% | All methods implemented, tested |
+| Infrastructure code | ✅ 100% | All tracker methods implemented |
 | Database | ✅ 100% | Schema complete with constraints |
 | API | ✅ 100% | All 6 endpoints implemented |
 | Startup Hook | ✅ 100% | Auto-recovery on backend start |
+| Pipeline integration | ✅ 100% | Stage tracking wired in `indexing_pipeline.py` |
 | Documentation | ✅ 100% | 4 comprehensive guides |
-| Integration Guide | ✅ 100% | Detailed checklist with templates |
 | Error Handling | ✅ 100% | All error cases covered |
 | Type Safety | ✅ 100% | Type hints throughout |
+| End-to-end testing | ⏳ Pending | Crash/resume/skip validation not yet run |
+| UI integration | ⏳ Pending | Timeline view and resume button not built |
 
 ## Summary
 
-**Phase 1 Status**: ✅ COMPLETE AND VERIFIED
+**Phase 1 + Phase 2 Status**: ✅ INFRASTRUCTURE AND PIPELINE COMPLETE
 
-All infrastructure components are in place:
-- ✅ JobProgressTracker class - 15+ methods, production-ready
-- ✅ Database schema - Normalized design with constraints
-- ✅ REST API - 6 endpoints, proper error handling
-- ✅ Auto-recovery - Startup hook implemented
-- ✅ Documentation - Comprehensive guides (1500+ lines total)
-
-**Ready for**: End-to-end crash/resume validation and UI integration
-
-**Estimated Phase 2 Time**: 3-5 hours
-**Estimated Phase 3 Time**: 4-6 hours (UI)
-**Total Feature Time**: ~8-11 hours
+- ✅ JobProgressTracker class — 15+ methods, production-ready
+- ✅ Database schema — normalized design with constraints
+- ✅ REST API — 6 endpoints, proper error handling
+- ✅ Auto-recovery — startup hook implemented
+- ✅ Pipeline integration — stage tracking live in indexing pipeline
+- ✅ Documentation — comprehensive guides (1500+ lines total)
+- ⏳ End-to-end crash/resume test — not yet formally validated
+- ⏳ UI — timeline display and resume button not yet built
 
 ## Next Action
 
-Proceed to end-to-end validation: start a background build, interrupt it, restart services, resume the job, and verify completed files/stages are reported correctly.
+1. **End-to-end test**: start a background build, kill the backend mid-run, restart, call `POST /index-jobs/{job_id}/resume`, verify completed stages are skipped.
+2. **UI integration** (Phase 3, ~4-6 hours): add timeline view and resume button to the frontend.
 
 ---
 
-**Feature #11 Phase 1 is production-ready and fully tested.**
+**Feature #11 infrastructure and pipeline integration are production-ready. Testing and UI remain.**

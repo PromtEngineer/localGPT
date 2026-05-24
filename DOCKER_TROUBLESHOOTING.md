@@ -112,20 +112,34 @@ ollama pull qwen3:8b
 #### Solution B: Test from Container
 ```bash
 # Test Ollama connection from RAG API container
+# macOS / Windows:
 docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+# Linux (host.docker.internal not available — use bridge gateway IP):
+docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
 
 # If this fails, check Docker network settings
 docker network ls
-docker network inspect localgpt_default
+docker network inspect localgpt_rag-network
 ```
 
-#### Solution C: Alternative Ollama Host
-```bash
-# Edit docker.env to use different host
-echo "OLLAMA_HOST=http://172.17.0.1:11434" >> docker.env
+#### Solution C: Alternative Ollama Host (Linux / custom network)
 
-# Or use IP address
-echo "OLLAMA_HOST=http://$(ipconfig getifaddr en0):11434" >> docker.env  # macOS
+`host.docker.internal` is not available on Linux. Use the Docker bridge gateway IP instead.
+Find it and update `docker.env` (replace, don't append — appending creates duplicate keys):
+
+```bash
+# Find your Docker bridge gateway IP
+docker network inspect localgpt_rag-network \
+  --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+
+# Replace OLLAMA_HOST in docker.env (Linux)
+sed -i "s|^OLLAMA_HOST=.*|OLLAMA_HOST=http://$(docker network inspect localgpt_rag-network --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'):11434|" docker.env
+
+# macOS — use your WiFi/Ethernet IP if host.docker.internal fails
+sed -i '' "s|^OLLAMA_HOST=.*|OLLAMA_HOST=http://$(ipconfig getifaddr en0):11434|" docker.env
+
+# Then restart the containers to pick up the new value
+docker compose --env-file docker.env up -d
 ```
 
 ### 3. Container Build Failures
@@ -324,17 +338,15 @@ docker compose config
 
 #### Network Debugging
 ```bash
-# Check network connectivity
-docker compose exec rag-api ping backend
-docker compose exec backend ping rag-api
-docker compose exec rag-api ping host.docker.internal
+# Check inter-container HTTP connectivity (curl is available; ping may not be)
+docker compose exec rag-api curl -sf http://backend:8000/health && echo "backend reachable"
+docker compose exec backend curl -sf http://rag-api:8001/models && echo "rag-api reachable"
 
-# Check DNS resolution
-docker compose exec rag-api nslookup host.docker.internal
-
-# Test HTTP connections
-docker compose exec rag-api curl -v http://backend:8000/health
+# Test Ollama connectivity from inside the container
+# macOS / Windows:
 docker compose exec rag-api curl -v http://host.docker.internal:11434/api/tags
+# Linux:
+docker compose exec rag-api curl -v http://172.18.0.1:11434/api/tags
 ```
 
 ### Log Analysis
@@ -376,7 +388,10 @@ journalctl -u docker.service -f
 ```bash
 # Test RAG API alone
 docker build -f Dockerfile.rag-api -t test-rag-api .
+# macOS / Windows:
 docker run --rm -p 8001:8001 -e OLLAMA_HOST=http://host.docker.internal:11434 test-rag-api &
+# Linux (replace with your bridge gateway IP):
+# docker run --rm -p 8001:8001 -e OLLAMA_HOST=http://172.18.0.1:11434 test-rag-api &
 sleep 30
 curl http://localhost:8001/models
 pkill -f test-rag-api

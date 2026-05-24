@@ -19,7 +19,7 @@ class SimplePDFProcessor:
     
     def init_database(self):
         """Initialize SQLite database for storing PDF content"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.execute('''
             CREATE TABLE IF NOT EXISTS pdf_documents (
                 id TEXT PRIMARY KEY,
@@ -83,7 +83,7 @@ class SimplePDFProcessor:
         now = datetime.now().isoformat()
         
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, timeout=30)
             
             # Store document
             conn.execute('''
@@ -114,7 +114,7 @@ class SimplePDFProcessor:
     def get_session_documents(self, session_id: str) -> List[Dict[str, Any]]:
         """Get all documents for a session"""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, timeout=30)
             conn.row_factory = sqlite3.Row
             
             cursor = conn.execute('''
@@ -136,7 +136,7 @@ class SimplePDFProcessor:
     def get_document_content(self, session_id: str) -> str:
         """Get all document content for a session (for LLM context)"""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, timeout=30)
             
             cursor = conn.execute('''
                 SELECT filename, content
@@ -166,7 +166,7 @@ class SimplePDFProcessor:
     def delete_session_documents(self, session_id: str) -> bool:
         """Delete all documents for a session"""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, timeout=30)
             cursor = conn.execute('''
                 DELETE FROM pdf_documents
                 WHERE session_id = ?

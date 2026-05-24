@@ -847,4 +847,38 @@ class ChatAPI {
   }
 }
 
-export const chatAPI = new ChatAPI(); 
+export const chatAPI = new ChatAPI();
+
+/**
+ * Subscribe to live indexing progress via SSE.
+ * Calls onEvent for each progress update; resolves when the job finishes.
+ * Returns a cleanup function that aborts the stream.
+ */
+export function streamIndexJob(
+  jobId: string,
+  onEvent: (data: { status: string; stage: string; progress: number; message: string; files: ApiRecord[] }) => void,
+): { cancel: () => void; promise: Promise<void> } {
+  const ctrl = new AbortController();
+  const promise = (async () => {
+    const resp = await fetch(`${API_BASE_URL}/index-jobs/${jobId}/stream`, { signal: ctrl.signal });
+    if (!resp.ok || !resp.body) throw new Error(`SSE stream failed: ${resp.status}`);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const parsed = JSON.parse(line.slice(6));
+          if (parsed.type === 'progress') onEvent(parsed.data);
+        } catch { /* ignore malformed */ }
+      }
+    }
+  })();
+  return { cancel: () => ctrl.abort(), promise };
+}

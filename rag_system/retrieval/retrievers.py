@@ -117,11 +117,14 @@ class MultiVectorRetriever:
             def _run_vec():
                 if vec_k == 0:
                     return None
-                return (
-                    tbl.search(text_query_embedding)
-                       .limit(vec_k * 2)  # fetch extra to allow for dedup
-                       .to_df()
-                )
+                search = tbl.search(text_query_embedding).limit(vec_k * 2)
+                # Use approximate search (nprobes) when an IVF-PQ index exists
+                try:
+                    if tbl.list_indices():
+                        search = search.nprobes(20)
+                except Exception:
+                    pass
+                return search.to_df()
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 fts_future = executor.submit(_run_fts)

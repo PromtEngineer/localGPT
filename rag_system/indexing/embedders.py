@@ -125,6 +125,16 @@ class VectorIndexer:
                 print(f"❌ Failed to add data even with NaN fill: {e2}")
                 raise
 
+        # Build an IVF-PQ ANN index for large tables (≥5000 rows) to speed up queries
+        try:
+            total_rows = tbl.count_rows() if hasattr(tbl, "count_rows") else len(data)
+            if total_rows >= 5000:
+                tbl.create_index(metric="cosine", num_partitions=256, num_sub_vectors=96)
+                print(f"✅ IVF-PQ ANN index built for '{table_name}' ({total_rows} rows).")
+        except Exception as ann_err:
+            # ANN index is optional; log and continue
+            print(f"⚠️ Could not build ANN index for '{table_name}': {ann_err}")
+
 # BM25Indexer is no longer needed as we are moving to LanceDB's native FTS.
 # class BM25Indexer:
 #     ...

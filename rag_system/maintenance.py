@@ -35,24 +35,16 @@ class MaintenanceTools:
         self.lancedb_path = Path(project_root) / lancedb_path
         self.uploads_path = Path(project_root) / uploads_path
         self.index_store_path = Path(project_root) / index_store_path
-        self.conn = None
-        self._init_db_connection()
-
-    def _init_db_connection(self):
-        """Initialize database connection"""
+    def _get_db(self):
+        """Open a fresh per-call connection (avoids persistent write-lock holders)."""
         try:
-            self.conn = sqlite3.connect(self.db_path)
-            self.conn.row_factory = sqlite3.Row
-            self.conn.execute("PRAGMA foreign_keys = ON")
+            conn = sqlite3.connect(self.db_path, timeout=30)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            return conn
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
-            self.conn = None
-
-    def _get_db(self):
-        """Get database connection, reconnect if needed"""
-        if self.conn is None:
-            self._init_db_connection()
-        return self.conn
+            return None
 
     # ========================================================================
     # 1. REPAIR STUCK BUILDS
@@ -748,3 +740,101 @@ class MaintenanceTools:
         except Exception:
             pass
         return total
+
+    # ========================================================================
+    # 7. SQLITE VACUUM
+    # ========================================================================
+
+    def vacuum_database(self) -> Dict[str, Any]:
+        """Run SQLite VACUUM if fragmentation exceeds 10%, free unused pages."""
+        db = self._get_db()
+        if db is None:
+            return {"error": "Database connection unavailable"}
+        try:
+            cursor = db.cursor()
+            freelist = cursor.execute("PRAGMA freelist_count").fetchone()[0]
+            page_count = cursor.execute("PRAGMA page_count").fetchone()[0]
+            fragmentation_pct = round((freelist / page_count) * 100, 1) if page_count else 0
+            page_size = cursor.execute("PRAGMA page_size").fetchone()[0]
+            freed_kb = round((freelist * page_size) / 1024, 1)
+
+            if fragmentation_pct >= 10:
+                cursor.execute("VACUUM")
+                cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                db.commit()
+                vacuumed = True
+                logger.info(f"SQLite VACUUM completed; freed ~{freed_kb} KB ({fragmentation_pct}% fragmentation)")
+            else:
+                vacuumed = False
+                logger.info(f"SQLite fragmentation {fragmentation_pct}% < 10%; skipping VACUUM")
+
+            return {
+                "fragmentation_pct": fragmentation_pct,
+                "freed_kb": freed_kb,
+                "vacuumed": vacuumed,
+            }
+        except Exception as e:
+            logger.error(f"VACUUM failed: {e}")
+            return {"error": str(e)}
+
+    # ========================================================================
+    # 8. LANCEDB ORPHAN TABLE SWEEP
+    # ========================================================================
+
+    def remove_orphan_lancedb_tables(self, dry_run: bool = True) -> Dict[str, Any]:
+        """Drop LanceDB tables that have no matching index record in SQLite.
+
+        Args:
+            dry_run: When True (default), only report; do not drop anything.
+        """
+        result: Dict[str, Any] = {"orphans": [], "dropped": [], "dry_run": dry_run, "error": None}
+
+        # Gather known index IDs from database
+        db = self._get_db()
+        if db is None:
+            result["error"] = "Database connection unavailable"
+            return result
+        try:
+            rows = db.execute("SELECT id FROM indexes").fetchall()
+            known_ids = {row["id"] for row in rows}
+        except Exception as e:
+            result["error"] = f"Could not query indexes table: {e}"
+            return result
+
+        # Gather LanceDB table names
+        try:
+            import lancedb
+        except ImportError:
+            result["error"] = "lancedb package not available"
+            return result
+
+        try:
+            conn = lancedb.connect(str(self.lancedb_path))
+            if hasattr(conn, "list_tables"):
+                raw = conn.list_tables()
+                all_tables = [t.name if hasattr(t, "name") else str(t) for t in raw]
+            else:
+                all_tables = conn.table_names() if hasattr(conn, "table_names") else []
+        except Exception as e:
+            result["error"] = f"Could not connect to LanceDB at {self.lancedb_path}: {e}"
+            return result
+
+        # Identify orphans: text_pages_{id} tables whose id isn't in known_ids
+        prefix = "text_pages_"
+        for table_name in all_tables:
+            if not table_name.startswith(prefix):
+                continue
+            index_id = table_name[len(prefix):]
+            # Strip lc suffix if present
+            index_id = index_id.removesuffix("_lc").removesuffix("_lc_v3")
+            if index_id not in known_ids:
+                result["orphans"].append(table_name)
+                if not dry_run:
+                    try:
+                        conn.drop_table(table_name)
+                        result["dropped"].append(table_name)
+                        logger.info(f"Dropped orphan LanceDB table: {table_name}")
+                    except Exception as drop_err:
+                        logger.warning(f"Failed to drop orphan table {table_name}: {drop_err}")
+
+        return result

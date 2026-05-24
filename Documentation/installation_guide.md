@@ -147,8 +147,10 @@ curl http://localhost:11434/api/tags
 # Start Docker containers
 ./start-docker.sh
 
-# Wait for containers to start (2-3 minutes)
-sleep 120
+# Wait until the backend is ready (polls every 3 s, no fixed timeout)
+until curl -sf http://localhost:8000/health > /dev/null; do
+  echo "waiting for backend..."; sleep 3
+done
 
 # Verify deployment
 ./start-docker.sh status
@@ -166,6 +168,32 @@ curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 # Access the application
 open http://localhost:3000
 ```
+
+### 3.4 Option: Fully Containerized Ollama
+
+If you prefer not to install Ollama locally, the compose file includes an optional
+Ollama container that can be enabled with a profile flag:
+
+```bash
+# 1. Edit docker.env — change OLLAMA_HOST to the service name
+sed -i '' 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # macOS
+# sed -i 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # Linux
+
+# 2. Start all containers including Ollama
+./start-docker.sh --profile with-ollama
+# Or manually:
+docker compose --profile with-ollama --env-file docker.env up --build -d
+
+# 3. Pull required models into the Ollama container
+docker compose exec ollama ollama pull qwen3:8b
+
+# 4. Verify
+curl http://localhost:11434/api/tags
+```
+
+> **Trade-off**: Containerized Ollama loses direct GPU access on macOS/Windows.
+> For best inference performance, keep Ollama local. On Linux with proper GPU
+> passthrough (`--gpus all` in the ollama service), performance is equivalent.
 
 ---
 
@@ -262,13 +290,25 @@ chmod 664 backend/chat_data.db
 ### 5.2 Configuration
 
 #### **Environment Variables**
-For Docker (automatic via `docker.env`):
+For Docker (configured in `docker.env`):
 ```bash
-OLLAMA_HOST=http://host.docker.internal:11434
+# Linux — Docker bridge gateway IP (default in docker.env)
+OLLAMA_HOST=http://172.18.0.1:11434
+# macOS / Windows — host.docker.internal is auto-resolved on these platforms
+# OLLAMA_HOST=http://host.docker.internal:11434
+# Containerized Ollama — use with --profile with-ollama (see Section 3.4)
+# OLLAMA_HOST=http://ollama:11434
 NODE_ENV=production
 RAG_API_URL=http://rag-api:8001
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
+> **Platform note**: `host.docker.internal` resolves automatically on macOS and Windows
+> Docker Desktop. On Linux it is not available by default, so `docker.env` uses the
+> Docker bridge gateway IP (`172.18.0.1`). To find your exact gateway:
+> ```bash
+> docker network inspect localgpt_rag-network --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+> ```
 
 For Direct Development (set automatically by `run_system.py`):
 ```bash

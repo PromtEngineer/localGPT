@@ -1,7 +1,7 @@
-# ✅ Feature #11 - Phase 1 Complete: Infrastructure Ready
+# ✅ Feature #11 - Phases 1 & 2 Complete: Infrastructure + Pipeline Integrated
 
-**Date**: May 2025
-**Status**: Pipeline Integrated - UI Integration Pending
+**Date**: May 2025 (updated 2026-05-23)
+**Status**: ✅ Pipeline Integrated — UI Integration Pending
 
 ## What Was Accomplished
 
@@ -108,27 +108,28 @@ Application Layer
 ✅ **Performance metrics** - Timing data per stage
 ✅ **Audit trail** - Export for compliance/debugging
 
-## What's Next (Phase 2)
+## What's Complete
 
-### 1. **Pipeline Integration** (2-3 hours)
-Modify `rag_system/pipelines/indexing_pipeline.py` to:
+### ✅ Phase 2: Pipeline Integration (done, commit `a114e6d`)
+`rag_system/pipelines/indexing_pipeline.py` updated to:
 - Call tracker methods at each stage boundary
-- Implement skip logic for resumed jobs
-- Track duration and output hashes
+- Skip completed stages on resume (`should_skip_stage`)
+- Track duration and output hashes per stage
 - Handle errors at file and stage level
 
-### 2. **Testing** (1-2 hours)
-- Crash recovery: Start job → kill → restart → verify recovery
-- Resume: Resume paused job → verify skips completed stages
-- Error handling: Induce failures → verify proper recording
-- Performance: Measure tracking overhead
-- API validation: Verify all endpoints return correct data
+## What's Next
 
-### 3. **UI Integration** (Future)
-- Display per-file progress
-- Show stage breakdown
-- Add resume button
-- Display error details
+### 1. **End-to-End Testing** (1-2 hours)
+- Crash recovery: Start job → kill → restart → verify auto-recovery
+- Resume: Call `POST /index-jobs/{id}/resume` → verify completed stages are skipped
+- Error handling: Induce failures → verify proper recording in DB
+- API validation: Verify timeline, statistics, audit-trail endpoints
+
+### 2. **UI Integration** (Phase 3, ~4-6 hours)
+- Display per-file progress in the frontend
+- Show stage breakdown timeline
+- Add resume button for paused jobs
+- Display error details per file
 
 ## Expected Impact
 
@@ -153,6 +154,7 @@ Created:
 Modified:
 ✅ backend/database.py                         (+stage tracking table)
 ✅ backend/server.py                           (+6 API endpoints, startup hook)
+✅ rag_system/pipelines/indexing_pipeline.py   (+JobProgressTracker integration)
 ```
 
 ## Code Quality
@@ -172,7 +174,7 @@ All components are complete and tested:
 - ✅ JobProgressTracker ready
 - ✅ API endpoints ready
 - ✅ Startup hooks ready
-- ⏳ Pipeline integration ready (templates provided)
+- ✅ Pipeline integration complete (wired into `indexing_pipeline.py`, commit `a114e6d`)
 
 ## Reliability Guarantees
 
@@ -215,16 +217,11 @@ curl http://localhost:8000/index-jobs/my-job/statistics
 
 ## Next Steps
 
-1. **Test** crash recovery and resume flows end-to-end
-2. **Add UI** timeline/progress display and resume controls
-3. **Persist** enriched chunks/embeddings for exact stage-level skipping
-4. **Deploy** to production
-5. **Monitor** and gather performance metrics
-
-**Estimated time for Phase 2**: 3-5 hours
-**Estimated time for Phase 3 (UI)**: 4-6 hours
-**Total feature time**: ~8-11 hours
+1. **Test** crash recovery and resume flows end-to-end (1-2 hours)
+2. **Add UI** timeline/progress display and resume controls (Phase 3, 4-6 hours)
+3. **Persist** enriched chunks/embeddings for exact stage-level skipping (optional enhancement)
+4. **Monitor** stage timing and tracker overhead in production
 
 ---
 
-**All infrastructure is ready. The system is designed for zero data loss and seamless crash recovery.**
+**Infrastructure and pipeline integration are complete. The system is designed for zero data loss and seamless crash recovery. End-to-end validation and UI are the remaining open items.**

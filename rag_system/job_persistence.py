@@ -43,20 +43,19 @@ class JobProgressTracker:
 
     def __init__(self, db_path: str = "backend/chat_data.db"):
         self.db_path = db_path
-        self.conn = None
-        self._init_connection()
-
-    def _init_connection(self):
-        """Initialize database connection"""
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.row_factory = sqlite3.Row
-        self.conn.execute("PRAGMA foreign_keys = ON")
 
     def _get_conn(self):
-        """Get database connection, reconnect if needed"""
-        if self.conn is None:
-            self._init_connection()
-        return self.conn
+        """Open a fresh per-call connection.
+
+        Persistent connections in DELETE journal mode hold a write lock for the
+        lifetime of the process, blocking all other writers.  A fresh connection
+        is cheaper than debugging lock timeouts and is safe in CPython where the
+        connection is closed immediately when the local reference drops.
+        """
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
 
     # ========================================================================
     # JOB-LEVEL OPERATIONS

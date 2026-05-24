@@ -36,9 +36,9 @@ print("✅ RAG Agent initialized successfully.")
 # -------------- Helper ----------------
 
 def _apply_index_embedding_model(idx_ids):
-    """Ensure retrieval pipeline uses the embedding model stored with the first index."""
+    """Ensure retrieval pipeline uses the embedding model + fusion weights from the first index."""
     debug_info = f"🔧 _apply_index_embedding_model called with idx_ids: {idx_ids}\n"
-    
+
     if not idx_ids:
         debug_info += "⚠️ No index IDs provided\n"
         with open("logs/embedding_debug.log", "a") as f:
@@ -47,19 +47,25 @@ def _apply_index_embedding_model(idx_ids):
     try:
         idx = db.get_index(idx_ids[0])
         debug_info += f"🔧 Retrieved index: {idx.get('id')} with metadata: {idx.get('metadata', {})}\n"
-        model = (idx.get("metadata") or {}).get("embedding_model")
+        meta = idx.get("metadata") or {}
+        model = meta.get("embedding_model")
         debug_info += f"🔧 Embedding model from metadata: {model}\n"
+        rp = RAG_AGENT.retrieval_pipeline
         if model:
-            rp = RAG_AGENT.retrieval_pipeline
             current_model = rp.config.get("embedding_model_name")
             debug_info += f"🔧 Current embedding model: {current_model}\n"
             rp.update_embedding_model(model)
             debug_info += f"🔧 Updated embedding model to: {model}\n"
         else:
             debug_info += "⚠️ No embedding model found in metadata\n"
+        # Apply per-index fusion weights if stored
+        fusion_config = meta.get("fusion_config")
+        if fusion_config and hasattr(rp, "retriever") and hasattr(rp.retriever, "fusion_config"):
+            rp.retriever.fusion_config = fusion_config
+            debug_info += f"🔧 Applied fusion_config: {fusion_config}\n"
     except Exception as e:
         debug_info += f"⚠️ Could not apply index embedding model: {e}\n"
-    
+
     # Write debug info to file
     with open("logs/embedding_debug.log", "a") as f:
         f.write(debug_info)
@@ -745,13 +751,12 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 print(f"⚠️ Could not get Ollama models: {e}")
             
-            # Add supported HuggingFace embedding models
-            huggingface_embedding_models = [
-                "Qwen/Qwen3-Embedding-0.6B",
-                "Qwen/Qwen3-Embedding-4B", 
-                "Qwen/Qwen3-Embedding-8B"
-            ]
-            embedding_models.extend(huggingface_embedding_models)
+            # Add supported HuggingFace embedding models from registry
+            try:
+                from rag_system.model_registry import huggingface_models
+                embedding_models.extend(huggingface_models())
+            except ImportError:
+                embedding_models.extend(["Qwen/Qwen3-Embedding-0.6B"])
             
             # Sort models for consistent ordering
             generation_models.sort()

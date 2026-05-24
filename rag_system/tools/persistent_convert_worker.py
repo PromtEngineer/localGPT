@@ -14,8 +14,16 @@ The process exits cleanly when stdin reaches EOF (parent closed the pipe).
 from __future__ import annotations
 
 import json
+import os
 import sys
 import traceback
+
+# Save the real stdout fd before any imports so library print() calls (e.g. from
+# DocumentConverter or Docling progress messages) can't corrupt the JSON protocol.
+# All subsequent print() / sys.stdout writes go to stderr; only _respond() uses
+# _protocol_out to write JSON to the parent.
+_protocol_out = os.fdopen(os.dup(sys.stdout.fileno()), "w", buffering=1)
+sys.stdout = sys.stderr  # redirect print() to stderr
 
 
 def main() -> None:
@@ -45,8 +53,8 @@ def main() -> None:
 
 
 def _respond(payload: dict) -> None:
-    sys.stdout.write(json.dumps(payload, default=str) + "\n")
-    sys.stdout.flush()
+    _protocol_out.write(json.dumps(payload, default=str) + "\n")
+    _protocol_out.flush()
 
 
 if __name__ == "__main__":

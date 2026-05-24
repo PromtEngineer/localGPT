@@ -51,7 +51,7 @@ class IncrementalIndexer:
 
     def _init_database(self):
         """Initialize database tables for incremental indexing"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.cursor()
 
         # Document metadata tracking table
@@ -141,7 +141,7 @@ class IncrementalIndexer:
 
     def get_stored_metadata(self, file_path: str, index_id: str = "default") -> Optional[DocumentMetadata]:
         """Get stored metadata from database"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.execute('''
             SELECT file_hash, modification_time, file_size, last_indexed, chunk_count, index_id
             FROM document_metadata_v2
@@ -221,7 +221,7 @@ class IncrementalIndexer:
             file_hash = self.calculate_file_hash(file_path)
         now = time.time()
 
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.cursor()
 
         # Update or insert index-scoped metadata
@@ -293,7 +293,7 @@ class IncrementalIndexer:
 
     def get_index_stats(self, index_id: Optional[str] = None) -> Dict[str, Any]:
         """Get statistics about indexed documents"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.cursor()
 
         if index_id:
@@ -348,7 +348,7 @@ class IncrementalIndexer:
         Returns:
             Number of entries cleaned up
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.cursor()
 
         # Get all tracked files
@@ -379,7 +379,7 @@ class IncrementalIndexer:
 
     def reset_index(self, index_id: str):
         """Reset all metadata for an index (useful for forced reindexing)"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         cursor = conn.cursor()
 
         # Remove metadata for this index

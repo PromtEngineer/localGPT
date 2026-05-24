@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { ApiRecord, ChatMessage, SourceDocument, Step } from "@/lib/api"
 import Markdown from "@/components/Markdown"
 import { normalizeWhitespace } from "@/utils/textNormalization"
+import { highlightTerms } from "@/lib/highlight"
 
 interface ConversationPageProps {
   messages: ChatMessage[]
@@ -33,18 +34,22 @@ type TimelineStep = Omit<Step, 'status'> & {
   details: unknown
 }
 
-function Citation({doc, idx}: {doc: SourceDocument, idx:number}){
+function Citation({doc, idx, query}: {doc: SourceDocument, idx:number, query?: string}){
   const [open,setOpen]=React.useState(false);
-  const preview = (doc.text||'').replace(/\s+/g,' ').trim().slice(0,160) + ((doc.text||'').length>160?'…':'');
+  const raw = (doc.text||'').replace(/\s+/g,' ').trim();
+  const previewText = raw.slice(0,160) + (raw.length>160?'…':'');
+  const body = query
+    ? highlightTerms(open ? raw : previewText, query)
+    : (open ? raw : previewText);
   return (
     <div onClick={()=>setOpen(!open)} className="text-xs text-gray-300 bg-gray-900/60 rounded p-2 cursor-pointer hover:bg-gray-800 transition">
-      <span className="font-semibold mr-1">[{idx+1}]</span>{open?doc.text:preview}
+      <span className="font-semibold mr-1">[{idx+1}]</span>{body}
     </div>
   );
 }
 
 // NEW: Expandable list of citations per assistant message
-function CitationsBlock({docs}:{docs: SourceDocument[]}){
+function CitationsBlock({docs, query}:{docs: SourceDocument[], query?: string}){
   const scored = docs.filter(d => d.rerank_score || d.score || d._distance)
   const rank = (doc: SourceDocument) => doc.rerank_score ?? doc.score ?? (doc._distance ? 1 / doc._distance : 0)
   scored.sort((a, b) => rank(b) - rank(a))
@@ -58,11 +63,11 @@ function CitationsBlock({docs}:{docs: SourceDocument[]}){
     <div className="mt-2 text-xs text-gray-400">
       <p className="font-semibold mb-1">Sources:</p>
       <div className="grid grid-cols-1 gap-2">
-        {visibleDocs.map((doc, i) => <Citation key={doc.chunk_id || i} doc={doc} idx={i} />)}
+        {visibleDocs.map((doc, i) => <Citation key={doc.chunk_id || i} doc={doc} idx={i} query={query} />)}
       </div>
       {scored.length > 5 && (
-        <button 
-          onClick={() => setExpanded(!expanded)} 
+        <button
+          onClick={() => setExpanded(!expanded)}
           className="text-blue-400 hover:text-blue-300 mt-2 text-xs"
         >
           {expanded ? 'Show less' : `Show ${scored.length-5} more`}
@@ -164,7 +169,7 @@ function StructuredMessageBlock({ content }: { content: ApiRecord[] | { steps: S
                     <ThinkingText text={normalizeWhitespace(String((step.details as ApiRecord).answer || ''))} />
                   </div>
                   {!hasSubAnswers && asSourceDocuments((step.details as ApiRecord).source_documents).length > 0 && (
-                    <CitationsBlock docs={asSourceDocuments((step.details as ApiRecord).source_documents)} />
+                    <CitationsBlock docs={asSourceDocuments((step.details as ApiRecord).source_documents)} query={precedingQuery} />
                   )}
                 </div>
               ) : step.key === 'final' && step.details && typeof step.details === 'string' ? (
@@ -187,7 +192,7 @@ function StructuredMessageBlock({ content }: { content: ApiRecord[] | { steps: S
                         <div className="font-semibold">{String(detail.question || '')}</div>
                         <div><ThinkingText text={normalizeWhitespace(String(detail.answer || ''))} /></div>
                         {asSourceDocuments(detail.source_documents).length > 0 && (
-                          <CitationsBlock docs={asSourceDocuments(detail.source_documents)} />
+                          <CitationsBlock docs={asSourceDocuments(detail.source_documents)} query={precedingQuery} />
                         )}
                       </div>
                     ))}
@@ -298,8 +303,20 @@ export function ConversationPage({
     <div className={`flex flex-col h-full bg-black relative overflow-hidden ${className}`}>
       <ScrollArea ref={scrollAreaRef} className="flex-1 h-full px-4 pt-4 pb-6 min-h-0">
         <div className="max-w-4xl mx-auto space-y-6">
-          {messages.map((message) => {
+          {messages.map((message, msgIdx) => {
             const isUser = message.sender === "user"
+            // Find the most recent user query preceding this assistant message (for term highlighting)
+            const precedingQuery = !isUser
+              ? (() => {
+                  for (let i = msgIdx - 1; i >= 0; i--) {
+                    if (messages[i].sender === "user") {
+                      const c = messages[i].content;
+                      return typeof c === "string" ? c : "";
+                    }
+                  }
+                  return "";
+                })()
+              : "";
             
             return (
               <div key={message.id} className="w-full group">
@@ -361,7 +378,7 @@ export function ConversationPage({
                       typeof message.content === 'string' &&
                       Array.isArray(message.metadata?.source_documents) &&
                       message.metadata.source_documents.length > 0) && (
-                        <CitationsBlock docs={message.metadata.source_documents as SourceDocument[]} />
+                        <CitationsBlock docs={message.metadata.source_documents as SourceDocument[]} query={precedingQuery} />
                     )}
                   </div>
 

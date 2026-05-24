@@ -95,7 +95,12 @@ All containers share access to document storage and databases through bind mount
 ### Environment Variables (docker.env)
 ```bash
 # Ollama Configuration
-OLLAMA_HOST=http://host.docker.internal:11434
+# Linux — Docker bridge gateway IP (default in docker.env)
+OLLAMA_HOST=http://172.18.0.1:11434
+# macOS / Windows — use this instead:
+# OLLAMA_HOST=http://host.docker.internal:11434
+# Containerized Ollama (--profile with-ollama) — use this instead:
+# OLLAMA_HOST=http://ollama:11434
 
 # Service Configuration  
 NODE_ENV=production
@@ -108,6 +113,11 @@ LANCEDB_PATH=/app/lancedb
 UPLOADS_PATH=/app/shared_uploads
 ```
 
+> **Platform note**: `host.docker.internal` resolves on macOS/Windows Docker Desktop
+> but not on Linux. The default `docker.env` uses `172.18.0.1` (Docker bridge gateway)
+> for Linux compatibility. Find yours:
+> `docker network inspect localgpt_rag-network --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'`
+
 ### Model Configuration
 The system uses these models by default:
 - **Embedding**: `Qwen/Qwen3-Embedding-0.6B` (1024 dimensions)
@@ -118,7 +128,7 @@ The system uses these models by default:
 
 ### Start/Stop Services
 ```bash
-# Start all services
+# Start all services (Ollama runs locally)
 ./start-docker.sh
 
 # Stop all services
@@ -126,6 +136,19 @@ The system uses these models by default:
 
 # Restart services
 ./start-docker.sh stop && ./start-docker.sh
+```
+
+### Option: Fully Containerized Ollama
+```bash
+# Update docker.env to route to the containerized Ollama service
+sed -i '' 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # macOS
+# sed -i 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # Linux
+
+# Start all containers including the Ollama container
+docker compose --profile with-ollama --env-file docker.env up --build -d
+
+# Pull models into the Ollama container (first time only)
+docker compose exec ollama ollama pull qwen3:8b
 ```
 
 ### Monitor Services
@@ -190,7 +213,10 @@ print('✅ RAG System OK')
 "
 
 # Test Ollama connection from container
+# macOS / Windows:
 docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+# Linux:
+docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
 
 # Check environment variables
 docker compose exec rag-api env | grep OLLAMA
@@ -239,8 +265,16 @@ curl http://localhost:11434/api/tags
 pkill ollama
 ollama serve
 
-# Test from container
+# Test from container (macOS / Windows)
 docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+# Test from container (Linux — use bridge gateway IP)
+docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
+
+# On Linux, if host.docker.internal doesn't resolve, update docker.env:
+# Find your bridge IP first:
+docker network inspect localgpt_rag-network --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'
+# Then update docker.env:
+sed -i 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://<gateway-ip>:11434|' docker.env
 ```
 
 #### Memory Issues

@@ -30,6 +30,19 @@ except ImportError as e:
     RAG_SYSTEM_AVAILABLE = False
     print(f"⚠️ RAG system modules not available: {e}")
 
+# Enable WAL journal mode before ANY connection is opened.
+# isolation_level=None (autocommit) is required because PRAGMA journal_mode
+# is silently ignored when issued inside an open transaction.
+import sqlite3 as _sqlite3
+_DB_PATH = os.path.join(BACKEND_DIR, "chat_data.db")
+try:
+    _wal_conn = _sqlite3.connect(_DB_PATH, timeout=30, isolation_level=None)
+    _wal_mode = _wal_conn.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+    _wal_conn.close()
+    print(f"✅ SQLite journal mode: {_wal_mode}")
+except Exception as _wal_err:
+    print(f"⚠️ Could not enable WAL mode: {_wal_err}")
+
 from ollama_client import OllamaClient
 from database import db, generate_session_title
 import simple_pdf_processor as pdf_module
@@ -60,6 +73,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Import metrics singleton
+try:
+    from metrics import metrics as _metrics
+except ImportError:
+    _metrics = None
+
+@app.middleware("http")
+async def _record_metrics(request: Request, call_next):
+    if _metrics is None:
+        return await call_next(request)
+    _metrics.inc_active()
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    latency_ms = (time.perf_counter() - t0) * 1000
+    _metrics.dec_active()
+    _metrics.record_request(request.url.path, latency_ms)
+    return response
 
 # Global variables
 ollama_client = OllamaClient()
@@ -132,12 +163,6 @@ def _index_build_preflight(index_id: str, data: Dict[str, Any] | None = None, *,
     document_count = 0
     total_bytes = 0
 
-    if not RAG_SYSTEM_AVAILABLE:
-        errors.append(
-            "RAG indexing dependencies are not available in this backend Python process. "
-            "Restart with './start-localgpt' or activate .venv before starting the backend."
-        )
-
     documents = index.get("documents", [])
     if not documents:
         errors.append("No documents are attached to this index.")
@@ -188,6 +213,13 @@ def _index_build_preflight(index_id: str, data: Dict[str, Any] | None = None, *,
         except requests.exceptions.RequestException as e:
             rag_api_available = False
             errors.append(f"RAG API is not reachable at {RAG_API_BASE_URL}: {e}")
+        # Only flag missing local imports when the RAG API is also down — in a healthy
+        # split-process setup (backend + separate RAG API) the local import is optional.
+        if not rag_api_available and not RAG_SYSTEM_AVAILABLE:
+            errors.append(
+                "RAG indexing dependencies are not available in this backend Python process "
+                "and the RAG API is not reachable. Run './start-localgpt' to start both services."
+            )
 
     return {
         "ok": not errors,
@@ -240,11 +272,17 @@ def _inspect_vector_table(table_name: str | None) -> Dict[str, Any]:
             continue
         try:
             conn = lancedb.connect(db_path)
+            # list_tables() returns a ListTablesResponse that iterates as
+            # (key, value) pairs: {"tables": [...], "page_token": ...}
+            # table_names() is deprecated but returns a plain list.
             if hasattr(conn, "list_tables"):
-                raw_names = conn.list_tables()
-                names = [item.name if hasattr(item, "name") else str(item) for item in raw_names]
+                raw = conn.list_tables()
+                names_map = dict(raw)  # {"tables": [...], "page_token": ...}
+                names = names_map.get("tables", [])
+            elif hasattr(conn, "table_names"):
+                names = list(conn.table_names())
             else:
-                names = conn.table_names() if hasattr(conn, "table_names") else []
+                names = []
             table_names = list(names)
             if table_name not in table_names:
                 continue
@@ -496,8 +534,12 @@ async def update_index_job_progress(job_id: str, request: Request):
         if key in data
     }
     if data.get("stage") == "completed":
-        updates["status"] = "completed"
-        updates["finished_at"] = datetime.now().isoformat()
+        # The RAG API emits a final progress callback before _run_index_build()
+        # finishes updating index metadata and storing the job result. Keep the
+        # job non-terminal here; the background runner is the source of truth for
+        # completion after all post-build bookkeeping is done.
+        updates["stage"] = "finalizing"
+        updates["progress"] = min(int(updates.get("progress", 100) or 100), 99)
     elif data.get("stage") == "cancelled":
         updates["status"] = "cancelled"
         updates["finished_at"] = datetime.now().isoformat()
@@ -531,6 +573,78 @@ async def health():
         "available_models": ollama_client.list_models(),
         "database_stats": db.get_stats()
     }
+
+
+@app.get("/metrics", response_class=JSONResponse)
+async def get_metrics(format: str = "json"):
+    """Prometheus-compatible metrics endpoint.
+
+    Use ?format=prometheus for text exposition format or default JSON.
+    """
+    if _metrics is None:
+        raise HTTPException(status_code=503, detail="Metrics not available")
+    if format == "prometheus":
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(_metrics.prometheus_text(), media_type="text/plain; version=0.0.4")
+    return _metrics.snapshot()
+
+
+@app.get("/health/deep")
+async def health_deep():
+    """Deep health probe: checks DB, LanceDB, RAG API, Ollama, and embedding."""
+    checks: Dict[str, Any] = {}
+    overall = "ok"
+
+    # 1. SQLite
+    try:
+        import sqlite3 as _sqlite3
+        _conn = _sqlite3.connect(db.db_path, timeout=3)
+        _conn.execute("SELECT 1").fetchone()
+        _conn.close()
+        checks["db"] = "ok"
+    except Exception as e:
+        checks["db"] = f"error: {e}"
+        overall = "degraded"
+
+    # 2. LanceDB
+    try:
+        import lancedb as _lancedb
+        for candidate in _lancedb_path_candidates():
+            if os.path.exists(candidate):
+                _lancedb.connect(candidate)
+                checks["lancedb"] = "ok"
+                break
+        else:
+            checks["lancedb"] = "not_found"
+            overall = "degraded"
+    except Exception as e:
+        checks["lancedb"] = f"error: {e}"
+        overall = "degraded"
+
+    # 3. RAG API
+    try:
+        # The lightweight RAG API exposes /models as its readiness endpoint.
+        resp = requests.get(f"{RAG_API_BASE_URL}/models", timeout=3)
+        checks["rag_api"] = "ok" if resp.status_code == 200 else f"http_{resp.status_code}"
+        if resp.status_code != 200:
+            overall = "degraded"
+    except Exception as e:
+        checks["rag_api"] = f"error: {e}"
+        overall = "degraded"
+
+    # 4. Ollama
+    try:
+        ollama_base = getattr(ollama_client, "host", None) or getattr(ollama_client, "base_url", "http://localhost:11434")
+        resp = requests.get(f"{ollama_base}/api/tags", timeout=3)
+        checks["ollama"] = "ok" if resp.status_code == 200 else f"http_{resp.status_code}"
+        if resp.status_code != 200:
+            overall = "degraded"
+    except Exception as e:
+        checks["ollama"] = f"error: {e}"
+        overall = "degraded"
+
+    return {"status": overall, "checks": checks}
+
 
 @app.get("/sessions")
 async def get_sessions():
@@ -907,13 +1021,12 @@ async def get_models():
             generation_models.extend(ollama_generation_models)
             embedding_models.extend(ollama_embedding_models)
 
-        # Add supported HuggingFace embedding models
-        huggingface_embedding_models = [
-            "Qwen/Qwen3-Embedding-0.6B",
-            "Qwen/Qwen3-Embedding-4B",
-            "Qwen/Qwen3-Embedding-8B"
-        ]
-        embedding_models.extend(huggingface_embedding_models)
+        # Add supported HuggingFace embedding models from registry
+        try:
+            from rag_system.model_registry import huggingface_models
+            embedding_models.extend(huggingface_models())
+        except ImportError:
+            embedding_models.extend(["Qwen/Qwen3-Embedding-0.6B"])
 
         # Sort models for consistent ordering
         generation_models.sort()
@@ -1027,6 +1140,31 @@ async def get_index(index_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.patch("/indexes/{index_id}/fusion-weights")
+async def update_fusion_weights(index_id: str, request: Request):
+    """Store per-index hybrid fusion weights in the index metadata.
+
+    Body: {"bm25_weight": 0.4, "vec_weight": 0.6}
+    """
+    try:
+        body = await request.json()
+        bm25_weight = float(body.get("bm25_weight", 0.5))
+        vec_weight = float(body.get("vec_weight", 0.5))
+        if abs(bm25_weight + vec_weight - 1.0) > 0.01:
+            raise HTTPException(status_code=400, detail="bm25_weight + vec_weight must sum to 1.0")
+        index = db.get_index(index_id)
+        if not index:
+            raise HTTPException(status_code=404, detail="Index not found")
+        meta = index.get("metadata") or {}
+        meta["fusion_config"] = {"method": "linear", "bm25_weight": bm25_weight, "vec_weight": vec_weight}
+        db.update_index_metadata(index_id, meta)
+        return {"index_id": index_id, "fusion_config": meta["fusion_config"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/indexes/{index_id}/diagnostics")
 async def get_index_diagnostics(index_id: str):
     """Validate source files, vector artifacts, and latest build state for an index."""
@@ -1095,16 +1233,6 @@ async def index_build_preflight(index_id: str, request: Request):
 
 
 def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = None) -> Dict[str, Any]:
-    if not RAG_SYSTEM_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "RAG indexing dependencies are not available in this backend Python process. "
-                "Stop the backend, run 'source .venv/bin/activate' from the project root, "
-                "then restart with 'python backend/server.py'."
-            ),
-        )
-
     index = db.get_index(index_id)
     if not index:
         raise HTTPException(status_code=404, detail="Index not found")
@@ -1366,6 +1494,45 @@ async def get_index_job(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Index job not found")
     return job
+
+
+@app.get("/index-jobs/{job_id}/stream")
+async def stream_index_job(job_id: str):
+    """SSE stream for live indexing progress. Emits events until the job finishes."""
+    import asyncio as _asyncio
+
+    async def _event_gen():
+        terminal_statuses = {"completed", "failed", "cancelled"}
+        last_progress = -1
+        while True:
+            job = _public_index_job(job_id)
+            if job is None:
+                yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'Job not found'}})}\n\n"
+                break
+            progress = job.get("progress", 0)
+            status = job.get("status", "unknown")
+            if progress != last_progress or status in terminal_statuses:
+                last_progress = progress
+                payload = {
+                    "type": "progress",
+                    "data": {
+                        "status": status,
+                        "stage": job.get("stage", ""),
+                        "progress": progress,
+                        "message": job.get("message", ""),
+                        "files": job.get("files", []),
+                    },
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+            if status in terminal_statuses:
+                break
+            await _asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        _event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/index-jobs/{job_id}/cancel")
@@ -1755,6 +1922,38 @@ async def export_diagnostics(
         raise HTTPException(status_code=500, detail=f"Error exporting diagnostics: {str(e)}")
 
 
+@app.post("/maintenance/vacuum-database")
+async def vacuum_database():
+    """Run SQLite VACUUM to reclaim fragmented pages."""
+    if not maintenance_tools:
+        raise HTTPException(status_code=503, detail="Maintenance tools not available")
+    try:
+        result = maintenance_tools.vacuum_database()
+        if result.get("error"):
+            raise HTTPException(status_code=500, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Vacuum failed: {str(e)}")
+
+
+@app.post("/maintenance/remove-orphan-tables")
+async def remove_orphan_tables(dry_run: bool = True):
+    """Drop LanceDB tables with no matching index record (dry_run=true by default)."""
+    if not maintenance_tools:
+        raise HTTPException(status_code=503, detail="Maintenance tools not available")
+    try:
+        result = maintenance_tools.remove_orphan_lancedb_tables(dry_run=dry_run)
+        if result.get("error"):
+            raise HTTPException(status_code=500, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Orphan sweep failed: {str(e)}")
+
+
 # ============================================================================
 # JOB PERSISTENCE & RESUMABLE INDEXING ENDPOINTS
 # ============================================================================
@@ -1885,7 +2084,7 @@ async def recover_stale_jobs(older_than_minutes: int = 5):
 
 @app.on_event("startup")
 async def startup_event():
-    """Auto-recover stale jobs on backend startup"""
+    """Auto-recover stale jobs and index metadata on backend startup"""
     if job_progress_tracker:
         try:
             result = job_progress_tracker.recover_stale_jobs(older_than_minutes=5)
@@ -1893,6 +2092,12 @@ async def startup_event():
                 print(f"✅ Auto-recovered {result['recovered']} stale indexing job(s)")
         except Exception as e:
             print(f"⚠️ Error during stale job recovery: {e}")
+    try:
+        recovered = _recover_stale_index_builds()
+        if recovered > 0:
+            print(f"✅ Reset {recovered} index(es) stuck in 'building' state")
+    except Exception as e:
+        print(f"⚠️ Error during stale index build recovery: {e}")
 
 
 if __name__ == "__main__":

@@ -26,3 +26,10 @@ target-version = "py311"
 select = ["E", "F", "I", "W", "C", "B", "ANN"]
 ignore = ["E501"]
 exclude = ["**/.venv/**", "**/node_modules/**", "**/__pycache__/**", "build/**", "dist/**"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_return_any = false
+exclude = ["node_modules", ".venv", "venv"]

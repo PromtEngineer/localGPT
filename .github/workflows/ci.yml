@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  lint:
+    name: Lint (ruff + black + mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install linters
+        run: pip install ruff black mypy
+
+      - name: ruff check
+        run: ruff check rag_system/ backend/ --ignore E501,ANN
+
+      - name: black check
+        run: black --check rag_system/ backend/
+
+      - name: mypy
+        run: mypy rag_system/ backend/ --ignore-missing-imports --check-untyped-defs --no-error-summary
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: |
+          python -m pytest \
+            test_hybrid_retrieval.py \
+            test_incremental_indexing.py \
+            test_logging_utils.py \
+            -v --tb=short

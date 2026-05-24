@@ -127,6 +127,19 @@ ollama pull qwen3:8b
 docker compose --env-file docker.env up --build -d
 ```
 
+**Alternative: Fully containerized Ollama (no local install)**
+```bash
+# Update docker.env to point to the containerized Ollama service
+sed -i '' 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # macOS
+# sed -i 's|^OLLAMA_HOST=.*|OLLAMA_HOST=http://ollama:11434|' docker.env  # Linux
+
+# Start with the Ollama container enabled
+docker compose --profile with-ollama --env-file docker.env up --build -d
+
+# Pull models into the Ollama container
+docker compose exec ollama ollama pull qwen3:8b
+```
+
 #### **Step 5: Verify Deployment**
 ```bash
 # Check container status
@@ -321,13 +334,23 @@ graph TB
 #### **Docker Configuration (`docker.env`)**
 ```bash
 # Ollama Configuration
-OLLAMA_HOST=http://host.docker.internal:11434
+# Linux — Docker bridge gateway IP (default in docker.env)
+OLLAMA_HOST=http://172.18.0.1:11434
+# macOS / Windows — uncomment this line instead:
+# OLLAMA_HOST=http://host.docker.internal:11434
+# Containerized Ollama (--profile with-ollama) — uncomment this line instead:
+# OLLAMA_HOST=http://ollama:11434
 
 # Service Configuration
 NODE_ENV=production
 RAG_API_URL=http://rag-api:8001
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
+> **Platform note**: `host.docker.internal` resolves on macOS/Windows Docker Desktop
+> but not on Linux. The default `docker.env` uses the bridge gateway IP for Linux
+> compatibility. Find yours with:
+> `docker network inspect localgpt_rag-network --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'`
 
 #### **Direct Development Configuration**
 ```bash
