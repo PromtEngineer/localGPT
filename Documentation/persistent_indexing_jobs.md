@@ -1,6 +1,6 @@
 # 📊 Persistent Indexing Jobs - Implementation Guide
 
-**Status**: ✅ Complete - Pipeline Integrated
+**Status**: ✅ Complete - Pipeline Integrated and Verified
 
 This feature adds crash recovery, resumable indexing, and detailed audit trails to the LocalGPT indexing system.
 
@@ -12,12 +12,32 @@ Instead of indexing jobs living in memory and being lost on crashes, all progres
 
 | Problem | Before | After |
 |---------|--------|-------|
-| Job lost on crash | ❌ All work lost | ✅ Can resume from last stage |
+| Job lost on crash | ❌ All work lost | ✅ Marked paused and resumable from persisted stage state |
 | Stuck builds | Detect via CLI | ✅ Auto-recover on startup |
 | Failed files unclear | Manual inspection | ✅ Clear status per file + stage |
-| Progress accuracy | Estimates | ✅ Real-time counts |
+| Progress accuracy | Estimates | ✅ Real-time job/file updates via backend SSE |
 | Audit trail | Logs only | ✅ Complete timeline in DB |
-| Retry smart files | Must rebuild all | ✅ Rebuild only failed files |
+| Retry smart files | Must rebuild all | ✅ Skips completed stages when persisted artifacts remain valid |
+
+## Verification Snapshot
+
+Verified on 2026-06-05:
+- `python -m pytest test_backend_api_contract.py -q` -> 6 passed
+- `python -m py_compile backend/server.py rag_system/api_server.py rag_system/api_server_with_progress.py rag_system/main.py rag_system/retrieval/retrievers.py rag_system/agent/loop.py`
+- `npx tsc --noEmit`
+
+Covered by the backend contract tests:
+- persistent index job shape is safe for the frontend
+- progress callbacks update job/file status
+- RAG final progress events do not prematurely mark jobs complete
+- startup recovery pauses stale job rows and stale `building` index metadata
+- all-skipped resume paths still validate existing vector tables before reporting success
+
+Current limitations:
+- recovery marks stale jobs as `paused`; a user/API resume is still required
+- completed stages can be skipped only when the persisted stage state and required artifacts are still usable
+- the UI shows live progress and failed-file errors, but timeline browsing and resume controls are still API-only
+- the backend and RAG API are still separate HTTP servers; consolidation is tracked as future architecture work
 
 ## Architecture
 
@@ -237,6 +257,25 @@ Response:
 }
 ```
 
+### Stream Live Progress
+```
+GET /index-jobs/{job_id}/stream
+
+Server-sent events emit:
+{
+  "type": "progress",
+  "data": {
+    "id": "job_123",
+    "index_id": "idx_abc",
+    "status": "running",
+    "stage": "chunking",
+    "progress": 35,
+    "message": "Chunking document",
+    "files": [...]
+  }
+}
+```
+
 ### Recover Stale Jobs
 ```
 POST /index-jobs/recover-stale?older_than_minutes=5
@@ -346,7 +385,7 @@ curl http://localhost:8000/index-jobs/abc123/audit-trail > trail.json
 Backend starts
 → Scans for jobs with status='building' and updated_at < NOW - 5min
 → Marks them as 'paused' (not failed!)
-→ User can resume from UI
+→ User can resume via API (UI resume control is still pending)
 ```
 
 ## Crash Recovery Flow
@@ -368,11 +407,11 @@ Finds jobs:
 Marks them as 'paused'
   (not 'failed' - they're resumable!)
 ↓
-User sees "paused" job in UI
+User/API sees the job as "paused"
 ↓
-Click "Resume"
+Call "Resume"
 ↓
-Job restarts from last incomplete stage
+Job restarts from the last incomplete persisted stage when artifacts are valid
 ```
 
 ## State Transitions
@@ -395,8 +434,8 @@ Stage states:
 ### 1. **Resumable from Crash**
 - Job status persisted to DB
 - Each stage tracked separately
-- Can resume from last incomplete stage
-- No duplicate work
+- Can resume from the last incomplete persisted stage when artifacts are valid
+- Avoids duplicate work for completed stages that can be safely reused
 
 ### 2. **Per-File Tracking**
 - Know exactly which files succeeded/failed
@@ -422,20 +461,21 @@ Stage states:
 - Can be manually resumed
 - No data loss
 
-## Next Steps for Implementation
+## Remaining Work
 
-### Phase 1: Integrate with Pipeline
-- Modify `IndexingPipeline.run()` to use `JobProgressTracker`
-- Add stage start/complete calls
-- Handle failures properly
+### Completed
+- `IndexingPipeline.run()` uses `JobProgressTracker`
+- Stage start/complete/failure calls are wired
+- Backend startup recovery pauses stale jobs and stale `building` index metadata
+- Backend SSE streams live job/file progress
+- Frontend create-index modal shows live progress and failed-file errors
 
-### Phase 2: UI Integration
-- Show per-file progress
+### UI Integration Remaining
 - Display timeline/stages
 - Add resume button
-- Show error details
+- Show detailed stage error history
 
-### Phase 3: Advanced Features
+### Advanced Features
 - Automatic retry with backoff
 - Smart stage skipping based on output hash
 - Parallel per-file processing
@@ -484,7 +524,8 @@ for file_path in files_to_index:
 
 - ✅ **`rag_system/job_persistence.py`** - New module for job tracking
 - ✅ **`backend/database.py`** - Enhanced schema with stage tracking
-- ✅ **`backend/server.py`** - 5 new REST endpoints + startup hook
+- ✅ **`backend/server.py`** - job REST endpoints, SSE stream, progress callback endpoint, and startup hook
+- ✅ **`src/lib/api.ts` / `src/components/IndexForm.tsx`** - live progress streaming and failed-file display
 
 ## Testing
 
@@ -512,7 +553,7 @@ curl http://localhost:8000/index-jobs/test-job/statistics
 
 ✅ **Atomic writes** - Each stage write is a transaction
 ✅ **No data loss** - All progress persisted before continuing
-✅ **Crash safe** - Can resume from exact failure point
+✅ **Crash safe** - Can resume from persisted stage state
 ✅ **Audit trail** - Complete history for debugging
 ✅ **Idempotent** - Can safely retry stages
 

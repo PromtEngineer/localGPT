@@ -1,8 +1,8 @@
-# RAG System – Improvement Road-map
+# RAG System - Improvement Roadmap
 
-_Revision: 2026-05-23 (final update — all items implemented)_
+_Revision: 2026-06-05 (verified against current codebase)_
 
-This document captures high-impact enhancements identified during the July 2025 code-review, updated to reflect current implementation status.  Items marked ✅ are in the codebase; items marked ⏳ are pending.
+This document captures high-impact enhancements identified during review, updated to reflect current implementation status. Items marked ✅ are in the codebase and have at least focused verification; items marked ⏳ are pending or intentionally deferred.
 
 ---
 
@@ -58,9 +58,9 @@ This document captures high-impact enhancements identified during the July 2025 
 
 | Status | Item |
 |--------|------|
-| ✅ Done | SSE-driven progress bar — `GET /index-jobs/{id}/stream` SSE endpoint; `streamIndexJob()` in `src/lib/api.ts`; `IndexForm.tsx` polling replaced with EventSource. |
-| ✅ Done | Matched-term highlighting — `src/lib/highlight.ts` `highlightTerms()`; `Citation` and `CitationsBlock` components accept `query` prop; query terms highlighted in yellow. |
-| ⏳ | Preset buttons (Fast / Balanced / High-Recall) for retrieval settings. |
+| ✅ Done | SSE-driven progress bar — `GET /index-jobs/{id}/stream` SSE endpoint; `streamIndexJob()` in `src/lib/api.ts`; `IndexForm.tsx` streams progress, file status, and failed-file errors. SSE events now include `id` and `index_id`. |
+| ✅ Done | Matched-term highlighting — `src/lib/highlight.ts` `highlightTerms()`; `Citation` and `CitationsBlock` components accept `query` prop; query terms highlighted in yellow. Verified with `npx tsc --noEmit` after fixing `precedingQuery` prop wiring. |
+| ✅ Done | Preset buttons for indexing settings — `IndexForm.tsx` includes Fast / Balanced / Maximum profiles that control chunking, enrichment, Docling chunking, and batch sizes. |
 
 ## 8. Testing & CI
 
@@ -75,8 +75,11 @@ This document captures high-impact enhancements identified during the July 2025 
 | Status | Item |
 |--------|------|
 | ⏳ | Graph-RAG integration (currently disabled, can be implemented if needed). |
-| ✅ Done | Consolidate duplicate config keys — `EXTERNAL_MODELS["embedding_model"]` already used in both pipeline configs; `model_registry.py` is the authoritative source for dims/dtype. |
+| ✅ Done | Consolidate duplicate config keys — `EXTERNAL_MODELS["embedding_model"]` is used in both pipeline configs; `.env` model variables are loaded by `rag_system/main.py`; `model_registry.py` is the authoritative source for dims/dtype. |
 | ✅ Done | Run mypy + black in CI — `.github/workflows/ci.yml` lint job runs ruff + black + mypy. |
+| ✅ Done | Dependency hygiene — duplicate top-level requirements were removed; `fuzzywuzzy` / `python-Levenshtein` were replaced with `rapidfuzz`. |
+| ✅ Done | Runtime health/config hygiene — CORS is driven by `CORS_ORIGINS`; RAG `/health` avoids eager embedder loading; Docker Compose sets `BACKEND_URL=http://backend:8000` so RAG index progress callbacks work across containers. |
+| ⏳ | Consolidate the FastAPI backend and legacy RAG HTTP server. Current architecture is still split: backend delegates chat/indexing to the RAG API on port 8001. |
 
 ---
 
@@ -95,9 +98,14 @@ Reduce complexity and improve maintainability.
 * **✅ COMPLETED**: Fix incorrect network name `localgpt_default` → `localgpt_rag-network`
 * **✅ COMPLETED**: Replace `ping` (unavailable in slim containers) with `curl -sf` in network debug commands
 
-### Priority Matrix (updated 2026-05-23 — all items complete)
+### Verification Notes (updated 2026-06-05)
 
-All items implemented. The only remaining item is:
-- **7.3 Preset buttons** (Fast / Balanced / High-Recall) — frontend-only enhancement, no blocking dependencies
+Recent focused checks:
+- `python -m pytest test_backend_api_contract.py -q` -> 6 passed
+- `python -m py_compile backend/server.py rag_system/api_server.py rag_system/api_server_with_progress.py rag_system/main.py rag_system/retrieval/retrievers.py rag_system/agent/loop.py`
+- `npx tsc --noEmit`
+
+Known remaining architecture item:
+- **Single API server migration** — consolidate the FastAPI backend and legacy RAG HTTP API behind a service layer, then remove the port-8001 HTTP boundary.
 
 Feel free to rearrange based on team objectives and resource availability. 

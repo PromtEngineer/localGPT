@@ -4,8 +4,9 @@ import sys
 import argparse
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+# Load environment variables (.env.keys overrides nothing already set by .env)
 load_dotenv()
+load_dotenv(".env.keys", override=False)
 
 # The sys.path manipulation has been removed to prevent import conflicts.
 # This script should be run as a module from the project root, e.g.:
@@ -28,16 +29,19 @@ from rag_system.utils.ollama_client import OllamaClient
 # Ollama Models Configuration (for inference via Ollama)
 OLLAMA_CONFIG = {
     "host": os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-    "generation_model": "qwen3:8b",  # Main text generation model
-    "enrichment_model": "qwen3:8b",  # Quality local model for routing/enrichment
+    "generation_model": os.getenv("GENERATION_MODEL", "qwen3:8b"),
+    "enrichment_model": os.getenv("ENRICHMENT_MODEL", "qwen3:8b"),
 }
 
 # External Model Configuration (HuggingFace models used directly)
 EXTERNAL_MODELS = {
-    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",  # HuggingFace embedding model (1024 dims - fresh start)
-    "reranker_model": "answerdotai/answerai-colbert-small-v1",  # ColBERT reranker
-    "vision_model": "Qwen/Qwen-VL-Chat",  # Vision model for multimodal
-    "fallback_reranker": "BAAI/bge-reranker-base",  # Backup reranker
+    "embedding_model": os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
+    "reranker_model": os.getenv(
+        "RERANKER_MODEL",
+        "answerdotai/answerai-colbert-small-v1",
+    ),
+    "vision_model": os.getenv("VISION_MODEL", "Qwen/Qwen-VL-Chat"),
+    "fallback_reranker": os.getenv("FALLBACK_RERANKER_MODEL", "BAAI/bge-reranker-base"),
 }
 
 # ============================================================================

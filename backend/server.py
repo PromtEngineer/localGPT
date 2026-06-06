@@ -11,6 +11,10 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()                        # .env  — main config
+load_dotenv(".env.keys", override=False)  # .env.keys — API keys (never committed)
 
 # Add parent directory to path so we can import rag_system modules
 import sys
@@ -22,10 +26,12 @@ for path in (BACKEND_DIR, PROJECT_ROOT):
 
 # Import RAG system modules for complete metadata
 try:
-    from rag_system.main import PIPELINE_CONFIGS
+    from rag_system.main import EXTERNAL_MODELS, OLLAMA_CONFIG, PIPELINE_CONFIGS
     RAG_SYSTEM_AVAILABLE = True
     print("✅ RAG system modules accessible from backend")
-except ImportError as e:
+except Exception as e:
+    EXTERNAL_MODELS = {}
+    OLLAMA_CONFIG = {}
     PIPELINE_CONFIGS = {}
     RAG_SYSTEM_AVAILABLE = False
     print(f"⚠️ RAG system modules not available: {e}")
@@ -65,11 +71,22 @@ except ImportError:
 # Initialize FastAPI app
 app = FastAPI(title="LocalGPT Backend", version="1.0.0")
 
+def _cors_origins_from_env() -> list[str]:
+    origins = os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    )
+    parsed = [origin.strip() for origin in origins.split(",") if origin.strip()]
+    return parsed or ["http://localhost:3000"]
+
+
+_cors_origins = _cors_origins_from_env()
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials="*" not in _cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -98,7 +115,8 @@ pdf_processor = None
 index_jobs_lock = threading.Lock()
 index_jobs: Dict[str, Dict[str, Any]] = {}
 STALE_BUILD_AFTER = timedelta(minutes=10)
-RAG_API_BASE_URL = "http://localhost:8001"
+RAG_API_BASE_URL = os.getenv("RAG_API_URL", "http://localhost:8001").rstrip("/")
+BACKEND_BASE_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 
 # Upload safety limits
 _MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB per file
@@ -928,7 +946,7 @@ async def index_documents(session_id: str):
 
         print(f"Found {len(file_paths)} documents to index. Sending to RAG API...")
 
-        rag_api_url = "http://localhost:8001/index"
+        rag_api_url = f"{RAG_API_BASE_URL}/index"
         rag_response = requests.post(rag_api_url, json={"file_paths": file_paths, "session_id": session_id})
 
         if rag_response.status_code == 200:
@@ -1107,9 +1125,12 @@ async def create_index(request: Request):
                 'chunk_overlap': 64,  # From default config
                 'retrieval_mode': 'hybrid',  # From default config
                 'window_size': 5,  # From default config
-                'embedding_model': 'Qwen/Qwen3-Embedding-0.6B',  # From default config
-                'enrich_model': 'qwen3:8b',  # From default config
-                'overview_model': 'qwen3:8b',  # From default config
+                'embedding_model': default_config.get(
+                    'embedding_model_name',
+                    EXTERNAL_MODELS.get('embedding_model', 'Qwen/Qwen3-Embedding-0.6B'),
+                ),
+                'enrich_model': OLLAMA_CONFIG.get('enrichment_model', 'qwen3:8b'),
+                'overview_model': OLLAMA_CONFIG.get('enrichment_model', 'qwen3:8b'),
                 'enable_enrich': True,  # From default config
                 'latechunk': True,  # From default config
                 'docling_chunk': True,  # From default config
@@ -1314,7 +1335,7 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         payload["overview_model_name"] = overview_model
     if job_id:
         payload["job_id"] = job_id
-        payload["backend_base_url"] = "http://localhost:8000"
+        payload["backend_base_url"] = BACKEND_BASE_URL
 
     meta_updates = {
         "status": "building",
@@ -1349,7 +1370,7 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         rag_resp = requests.post(rag_api_url, json=payload)
     except requests.exceptions.ConnectionError as e:
         detail = (
-            "Could not reach the RAG indexing server at http://localhost:8001. "
+            f"Could not reach the RAG indexing server at {RAG_API_BASE_URL}. "
             "Start it in Terminal 2 with 'source .venv/bin/activate' and "
             "'python -m rag_system.api_server'."
         )
@@ -1516,6 +1537,8 @@ async def stream_index_job(job_id: str):
                 payload = {
                     "type": "progress",
                     "data": {
+                        "id": job.get("id", job_id),
+                        "index_id": job.get("index_id", ""),
                         "status": status,
                         "stage": job.get("stage", ""),
                         "progress": progress,
@@ -1705,7 +1728,7 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
     source_docs: List[dict] = []
 
     # Build payload for RAG API
-    rag_api_url = "http://localhost:8001/chat"
+    rag_api_url = f"{RAG_API_BASE_URL}/chat"
     table_name = f"text_pages_{idx_ids[-1]}" if idx_ids else None
     payload: Dict[str, Any] = {
         "query": message,

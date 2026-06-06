@@ -131,7 +131,13 @@ function asSourceDocuments(value: unknown): SourceDocument[] {
   return Array.isArray(value) ? (value as SourceDocument[]) : []
 }
 
-function StructuredMessageBlock({ content }: { content: ApiRecord[] | { steps: Step[] } }) {
+function StructuredMessageBlock({
+  content,
+  precedingQuery,
+}: {
+  content: ApiRecord[] | { steps: Step[] };
+  precedingQuery?: string;
+}) {
   const steps: TimelineStep[] = Array.isArray(content) ? content as TimelineStep[] : content.steps as TimelineStep[];
   // Determine if sub-query answers are present
   const hasSubAnswers = steps.some((s) => s.key === 'answer' && Array.isArray(s.details) && s.details.length > 0);
@@ -170,6 +176,9 @@ function StructuredMessageBlock({ content }: { content: ApiRecord[] | { steps: S
                   </div>
                   {!hasSubAnswers && asSourceDocuments((step.details as ApiRecord).source_documents).length > 0 && (
                     <CitationsBlock docs={asSourceDocuments((step.details as ApiRecord).source_documents)} query={precedingQuery} />
+                  )}
+                  {!hasSubAnswers && step.status === 'done' && asSourceDocuments((step.details as ApiRecord).source_documents).length === 0 && (
+                    <p className="text-xs text-yellow-600/70 italic">No matching documents found in the index for this query. Try rephrasing or rebuilding the index.</p>
                   )}
                 </div>
               ) : step.key === 'final' && step.details && typeof step.details === 'string' ? (
@@ -348,7 +357,7 @@ export function ConversationPage({
                         <div className="whitespace-pre-wrap text-base leading-relaxed">
                           {typeof message.content === 'string' 
                               ? <ThinkingText text={normalizeWhitespace(message.content)} />
-                              : <StructuredMessageBlock content={message.content} />
+                              : <StructuredMessageBlock content={message.content} precedingQuery={precedingQuery} />
                           }
                         </div>
                       )}

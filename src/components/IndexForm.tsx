@@ -164,7 +164,11 @@ export function IndexForm({ onClose, onIndexed }: Props) {
     return new Promise<IndexJob>((resolve, reject) => {
       let lastJob: IndexJob | null = null;
       const { cancel, promise } = streamIndexJob(jobId, (data) => {
-        const job: IndexJob = { id: jobId, index_id: lastJob?.index_id ?? '', ...data } as IndexJob;
+        const job: IndexJob = {
+          id: data.id ?? jobId,
+          index_id: data.index_id ?? lastJob?.index_id ?? '',
+          ...data,
+        } as IndexJob;
         lastJob = job;
         setBuildJob(job);
         if (data.status === 'completed') { cancel(); resolve(job); }
@@ -253,6 +257,21 @@ export function IndexForm({ onClose, onIndexed }: Props) {
                 <p className="mt-2 text-xs text-gray-300">{fileStatusSummary(buildJob)}</p>
               )}
               {buildJob.cancel_requested && <p className="mt-2 text-xs text-yellow-200">Cancel requested. Waiting for the active indexing step to finish.</p>}
+              {/* Failed file list */}
+              {(() => {
+                const failed = (buildJob.files || []).filter(f => f.status === 'failed' && f.error);
+                if (!failed.length) return null;
+                return (
+                  <div className="mt-3 max-h-32 overflow-y-auto space-y-1">
+                    {failed.map((f, i) => (
+                      <div key={i} className="rounded bg-red-900/40 px-2 py-1 text-[11px] text-red-300">
+                        <span className="font-medium">{f.filename || 'Unknown file'}</span>
+                        {f.error && <span className="block text-red-400/80 truncate">{f.error}</span>}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               {buildJob.status !== 'completed' && buildJob.status !== 'failed' && buildJob.status !== 'cancelled' && (
                 <button onClick={handleCancelBuild} className="mt-4 w-full rounded bg-red-700/80 px-3 py-2 text-xs hover:bg-red-700">
                   Cancel build

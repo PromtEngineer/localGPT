@@ -28,8 +28,7 @@ RAG_AGENT = get_agent(AGENT_MODE)
 INDEXING_PIPELINE = get_indexing_pipeline(AGENT_MODE)
 
 if RAG_AGENT is None:
-    print("❌ Critical error: RAG Agent could not be initialized. Exiting.")
-    exit(1)
+    raise RuntimeError("RAG Agent could not be initialized")
 print("✅ RAG Agent initialized successfully.")
 
 # Add helper near top after db & agent init
@@ -37,38 +36,40 @@ print("✅ RAG Agent initialized successfully.")
 
 def _apply_index_embedding_model(idx_ids):
     """Ensure retrieval pipeline uses the embedding model + fusion weights from the first index."""
-    debug_info = f"🔧 _apply_index_embedding_model called with idx_ids: {idx_ids}\n"
+    logger = logging.getLogger(__name__)
+    logger.debug("apply_index_embedding_model idx_ids=%s", idx_ids)
 
     if not idx_ids:
-        debug_info += "⚠️ No index IDs provided\n"
-        with open("logs/embedding_debug.log", "a") as f:
-            f.write(debug_info)
+        logger.warning("apply_index_embedding_model called without index IDs")
         return
     try:
         idx = db.get_index(idx_ids[0])
-        debug_info += f"🔧 Retrieved index: {idx.get('id')} with metadata: {idx.get('metadata', {})}\n"
+        logger.debug(
+            "apply_index_embedding_model index_id=%s metadata=%s",
+            idx.get("id"),
+            idx.get("metadata", {}),
+        )
         meta = idx.get("metadata") or {}
         model = meta.get("embedding_model")
-        debug_info += f"🔧 Embedding model from metadata: {model}\n"
+        logger.debug("apply_index_embedding_model metadata_embedding_model=%s", model)
         rp = RAG_AGENT.retrieval_pipeline
         if model:
             current_model = rp.config.get("embedding_model_name")
-            debug_info += f"🔧 Current embedding model: {current_model}\n"
             rp.update_embedding_model(model)
-            debug_info += f"🔧 Updated embedding model to: {model}\n"
+            logger.debug(
+                "apply_index_embedding_model updated_embedding_model previous=%s current=%s",
+                current_model,
+                model,
+            )
         else:
-            debug_info += "⚠️ No embedding model found in metadata\n"
+            logger.warning("apply_index_embedding_model no embedding model in index metadata")
         # Apply per-index fusion weights if stored
         fusion_config = meta.get("fusion_config")
         if fusion_config and hasattr(rp, "retriever") and hasattr(rp.retriever, "fusion_config"):
             rp.retriever.fusion_config = fusion_config
-            debug_info += f"🔧 Applied fusion_config: {fusion_config}\n"
+            logger.debug("apply_index_embedding_model applied_fusion_config=%s", fusion_config)
     except Exception as e:
-        debug_info += f"⚠️ Could not apply index embedding model: {e}\n"
-
-    # Write debug info to file
-    with open("logs/embedding_debug.log", "a") as f:
-        f.write(debug_info)
+        logger.warning("apply_index_embedding_model failed: %s", e)
 
 def _get_table_name_for_session(session_id):
     """Get the correct vector table name for a session by looking up its linked indexes."""
@@ -141,8 +142,48 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
         if parsed_path.path == '/models':
             self.handle_models()
+        elif parsed_path.path == '/health':
+            self.handle_health()
         else:
             self.send_json_response({"error": "Not Found"}, status_code=404)
+
+    def handle_health(self):
+        """Lightweight health probe that avoids loading large ML models."""
+        checks: dict = {}
+        overall = "ok"
+
+        # Agent
+        checks["agent"] = "ok" if RAG_AGENT is not None else "error"
+        if RAG_AGENT is None:
+            overall = "degraded"
+
+        # LanceDB
+        try:
+            import lancedb as _lancedb
+            lancedb_uri = os.getenv("LANCEDB_URI", "./lancedb")
+            if os.path.exists(lancedb_uri):
+                conn = _lancedb.connect(lancedb_uri)
+                table_names = conn.table_names()
+                checks["lancedb"] = f"ok ({len(table_names)} tables)"
+            else:
+                checks["lancedb"] = "not_initialized"
+        except Exception as e:
+            checks["lancedb"] = f"error: {e}"
+            overall = "degraded"
+
+        # Embedder readiness without forcing model initialization.
+        try:
+            if RAG_AGENT is not None:
+                retrieval_pipeline = getattr(RAG_AGENT, "retrieval_pipeline", None)
+                embedder = getattr(retrieval_pipeline, "text_embedder", None)
+                checks["embedder"] = "loaded" if embedder is not None else "not_loaded"
+            else:
+                checks["embedder"] = "agent_unavailable"
+        except Exception as e:
+            checks["embedder"] = f"error: {e}"
+            overall = "degraded"
+
+        self.send_json_response({"status": overall, "checks": checks})
 
     def _parse_chat_request(self):
         """Parse and validate a chat POST body. Returns a params dict, or None if a response was already sent."""

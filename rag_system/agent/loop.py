@@ -559,19 +559,23 @@ FINAL ANSWER:
             
         if verification_enabled and result.get("source_documents"):
             context_str = "\n".join([doc['text'] for doc in result['source_documents']])
-            verification = await self.verifier.verify_async(contextual_query, context_str, result['answer'])
-            
-            score = verification.confidence_score
+            try:
+                verification = await asyncio.wait_for(
+                    self.verifier.verify_async(contextual_query, context_str, result['answer']),
+                    timeout=30.0,
+                )
+            except asyncio.TimeoutError:
+                print("⚠️  Verifier timed out after 30 s; skipping confidence annotation.")
+                verification = None
 
-            # Only include confidence details if we received a non-zero score (0 usually means JSON parse failure)
-            if score > 0:
-                result['answer'] += f" [Confidence: {score}%]"
-                # Add warning only when the verifier explicitly reported low confidence / not grounded
-                if (not verification.is_grounded) or score < 50:
-                    result['answer'] += f" [Warning: Low confidence. Groundedness: {verification.is_grounded}]"
-            else:
-                # Skip appending any verifier note – 0 likely indicates a parser error
-                print("⚠️  Verifier returned 0 confidence – likely JSON parse error; omitting tags.")
+            if verification is not None:
+                score = verification.confidence_score
+                if score > 0:
+                    result['answer'] += f" [Confidence: {score}%]"
+                    if (not verification.is_grounded) or score < 50:
+                        result['answer'] += f" [Warning: Low confidence. Groundedness: {verification.is_grounded}]"
+                else:
+                    print("⚠️  Verifier returned 0 confidence – likely JSON parse error; omitting tags.")
         else:
             print("🚀 Skipping verification for speed or lack of sources")
         

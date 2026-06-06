@@ -1,6 +1,6 @@
 # 🚀 Persistent Indexing Jobs - Quick Start
 
-**Status**: ✅ Pipeline Integrated (UI progress display pending)
+**Status**: ✅ Pipeline Integrated (SSE progress UI complete; timeline/resume UI pending)
 
 ## What's New?
 
@@ -25,8 +25,9 @@ curl http://localhost:8000/index-jobs/my-job-123/file-status
 # Then resume manually via API:
 curl -X POST http://localhost:8000/index-jobs/my-job-123/resume
 
-# Job is queued again and the pipeline skips completed files
-# Completed conversion/chunking work is reused when the chunk cache is available
+# Job is queued again and the pipeline skips completed stages where persisted
+# artifacts are still valid. Completed conversion/chunking work is reused when
+# the chunk cache is available.
 ```
 
 ### 3. View Performance Report
@@ -85,7 +86,9 @@ You can resume them via the API
 | REST API endpoints | ✅ Complete |
 | Auto-recovery on startup | ✅ Complete |
 | Pipeline integration | ✅ Complete |
-| UI progress display | ⏳ Future |
+| SSE progress display | ✅ Complete |
+| Failed-file display | ✅ Complete |
+| Timeline/resume UI controls | ⏳ Future |
 
 ## What's Tracked
 
@@ -112,7 +115,8 @@ Each stage has:
 | `/index-jobs/{id}/timeline` | GET | View all events |
 | `/index-jobs/{id}/file-status` | GET | Per-file breakdown |
 | `/index-jobs/{id}/statistics` | GET | Performance metrics |
-| `/index-jobs/{id}/audit-trail` | GET | All events (CSV format) |
+| `/index-jobs/{id}/audit-trail` | GET | All events (JSON format) |
+| `/index-jobs/{id}/stream` | GET | Live SSE progress |
 | `/index-jobs/recover-stale` | POST | Manual recovery |
 
 ## Example: Complete Flow
@@ -133,7 +137,7 @@ curl http://localhost:8000/index-jobs/abc123/timeline
 
 # 5. Resume
 curl -X POST http://localhost:8000/index-jobs/abc123/resume
-# Job continues from last incomplete stage
+# Job continues from the last incomplete persisted stage when artifacts are valid
 
 # 6. Monitor progress
 curl http://localhost:8000/index-jobs/abc123/file-status
@@ -144,7 +148,7 @@ curl http://localhost:8000/index-jobs/abc123/file-status
 
 | Scenario | Before | After |
 |----------|--------|-------|
-| Backend crashes | Job lost ❌ | Job resumed ✅ |
+| Backend crashes | Job lost ❌ | Job marked paused and resumable ✅ |
 | Stuck build | Stuck forever | Detected & marked paused |
 | Failed file | Unclear why | Clear error + error code |
 | Performance tuning | Guesswork | Exact metrics per stage |
@@ -155,7 +159,7 @@ curl http://localhost:8000/index-jobs/abc123/file-status
 ### Soon (Phase 3)
 - UI display of job timeline
 - Resume button in interface
-- Per-file error display
+- Inline timeline/stage inspection
 
 ### Future (Phase 4)
 - Automatic retry with backoff
@@ -188,4 +192,4 @@ curl -X POST http://localhost:8000/index-jobs/recover-stale?older_than_minutes=1
 
 ---
 
-**TL;DR**: Jobs are now resilient to crashes. They auto-recover on startup and can be resumed from exactly where they left off.
+**TL;DR**: Jobs are now resilient to crashes. They auto-recover on startup, preserve per-file stage progress, and can resume without rebuilding already-completed valid stages.

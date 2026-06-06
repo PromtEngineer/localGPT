@@ -20,8 +20,7 @@ ACTIVE_PROGRESS_SESSIONS: Dict[str, Dict[str, Any]] = {}
 logger.info("initializing_rag_agent Initializing RAG Agent... This may take a moment")
 RAG_AGENT = get_agent()
 if RAG_AGENT is None:
-    logger.error("rag_agent_initialization_failed Critical error: RAG Agent could not be initialized. Exiting.")
-    exit(1)
+    raise RuntimeError("RAG Agent could not be initialized")
 logger.info("rag_agent_initialized RAG Agent initialized successfully.")
 
 class ServerSentEventsHandler:

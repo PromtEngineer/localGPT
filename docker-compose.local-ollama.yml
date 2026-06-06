@@ -34,6 +34,7 @@ services:
     environment:
       - NODE_ENV=production
       - RAG_API_URL=http://rag-api:8001
+      - BACKEND_URL=http://backend:8000
     volumes:
       - ./backend/chat_data.db:/app/backend/chat_data.db
       - ./shared_uploads:/app/shared_uploads

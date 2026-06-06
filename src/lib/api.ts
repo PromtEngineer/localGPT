@@ -1,4 +1,5 @@
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const RAG_API_BASE_URL = process.env.NEXT_PUBLIC_RAG_API_URL ?? 'http://localhost:8001';
 
 // 🆕 Simple UUID generator for client-side message IDs
 export const generateUUID = () => {
@@ -803,7 +804,7 @@ class ChatAPI {
     if (typeof forceRag === 'boolean') payload.force_rag = forceRag;
     if (typeof provencePrune === 'boolean') payload.provence_prune = provencePrune;
 
-    const resp = await fetch('http://localhost:8001/chat/stream', {
+    const resp = await fetch(`${RAG_API_BASE_URL}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -856,7 +857,7 @@ export const chatAPI = new ChatAPI();
  */
 export function streamIndexJob(
   jobId: string,
-  onEvent: (data: { status: string; stage: string; progress: number; message: string; files: ApiRecord[] }) => void,
+  onEvent: (data: { id?: string; index_id?: string; status: string; stage: string; progress: number; message: string; files: ApiRecord[] }) => void,
 ): { cancel: () => void; promise: Promise<void> } {
   const ctrl = new AbortController();
   const promise = (async () => {

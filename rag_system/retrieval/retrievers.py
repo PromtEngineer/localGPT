@@ -22,7 +22,13 @@ from rag_system.utils.logging_utils import log_retrieval_results
 # BM25Retriever is no longer needed.
 # class BM25Retriever: ...
 
-from fuzzywuzzy import process
+try:
+    from rapidfuzz import process
+except ImportError:  # pragma: no cover - graph retrieval is optional.
+    process = None
+    logging.getLogger(__name__).warning(
+        "rapidfuzz is not installed; graph retrieval is disabled. Run: pip install rapidfuzz"
+    )
 
 class GraphRetriever:
     def __init__(self, graph_path: str):
@@ -30,6 +36,8 @@ class GraphRetriever:
 
     def retrieve(self, query: str, k: int = 5, score_cutoff: int = 80) -> List[Dict[str, Any]]:
         print(f"\n--- Performing Graph Retrieval for query: '{query}' ---")
+        if process is None:
+            return []
         
         query_parts = query.split()
         entities = []
