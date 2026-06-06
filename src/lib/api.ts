@@ -128,6 +128,38 @@ export type IndexDiagnosticsSummary = {
   error?: string;
 };
 
+export type MaintenanceIndexHealthEntry = {
+  index_id: string;
+  name?: string;
+  health: 'healthy' | 'warning' | 'unhealthy';
+  status?: string | null;
+  documents: number;
+  latest_job: {
+    status?: string | null;
+    error?: string | null;
+    created_at?: string | null;
+  };
+  metadata: {
+    created_at?: string | null;
+    chunk_size?: number | null;
+    embedding_model?: string | null;
+    enable_enrich?: boolean | null;
+    vector_table?: string | null;
+  };
+};
+
+export type MaintenanceHealthReport = {
+  timestamp: string;
+  indexes: MaintenanceIndexHealthEntry[];
+  summary: {
+    total: number;
+    healthy: number;
+    warning: number;
+    unhealthy: number;
+  };
+  error?: string;
+};
+
 export type EnrichProvider = 'ollama' | 'anthropic' | 'openai' | 'groq';
 
 export type IndexBuildOptions = {
@@ -151,7 +183,7 @@ export type IndexBuildOptions = {
 export type IndexJob = {
   id: string;
   index_id: string;
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
   stage: string;
   progress: number;
   message?: string;
@@ -695,6 +727,18 @@ class ChatAPI {
     return response.json();
   }
 
+  async getMaintenanceHealthReport(indexId?: string): Promise<MaintenanceHealthReport> {
+    const url = indexId
+      ? `${API_BASE_URL}/maintenance/index-health?index_id=${encodeURIComponent(indexId)}`
+      : `${API_BASE_URL}/maintenance/index-health`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`Maintenance health report error: ${errorData.error || errorData.detail || response.statusText}`);
+    }
+    return response.json();
+  }
+
   async startIndexBuild(indexId: string, opts: IndexBuildOptions = {}): Promise<{ message: string; job_id: string; status: string }> {
     const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/build`, {
       method: 'POST',
@@ -722,6 +766,15 @@ class ChatAPI {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       throw new Error(`Cancel job error: ${errorData.error || errorData.detail || response.statusText}`);
+    }
+    return response.json();
+  }
+
+  async resumeIndexJob(jobId: string): Promise<{ job_id: string; status: string; message: string }> {
+    const response = await fetch(`${API_BASE_URL}/index-jobs/${jobId}/resume`, { method: 'POST' });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(`Resume job error: ${errorData.error || errorData.detail || response.statusText}`);
     }
     return response.json();
   }

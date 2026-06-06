@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ApiRecord, BuildIndexResponse, chatAPI, IndexDiagnostics, IndexDiagnosticsSummary, IndexJob, IndexSummary } from '@/lib/api';
+import { ApiRecord, BuildIndexResponse, chatAPI, IndexDiagnostics, IndexDiagnosticsSummary, IndexJob, IndexSummary, MaintenanceHealthReport } from '@/lib/api';
 
 interface Props {
   onSelect: (indexId: string) => void;
@@ -15,8 +15,12 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
   const [busyMessage, setBusyMessage] = useState<string | null>(null);
   const [buildJob, setBuildJob] = useState<IndexJob | null>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
+  const [showFileDetails, setShowFileDetails] = useState(false);
   const [diagnosticsById, setDiagnosticsById] = useState<Record<string, IndexDiagnosticsSummary>>({});
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [healthReport, setHealthReport] = useState<MaintenanceHealthReport | null>(null);
+  const [healthReportLoading, setHealthReportLoading] = useState(false);
+  const [showHealthReport, setShowHealthReport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
@@ -51,6 +55,24 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       console.warn('Index health refresh failed', e);
     } finally {
       setDiagnosticsLoading(false);
+    }
+  }
+
+  async function handleMaintenanceReport() {
+    if (showHealthReport) {
+      setShowHealthReport(false);
+      return;
+    }
+    setShowHealthReport(true);
+    setHealthReportLoading(true);
+    try {
+      const report = await chatAPI.getMaintenanceHealthReport();
+      setHealthReport(report);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to load maintenance health report');
+      setShowHealthReport(false);
+    } finally {
+      setHealthReportLoading(false);
     }
   }
 
@@ -145,7 +167,27 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       acc[file.status] = (acc[file.status] || 0) + 1;
       return acc;
     }, {});
-    return `${counts.done || 0} done - ${counts.processing || 0} active - ${counts.skipped || 0} skipped - ${counts.failed || 0} failed - ${counts.pending || 0} pending`;
+    return `${counts.done || 0} done · ${counts.processing || 0} active · ${counts.skipped || 0} skipped · ${counts.failed || 0} failed · ${counts.pending || 0} pending`;
+  };
+
+  const formatFileDetails = (job: IndexJob | null) => {
+    const files = job?.files || [];
+    if (!files.length) return null;
+    return files.map((file) => (
+      <li key={`${file.filename}-${file.id}`} className="border-b border-white/10 py-2 last:border-b-0">
+        <div className="flex items-center justify-between gap-3 text-sm text-gray-200">
+          <div className="min-w-0 truncate">
+            <div className="font-medium">{file.filename || 'Unnamed file'}</div>
+            <div className="text-xs text-gray-400">{file.stage ? `Stage: ${file.stage}` : 'Stage unknown'}</div>
+          </div>
+          <span className={`rounded-full px-2 py-1 text-[11px] ${file.status === 'done' ? 'bg-green-500/20 text-green-200' : file.status === 'failed' ? 'bg-red-500/20 text-red-200' : file.status === 'processing' ? 'bg-yellow-500/20 text-yellow-200' : 'bg-white/10 text-gray-200'}`}>
+            {file.status}
+          </span>
+        </div>
+        {file.error && <p className="mt-1 text-xs text-red-300">Error: {file.error}</p>}
+        {typeof file.chunks_generated === 'number' && <p className="mt-1 text-xs text-gray-400">Chunks generated: {file.chunks_generated}</p>}
+      </li>
+    ));
   };
 
   const healthBadge = (diagnostics?: IndexDiagnosticsSummary) => {
@@ -313,6 +355,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       setBusyMessage(null);
       setBuildJob(null);
       setUploadTargetId(null);
+      setShowFileDetails(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
@@ -325,6 +368,22 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       setBusyMessage(job.message || 'Cancel requested.');
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to cancel rebuild');
+    }
+  }
+
+  async function handleResumeBuild() {
+    if (!buildJob) return;
+    setBusyId(buildJob.index_id || buildJob.id);
+    try {
+      const result = await chatAPI.resumeIndexJob(buildJob.id);
+      setBusyMessage(result.message || 'Resume requested.');
+      const job = await chatAPI.getIndexJob(buildJob.id);
+      setBuildJob(job);
+      if (job.status === 'queued' || job.status === 'running') {
+        setBusyMessage('Resuming build…');
+      }
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to resume build');
     }
   }
 
@@ -357,7 +416,51 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
           <button onClick={refreshDiagnostics} disabled={diagnosticsLoading || !!busyId} className="shrink-0 rounded bg-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/20 disabled:opacity-50">
             {diagnosticsLoading ? 'Checking' : 'Refresh health'}
           </button>
+          <button onClick={handleMaintenanceReport} disabled={healthReportLoading || !!busyId} className="shrink-0 rounded bg-white/10 px-3 py-2 text-xs text-gray-200 hover:bg-white/20 disabled:opacity-50">
+            {healthReportLoading ? 'Loading report' : showHealthReport ? 'Hide maintenance report' : 'Maintenance report'}
+          </button>
         </div>
+        {showHealthReport && (
+          <div className="rounded-lg border border-white/10 bg-black/60 p-3 text-xs text-gray-200">
+            {healthReportLoading && <p className="text-gray-300">Loading maintenance health report…</p>}
+            {!healthReportLoading && healthReport && (
+              healthReport.error ? (
+                <p className="text-red-300">Error: {healthReport.error}</p>
+              ) : (
+                <>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-white">Maintenance health report</p>
+                    <span className="shrink-0 text-[11px] text-gray-400">As of {new Date(healthReport.timestamp).toLocaleString()}</span>
+                  </div>
+                  <p className="mb-2 text-gray-300">
+                    {healthReport.summary.healthy} healthy · {healthReport.summary.warning} warning · {healthReport.summary.unhealthy} unhealthy ({healthReport.summary.total} total)
+                  </p>
+                  <ul className="space-y-2 max-h-56 overflow-y-auto">
+                    {healthReport.indexes.map((entry) => (
+                      <li key={entry.index_id} className="border-b border-white/10 py-2 last:border-b-0">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate font-medium text-gray-100">{entry.name || 'Untitled index'}</span>
+                          <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] ${entry.health === 'healthy' ? 'bg-green-500/20 text-green-200' : entry.health === 'warning' ? 'bg-yellow-500/20 text-yellow-200' : 'bg-red-500/20 text-red-200'}`}>
+                            {entry.health}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-gray-400">
+                          {entry.documents} document(s){entry.status ? ` · status: ${entry.status}` : ''}
+                        </p>
+                        {entry.latest_job?.status && (
+                          <p className="mt-1 text-gray-400">
+                            Latest job: {entry.latest_job.status}{entry.latest_job.error ? ` — ${entry.latest_job.error}` : ''}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                    {healthReport.indexes.length === 0 && <p className="text-gray-400">No indexes to report on.</p>}
+                  </ul>
+                </>
+              )
+            )}
+          </div>
+        )}
         {busyId && (
           <div className="space-y-2 text-xs text-green-300">
             <p>{busyMessage || 'Rebuilding index…'} Keep both backend terminals running.</p>
@@ -371,11 +474,33 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
                   <span>{buildJob.progress || 0}%</span>
                 </div>
                 {fileStatusSummary(buildJob) && <p className="text-gray-300">{fileStatusSummary(buildJob)}</p>}
-                {buildJob.cancel_requested && <p className="text-yellow-200">Cancel requested. Waiting for the active indexing step to finish.</p>}
-                {buildJob.status !== 'completed' && buildJob.status !== 'failed' && buildJob.status !== 'cancelled' && (
-                  <button onClick={handleCancelBuild} className="rounded bg-red-500/80 px-3 py-1 text-white hover:bg-red-500">
-                    Cancel rebuild
-                  </button>
+                {buildJob.status === 'paused' && (
+                  <p className="text-yellow-200">Build paused. Resume to continue indexing.</p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {buildJob.files && buildJob.files.length > 0 && (
+                    <button onClick={() => setShowFileDetails((prev) => !prev)} className="rounded bg-white/10 px-3 py-1 text-xs text-gray-200 hover:bg-white/20">
+                      {showFileDetails ? 'Hide file details' : 'Show file details'}
+                    </button>
+                  )}
+                  {buildJob.status === 'paused' && (
+                    <button onClick={handleResumeBuild} className="rounded bg-blue-500/80 px-3 py-1 text-white hover:bg-blue-500">
+                      Resume rebuild
+                    </button>
+                  )}
+                  {buildJob.status !== 'completed' && buildJob.status !== 'failed' && buildJob.status !== 'cancelled' && (
+                    <button onClick={handleCancelBuild} className="rounded bg-red-500/80 px-3 py-1 text-white hover:bg-red-500">
+                      Cancel rebuild
+                    </button>
+                  )}
+                </div>
+                {showFileDetails && buildJob.files && buildJob.files.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-white/10 bg-black/60 p-3 text-xs text-gray-200">
+                    <p className="mb-2 text-sm font-medium text-white">File progress details</p>
+                    <ul className="space-y-2 max-h-56 overflow-y-auto">
+                      {formatFileDetails(buildJob)}
+                    </ul>
+                  </div>
                 )}
               </div>
             )}
@@ -411,6 +536,9 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
                       <button onClick={()=>handleAddFiles(idx)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Add files + rebuild</button>
                       <button onClick={()=>handleDiagnostics(idx)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Run diagnostics</button>
                       <button onClick={()=>handleDiagnostics(idx, true)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Diagnose + repair</button>
+                      <div className="px-4 py-2 text-xs text-gray-400 border-t border-white/10">
+                        Tip: Use diagnostics to check health and repair indexes before opening them for chat.
+                      </div>
                       <button onClick={()=>handleRebuild(idx, false)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Rebuild changed only</button>
                       <button onClick={()=>handleRebuild(idx, true)} className="block w-full text-left px-4 py-2 hover:bg-white/10">Force rebuild</button>
                       <button onClick={()=>handleDelete(indexId(idx), idx.name || 'Untitled index')} className="block w-full text-left px-4 py-2 hover:bg-white/10 text-red-400 hover:text-red-500">Delete</button>

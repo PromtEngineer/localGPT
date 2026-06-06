@@ -155,8 +155,8 @@ echo "🛠️ Weekly maintenance..."
 # Repair any stuck jobs
 ./maintain repair-stuck-builds --older-than 120
 
-# Clean up orphans
-./maintain remove-orphan-files --execute
+# Clean up orphans (dry run first)
+./maintain remove-orphan-files --mode dry_run
 
 # Check health
 ./maintain list-health > health_report_$(date +%Y%m%d).json
@@ -169,6 +169,35 @@ Then add to crontab:
 crontab -e
 # Add: 0 2 * * 0 /path/to/localGPT/weekly_maintenance.sh
 ```
+
+## Weekly cron example
+
+If you prefer not to use a wrapper script, add a direct weekly cron entry:
+
+```bash
+0 3 * * 0 cd /path/to/localGPT && /usr/bin/python maintenance_cli.py repair-stuck-builds --older-than 120 >> logs/maintenance.log 2>&1
+10 3 * * 0 cd /path/to/localGPT && /usr/bin/python maintenance_cli.py remove-orphan-files --mode dry_run >> logs/maintenance.log 2>&1
+```
+
+Use `--mode execute` only after reviewing the dry-run report.
+
+## Storage cleanup guidance
+
+- Rotate `logs/` daily and keep only the most recent 30 days:
+  ```bash
+  find logs -type f -name '*.log' -mtime +30 -delete
+  ```
+- Clean `lancedb/` safely by verifying orphan tables first:
+  ```bash
+  ./maintain remove-orphan-tables --mode dry_run
+  ./maintain remove-orphan-tables --mode execute
+  ```
+- Clean `index_store/` safely by inspecting broken indexes and removing stale cache files:
+  ```bash
+  ./maintain delete-broken-indexes --mode dry_run
+  ./maintain delete-broken-indexes --mode execute
+  ```
+- `index_store/chunk_cache/` and `index_store/overviews/` are cache artifacts and may be removed before a full rebuild.
 
 ## Troubleshooting
 

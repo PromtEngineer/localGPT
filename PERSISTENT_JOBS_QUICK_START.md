@@ -88,7 +88,7 @@ You can resume them via the API
 | Pipeline integration | ✅ Complete |
 | SSE progress display | ✅ Complete |
 | Failed-file display | ✅ Complete |
-| Timeline/resume UI controls | ⏳ Future |
+| Timeline/resume UI controls | ✅ Resume controls are present in IndexPicker; timeline browsing remains API-only |
 
 ## What's Tracked
 

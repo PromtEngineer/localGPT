@@ -60,11 +60,15 @@ class BackendApiContractTests(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.temp_dir, "chat_data.db")
         self.original_db = server.db
+        self.original_job_progress_tracker = server.job_progress_tracker
+        self.original_thread_class = server.threading.Thread
         server.db = ChatDatabase(self.db_path)
         self.client = TestClient(server.app)
 
     def tearDown(self):
         server.db = self.original_db
+        server.job_progress_tracker = self.original_job_progress_tracker
+        server.threading.Thread = self.original_thread_class
         shutil.rmtree(self.temp_dir)
 
     def test_frontend_session_lifecycle_contract(self):
@@ -241,6 +245,122 @@ class BackendApiContractTests(unittest.TestCase):
         chat_detail = chat_response.json()["detail"]
         self.assertIn("Cannot chat with unhealthy linked index", chat_detail["message"])
         self.assertEqual(chat_detail["diagnostics"][0]["recommended_action"], "force_rebuild")
+
+    def test_maintenance_endpoints_contract(self):
+        response = self.client.get("/maintenance/index-health")
+        self.assertEqual(response.status_code, 200)
+        health_report = response.json()
+        self.assertIn("indexes", health_report)
+        self.assertIn("summary", health_report)
+        self.assertIsInstance(health_report["indexes"], list)
+
+        repair_response = self.client.post("/maintenance/repair-stuck-builds?older_than_minutes=1")
+        self.assertEqual(repair_response.status_code, 200)
+        self.assertIn("repaired", repair_response.json())
+
+        orphan_response = self.client.post("/maintenance/remove-orphan-files?dry_run=true")
+        self.assertEqual(orphan_response.status_code, 200)
+        self.assertIn("orphans_found", orphan_response.json())
+        self.assertTrue(orphan_response.json()["dry_run"])
+
+    def test_health_deep_uses_rag_api_and_ollama(self):
+        class DummyResponse:
+            def __init__(self, status_code):
+                self.status_code = status_code
+
+        def fake_get(url, timeout=3):
+            return DummyResponse(200)
+
+        fake_lancedb = types.ModuleType("lancedb")
+        fake_lancedb.connect = lambda path: None
+
+        with patch.dict(sys.modules, {"lancedb": fake_lancedb}), \
+             patch("backend.server.requests.get", side_effect=fake_get), \
+             patch("backend.server._lancedb_path_candidates", return_value=[self.temp_dir]), \
+             patch("backend.server.os.path.exists", return_value=True):
+            response = self.client.get("/health/deep")
+
+        self.assertEqual(response.status_code, 200)
+        status = response.json()
+        self.assertEqual(status["status"], "ok")
+        self.assertEqual(status["checks"]["rag_api"], "ok")
+        self.assertEqual(status["checks"]["ollama"], "ok")
+        self.assertEqual(status["checks"]["db"], "ok")
+        self.assertEqual(status["checks"]["lancedb"], "ok")
+
+    def test_resume_paused_index_job(self):
+        index_id = server.db.create_index("Resume API")
+        stored_path = os.path.join(self.temp_dir, "resume-api-doc.txt")
+        with open(stored_path, "w", encoding="utf-8") as handle:
+            handle.write("resume api document")
+        server.db.add_document_to_index(index_id, "resume-api-doc.txt", stored_path)
+
+        job_id = "resume-api-job"
+        server.db.create_index_job(
+            job_id,
+            index_id,
+            {"background": True},
+            [{"filename": "resume-api-doc.txt", "stored_path": stored_path}],
+        )
+        server.db.update_index_job(job_id, {"status": "paused", "stage": "paused", "message": "Paused for test"})
+        server.job_progress_tracker = SimpleNamespace(
+            mark_job_resuming=lambda job_id: {
+                "job_id": job_id,
+                "status": "queued",
+                "message": "Resume queued",
+            }
+        )
+
+        class DummyThread:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def start(self):
+                pass
+
+        with patch("backend.server.threading.Thread", DummyThread):
+            resume_response = self.client.post(f"/index-jobs/{job_id}/resume")
+
+        self.assertEqual(resume_response.status_code, 200)
+        self.assertEqual(resume_response.json()["status"], "queued")
+        self.assertIn(job_id, server.index_jobs)
+        self.assertEqual(server.index_jobs[job_id]["status"], "queued")
+
+    def test_job_progress_tracker_mark_job_resuming_identifies_incomplete_files(self):
+        index_id = server.db.create_index("Crash Resume")
+        documents = []
+        for filename in ("done-doc.txt", "pending-doc.txt", "failed-doc.txt"):
+            stored_path = os.path.join(self.temp_dir, filename)
+            with open(stored_path, "w", encoding="utf-8") as handle:
+                handle.write(f"content for {filename}")
+            server.db.add_document_to_index(index_id, filename, stored_path)
+            documents.append({"filename": filename, "stored_path": stored_path})
+
+        job_id = "crash-resume-job"
+        server.db.create_index_job(job_id, index_id, {"background": True}, documents)
+        server.db.update_index_job(job_id, {"status": "running", "stage": "embedding", "message": "Crashed mid-run"})
+        server.db.update_index_job_file(job_id, filename="done-doc.txt", updates={"status": "done"})
+        server.db.update_index_job_file(job_id, filename="failed-doc.txt", updates={"status": "failed", "error": "boom"})
+        # pending-doc.txt is left at its initial 'pending' status, simulating work that never started
+
+        tracker = JobProgressTracker(self.db_path)
+        result = tracker.mark_job_resuming(job_id)
+
+        self.assertEqual(result["job_id"], job_id)
+        self.assertEqual(result["status"], "resuming")
+        retried_filenames = {entry["filename"] for entry in result["files_to_retry"]}
+        self.assertEqual(retried_filenames, {"pending-doc.txt", "failed-doc.txt"})
+        self.assertEqual(result["total_files"], 2)
+
+        refreshed_job = server.db.get_index_job(job_id)
+        self.assertEqual(refreshed_job["status"], "queued")
+        self.assertEqual(refreshed_job["stage"], "queued")
+        self.assertEqual(refreshed_job["message"], "Queued for resume after crash")
+
+    def test_mark_job_resuming_reports_missing_job(self):
+        tracker = JobProgressTracker(self.db_path)
+        result = tracker.mark_job_resuming("does-not-exist")
+        self.assertEqual(result, {"error": "Job not found", "job_id": "does-not-exist"})
 
     def test_startup_recovery_pauses_stuck_building_index_metadata(self):
         index_id = server.db.create_index("Stuck Metadata")

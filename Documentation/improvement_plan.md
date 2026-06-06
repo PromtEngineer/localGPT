@@ -1,8 +1,22 @@
 # RAG System - Improvement Roadmap
 
-_Revision: 2026-06-05 (verified against current codebase)_
+_Revision: 2026-06-06 (full-codebase review and verification refresh)_
 
 This document captures high-impact enhancements identified during review, updated to reflect current implementation status. Items marked ✅ are in the codebase and have at least focused verification; items marked ⏳ are pending or intentionally deferred.
+
+---
+
+## 0. Priority Upgrade Plan
+
+The detailed execution plan is now
+[`Documentation/upgrade_implementation_plan.md`](upgrade_implementation_plan.md).
+The immediate order is:
+
+1. Protect cloud provider secrets and close healthy-index false positives.
+2. Repair hybrid retrieval semantics and its failing test environment.
+3. Eliminate shared request-state mutation and blocking upstream calls.
+4. Consolidate the FastAPI and legacy RAG HTTP servers.
+5. Harden SQLite, uploads, multi-index behavior, CI, and release evidence.
 
 ---
 
@@ -12,7 +26,7 @@ This document captures high-impact enhancements identified during review, update
 |----|--------|------|-----------|-------|
 | 1.1 | ✅ Done | Late-chunk result merging | Returned snippets can be single late-chunks → fragmented. | `retrieval_pipeline.py` — `_get_surrounding_chunks_lancedb()` gathers ±1 siblings concurrently; controlled by `context_window_size`. |
 | 1.2 | ✅ Done | Tiered retrieval (ANN pre-filter) | Large indexes → LanceDB full scan can be slow. | IVF-PQ index built after indexing ≥5000 rows; `nprobes=20` at query time in `retrievers.py`. |
-| 1.3 | ✅ Done | Dynamic fusion weights | Different corpora favour dense vs BM25 differently. | Per-index `fusion_config` stored in metadata; `PATCH /indexes/{id}/fusion-weights` endpoint; applied in `api_server.py`. |
+| 1.3 | ⚠️ Partial | Dynamic fusion weights | Different corpora favour dense vs BM25 differently. | Configuration is stored, but the current concat/dedup merge does not reliably fuse modality scores. The test does not assert a ranking change. |
 | 1.4 | ✅ Done | Query expansion via KG | Use extracted entities to enrich queries. | `_expand_queries_with_kg()` in `loop.py` appends 1-hop neighbor labels (≤5) to each sub-query when a KG GML file exists. |
 
 ## 2. Routing / Triage
@@ -28,7 +42,7 @@ This document captures high-impact enhancements identified during review, update
 | ID | Status | Item | Rationale |
 |----|--------|------|-----------|
 | 3.1 | ✅ Done | Parallel document conversion | PDF→MD conversion isolated to subprocess worker (`tools/persistent_convert_worker.py`); enrichment parallelised with `ThreadPoolExecutor`. |
-| 3.2 | ✅ Done | Incremental indexing | `JobProgressTracker` + per-stage skip logic in `indexing_pipeline.py`; resumes from last completed stage on retry. |
+| 3.2 | ✅ Done | Incremental indexing | `JobProgressTracker` + per-stage skip logic in `indexing_pipeline.py`; resumes from last completed stage on retry and validates skipped all-unchanged index tables before reporting success. |
 | 3.3 | ✅ Done | Auto GPU dtype selection | Use FP16 on CUDA / MPS for memory and speed. | `representations.py` selects `torch.float16` via `model_registry.get_dtype()` on CUDA/MPS; `None` on CPU. |
 | 3.4 | ✅ Done | Post-build health check | Automatic post-build validation (dim mismatch, empty table guard). | `_validate_built_index()` in `indexing_pipeline.py` checks row count > 0 and dimension match after every build. |
 
@@ -66,9 +80,9 @@ This document captures high-impact enhancements identified during review, update
 
 | Status | Item |
 |--------|------|
-| ✅ Done | LanceDB hybrid retriever tests — `test_hybrid_retrieval.py` with 6 unittest tests (FTS, vector, hybrid, fusion weights, deduplication, surrounding chunks). |
+| ⚠️ Partial | LanceDB hybrid retriever tests pass in the project `.venv` (6 tests), but the fusion test lacks a ranking assertion and direct verification shows different weights currently return identical rankings. |
 | ✅ Done | Integration smoke test — `smoke_test.py` added (commit `5ebaf01`). |
-| ✅ Done | GitHub Actions workflow — `.github/workflows/ci.yml`: lint (ruff + black + mypy) + unit-tests jobs. |
+| ⚠️ Partial | GitHub Actions workflow exists, but the configured Python lint gates currently fail locally (`ruff`: 987 errors; `black`: 44 files plus one parse failure). |
 
 ## 9. Codebase Hygiene
 
@@ -76,10 +90,10 @@ This document captures high-impact enhancements identified during review, update
 |--------|------|
 | ⏳ | Graph-RAG integration (currently disabled, can be implemented if needed). |
 | ✅ Done | Consolidate duplicate config keys — `EXTERNAL_MODELS["embedding_model"]` is used in both pipeline configs; `.env` model variables are loaded by `rag_system/main.py`; `model_registry.py` is the authoritative source for dims/dtype. |
-| ✅ Done | Run mypy + black in CI — `.github/workflows/ci.yml` lint job runs ruff + black + mypy. |
-| ✅ Done | Dependency hygiene — duplicate top-level requirements were removed; `fuzzywuzzy` / `python-Levenshtein` were replaced with `rapidfuzz`. |
+| ⚠️ Partial | CI invokes mypy + black, but adding a command is not completion: the current codebase does not pass the configured lint/format gates. |
+| ✅ Done | Dependency hygiene — duplicate top-level requirements were removed; `fuzzywuzzy` / `python-Levenshtein` were replaced with `rapidfuzz`; `rank_bm25`, `scikit-learn`, and `sentence_transformers` were removed from all three requirements files (zero real usage — confirmed via grep and `pip show` reverse-dependency checks; BM25 retrieval was already replaced by LanceDB native FTS), along with the dead `_get_bm25_retriever()` method in `retrieval_pipeline.py` that referenced a no-longer-existing `BM25Retriever` class. `requirements.txt` and `requirements-docker.txt` are now consistent. |
 | ✅ Done | Runtime health/config hygiene — CORS is driven by `CORS_ORIGINS`; RAG `/health` avoids eager embedder loading; Docker Compose sets `BACKEND_URL=http://backend:8000` so RAG index progress callbacks work across containers. |
-| ⏳ | Consolidate the FastAPI backend and legacy RAG HTTP server. Current architecture is still split: backend delegates chat/indexing to the RAG API on port 8001. |
+| ✅ Done | Clarify the FastAPI backend and legacy RAG HTTP server roles and document the port-8001 boundary. Current architecture is still split, but the service roles are now formally defined in `README.md`. |
 
 ---
 
@@ -105,7 +119,10 @@ Recent focused checks:
 - `python -m py_compile backend/server.py rag_system/api_server.py rag_system/api_server_with_progress.py rag_system/main.py rag_system/retrieval/retrievers.py rag_system/agent/loop.py`
 - `npx tsc --noEmit`
 
-Known remaining architecture item:
-- **Single API server migration** — consolidate the FastAPI backend and legacy RAG HTTP API behind a service layer, then remove the port-8001 HTTP boundary.
+Known release blockers:
+- Cloud enrichment API keys are persisted in index job options.
+- Hybrid retrieval tests pass in `.venv`, but fusion/search-mode behavior remains incomplete and the fusion assertion is not meaningful.
+- Shared mutable RAG configuration can leak settings across concurrent requests.
+- **Single API server migration** remains pending; documenting the split is not consolidation.
 
 Feel free to rearrange based on team objectives and resource availability. 

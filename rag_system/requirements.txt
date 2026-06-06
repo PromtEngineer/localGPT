@@ -5,7 +5,6 @@ transformers==4.51.0
 torch==2.4.1
 torchvision==0.19.1
 lancedb>=0.27.1
-rank_bm25>=0.2.2
 rapidfuzz>=3.0
 torchaudio==2.4.1
 sentencepiece>=0.2.0

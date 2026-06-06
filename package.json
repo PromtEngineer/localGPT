@@ -2,9 +2,14 @@
   "name": "multimodal_rag",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "app": "./start-localgpt",
+    "lint:ui": "eslint . --ext .js,.jsx,.ts,.tsx",
     "app:health": "./start-localgpt --health",
     "app:no-frontend": "./start-localgpt --no-frontend",
     "build": "next build",

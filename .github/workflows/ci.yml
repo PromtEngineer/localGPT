@@ -42,7 +42,9 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
 
       - name: Run tests
         run: |
@@ -50,4 +52,29 @@ jobs:
             test_hybrid_retrieval.py \
             test_incremental_indexing.py \
             test_logging_utils.py \
-            -v --tb=short
+            test_backend_api_contract.py \
+            test_persistent_cache.py \
+            -v --tb=short --cov=backend --cov=rag_system --cov-report=term-missing --cov-report=xml
+
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.x"
+          cache: "npm"
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Run UI lint
+        run: npm run lint:ui
+
+      - name: Run full lint
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build

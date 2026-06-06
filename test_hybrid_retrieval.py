@@ -60,6 +60,8 @@ def _populate_table(manager, table_name: str, rows: list[dict], dim: int = 8):
     else:
         tbl = manager.create_table(table_name, schema=schema, mode="create")
         tbl.add(records)
+    # Hybrid retrieval needs an inverted index on `text` to run FTS queries (lancedb >= 0.27)
+    tbl.create_fts_index("text", use_tantivy=False, replace=True)
     return tbl
 
 
@@ -150,7 +152,7 @@ class TestHybridRetrieval(unittest.TestCase):
         """_get_surrounding_chunks_lancedb returns a list without crashing."""
         from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
         rp = RetrievalPipeline.__new__(RetrievalPipeline)
-        rp.lancedb_manager = self.manager
+        rp.db_manager = self.manager
         rp.config = {"storage": {"text_table_name": self.table}}
         central_chunk = {
             "document_id": "doc_fox",

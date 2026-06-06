@@ -10,7 +10,7 @@
 [![GitHub Forks](https://img.shields.io/github/forks/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/network/members)
 [![GitHub Issues](https://img.shields.io/github/issues/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/pulls)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg?style=flat-square)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg?style=flat-square)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg?style=flat-square)](https://www.docker.com/)
 
@@ -77,6 +77,16 @@ Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT.
 - **Index Management**: Easy document collection management
 - **Real-time Chat**: Streaming responses for immediate feedback
 
+## 📚 Docs Index
+- `Documentation/system_overview.md` — architecture, components, and data flow
+- `Documentation/improvement_plan.md` — roadmap, priority upgrades, and status summary
+- `Documentation/maintenance_tools.md` — maintenance CLI/API guide and troubleshooting
+- `FEATURE_11_PHASE_1_SUMMARY.md` — job persistence and pipeline integration summary
+- `FEATURE_11_VALIDATION_CHECKLIST.md` — verification checklist for Feature #11
+- `MAINTENANCE_SUMMARY.md` — maintenance feature overview and usage
+- `MAINTENANCE_DELIVERY_CHECKLIST.md` — delivery checklist for maintenance tools
+- `RELEASE_CHECKLIST.md` — consolidated release readiness checklist
+
 ---
 
 ## 🚀 Quick Start
@@ -84,17 +94,21 @@ Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT.
 Note: The installation is currently only tested on macOS. 
 
 ### Prerequisites
-- Python 3.8 or higher (tested with Python 3.11.5)
-- Node.js 16+ and npm (tested with Node.js 23.10.0, npm 10.9.2)
+- Python 3.11 or higher (tested with Python 3.11.5)
+- Node.js 18+ and npm (tested with Node.js 23.10.0, npm 10.9.2)
 - Docker (optional, for containerized deployment)
 - 8GB+ RAM (16GB+ recommended)
 - Ollama (required for both deployment approaches)
 
+> Tip: copy `.env.example` to `.env` and adjust host/port settings before starting the system.
+
+> Release readiness and consolidated tracking are documented in `RELEASE_CHECKLIST.md`.
+
 ### ***NOTE***
-Before this brach is moved to the main branch, please clone this branch for instalation:
+This repository is now on the main branch; clone normally unless you need a specific feature branch.
 
 ```bash
-git clone -b localgpt-v2 https://github.com/PromtEngineer/localGPT.git
+git clone https://github.com/PromtEngineer/localGPT.git
 cd localGPT
 ```
 
@@ -190,8 +204,30 @@ python system_health_check.py
 The `run_system.py` launcher manages four key services:
 - **Ollama Server** (port 11434): AI model serving
 - **RAG API Server** (port 8001): Document processing and retrieval
-- **Backend Server** (port 8000): Session management and API endpoints
+- **Backend Server** (port 8000): Session management, user-facing API, and orchestration
 - **Frontend Server** (port 3000): React/Next.js web interface
+
+The backend currently delegates document indexing, retrieval, and advanced pipeline orchestration to the separate `rag_system` service on port `8001`. This boundary is intentional for modularity, but it should be formally documented until the services are consolidated into a single API.
+
+### Architecture Diagram
+
+```mermaid
+graph TB
+    Browser[User Browser]<-->Frontend[Frontend (Next.js)\nport 3000]
+    Frontend -->|REST API| Backend[Backend Server (FastAPI)\nport 8000]
+    Backend -->|Internal HTTP / API| RAG[RAG API Server (Python)\nport 8001]
+    RAG -->|Embedding + Generation| Ollama[Ollama Server\nport 11434]
+    Backend -->|Metadata / session| SQLite[(SQLite DB)]
+    RAG -->|Vector store| Lance[(LanceDB)]
+```
+```
+
+### Role Definitions
+
+- **Backend (`backend/`)**: handles frontend-facing APIs, session state, chat routing, health checks, and maintenance tooling.
+- **RAG API (`rag_system/`)**: handles document ingestion, indexing, retrieval, embedding, reranking, and LLM orchestration.
+
+This split improves modularity and allows the RAG engine to evolve independently, but it also introduces an HTTP boundary that should be intentionally managed. If you want to simplify deployment, the next architecture step is to merge the backend service and RAG API into a single unified backend API.
 
 ### Option 3: Manual Component Startup
 
@@ -222,17 +258,17 @@ npm run dev
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install python3.8 python3-pip nodejs npm docker.io docker-compose
+sudo apt install python3.11 python3-pip nodejs npm docker.io docker-compose
 ```
 
 **macOS:**
 ```bash
-brew install python@3.8 node npm docker docker-compose
+brew install python@3.11 node npm docker docker-compose
 ```
 
 **Windows:**
 ```bash
-# Install Python 3.8+, Node.js, and Docker Desktop
+# Install Python 3.11+, Node.js 18+, and Docker Desktop
 # Then use PowerShell or WSL2
 ```
 
@@ -257,6 +293,8 @@ cp .env.example .env
 nano .env
 ```
 
+> Note: `.env.keys` is an optional secret-only override file used for API keys and credentials. It is loaded by `backend/server.py` and intentionally excluded from version control.
+
 **Key Configuration Options:**
 ```env
 # AI Models (referenced in rag_system/main.py)
@@ -277,6 +315,17 @@ ENRICHMENT_MODEL=qwen3:8b
 EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
 RERANKER_MODEL=answerdotai/answerai-colbert-small-v1
 ```
+
+### Local data and privacy
+
+This system stores all runtime data locally under the repository root. The following directories are ignored by Git and are intended for local-only data:
+
+- `logs/` — application logs and diagnostics
+- `lancedb/` — vector database storage
+- `index_store/` — cached chunk/index metadata
+- `shared_uploads/` — uploaded files and document artifacts
+
+> These paths are not designed for remote data sharing, and the app does not transmit stored logs or index artifacts externally by default.
 
 #### 4. Initialize the System
 
@@ -474,7 +523,7 @@ SEARCH_CONFIG = {
 #### Installation Problems
 ```bash
 # Check Python version
-python --version  # Should be 3.8+
+python --version  # Should be 3.11+
 
 # Check dependencies
 pip list | grep -E "(torch|transformers|lancedb)"
@@ -532,12 +581,29 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 
 3. **Health Endpoints**: Check individual service health:
    - Backend: `http://localhost:8000/health`
+   - Deep health: `http://localhost:8000/health/deep`
    - RAG API: `http://localhost:8001/health`
    - Ollama: `http://localhost:11434/api/tags`
+   - Metrics (Prometheus text or JSON): `http://localhost:8000/metrics?format=prometheus`
 
-4. **Documentation**: Check the [Technical Documentation](TECHNICAL_DOCS.md)
-5. **GitHub Issues**: Report bugs and request features
-6. **Community**: Join our Discord/Slack community
+4. **Operational maturity**: Keep the system stable and reclaim storage.
+   - Weekly cron example:
+     ```bash
+     0 3 * * 0 cd /path/to/localGPT && /usr/bin/python maintenance_cli.py repair-stuck-builds --older-than 120 >> logs/maintenance.log 2>&1
+     10 3 * * 0 cd /path/to/localGPT && /usr/bin/python maintenance_cli.py remove-orphan-files --mode dry_run >> logs/maintenance.log 2>&1
+     ```
+   - Log cleanup:
+     ```bash
+     find logs -type f -name '*.log' -mtime +30 -delete
+     ```
+   - Safe storage cleanup:
+     - Use `python maintenance_cli.py remove-orphan-tables --mode dry_run` before cleaning `lancedb/`
+     - Use `python maintenance_cli.py delete-broken-indexes --mode dry_run` before cleaning `index_store/`
+     - `index_store/chunk_cache/` and `index_store/overviews/` can be removed as cache data ahead of a rebuild.
+
+5. **Documentation**: Check the [Technical Documentation](TECHNICAL_DOCS.md)
+6. **GitHub Issues**: Report bugs and request features
+7. **Community**: Join our Discord/Slack community
 
 ---
 

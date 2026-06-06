@@ -1,7 +1,7 @@
 # ✅ Feature #11 - Validation Checklist
 
 **Date**: May 2025 (updated 2026-05-23)
-**Status**: PIPELINE INTEGRATED ✅ — END-TO-END TESTING PENDING
+**Status**: PIPELINE INTEGRATED ⚠️ — END-TO-END TESTING AND ONE INDEX-VALIDATION PATH PENDING
 
 ## Code Components - Verified ✅
 
@@ -199,16 +199,16 @@ Pipeline integration complete (commit `a114e6d`):
 | Database | ✅ 100% | Schema complete with constraints |
 | API | ✅ 100% | All 6 endpoints implemented |
 | Startup Hook | ✅ 100% | Auto-recovery on backend start |
-| Pipeline integration | ✅ 100% | Stage tracking wired in `indexing_pipeline.py` |
+| Pipeline integration | ✅ 100% | Stage tracking is wired and the all-unchanged incremental path validates the existing LanceDB table before marking the job complete. |
 | Documentation | ✅ 100% | 4 comprehensive guides |
 | Error Handling | ✅ 100% | All error cases covered |
 | Type Safety | ✅ 100% | Type hints throughout |
 | End-to-end testing | ⏳ Pending | Crash/resume/skip validation not yet run |
-| UI integration | ⏳ Pending | Timeline view and resume button not built |
+| UI integration | ⚠️ Partial | Resume/repair UI is present in `IndexPicker.tsx` and manual test cases are documented in `Documentation/ui_manual_test_cases.md`; the manual pass itself has not yet been run against a live crash/resume scenario. |
 
 ## Summary
 
-**Phase 1 + Phase 2 Status**: ✅ INFRASTRUCTURE AND PIPELINE COMPLETE
+**Phase 1 + Phase 2 Status**: ⚠️ INFRASTRUCTURE PRESENT; RELEASE VERIFICATION INCOMPLETE
 
 - ✅ JobProgressTracker class — 15+ methods, production-ready
 - ✅ Database schema — normalized design with constraints
@@ -217,12 +217,20 @@ Pipeline integration complete (commit `a114e6d`):
 - ✅ Pipeline integration — stage tracking live in indexing pipeline
 - ✅ Documentation — comprehensive guides (1500+ lines total)
 - ⏳ End-to-end crash/resume test — not yet formally validated
-- ⏳ UI — timeline display and resume button not yet built
+- ⚠️ UI — resume/repair flow present; manual test cases documented in `Documentation/ui_manual_test_cases.md`, but the live manual pass has not been run
+
+## Manual UI Test Cases
+
+The full manual test matrix for the index-picker UI (per-file stage display,
+resume/repair actions, and the maintenance health-report panel) now lives in
+[`Documentation/ui_manual_test_cases.md`](Documentation/ui_manual_test_cases.md).
+Section 2 of that document covers the Feature #11 resume/repair flow
+specifically — use it instead of duplicating the steps here.
 
 ## Next Action
 
 1. **End-to-end test**: start a background build, kill the backend mid-run, restart, call `POST /index-jobs/{job_id}/resume`, verify completed stages are skipped.
-2. **UI integration** (Phase 3, ~4-6 hours): add timeline view and resume button to the frontend.
+2. **Manual UI validation**: run the cases in `Documentation/ui_manual_test_cases.md` §2 against the index picker resume/repair workflow and confirm the job progress UI updates correctly.
 
 ---
 

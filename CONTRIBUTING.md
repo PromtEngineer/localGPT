@@ -5,8 +5,8 @@ Thank you for your interest in contributing to LocalGPT! This guide will help yo
 ## 🚀 Quick Start for Contributors
 
 ### Prerequisites
-- Python 3.8+ (we test with 3.11.5)
-- Node.js 16+ (we test with 23.10.0)
+- Python 3.11+ (we test with 3.11.5)
+- Node.js 18+ (we test with 23.10.0)
 - Git
 - Ollama (for local AI models)
 

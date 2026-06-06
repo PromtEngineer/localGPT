@@ -78,8 +78,6 @@ function isLargeIndexingModel(model?: string) {
   return Boolean(model && LARGE_INDEXING_MODEL_RE.test(model));
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 const fileStatusSummary = (job: IndexJob | null) => {
   const files = job?.files || [];
   if (!files.length) return null;

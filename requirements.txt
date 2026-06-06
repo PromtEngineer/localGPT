@@ -8,7 +8,6 @@ transformers==4.51.0
 torch==2.4.1
 torchvision==0.19.1
 lancedb>=0.27.1
-rank_bm25>=0.2.2
 rapidfuzz>=3.0
 torchaudio==2.4.1
 sentencepiece>=0.2.0
@@ -20,8 +19,6 @@ networkx>=3.2
 matplotlib>=3.8
 psutil>=5.9
 httpx>=0.27
-scikit-learn>=1.4
 pandas>=2.2
-sentence_transformers>=5.0
 rerankers>=0.10.0
 nltk>=3.8

@@ -59,7 +59,6 @@ class RetrievalPipeline:
         self.db_manager = None
         self.text_embedder = None
         self.dense_retriever = None
-        self.bm25_retriever = None
         # Use a private attribute to avoid clashing with the public property
         self._graph_retriever = None
         self.reranker = None
@@ -104,20 +103,6 @@ class RetrievalPipeline:
                 logger.error("dense_retriever_initialization_failed error=%s", e)
                 self.dense_retriever = None
         return self.dense_retriever
-
-    def _get_bm25_retriever(self):
-        if self.bm25_retriever is None and self.retriever_configs.get("bm25", {}).get("enabled"):
-            try:
-                logger.info("bm25_retriever_initializing")
-                self.bm25_retriever = BM25Retriever(
-                    index_path=self.storage_config["bm25_path"],
-                    index_name=self.retriever_configs["bm25"]["index_name"]
-                )
-                logger.info("bm25_retriever_initialized")
-            except Exception as e:
-                logger.error("bm25_retriever_initialization_failed error=%s", e)
-                # Keep it None so we don't try again
-        return self.bm25_retriever
 
     def _get_graph_retriever(self):
         if self._graph_retriever is None and self.retriever_configs.get("graph", {}).get("enabled"):

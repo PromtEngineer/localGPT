@@ -1,6 +1,6 @@
 # 📊 Persistent Indexing Jobs - Implementation Guide
 
-**Status**: ✅ Complete - Pipeline Integrated and Verified
+**Status**: ✅ Complete - Pipeline integrated; resume, recovery, and post-build validation are implemented. UI timeline browsing remains API-only.
 
 This feature adds crash recovery, resumable indexing, and detailed audit trails to the LocalGPT indexing system.
 
@@ -21,8 +21,8 @@ Instead of indexing jobs living in memory and being lost on crashes, all progres
 
 ## Verification Snapshot
 
-Verified on 2026-06-05:
-- `python -m pytest test_backend_api_contract.py -q` -> 6 passed
+Verified on 2026-06-06:
+- `python -m pytest test_backend_api_contract.py -q` -> 11 passed
 - `python -m py_compile backend/server.py rag_system/api_server.py rag_system/api_server_with_progress.py rag_system/main.py rag_system/retrieval/retrievers.py rag_system/agent/loop.py`
 - `npx tsc --noEmit`
 
@@ -36,7 +36,7 @@ Covered by the backend contract tests:
 Current limitations:
 - recovery marks stale jobs as `paused`; a user/API resume is still required
 - completed stages can be skipped only when the persisted stage state and required artifacts are still usable
-- the UI shows live progress and failed-file errors, but timeline browsing and resume controls are still API-only
+- the UI shows live progress, failed-file errors, and resume controls; timeline browsing remains API-only
 - the backend and RAG API are still separate HTTP servers; consolidation is tracked as future architecture work
 
 ## Architecture

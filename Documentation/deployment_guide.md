@@ -61,9 +61,9 @@ Docker Compose 2.20+
 **For direct development:**
 ```bash
 # Python & Node.js
-Python 3.8+
-Node.js 16+
-npm 8+
+Python 3.11+
+Node.js 18+
+npm 9+
 ```
 
 ---

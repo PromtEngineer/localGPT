@@ -94,8 +94,8 @@ Open your browser to: **http://localhost:3000**
 ## 💻 Direct Development
 
 ### Prerequisites
-- Python 3.8+
-- Node.js 16+ and npm
+- Python 3.11+
+- Node.js 18+ and npm
 - 8GB+ RAM available
 
 ### Step 1: Clone and Install Dependencies

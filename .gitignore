@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# .env.keys is used for local secret/API keys only and should never be committed.
 
 # vercel
 .vercel
@@ -64,6 +65,8 @@ logs/
 
 # SQLite or other database files
 *.db
+*.db-shm
+*.db-wal
 #backend/*.db
 # backend/chat_history.db
 backend/chroma_db/
