@@ -6,6 +6,7 @@ import { AccordionGroup } from '@/components/ui/AccordionGroup';
 import { ModelSelect } from '@/components/ModelSelect';
 import { chatAPI, streamIndexJob, ChatSession, EnrichProvider, IndexBuildOptions, IndexJob } from '@/lib/api';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
+import { useAlert, useConfirm } from '@/components/ui/confirm-dialog';
 
 interface Props {
   onClose: () => void;
@@ -109,6 +110,9 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const [enrichProvider, setEnrichProvider] = useState<EnrichProvider>('ollama');
   const [enrichApiKey, setEnrichApiKey] = useState('');
 
+  const { showAlert, dialog: alertDialog } = useAlert();
+  const { showConfirm, dialog: confirmDialog } = useConfirm();
+
   const selectedFiles = files ? Array.from(files) : [];
   const totalBytes = selectedFiles.reduce((sum, file) => sum + file.size, 0);
   const estimatedChunks = Math.max(
@@ -186,25 +190,23 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       setBuildJob(job);
     } catch (e) {
       console.error('Cancel failed', e);
-      alert('Cancel request failed. See console for details.');
+      await showAlert('Cancel request failed. See console for details.');
     }
   };
 
   const handleSubmit = async () => {
     if (!files) return;
     if (hasLargeIndexingModel) {
-      alert('Large chat models such as gpt-oss:120b-cloud are blocked for indexing enrichment/overview. Use qwen3:8b for indexing, then use the large model for chat.');
+      await showAlert('Large chat models such as gpt-oss:120b-cloud are blocked for indexing enrichment/overview. Use qwen3:8b for indexing, then use the large model for chat.');
       return;
     }
-    if (isHighRiskJob && !confirm(`This index may run about ${estimatedLlmCalls.toLocaleString()} LLM call(s). Continue?`)) {
+    if (isHighRiskJob && !await showConfirm(`This index may run about ${estimatedLlmCalls.toLocaleString()} LLM call(s). Continue?`)) {
       return;
     }
     setLoading(true);
     try {
-      // 1. create index record
       const { index_id } = await chatAPI.createIndex(indexName);
 
-      // 2. upload files to index
       await chatAPI.uploadFilesToIndex(index_id, Array.from(files));
 
       const preflight = await chatAPI.preflightIndexBuild(index_id, buildOptions());
@@ -231,7 +233,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       console.error('Indexing failed', e);
       setLoading(false);
       setBuildJob(null);
-      alert(e instanceof Error ? `Indexing failed: ${e.message}` : 'Indexing failed. See console for details.');
+      await showAlert(e instanceof Error ? `Indexing failed: ${e.message}` : 'Indexing failed. See console for details.');
     }
   };
 
@@ -255,7 +257,6 @@ export function IndexForm({ onClose, onIndexed }: Props) {
                 <p className="mt-2 text-xs text-gray-300">{fileStatusSummary(buildJob)}</p>
               )}
               {buildJob.cancel_requested && <p className="mt-2 text-xs text-yellow-200">Cancel requested. Waiting for the active indexing step to finish.</p>}
-              {/* Failed file list */}
               {(() => {
                 const failed = (buildJob.files || []).filter(f => f.status === 'failed' && f.error);
                 if (!failed.length) return null;
@@ -282,13 +283,11 @@ export function IndexForm({ onClose, onIndexed }: Props) {
 
       <h2 className="text-lg font-semibold">Create new index</h2>
 
-      {/* Index name */}
       <div>
         <label className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Index name</label>
         <GlassInput placeholder="My project docs" value={indexName} onChange={(e)=>setIndexName(e.target.value)} />
       </div>
 
-      {/* Upload & defaults */}
       <div className="space-y-4">
         <div>
           <label className="block text-xs uppercase tracking-wide text-gray-300 mb-1">PDF files</label>
@@ -349,7 +348,6 @@ export function IndexForm({ onClose, onIndexed }: Props) {
           </div>
         )}
 
-        {/* Retrieval mode & Late-chunk toggle */}
         <div>
           <label className="flex items-center gap-1 text-xs uppercase tracking-wide text-gray-300 mb-1">Retrieval mode <InfoTooltip text="Choose how chunks are found. Hybrid combines full-text search with vectors; FTS uses textual matching only; Vector relies purely on dense similarity." /></label>
           <div className="flex gap-3">
@@ -382,12 +380,11 @@ export function IndexForm({ onClose, onIndexed }: Props) {
             </div>
           </div>
 
-          {/* Embedding & Overview models */}
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
               <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Embedding model <InfoTooltip text="Model used to generate dense vectors stored in the index." size={12} /></label>
-              <ModelSelect 
-                value={embeddingModel} 
+              <ModelSelect
+                value={embeddingModel}
                 onChange={setEmbeddingModel}
                 type="embedding"
                 placeholder="Select embedding model"
@@ -395,7 +392,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
             </div>
             <div>
               <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Overview LLM <InfoTooltip text="Use a small model here. This runs during indexing and should not use large chat models." size={12} /></label>
-              <ModelSelect 
+              <ModelSelect
                 value={overviewModel}
                 onChange={setOverviewModel}
                 type="generation"
@@ -405,7 +402,6 @@ export function IndexForm({ onClose, onIndexed }: Props) {
           </div>
         </div>
 
-        {/* Contextual retrieval section */}
         <AccordionGroup title={<><span>Contextual Retrieval</span> <InfoTooltip text="Adds neighbour chunks into each original chunk then enriches with LLM – improves semantic continuity but increases indexing latency." /></>}>
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-400">Enable</span>
@@ -414,7 +410,6 @@ export function IndexForm({ onClose, onIndexed }: Props) {
 
           {enableEnrich && (
             <div className="mt-3 space-y-3">
-              {/* Provider selector */}
               <div>
                 <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">
                   Enrichment provider
@@ -496,7 +491,6 @@ export function IndexForm({ onClose, onIndexed }: Props) {
         </AccordionGroup>
       </div>
 
-      {/* Advanced */}
       <AccordionGroup title={<><span>Batch Size</span> <InfoTooltip text="Control the number of chunks processed per batch. Larger values speed up indexing but require more memory." /></>}>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -530,6 +524,8 @@ export function IndexForm({ onClose, onIndexed }: Props) {
           {loading ? 'Indexing…' : 'Start indexing'}
         </button>
       </div>
+      {alertDialog}
+      {confirmDialog}
     </div>
   );
 }

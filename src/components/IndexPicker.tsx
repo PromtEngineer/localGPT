@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiRecord, BuildIndexResponse, chatAPI, IndexDiagnostics, IndexDiagnosticsSummary, IndexJob, IndexSummary, MaintenanceHealthReport } from '@/lib/api';
+import { useAlert, useConfirm } from '@/components/ui/confirm-dialog';
 
 interface Props {
   onSelect: (indexId: string) => void;
@@ -24,6 +25,8 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const { showConfirm, dialog: confirmDialog } = useConfirm();
+  const { showAlert, dialog: alertDialog } = useAlert();
 
   useEffect(() => {
     (async () => {
@@ -69,7 +72,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       const report = await chatAPI.getMaintenanceHealthReport();
       setHealthReport(report);
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to load maintenance health report');
+      await showAlert(e instanceof Error ? e.message : 'Failed to load maintenance health report');
       setShowHealthReport(false);
     } finally {
       setHealthReportLoading(false);
@@ -198,13 +201,13 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
   };
 
   async function handleDelete(idxId: string, name: string) {
-    if (!confirm(`Delete index "${name}"? This cannot be undone.`)) return;
+    if (!await showConfirm(`Delete index "${name}"? This cannot be undone.`)) return;
     try {
       await chatAPI.deleteIndex(idxId);
       setIndexes(prev => prev.filter(i => (i.id || i.index_id)!==idxId));
       setMenuOpenId(null);
     } catch (e: unknown){
-      alert(e instanceof Error ? e.message : 'Failed to delete index');
+      await showAlert(e instanceof Error ? e.message : 'Failed to delete index');
     }
   }
 
@@ -213,11 +216,11 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     if (!id) return;
     const docCount = idx.documents?.length || 0;
     if (docCount === 0) {
-      alert('This index has no files. Add files first, then rebuild.');
+      await showAlert('This index has no files. Add files first, then rebuild.');
       return;
     }
     const actionLabel = forceReindex ? 'Force rebuild' : 'Rebuild changed files for';
-    if (!confirm(`${actionLabel} "${idx.name || 'Untitled index'}" from ${docCount} file(s)?`)) return;
+    if (!await showConfirm(`${actionLabel} "${idx.name || 'Untitled index'}" from ${docCount} file(s)?`)) return;
     setBusyId(id);
     setBusyMessage(`${forceReindex ? 'Force rebuilding' : 'Checking changed files for'} "${idx.name || 'Untitled index'}"…`);
     setMenuOpenId(null);
@@ -226,9 +229,9 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       const data = await chatAPI.listIndexes();
       setIndexes(data.indexes);
       refreshDiagnostics();
-      alert(formatBuildSummary(result));
+      await showAlert(formatBuildSummary(result));
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to rebuild index');
+      await showAlert(e instanceof Error ? e.message : 'Failed to rebuild index');
     } finally {
       setBusyId(null);
       setBusyMessage(null);
@@ -263,7 +266,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
         };
         setDiagnosticsById((prev) => ({ ...prev, [id]: summary as IndexDiagnosticsSummary }));
       } catch (e: unknown) {
-        alert(e instanceof Error ? e.message : 'Failed to check index health');
+        await showAlert(e instanceof Error ? e.message : 'Failed to check index health');
         setBusyId(null);
         setBusyMessage(null);
         return;
@@ -275,15 +278,15 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
     if (summary.health === 'unhealthy') {
       const canRepair = summary.can_repair;
       const message = `"${idx.name || 'Untitled index'}" is unhealthy and should not be opened for chat.\n\nRecommended action: ${summary.recommended_action.replace('_', ' ')}.`;
-      if (canRepair && confirm(`${message}\n\nRun diagnose + repair now?`)) {
+      if (canRepair && await showConfirm(`${message}\n\nRun diagnose + repair now?`)) {
         await handleDiagnostics(idx, true);
       } else if (!canRepair) {
-        alert(`${message}\n\nRe-upload or fix the source files first.`);
+        await showAlert(`${message}\n\nRe-upload or fix the source files first.`);
       }
       return;
     }
 
-    if (summary.health === 'warning' && !confirm(`"${idx.name || 'Untitled index'}" has diagnostics warnings. Open it anyway?`)) {
+    if (summary.health === 'warning' && !await showConfirm(`"${idx.name || 'Untitled index'}" has diagnostics warnings. Open it anyway?`)) {
       return;
     }
 
@@ -300,24 +303,24 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       const diagnostics = await chatAPI.getIndexDiagnostics(id);
       const details = formatDiagnostics(diagnostics);
       if (!offerRepair || diagnostics.recommended_action === 'none') {
-        alert(details);
+        await showAlert(details);
         return;
       }
       if (!diagnostics.can_repair) {
-        alert(details);
+        await showAlert(details);
         return;
       }
       const forceReindex = diagnostics.recommended_action === 'force_rebuild';
       const repairLabel = forceReindex ? 'Force rebuild now?' : 'Rebuild changed files now?';
-      if (!confirm(`${details}\n\n${repairLabel}`)) return;
+      if (!await showConfirm(`${details}\n\n${repairLabel}`)) return;
       setBusyMessage(`${forceReindex ? 'Force rebuilding' : 'Rebuilding'} "${idx.name || 'Untitled index'}"...`);
       const result = await rebuildInBackground(id, idx, forceReindex);
       const data = await chatAPI.listIndexes();
       setIndexes(data.indexes);
       refreshDiagnostics();
-      alert(formatBuildSummary(result));
+      await showAlert(formatBuildSummary(result));
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to inspect index');
+      await showAlert(e instanceof Error ? e.message : 'Failed to inspect index');
     } finally {
       setBusyId(null);
       setBusyMessage(null);
@@ -347,9 +350,9 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       const data = await chatAPI.listIndexes();
       setIndexes(data.indexes);
       refreshDiagnostics();
-      alert(`Files added. ${formatBuildSummary(result)}`);
+      await showAlert(`Files added. ${formatBuildSummary(result)}`);
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to add files and rebuild index');
+      await showAlert(e instanceof Error ? e.message : 'Failed to add files and rebuild index');
     } finally {
       setBusyId(null);
       setBusyMessage(null);
@@ -367,7 +370,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       setBuildJob(job);
       setBusyMessage(job.message || 'Cancel requested.');
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to cancel rebuild');
+      await showAlert(e instanceof Error ? e.message : 'Failed to cancel rebuild');
     }
   }
 
@@ -383,7 +386,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
         setBusyMessage('Resuming build…');
       }
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to resume build');
+      await showAlert(e instanceof Error ? e.message : 'Failed to resume build');
     }
   }
 
@@ -554,6 +557,8 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
           <button onClick={onClose} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 text-sm">Close</button>
         </div>
       </div>
+      {confirmDialog}
+      {alertDialog}
     </div>
   );
-} 
+}

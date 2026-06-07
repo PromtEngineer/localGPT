@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ApiRecord, chatAPI } from '@/lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { ApiRecord, IndexJob, chatAPI } from '@/lib/api';
 
 interface Props {
   sessionId: string;
@@ -12,6 +12,15 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
   const [sessionTitle, setSessionTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [storedIndexId, setStoredIndexId] = useState<string | null>(null);
+
+  const [rebuilding, setRebuilding] = useState(false);
+  const [rebuildMessage, setRebuildMessage] = useState<string | null>(null);
+  const [rebuildError, setRebuildError] = useState<string | null>(null);
+  const [rebuildSuccess, setRebuildSuccess] = useState<string | null>(null);
+
+  const mountedRef = useRef(true);
+  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
   useEffect(() => {
     (async () => {
@@ -22,6 +31,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
           setSessionTitle(first.session?.title || first.name || first.title || 'Untitled index');
           setFiles(first.documents?.map((d)=>d.filename) || []);
           setIndexMeta(first.metadata || {});
+          setStoredIndexId(first.index_id || first.id || null);
         } else {
           setError('No indexes linked to this chat');
         }
@@ -53,7 +63,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: 'This index was created before metadata tracking was implemented. Configuration details are not available.'
       };
     }
-    
     if (indexStatus === 'incomplete') {
       return {
         type: 'error',
@@ -61,7 +70,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: textValue(meta.issue) || 'The index appears to be incomplete or was never properly built.'
       };
     }
-    
     if (indexStatus === 'empty') {
       return {
         type: 'error',
@@ -69,7 +77,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: 'The vector table exists but contains no data. The index may need to be rebuilt.'
       };
     }
-    
     if (indexStatus === 'legacy') {
       return {
         type: 'warning',
@@ -77,7 +84,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: textValue(meta.issue) || 'This index was created before metadata tracking was implemented. Configuration details are not available.'
       };
     }
-    
     if (isInferredMetadata) {
       return {
         type: 'info',
@@ -85,15 +91,11 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: 'This metadata was inferred from the vector database structure. Some configuration details may be incomplete.'
       };
     }
-    
     if (indexStatus === 'functional') {
-      // Check if we have complete configuration metadata
       const hasCompleteConfig = meta.chunk_size &&
                                meta.chunk_overlap !== undefined &&
                                meta.retrieval_mode &&
                                meta.embedding_model;
-      
-      // Only show limited message if we truly have limited data
       if (meta.inspection_limitation && !hasCompleteConfig) {
         return {
           type: 'info',
@@ -101,13 +103,75 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
           message: 'This index is functional but detailed configuration inspection requires direct RAG system access. Basic information is shown below.'
         };
       }
-      
-      // Don't show any status message for functional indexes with complete metadata
       return null;
     }
-    
     return null;
   };
+
+  const handleRebuild = async (forceReindex: boolean) => {
+    if (!storedIndexId) return;
+    setRebuilding(true);
+    setRebuildError(null);
+    setRebuildSuccess(null);
+    setRebuildMessage('Running preflight check…');
+    try {
+      const options = {
+        latechunk: typeof meta.latechunk === 'boolean' ? meta.latechunk : false,
+        doclingChunk: typeof meta.docling_chunk === 'boolean' ? meta.docling_chunk : true,
+        chunkSize: typeof meta.chunk_size === 'number' ? meta.chunk_size : 512,
+        chunkOverlap: typeof meta.chunk_overlap === 'number' ? meta.chunk_overlap : 64,
+        retrievalMode: typeof meta.retrieval_mode === 'string' ? meta.retrieval_mode : 'hybrid',
+        windowSize: typeof meta.window_size === 'number' ? meta.window_size : 2,
+        enableEnrich: typeof meta.enable_enrich === 'boolean' ? meta.enable_enrich : false,
+        embeddingModel: typeof meta.embedding_model === 'string' ? meta.embedding_model : undefined,
+        enrichModel: typeof meta.enrich_model === 'string' ? meta.enrich_model : undefined,
+        overviewModel: typeof meta.overview_model === 'string' ? meta.overview_model : undefined,
+        batchSizeEmbed: typeof meta.batch_size_embed === 'number' ? meta.batch_size_embed : 8,
+        batchSizeEnrich: typeof meta.batch_size_enrich === 'number' ? meta.batch_size_enrich : 4,
+        forceReindex,
+      };
+      const preflight = await chatAPI.preflightIndexBuild(storedIndexId, options);
+      if (!preflight.ok) {
+        throw new Error(preflight.errors.join(' ') || 'Preflight check failed.');
+      }
+      const started = await chatAPI.startIndexBuild(storedIndexId, options);
+      if (!mountedRef.current) return;
+      setRebuildMessage(`Build started — polling for completion…`);
+      let job: IndexJob;
+      while (mountedRef.current) {
+        job = await chatAPI.getIndexJob(started.job_id);
+        if (!mountedRef.current) break;
+        setRebuildMessage(job.message || 'Rebuilding…');
+        if (job.status === 'completed') break;
+        if (job.status === 'failed') throw new Error(job.error || 'Rebuild failed.');
+        if (job.status === 'cancelled') throw new Error('Rebuild was cancelled.');
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      if (!mountedRef.current) return;
+      const data = await chatAPI.getSessionIndexes(sessionId);
+      const first = data.indexes[0];
+      if (first) {
+        setSessionTitle(first.session?.title || first.name || first.title || 'Untitled index');
+        setFiles(first.documents?.map((d: { filename: string }) => d.filename) || []);
+        setIndexMeta(first.metadata || {});
+      }
+      setRebuildSuccess('Index rebuilt successfully.');
+    } catch (e: unknown) {
+      if (mountedRef.current) {
+        setRebuildError(e instanceof Error ? e.message : 'Rebuild failed.');
+      }
+    } finally {
+      if (mountedRef.current) {
+        setRebuilding(false);
+        setRebuildMessage(null);
+      }
+    }
+  };
+
+  const showRebuildButton = storedIndexId && !rebuilding && (
+    indexStatus === 'incomplete' || indexStatus === 'empty' || indexStatus === 'legacy'
+  );
+  const forceForStatus = indexStatus === 'incomplete' || indexStatus === 'empty';
 
   const statusMessage = getStatusMessage();
 
@@ -118,6 +182,23 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
 
         {loading && <p className="text-sm text-gray-300">Loading…</p>}
         {error && <p className="text-sm text-red-400">{error}</p>}
+
+        {rebuildError && (
+          <div className="rounded-lg p-3 bg-red-900/20 border border-red-600/30">
+            <p className="text-sm text-red-300">{rebuildError}</p>
+          </div>
+        )}
+        {rebuildSuccess && (
+          <div className="rounded-lg p-3 bg-green-900/20 border border-green-600/30">
+            <p className="text-sm text-green-300">{rebuildSuccess}</p>
+          </div>
+        )}
+        {rebuilding && rebuildMessage && (
+          <div className="rounded-lg p-3 bg-blue-900/20 border border-blue-600/30 flex items-center gap-3">
+            <div className="w-4 h-4 border-2 border-blue-400/40 border-t-blue-400 rounded-full animate-spin shrink-0" />
+            <p className="text-sm text-blue-300">{rebuildMessage}</p>
+          </div>
+        )}
 
         {(!loading && !error) && (
           <>
@@ -151,7 +232,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
 
             {hasMetadata && (indexStatus === 'functional' || indexStatus === 'created' || !indexStatus) && (
               <>
-                {/* Basic Information */}
                 <div className="grid grid-cols-2 gap-4">
                   {Boolean(meta.embedding_model || meta.embedding_model_inferred) && (
                     <div>
@@ -185,7 +265,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                   )}
                 </div>
 
-                {/* Chunk Configuration */}
                 <div className="grid grid-cols-2 gap-4">
                   {(typeof meta.chunk_size==='number' || Boolean(meta.chunk_size_inferred)) && (
                     <div>
@@ -204,7 +283,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                   )}
                 </div>
 
-                {/* Context and Features */}
                 <div className="grid grid-cols-2 gap-4">
                   {typeof meta.window_size==='number' && (
                     <div>
@@ -226,7 +304,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                   )}
                 </div>
 
-                {/* Advanced features */}
                 <div className="grid grid-cols-2 gap-4">
                   {typeof meta.latechunk==='boolean' && (
                     <div>
@@ -254,7 +331,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                   )}
                 </div>
 
-                {/* LLM Models section */}
                 {Boolean(meta.enrich_model || meta.overview_model) && (
                   <>
                     <div className="border-t border-white/10 pt-4">
@@ -277,7 +353,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                   </>
                 )}
 
-                {/* Batch sizes section */}
                 {(typeof meta.batch_size_embed==='number' || typeof meta.batch_size_enrich==='number') && (
                   <>
                     <div className="border-t border-white/10 pt-4">
@@ -300,7 +375,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                   </>
                 )}
 
-                {/* Metadata info */}
                 {isInferredMetadata && dateValue(meta.metadata_inferred_at) && (
                   <div className="border-t border-white/10 pt-4">
                     <h3 className="text-sm font-medium text-gray-300 mb-3">Metadata Information</h3>
@@ -316,7 +390,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
               </>
             )}
 
-            {/* Legacy index information */}
             {hasMetadata && indexStatus === 'legacy' && (
               <>
                 <div className="grid grid-cols-2 gap-4">
@@ -339,7 +412,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                     </div>
                   )}
                 </div>
-                
                 {meta.note && (
                   <div className="border-t border-white/10 pt-4">
                     <h3 className="text-sm font-medium text-gray-300 mb-3">Technical Note</h3>
@@ -349,7 +421,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
               </>
             )}
 
-            {/* Debug info for incomplete indexes */}
             {indexStatus === 'incomplete' && stringArrayValue(meta.available_tables).length > 0 && (
               <div className="border-t border-white/10 pt-4">
                 <h3 className="text-sm font-medium text-gray-300 mb-3">Debug Information</h3>
@@ -371,10 +442,23 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
           </>
         )}
 
-        <div className="flex justify-end pt-4 border-t border-white/10">
+        <div className="flex items-center justify-between pt-4 border-t border-white/10">
+          <div className="flex gap-2">
+            {showRebuildButton && (
+              <button
+                onClick={() => handleRebuild(forceForStatus)}
+                className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-500 text-sm transition-colors"
+              >
+                {forceForStatus ? 'Force rebuild' : 'Rebuild index'}
+              </button>
+            )}
+            {rebuilding && (
+              <span className="text-xs text-blue-300 self-center">Rebuilding in progress…</span>
+            )}
+          </div>
           <button onClick={onClose} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 text-sm">Close</button>
         </div>
       </div>
     </div>
   );
-} 
+}

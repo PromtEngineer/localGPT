@@ -11,7 +11,9 @@ import { Button } from "./button"
 import type { Step } from '@/lib/api'
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal'
 import { IndexForm } from '@/components/IndexForm'
+import IndexPicker from '@/components/IndexPicker'
 import SessionIndexInfo from '@/components/SessionIndexInfo'
+import { useConfirm, useAlert } from '@/components/ui/confirm-dialog'
 import { Database } from 'lucide-react'
 
 interface SessionChatProps {
@@ -73,7 +75,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   const [showSettings, setShowSettings] = useState(false)
   const [showIndexForm, setShowIndexForm] = useState(false)
   const [showIndexInfo, setShowIndexInfo] = useState(false)
-  
+  const [showIndexSwitcher, setShowIndexSwitcher] = useState(false)
+
+  const { showConfirm, dialog: confirmDialog } = useConfirm()
+  const { showAlert, dialog: alertDialog } = useAlert()
+
   const apiService = chatAPI
 
   const ensureIndexHealthyForChat = async (idxId: string | null, indexName?: string | null) => {
@@ -83,7 +89,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
     if (diagnostics.health === 'unhealthy') {
       throw new Error(`Cannot chat with "${label}" because its index is unhealthy. Run diagnostics and repair it before chatting.`);
     }
-    if (diagnostics.health === 'warning' && !confirm(`"${label}" has diagnostics warnings. Continue chatting anyway?`)) {
+    if (diagnostics.health === 'warning' && !await showConfirm(`"${label}" has diagnostics warnings. Continue chatting anyway?`)) {
       throw new Error('Chat cancelled because the linked index has warnings.');
     }
   };
@@ -118,20 +124,17 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
     }
   }, [apiService, onSessionChange])
 
-  // Load session when sessionId changes
+  const loadedSessionId = currentSession?.id
   useEffect(() => {
     if (sessionId) {
-      // Only load session if we don't already have the current session
-      // This prevents overriding messages when a new session is created
-      if (!currentSession || currentSession.id !== sessionId) {
+      if (loadedSessionId !== sessionId) {
         loadSession(sessionId)
       }
     } else {
-      // Clear messages if no session
       setMessages([])
       setCurrentSession(null)
     }
-  }, [sessionId, currentSession, loadSession]) // Added missing dependencies
+  }, [sessionId, loadedSessionId, loadSession])
 
   // Fetch available models on mount
   useEffect(()=>{
@@ -599,15 +602,27 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               onOpenSettings={()=>setShowSettings(true)}
               onAddIndex={()=>setShowIndexForm(true)}
               leftExtras={currentIndexId && currentIndexName ? (
-                <button
-                  type="button"
-                  onClick={()=>setShowIndexInfo(true)}
-                  title="View index info"
-                  className="flex items-center gap-1 p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-colors"
-                >
-                  <Database className="w-5 h-5" />
-                  <span className="text-xs hidden sm:inline">{truncate(currentIndexName,12)}</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={()=>setShowIndexInfo(true)}
+                    title="View index info"
+                    className="flex items-center gap-1 p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-colors"
+                  >
+                    <Database className="w-5 h-5" />
+                    <span className="text-xs hidden sm:inline">{truncate(currentIndexName,12)}</span>
+                  </button>
+                  {currentSession && (
+                    <button
+                      type="button"
+                      onClick={()=>setShowIndexSwitcher(true)}
+                      title="Switch index"
+                      className="px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
+                    >
+                      Switch
+                    </button>
+                  )}
+                </>
               ) : undefined}
             />
           </div>
@@ -637,15 +652,27 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               onOpenSettings={()=>setShowSettings(true)}
               onAddIndex={()=>setShowIndexForm(true)}
               leftExtras={currentIndexId && currentIndexName ? (
-                <button
-                  type="button"
-                  onClick={()=>setShowIndexInfo(true)}
-                  title="View index info"
-                  className="flex items-center gap-1 p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-colors"
-                >
-                  <Database className="w-5 h-5" />
-                  <span className="text-xs hidden sm:inline">{truncate(currentIndexName,12)}</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={()=>setShowIndexInfo(true)}
+                    title="View index info"
+                    className="flex items-center gap-1 p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-colors"
+                  >
+                    <Database className="w-5 h-5" />
+                    <span className="text-xs hidden sm:inline">{truncate(currentIndexName,12)}</span>
+                  </button>
+                  {currentSession && (
+                    <button
+                      type="button"
+                      onClick={()=>setShowIndexSwitcher(true)}
+                      title="Switch index"
+                      className="px-2 py-1 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded transition-colors"
+                    >
+                      Switch
+                    </button>
+                  )}
+                </>
               ) : undefined}
             />
           </div>
@@ -693,10 +720,32 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         />
       )}
 
-      {/* Index info modal */}
       {showIndexInfo && currentSession && (
         <SessionIndexInfo sessionId={currentSession.id} onClose={()=>setShowIndexInfo(false)} />
       )}
+
+      {showIndexSwitcher && (
+        <IndexPicker
+          onClose={()=>setShowIndexSwitcher(false)}
+          onSelect={async (idxId) => {
+            if (currentSession) {
+              try {
+                await chatAPI.linkIndexToSession(currentSession.id, idxId)
+                const idxResp = await chatAPI.getSessionIndexes(currentSession.id)
+                const linked = idxResp.indexes.find((i: IndexSummary) => (i.index_id || i.id) === idxId)
+                setCurrentIndexId(idxId)
+                setCurrentIndexName(linked?.name ?? linked?.title ?? idxId.slice(0, 8))
+              } catch (e) {
+                await showAlert(e instanceof Error ? e.message : 'Failed to switch index')
+              }
+            }
+            setShowIndexSwitcher(false)
+          }}
+        />
+      )}
+
+      {confirmDialog}
+      {alertDialog}
     </div>
   )
 })

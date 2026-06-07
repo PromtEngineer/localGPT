@@ -6,6 +6,7 @@ import { Plus, MessageSquare, MoreVertical } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChatSession, chatAPI } from "@/lib/api"
+import { useConfirm, usePrompt } from "@/components/ui/confirm-dialog"
 
 interface SessionSidebarRef {
   refreshSessions: () => Promise<void>
@@ -32,6 +33,8 @@ export function SessionSidebar({
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const { showConfirm, dialog: confirmDialog } = useConfirm()
+  const { showPrompt, dialog: promptDialog } = usePrompt()
 
   const loadSessions = React.useCallback(async () => {
     try {
@@ -71,7 +74,7 @@ export function SessionSidebar({
   const handleDeleteSession = async (sessionId: string, event: React.MouseEvent) => {
     event.stopPropagation() // Prevent session selection when clicking delete
     
-    if (!confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
+    if (!await showConfirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
       return
     }
 
@@ -92,7 +95,7 @@ export function SessionSidebar({
   const handleRenameSession = async (sessionId: string, event: React.MouseEvent) => {
     event.stopPropagation();
     const current = sessions.find(s => s.id === sessionId);
-    const newTitle = prompt('Enter new title', current?.title || '');
+    const newTitle = await showPrompt('Enter new title', current?.title || '');
     if (!newTitle || newTitle.trim() === '' || newTitle === current?.title) {
       return;
     }
@@ -211,6 +214,8 @@ export function SessionSidebar({
           </div>
         </div>
       )}
+      {confirmDialog}
+      {promptDialog}
     </div>
   )
 } 
