@@ -219,12 +219,14 @@ class ChatDatabase:
         _migrations = [
             "ALTER TABLE index_job_files ADD COLUMN attempt_count INTEGER DEFAULT 0",
             "ALTER TABLE index_job_files ADD COLUMN last_error_code TEXT",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_indexes_unique ON session_indexes (session_id, index_id)",
         ]
         for _sql in _migrations:
             try:
                 cursor.execute(_sql)
-            except sqlite3.OperationalError:
-                pass  # column already exists
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e) and "already exists" not in str(e):
+                    raise
 
         conn.commit()
         conn.close()
@@ -504,7 +506,7 @@ class ChatDatabase:
 
     def link_index_to_session(self, session_id: str, index_id: str):
         conn = sqlite3.connect(self.db_path, timeout=30)
-        conn.execute('INSERT INTO session_indexes (session_id, index_id, linked_at) VALUES (?,?,?)', (session_id, index_id, datetime.now().isoformat()))
+        conn.execute('INSERT OR IGNORE INTO session_indexes (session_id, index_id, linked_at) VALUES (?,?,?)', (session_id, index_id, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 

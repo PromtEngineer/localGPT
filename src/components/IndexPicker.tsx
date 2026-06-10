@@ -23,6 +23,8 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
   const [healthReportLoading, setHealthReportLoading] = useState(false);
   const [showHealthReport, setShowHealthReport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const { showConfirm, dialog: confirmDialog } = useConfirm();
@@ -126,8 +128,9 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
   };
 
   const waitForBuildJob = async (jobId: string): Promise<BuildIndexResponse> => {
-    while (true) {
+    while (mountedRef.current) {
       const job = await chatAPI.getIndexJob(jobId);
+      if (!mountedRef.current) break;
       setBuildJob(job);
       setBusyMessage(job.message || 'Rebuilding index...');
 
@@ -143,6 +146,7 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
 
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
+    throw new Error('Component unmounted');
   };
 
   const rebuildInBackground = async (idxId: string, idx: IndexSummary, forceReindex: boolean) => {

@@ -26,11 +26,13 @@ export function highlightTerms(text: string, query: string): React.ReactNode {
   const pattern = new RegExp(`(${tokens.map(escapeRegex).join("|")})`, "gi");
   const parts = text.split(pattern);
 
+  // String.split with a capture group places matches at odd indices — use index
+  // parity instead of pattern.test() to avoid stateful lastIndex advancement.
   return React.createElement(
     React.Fragment,
     null,
     ...parts.map((part, i) =>
-      pattern.test(part)
+      i % 2 === 1
         ? React.createElement("mark", { key: i, className: "bg-yellow-400/30 text-inherit rounded-sm" }, part)
         : part,
     ),

@@ -1264,6 +1264,7 @@ async def index_build_preflight(index_id: str, request: Request):
 
 
 def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = None) -> Dict[str, Any]:
+    data = dict(data)  # shallow copy — prevents pop() from mutating the caller's job['options'] dict
     index = db.get_index(index_id)
     if not index:
         raise HTTPException(status_code=404, detail="Index not found")
@@ -1726,7 +1727,7 @@ async def _handle_direct_llm_query(session_id: str, message: str, session: dict)
 
     except Exception as e:
         print(f"❌ Direct LLM error: {e}")
-        return f"Error processing query: {str(e)}", []
+        raise HTTPException(status_code=503, detail=f"Error processing query: {str(e)}")
 
 async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: List[str]):
     """

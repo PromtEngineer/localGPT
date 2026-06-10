@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { GlassInput } from '@/components/ui/GlassInput';
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { AccordionGroup } from '@/components/ui/AccordionGroup';
@@ -105,6 +105,8 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const [batchSizeEnrich, setBatchSizeEnrich] = useState(INDEXING_PROFILES.balanced.batchSizeEnrich);
   const [loading, setLoading] = useState(false);
   const [buildJob, setBuildJob] = useState<IndexJob | null>(null);
+  const cancelStreamRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => { cancelStreamRef.current?.(); }, []);
   const [enableLateChunk, setEnableLateChunk] = useState(INDEXING_PROFILES.balanced.enableLateChunk);
   const [enableDoclingChunk, setEnableDoclingChunk] = useState(INDEXING_PROFILES.balanced.enableDoclingChunk);
   const [enrichProvider, setEnrichProvider] = useState<EnrichProvider>('ollama');
@@ -177,6 +179,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
         if (data.status === 'failed') { cancel(); reject(new Error(data.message || 'Index build failed')); }
         if (data.status === 'cancelled') { cancel(); reject(new Error('Index build was cancelled')); }
       });
+      cancelStreamRef.current = cancel;
       promise.catch((err) => {
         if ((err as Error).name !== 'AbortError') reject(err);
       });
