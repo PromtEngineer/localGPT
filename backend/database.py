@@ -527,6 +527,7 @@ class ChatDatabase:
             # Remove child rows first due to foreign‐key constraints
             conn.execute('DELETE FROM index_documents WHERE index_id = ?', (index_id,))
             conn.execute('DELETE FROM session_indexes WHERE index_id = ?', (index_id,))
+            conn.execute('DELETE FROM index_job_file_stages WHERE file_id IN (SELECT id FROM index_job_files WHERE index_id = ?)', (index_id,))
             conn.execute('DELETE FROM index_job_files WHERE index_id = ?', (index_id,))
             conn.execute('DELETE FROM index_jobs WHERE index_id = ?', (index_id,))
             cursor = conn.execute('DELETE FROM indexes WHERE id = ?', (index_id,))

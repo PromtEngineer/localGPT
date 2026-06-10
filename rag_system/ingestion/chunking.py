@@ -25,10 +25,16 @@ class MarkdownRecursiveChunker:
                 trust_remote_code=True,
                 local_files_only=True,
             )
-        except Exception as e:
-            print(f"Warning: Failed to load local tokenizer {repo_id}: {e}")
-            print("Falling back to character-based approximation (4 chars ~= 1 token)")
-            self.tokenizer = None
+        except Exception:
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    repo_id,
+                    trust_remote_code=True,
+                )
+            except Exception as e:
+                print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
+                print("Falling back to character-based approximation (4 chars ~= 1 token)")
+                self.tokenizer = None
 
     def _token_len(self, text: str) -> int:
         """Get token count for text using the tokenizer."""

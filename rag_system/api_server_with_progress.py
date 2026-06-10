@@ -197,8 +197,8 @@ def run_indexing_with_progress(file_paths: List[str], session_id: str):
                 # Step 1: Document Processing
                 step_tracker.update(1, current_step="Processing documents...")
                 
-                # Run the indexing pipeline
-                pipeline.run(file_paths)
+                # Run the indexing pipeline (session_id is index_id in this context)
+                pipeline.run(file_paths, index_id=session_id)
                 
                 # Update progress through the steps
                 step_tracker.update(1, current_step="Chunking completed...")

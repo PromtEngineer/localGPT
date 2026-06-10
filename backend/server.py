@@ -103,10 +103,12 @@ async def _record_metrics(request: Request, call_next):
         return await call_next(request)
     _metrics.inc_active()
     t0 = time.perf_counter()
-    response = await call_next(request)
-    latency_ms = (time.perf_counter() - t0) * 1000
-    _metrics.dec_active()
-    _metrics.record_request(request.url.path, latency_ms)
+    try:
+        response = await call_next(request)
+    finally:
+        latency_ms = (time.perf_counter() - t0) * 1000
+        _metrics.dec_active()
+        _metrics.record_request(request.url.path, latency_ms)
     return response
 
 # Global variables
@@ -878,8 +880,9 @@ async def session_chat(session_id: str, request: Request):
             print(f"⚠️ No overviews found for indices {idx_ids}")
         aggregated = aggregated[:40]
 
-        # Decide routing
-        use_rag = _route_using_overviews(message, aggregated) if aggregated else _simple_pattern_routing(message, idx_ids)
+        # Decide routing (force_rag bypasses heuristics entirely)
+        force_rag = bool(data.get('force_rag', False))
+        use_rag = force_rag or (_route_using_overviews(message, aggregated) if aggregated else _simple_pattern_routing(message, idx_ids))
 
         if use_rag:
             response_text, source_docs = await _handle_rag_query(session_id, message, data, idx_ids)
@@ -1061,7 +1064,6 @@ async def get_models():
 async def get_indexes():
     """Get all indexes"""
     try:
-        _recover_stale_index_builds()
         data = db.list_indexes()
         return {"indexes": data, "total": len(data)}
     except Exception as e:
@@ -1072,7 +1074,6 @@ async def get_indexes():
 async def get_indexes_diagnostics():
     """Get compact health diagnostics for all indexes."""
     try:
-        _recover_stale_index_builds()
         summaries = []
         for item in db.list_indexes():
             idx_id = item.get("id") or item.get("index_id")
@@ -1277,7 +1278,7 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     embedding_model = data.get('embeddingModel')
     enrich_model = data.get('enrichModel')
     enrich_provider = data.get('enrichProvider', 'ollama')
-    enrich_api_key = data.get('enrichApiKey')  # never stored in DB
+    enrich_api_key = data.pop('enrichApiKey', None)  # extracted and removed so it is never written to the DB
     batch_size_embed = int(data.get('batchSizeEmbed', 50))
     batch_size_enrich = int(data.get('batchSizeEnrich', 25))
     overview_model = data.get('overviewModel')
@@ -1767,14 +1768,16 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
             response_text = rag_data.get("answer", "No answer found.")
             source_docs = rag_data.get("source_documents", [])
         else:
-            response_text = f"Error from RAG API ({rag_response.status_code}): {rag_response.text}"
-            print(f"❌ RAG API error: {response_text}")
+            print(f"❌ RAG API error: {rag_response.status_code} {rag_response.text}")
+            raise HTTPException(status_code=502, detail=f"RAG API error ({rag_response.status_code}): {rag_response.text}")
+    except HTTPException:
+        raise
     except requests.exceptions.ConnectionError:
-        response_text = "Could not connect to the RAG API server. Please ensure it is running."
         print("❌ Connection to RAG API failed (port 8001).")
+        raise HTTPException(status_code=503, detail="Could not connect to the RAG API server. Please ensure it is running.")
     except Exception as e:
-        response_text = f"Error processing RAG query: {str(e)}"
         print(f"❌ RAG processing error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing RAG query: {str(e)}")
 
     # Strip any <think>/<thinking> tags that might slip through
     response_text = re.sub(r'<(think|thinking)>.*?</\1>', '', response_text, flags=re.DOTALL | re.IGNORECASE).strip()
@@ -1894,6 +1897,8 @@ async def get_failed_files(index_id: str):
         if result.get("error"):
             raise HTTPException(status_code=404, detail=result["error"])
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting failed files: {str(e)}")
 
@@ -1909,6 +1914,8 @@ async def rebuild_failed_files(index_id: str, force: bool = False):
         if result.get("error"):
             raise HTTPException(status_code=400, detail=result["error"])
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error rebuilding failed files: {str(e)}")
 
