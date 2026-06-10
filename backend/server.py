@@ -98,6 +98,15 @@ except ImportError:
     _metrics = None
 
 @app.middleware("http")
+async def _restrict_maintenance(request: Request, call_next):
+    if request.url.path.startswith("/maintenance"):
+        host = request.client.host if request.client else ""
+        if host not in ("127.0.0.1", "::1"):
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=403, content={"detail": "Maintenance endpoints are only accessible from localhost"})
+    return await call_next(request)
+
+@app.middleware("http")
 async def _record_metrics(request: Request, call_next):
     if _metrics is None:
         return await call_next(request)
@@ -559,7 +568,8 @@ async def update_index_job_progress(job_id: str, request: Request):
         # job non-terminal here; the background runner is the source of truth for
         # completion after all post-build bookkeeping is done.
         updates["stage"] = "finalizing"
-        updates["progress"] = min(int(updates.get("progress", 100) or 100), 99)
+        p = updates.get("progress")
+        updates["progress"] = min(int(p if p is not None else 100), 99)
     elif data.get("stage") == "cancelled":
         updates["status"] = "cancelled"
         updates["finished_at"] = datetime.now().isoformat()
@@ -814,9 +824,6 @@ async def session_chat(session_id: str, request: Request):
             title = generate_session_title(message)
             db.update_session_title(session_id, title)
 
-        # Add user message to database first
-        user_message_id = db.add_message(session_id, message, "user")
-
         # 🎯 SMART ROUTING: Decide between direct LLM vs RAG
         # Get overviews for routing decision
         aggregated = []
@@ -889,7 +896,9 @@ async def session_chat(session_id: str, request: Request):
         else:
             response_text, source_docs = await _handle_direct_llm_query(session_id, message, session)
 
-        # Add assistant message to database
+        # Store both turns only after a successful response — prevents orphaned user messages
+        # if the RAG/LLM call raises an HTTPException
+        db.add_message(session_id, message, "user")
         assistant_message_id = db.add_message(session_id, response_text, "assistant", metadata={"sources": source_docs})
 
         return {
@@ -921,7 +930,7 @@ async def upload_files(session_id: str, files: List[UploadFile] = File(...)):
         if len(content) > _MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail=f"'{file.filename}' exceeds the 500 MB upload limit")
 
-        unique_filename = f"{uuid.uuid4()}_{file.filename}"
+        unique_filename = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
         file_path = os.path.join(upload_dir, unique_filename)
         with open(file_path, 'wb') as f:
             f.write(content)
@@ -1228,7 +1237,7 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...)):
         if len(content) > _MAX_UPLOAD_BYTES:
             raise HTTPException(status_code=413, detail=f"'{f.filename}' exceeds the 500 MB upload limit")
 
-        unique = f"{uuid.uuid4()}_{f.filename}"
+        unique = f"{uuid.uuid4()}_{os.path.basename(f.filename)}"
         path = os.path.join(upload_dir, unique)
         with open(path, 'wb') as out:
             out.write(content)
@@ -1466,7 +1475,6 @@ def _run_index_build_job(job_id: str):
 async def build_index(index_id: str, request: Request):
     """Build an index from uploaded documents"""
     try:
-        _recover_stale_index_builds()
         body = await request.body()
         data = json.loads(body.decode("utf-8")) if body else {}
         if bool(data.get("background", False)):
@@ -1526,7 +1534,9 @@ async def stream_index_job(job_id: str):
     async def _event_gen():
         terminal_statuses = {"completed", "failed", "cancelled"}
         last_progress = -1
-        while True:
+        max_ticks = 7200  # 1-hour hard cap at 0.5 s/tick
+        ticks = 0
+        while ticks < max_ticks:
             job = _public_index_job(job_id)
             if job is None:
                 yield f"data: {json.dumps({'type': 'error', 'data': {'message': 'Job not found'}})}\n\n"
@@ -1550,6 +1560,7 @@ async def stream_index_job(job_id: str):
                 yield f"data: {json.dumps(payload)}\n\n"
             if status in terminal_statuses:
                 break
+            ticks += 1
             await _asyncio.sleep(0.5)
 
     return StreamingResponse(
@@ -1730,7 +1741,11 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
 
     # Build payload for RAG API
     rag_api_url = f"{RAG_API_BASE_URL}/chat"
-    table_name = f"text_pages_{idx_ids[-1]}" if idx_ids else None
+    if idx_ids:
+        idx_meta = db.get_index(idx_ids[-1]) or {}
+        table_name = idx_meta.get("vector_table_name") or f"text_pages_{idx_ids[-1]}"
+    else:
+        table_name = None
     payload: Dict[str, Any] = {
         "query": message,
         "session_id": session_id,

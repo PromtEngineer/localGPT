@@ -1,6 +1,7 @@
 import json
 import http.server
 import socketserver
+import threading
 from urllib.parse import urlparse, parse_qs
 import os
 import requests
@@ -26,6 +27,7 @@ AGENT_MODE = os.getenv("RAG_CONFIG_MODE", "default")
 print("🧠 Initializing RAG Agent... (This may take a moment)")
 RAG_AGENT = get_agent(AGENT_MODE)
 INDEXING_PIPELINE = get_indexing_pipeline(AGENT_MODE)
+_rag_agent_lock = threading.Lock()  # guards per-request mutations of RAG_AGENT shared state
 
 if RAG_AGENT is None:
     raise RuntimeError("RAG Agent could not be initialized")
@@ -193,7 +195,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
         requested_model = data.get('model')
         if isinstance(requested_model, str) and requested_model:
-            RAG_AGENT.ollama_config['generation_model'] = requested_model
+            with _rag_agent_lock:
+                RAG_AGENT.ollama_config['generation_model'] = requested_model
 
         query = data.get('query')
         if not query:

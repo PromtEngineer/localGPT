@@ -611,8 +611,6 @@ class MaintenanceTools:
                 try:
                     config_files = [
                         "pyproject.toml",
-                        ".env",
-                        "docker.env",
                     ]
                     
                     for config_file in config_files:
