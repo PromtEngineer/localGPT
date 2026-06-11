@@ -3,6 +3,7 @@ Simple PDF Processing Service
 Handles PDF upload and text extraction for RAG functionality
 """
 
+import os
 import uuid
 from typing import List, Dict, Any
 import PyPDF2
@@ -10,8 +11,13 @@ from io import BytesIO
 import sqlite3
 from datetime import datetime
 
+# Anchor to this file's directory: a CWD-relative path silently creates a
+# second database when the server is launched from a different directory
+_DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_data.db")
+
+
 class SimplePDFProcessor:
-    def __init__(self, db_path: str = "chat_data.db"):
+    def __init__(self, db_path: str = _DEFAULT_DB_PATH):
         """Initialize simple PDF processor with SQLite storage"""
         self.db_path = db_path
         self.init_database()

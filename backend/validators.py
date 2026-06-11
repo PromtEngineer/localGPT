@@ -30,10 +30,12 @@ class MessageRequest(BaseModel):
     """Request model for chat messages."""
     message: str = Field(..., min_length=1, max_length=10000, description="Chat message")
 
-    @field_validator('message')
+    # mode="before" so the strip happens BEFORE min_length runs — otherwise
+    # a whitespace-only message passes the length check and reaches the LLM
+    @field_validator('message', mode='before')
     @classmethod
-    def sanitize_message(cls, v: str) -> str:
-        return v.strip()
+    def sanitize_message(cls, v):
+        return v.strip() if isinstance(v, str) else v
 
     class Config:
         json_schema_extra = {
@@ -47,10 +49,10 @@ class RenameSessionRequest(BaseModel):
     """Request model for renaming a session."""
     title: str = Field(..., min_length=1, max_length=100, description="New session title")
 
-    @field_validator('title')
+    @field_validator('title', mode='before')
     @classmethod
-    def sanitize_title(cls, v: str) -> str:
-        return v.strip()
+    def sanitize_title(cls, v):
+        return v.strip() if isinstance(v, str) else v
 
 
 class IndexRequest(BaseModel):

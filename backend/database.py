@@ -973,16 +973,25 @@ class ChatDatabase:
 
 def generate_session_title(first_message: str, max_length: int = 50) -> str:
     """Generate a session title from the first message"""
+    import re
+
     # Clean up the message
     title = first_message.strip()
-    
-    # Remove common prefixes
+
+    # Strip common greeting/filler prefixes at word boundaries only —
+    # "history" must not lose its "hi" — along with any punctuation that
+    # follows them ("Hello! Summarize..." → "Summarize...").
     prefixes = ["hey", "hi", "hello", "can you", "please", "i want", "i need"]
-    title_lower = title.lower()
-    for prefix in prefixes:
-        if title_lower.startswith(prefix):
-            title = title[len(prefix):].strip()
+    prefix_pattern = re.compile(
+        r"^(?:" + "|".join(re.escape(p) for p in prefixes) + r")\b[\s,.!?:;\-]*",
+        re.IGNORECASE,
+    )
+    # Apply repeatedly so "Hi, can you summarize..." sheds both prefixes
+    for _ in range(3):
+        stripped = prefix_pattern.sub("", title, count=1).strip()
+        if stripped == title:
             break
+        title = stripped
     
     # Capitalize first letter
     if title:

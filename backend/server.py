@@ -151,6 +151,9 @@ _ALLOWED_UPLOAD_EXTENSIONS = {
     ".html", ".htm", ".csv", ".json", ".xml", ".yaml", ".yml",
 }
 _UPLOAD_CHUNK_BYTES = 1024 * 1024  # stream uploads to disk 1 MB at a time
+# Anchor to the repo root: a CWD-relative path creates a second uploads
+# directory when the server is launched from backend/ instead of the root
+_UPLOAD_DIR = os.path.join(PROJECT_ROOT, "shared_uploads")
 
 
 def _validation_error_detail(e: ValidationError) -> str:
@@ -160,7 +163,7 @@ def _validation_error_detail(e: ValidationError) -> str:
     return f"{loc}: {msg}" if loc else msg
 
 
-async def _save_uploads(files: List[UploadFile], upload_dir: str = "shared_uploads") -> List[Dict[str, str]]:
+async def _save_uploads(files: List[UploadFile], upload_dir: str = _UPLOAD_DIR) -> List[Dict[str, str]]:
     """Validate every file, then stream them all to disk.
 
     Validation happens for the whole batch before anything is written, and a
@@ -223,7 +226,7 @@ maintenance_tools = None
 if MAINTENANCE_TOOLS_AVAILABLE:
     try:
         maintenance_tools = MaintenanceTools(
-            db_path="backend/chat_data.db",
+            db_path=_DB_PATH,
             project_root=PROJECT_ROOT,
             lancedb_path="lancedb",
             uploads_path="shared_uploads",
@@ -237,7 +240,7 @@ if MAINTENANCE_TOOLS_AVAILABLE:
 job_progress_tracker = None
 if JOB_PERSISTENCE_AVAILABLE:
     try:
-        job_progress_tracker = JobProgressTracker(db_path="backend/chat_data.db")
+        job_progress_tracker = JobProgressTracker(db_path=_DB_PATH)
         print("✅ Job persistence tracker initialized")
     except Exception as e:
         print(f"⚠️ Failed to initialize job persistence: {e}")
