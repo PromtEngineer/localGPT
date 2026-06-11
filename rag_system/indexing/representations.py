@@ -54,13 +54,22 @@ class QwenEmbedder(EmbeddingModel):
         self.tokenizer, self.model = _MODEL_CACHE[self.model_name]
         self._loaded = True
 
-    # Activation memory of one forward pass scales with batch × padded length,
-    # so a single 50-chunk batch of 512-token chunks spikes hard on MPS/CPU.
-    # Micro-batching flattens the peak regardless of what callers pass in.
-    _DEVICE_MICROBATCH = {"cuda": 64, "mps": 16, "cpu": 8}
+    # Attention cost is quadratic in sequence length and activation memory
+    # scales with batch × padded length. Two guards keep both bounded:
+    # - a hard cap on tokens per sequence (atomic table chunks from Docling
+    #   can reach several thousand tokens; embedding their first N tokens is
+    #   an acceptable trade for a bounded runtime)
+    # - a token budget per forward pass, packed over length-sorted texts so
+    #   one giant chunk can't pad a whole batch up to its own length
+    MAX_SEQ_TOKENS = int(os.getenv("EMBED_MAX_TOKENS", "2048"))
+    _DEVICE_TOKEN_BUDGET = {"cuda": 49152, "mps": 12288, "cpu": 6144}
+    _MAX_BATCH_COUNT = 64
 
     def _forward(self, texts: List[str]) -> np.ndarray:
-        inputs = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt").to(self.device)
+        inputs = self.tokenizer(
+            texts, padding=True, truncation=True,
+            max_length=self.MAX_SEQ_TOKENS, return_tensors="pt",
+        ).to(self.device)
         with torch.no_grad():
             outputs = self.model(**inputs)
             last_hidden = outputs.last_hidden_state  # [B, seq, dim]
@@ -73,9 +82,37 @@ class QwenEmbedder(EmbeddingModel):
     def create_embeddings(self, texts: List[str]) -> np.ndarray:
         self._ensure_loaded()
         print(f"Generating {len(texts)} embeddings with {self.model_name} model...")
-        micro = self._DEVICE_MICROBATCH.get(self.device, 8)
-        parts = [self._forward(texts[i:i + micro]) for i in range(0, len(texts), micro)]
-        embeddings_np = np.vstack(parts)
+        budget = self._DEVICE_TOKEN_BUDGET.get(self.device, 6144)
+
+        # Sort by approximate token count (≈ chars/4), pack greedily into
+        # batches whose padded size (count × longest) fits the budget, then
+        # restore original order.
+        approx = [min(max(1, len(t) // 4), self.MAX_SEQ_TOKENS) for t in texts]
+        order = sorted(range(len(texts)), key=lambda i: approx[i])
+
+        results: List[np.ndarray | None] = [None] * len(texts)
+        batch: List[int] = []
+        batch_max = 0
+
+        def _flush():
+            nonlocal batch, batch_max
+            if not batch:
+                return
+            vecs = self._forward([texts[i] for i in batch])
+            for idx, vec in zip(batch, vecs):
+                results[idx] = vec
+            batch, batch_max = [], 0
+
+        for i in order:
+            new_max = max(batch_max, approx[i])
+            if batch and ((len(batch) + 1) * new_max > budget or len(batch) >= self._MAX_BATCH_COUNT):
+                _flush()
+                new_max = approx[i]
+            batch.append(i)
+            batch_max = new_max
+        _flush()
+
+        embeddings_np = np.vstack(results)
         
         # Check for NaN or infinite values
         if np.isnan(embeddings_np).any():

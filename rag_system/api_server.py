@@ -634,7 +634,10 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 config_override.setdefault("indexing", {})
                 config_override["indexing"]["embedding_batch_size"] = batch_size_embed
                 config_override["indexing"]["enrichment_batch_size"] = batch_size_enrich
-                config_override["indexing"].setdefault("conversion_timeout_seconds", 180)
+                # 900s: a 500-page PDF legitimately needs >180s for layout analysis;
+                # a timeout also kills the conversion worker, so the next file pays
+                # a full Docling reload on top of the failure
+                config_override["indexing"].setdefault("conversion_timeout_seconds", int(os.getenv("CONVERSION_TIMEOUT_SECONDS", "900")))
                 config_override["indexing"].setdefault("overview_timeout_seconds", 45)
                 config_override["indexing"].setdefault("enrichment_timeout_seconds", 60)
                 
@@ -702,7 +705,10 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 config_override.setdefault("indexing", {})
                 config_override["indexing"]["embedding_batch_size"] = batch_size_embed
                 config_override["indexing"]["enrichment_batch_size"] = batch_size_enrich
-                config_override["indexing"].setdefault("conversion_timeout_seconds", 180)
+                # 900s: a 500-page PDF legitimately needs >180s for layout analysis;
+                # a timeout also kills the conversion worker, so the next file pays
+                # a full Docling reload on top of the failure
+                config_override["indexing"].setdefault("conversion_timeout_seconds", int(os.getenv("CONVERSION_TIMEOUT_SECONDS", "900")))
                 config_override["indexing"].setdefault("overview_timeout_seconds", 45)
                 config_override["indexing"].setdefault("enrichment_timeout_seconds", 60)
                 
