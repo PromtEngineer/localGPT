@@ -274,7 +274,7 @@ class ServiceManager:
 
     def _check_python_environment(self):
         """Verify that required Python packages are installed in the project venv."""
-        imports = ["fastapi", "uvicorn", "transformers", "torch", "lancedb", "docling"]
+        imports = ["fastapi", "uvicorn", "python_multipart", "transformers", "torch", "lancedb", "docling"]
         probe = "import " + ", ".join(imports)
         result = subprocess.run(
             [str(VENV_PYTHON), "-c", probe],

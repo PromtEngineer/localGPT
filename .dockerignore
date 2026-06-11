@@ -1,0 +1,34 @@
+# Dependencies and build output
+node_modules
+.next
+.venv
+venv
+**/__pycache__
+*.pyc
+tsconfig.tsbuildinfo
+
+# Local data — never bake user data into images
+lancedb
+index_store
+shared_uploads
+logs
+**/chat_data.db
+**/chat_data.db-wal
+**/chat_data.db-shm
+*.log
+
+# VCS / editor
+.git
+.gitignore
+.vscode
+.idea
+.claude
+
+# Docker files themselves
+Dockerfile.*
+docker-compose*.yml
+.dockerignore
+
+# Env files
+.env
+.env.*

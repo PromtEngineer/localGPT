@@ -2,4 +2,5 @@ requests
 python-dotenv
 PyPDF2
 fastapi
-uvicorn[standard] 
+uvicorn[standard]
+python-multipart

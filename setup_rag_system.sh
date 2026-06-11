@@ -302,11 +302,23 @@ fi
 # Step 5: Build and Start Services
 log "Step 5: Building and starting services..."
 
+# The ollama service sits behind the "with-ollama" profile — without the
+# profile flag it never starts. Prefer a host Ollama when one is running.
+if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+    USE_HOST_OLLAMA=true
+    COMPOSE_PROFILE_ARGS=()
+    info "Host Ollama detected at localhost:11434 — using it"
+else
+    USE_HOST_OLLAMA=false
+    COMPOSE_PROFILE_ARGS=(--profile with-ollama)
+    info "No host Ollama detected — enabling the containerized Ollama service"
+fi
+
 info "Building Docker containers (this may take 10-15 minutes)..."
-docker compose build --no-cache
+docker compose "${COMPOSE_PROFILE_ARGS[@]}" build --no-cache
 
 info "Starting services..."
-docker compose up -d
+docker compose "${COMPOSE_PROFILE_ARGS[@]}" up -d
 
 # Wait for services to start
 info "Waiting for services to initialize..."
@@ -319,11 +331,16 @@ docker compose ps
 # Step 6: Install AI Models
 log "Step 6: Installing AI models..."
 
-# Wait for Ollama to be ready
+# Wait for Ollama to be ready (host instance or the profiled container)
 info "Waiting for Ollama to be ready..."
+if [ "$USE_HOST_OLLAMA" = true ]; then
+    OLLAMA_CHECK=(curl -s http://localhost:11434/api/tags)
+else
+    OLLAMA_CHECK=(docker compose exec ollama ollama list)
+fi
 max_attempts=30
 attempt=0
-while ! docker compose exec ollama ollama list &> /dev/null; do
+while ! "${OLLAMA_CHECK[@]}" &> /dev/null; do
     if [ $attempt -ge $max_attempts ]; then
         error "Ollama failed to start after $max_attempts attempts"
         exit 1
@@ -335,10 +352,20 @@ done
 
 # Download Ollama models
 info "Downloading required Ollama models..."
-docker compose exec ollama ollama pull qwen3:8b
-
-info "Verifying model installation..."
-docker compose exec ollama ollama list
+if [ "$USE_HOST_OLLAMA" = true ]; then
+    if command -v ollama >/dev/null 2>&1; then
+        ollama pull qwen3:8b
+    else
+        # Host server is running but the CLI isn't on PATH — pull via API
+        curl -s http://localhost:11434/api/pull -d '{"name":"qwen3:8b"}' >/dev/null
+    fi
+    info "Verifying model installation..."
+    curl -s http://localhost:11434/api/tags | grep -q "qwen3:8b" || error "qwen3:8b not found after pull"
+else
+    docker compose exec ollama ollama pull qwen3:8b
+    info "Verifying model installation..."
+    docker compose exec ollama ollama list
+fi
 
 # Step 7: System Verification
 log "Step 7: Verifying system installation..."
@@ -360,22 +387,24 @@ done
 # Step 8: Create Helper Scripts
 log "Step 8: Creating helper scripts..."
 
-# Create start script
-cat > start_rag_system.sh << 'EOF'
+# Create start script (bake in the profile chosen during setup so the
+# containerized Ollama starts again on subsequent runs when needed)
+cat > start_rag_system.sh << EOF
 #!/bin/bash
 # Start RAG System
 echo "Starting RAG System..."
-docker compose up -d
+docker compose ${COMPOSE_PROFILE_ARGS[*]} up -d
 echo "RAG System started. Access at: http://localhost:3000"
 EOF
 chmod +x start_rag_system.sh
 
-# Create stop script
+# Create stop script (--profile with-ollama also stops the profiled service
+# when it exists; harmless otherwise)
 cat > stop_rag_system.sh << 'EOF'
 #!/bin/bash
 # Stop RAG System
 echo "Stopping RAG System..."
-docker compose down
+docker compose --profile with-ollama down
 echo "RAG System stopped."
 EOF
 chmod +x stop_rag_system.sh

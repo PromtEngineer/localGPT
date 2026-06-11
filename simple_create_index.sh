@@ -12,21 +12,21 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Function to print colored output
+# Status messages go to stderr so stdout can carry data (e.g. validated paths)
 print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    echo -e "${BLUE}[INFO]${NC} $1" >&2
 }
 
 print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}[SUCCESS]${NC} $1" >&2
 }
 
 print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "${YELLOW}[WARNING]${NC} $1" >&2
 }
 
 print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
 # Function to check if a command exists
@@ -37,42 +37,44 @@ command_exists() {
 # Function to check prerequisites
 check_prerequisites() {
     print_status "Checking prerequisites..."
-    
+
     # Check Python
     if ! command_exists python3; then
         print_error "Python 3 is required but not installed."
         exit 1
     fi
-    
+
     # Check if we're in the right directory
     if [ ! -f "run_system.py" ] || [ ! -d "rag_system" ]; then
         print_error "This script must be run from the LocalGPT project root directory."
         exit 1
     fi
-    
+
     # Check if Ollama is running
     if ! curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
         print_error "Ollama is not running. Please start Ollama first:"
-        echo "  ollama serve"
+        echo "  ollama serve" >&2
         exit 1
     fi
-    
+
     print_success "Prerequisites check passed"
 }
 
-# Function to validate documents
+# Function to validate documents.
+# Prints one valid path per line on stdout; logs go to stderr.
 validate_documents() {
     local documents=("$@")
-    local valid_docs=()
-    
+    local valid_count=0
+
     print_status "Validating documents..."
-    
+
     for doc in "${documents[@]}"; do
         if [ -f "$doc" ]; then
             # Check file extension
             case "${doc##*.}" in
                 pdf|txt|docx|md|html|htm)
-                    valid_docs+=("$doc")
+                    printf '%s\n' "$doc"
+                    valid_count=$((valid_count + 1))
                     print_status "✓ Valid document: $doc"
                     ;;
                 *)
@@ -83,100 +85,75 @@ validate_documents() {
             print_warning "File not found: $doc (skipping)"
         fi
     done
-    
-    if [ ${#valid_docs[@]} -eq 0 ]; then
+
+    if [ "$valid_count" -eq 0 ]; then
         print_error "No valid documents found."
         exit 1
     fi
-    
-    echo "${valid_docs[@]}"
 }
 
-# Function to create index using Python
+# Function to create the index.
+# The index name and document paths are passed to Python as argv — never
+# interpolated into the source — so names with quotes or code are safe.
 create_index() {
-    local index_name="$1"
-    shift
-    local documents=("$@")
-    
-    print_status "Creating index: $index_name"
-    print_status "Documents: ${documents[*]}"
-    
-    # Create a temporary Python script to create the index
-    cat > /tmp/create_index_temp.py << EOF
-#!/usr/bin/env python3
-import sys
+    python3 - "$@" << 'EOF'
 import os
-import json
+import sys
+
 sys.path.insert(0, os.getcwd())
 
 from rag_system.main import PIPELINE_CONFIGS
 from rag_system.pipelines.indexing_pipeline import IndexingPipeline
 from rag_system.utils.ollama_client import OllamaClient
 from backend.database import ChatDatabase
-import uuid
 
-def create_index_simple():
+
+def main():
+    index_name = sys.argv[1]
+    documents = [os.path.abspath(d) for d in sys.argv[2:] if os.path.isfile(d)]
+    if not documents:
+        print("❌ No valid documents to process")
+        sys.exit(1)
+
+    db = ChatDatabase()
+    index_id = db.create_index(
+        name=index_name,
+        description="Created with simple_create_index.sh",
+        metadata={
+            "chunk_size": 512,
+            "chunk_overlap": 64,
+            "enable_enrich": True,
+            "enable_latechunk": True,
+            "retrieval_mode": "hybrid",
+            "created_by": "simple_create_index.sh",
+        },
+    )
+
+    for doc_path in documents:
+        db.add_document_to_index(index_id, os.path.basename(doc_path), doc_path)
+
+    config = PIPELINE_CONFIGS.get("default", {})
+    ollama_config = {
+        "generation_model": "qwen3:8b",
+        "enrichment_model": "qwen3:8b",
+    }
+    pipeline = IndexingPipeline(config, OllamaClient(), ollama_config)
+    pipeline.process_documents(documents)
+
+    print(f"✅ Index '{index_name}' created successfully!")
+    print(f"Index ID: {index_id}")
+    print(f"Processed {len(documents)} documents")
+
+
+if __name__ == "__main__":
     try:
-        # Initialize database
-        db = ChatDatabase()
-        
-        # Create index record
-        index_id = db.create_index(
-            name="$index_name",
-            description="Created with simple_create_index.sh",
-            metadata={
-                "chunk_size": 512,
-                "chunk_overlap": 64,
-                "enable_enrich": True,
-                "enable_latechunk": True,
-                "retrieval_mode": "hybrid",
-                "created_by": "simple_create_index.sh"
-            }
-        )
-        
-        # Add documents to index
-        documents = [${documents[@]/#/\"} ${documents[@]/%/\"}]
-        for doc_path in documents:
-            if doc_path.strip():  # Skip empty strings
-                filename = os.path.basename(doc_path.strip())
-                db.add_document_to_index(index_id, filename, os.path.abspath(doc_path.strip()))
-        
-        # Initialize pipeline
-        config = PIPELINE_CONFIGS.get("default", {})
-        ollama_client = OllamaClient()
-        ollama_config = {
-            "generation_model": "qwen3:8b",
-            "enrichment_model": "qwen3:8b"
-        }
-        
-        pipeline = IndexingPipeline(config, ollama_client, ollama_config)
-        
-        # Process documents
-        valid_docs = [doc.strip() for doc in documents if doc.strip() and os.path.exists(doc.strip())]
-        if valid_docs:
-            pipeline.process_documents(valid_docs)
-        
-        print(f"✅ Index '{index_name}' created successfully!")
-        print(f"Index ID: {index_id}")
-        print(f"Processed {len(valid_docs)} documents")
-        
-        return index_id
-        
+        main()
     except Exception as e:
         print(f"❌ Error creating index: {e}")
         import traceback
         traceback.print_exc()
-        return None
-
-if __name__ == "__main__":
-    create_index_simple()
+        sys.exit(1)
 EOF
-
-    # Run the Python script
-    python3 /tmp/create_index_temp.py
-    
-    # Clean up
-    rm -f /tmp/create_index_temp.py
 }
 
 # Function to show usage
@@ -199,30 +176,32 @@ main() {
         show_usage
         exit 1
     fi
-    
+
     local index_name="$1"
     shift
     local documents=("$@")
-    
+
     # Check prerequisites
     check_prerequisites
-    
-    # Validate documents
-    local valid_documents
-    valid_documents=($(validate_documents "${documents[@]}"))
-    
+
+    # Validate documents (newline-separated so paths with spaces survive)
+    local valid_documents=()
+    while IFS= read -r line; do
+        [ -n "$line" ] && valid_documents+=("$line")
+    done < <(validate_documents "${documents[@]}")
+
     if [ ${#valid_documents[@]} -eq 0 ]; then
         print_error "No valid documents to process."
         exit 1
     fi
-    
+
     # Create the index
     print_status "Starting index creation process..."
     create_index "$index_name" "${valid_documents[@]}"
-    
+
     print_success "Index creation completed!"
     print_status "You can now use the index in the LocalGPT interface."
 }
 
 # Run main function with all arguments
-main "$@"  
+main "$@"
