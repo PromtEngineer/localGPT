@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import uuid
@@ -49,8 +50,16 @@ try:
 except Exception as _wal_err:
     print(f"⚠️ Could not enable WAL mode: {_wal_err}")
 
-from ollama_client import OllamaClient
+from ollama_client import OllamaClient, OllamaError
 from database import db, generate_session_title
+from pydantic import ValidationError
+from validators import (
+    IndexBuildRequest,
+    MessageRequest,
+    RenameSessionRequest,
+    SessionRequest,
+    validate_file_upload,
+)
 import simple_pdf_processor as pdf_module
 from simple_pdf_processor import initialize_simple_pdf_processor
 
@@ -100,8 +109,10 @@ except ImportError:
 @app.middleware("http")
 async def _restrict_maintenance(request: Request, call_next):
     if request.url.path.startswith("/maintenance"):
+        # "testclient" is the synthetic peer address Starlette's TestClient
+        # uses for in-process requests — those never cross the network.
         host = request.client.host if request.client else ""
-        if host not in ("127.0.0.1", "::1"):
+        if host not in ("127.0.0.1", "::1", "testclient"):
             from fastapi.responses import JSONResponse
             return JSONResponse(status_code=403, content={"detail": "Maintenance endpoints are only accessible from localhost"})
     return await call_next(request)
@@ -117,7 +128,10 @@ async def _record_metrics(request: Request, call_next):
     finally:
         latency_ms = (time.perf_counter() - t0) * 1000
         _metrics.dec_active()
-        _metrics.record_request(request.url.path, latency_ms)
+        # Record the route template (/sessions/{session_id}/messages), not the
+        # concrete URL — per-UUID paths grow the metrics dict without bound.
+        route = request.scope.get("route")
+        _metrics.record_request(getattr(route, "path", None) or request.url.path, latency_ms)
     return response
 
 # Global variables
@@ -136,6 +150,73 @@ _ALLOWED_UPLOAD_EXTENSIONS = {
     ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
     ".html", ".htm", ".csv", ".json", ".xml", ".yaml", ".yml",
 }
+_UPLOAD_CHUNK_BYTES = 1024 * 1024  # stream uploads to disk 1 MB at a time
+
+
+def _validation_error_detail(e: ValidationError) -> str:
+    first = e.errors()[0]
+    loc = ".".join(str(p) for p in first.get("loc", ()))
+    msg = first.get("msg", "invalid value")
+    return f"{loc}: {msg}" if loc else msg
+
+
+async def _save_uploads(files: List[UploadFile], upload_dir: str = "shared_uploads") -> List[Dict[str, str]]:
+    """Validate every file, then stream them all to disk.
+
+    Validation happens for the whole batch before anything is written, and a
+    failure mid-write removes everything written so far — so a rejected batch
+    never leaves partial files behind for the caller to register.
+    Returns [{"filename", "stored_path"}]; DB registration is the caller's job.
+    """
+    os.makedirs(upload_dir, exist_ok=True)
+
+    candidates = [f for f in files if f.filename]
+    if not candidates:
+        raise HTTPException(status_code=400, detail="No files were uploaded")
+
+    # Pass 1: validate every file before writing anything
+    for file in candidates:
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
+            raise HTTPException(status_code=415, detail=f"'{file.filename}': unsupported file type '{ext}'")
+        result = validate_file_upload(file, max_size_bytes=_MAX_UPLOAD_BYTES)
+        if not result.valid and "not allowed" in (result.error or "") and "MIME" in (result.error or ""):
+            raise HTTPException(status_code=415, detail=f"'{file.filename}': {result.error}")
+        if file.size and file.size > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"'{file.filename}' exceeds the 500 MB upload limit")
+
+    # Pass 2: stream to disk in chunks (never the whole file in memory)
+    saved: List[Dict[str, str]] = []
+    file_path = None
+    try:
+        for file in candidates:
+            unique_filename = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
+            file_path = os.path.join(upload_dir, unique_filename)
+            written = 0
+            with open(file_path, 'wb') as out:
+                while chunk := await file.read(_UPLOAD_CHUNK_BYTES):
+                    written += len(chunk)
+                    if written > _MAX_UPLOAD_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"'{file.filename}' exceeds the 500 MB upload limit",
+                        )
+                    out.write(chunk)
+            saved.append({"filename": file.filename, "stored_path": os.path.abspath(file_path)})
+            file_path = None
+    except Exception:
+        # Roll back: remove completed files and the partially written one
+        if file_path:
+            saved.append({"filename": "", "stored_path": file_path})
+        for item in saved:
+            try:
+                if os.path.exists(item["stored_path"]):
+                    os.remove(item["stored_path"])
+            except OSError:
+                pass
+        raise
+
+    return saved
 
 # Initialize maintenance tools
 maintenance_tools = None
@@ -224,7 +305,7 @@ def _index_build_preflight(index_id: str, data: Dict[str, Any] | None = None, *,
         warnings.append(f"This build is {_format_bytes(total_bytes)}. Large builds can take a long time on local hardware.")
     if bool(data.get("forceReindex")):
         warnings.append("Force reindex will rebuild all files, including unchanged documents.")
-    if bool(data.get("enableEnrich", True)) and document_count > 50:
+    if bool(data.get("enableEnrich", False)) and document_count > 50:
         warnings.append("Context enrichment on large file sets can be slow. Fast mode is safer for the first pass.")
 
     for key, label in (("enrichModel", "enrichment"), ("overviewModel", "overview")):
@@ -599,8 +680,8 @@ async def health():
         "python_executable": sys.executable,
         "python_version": sys.version.split()[0],
         "virtual_env": os.environ.get("VIRTUAL_ENV"),
-        "ollama_running": ollama_client.is_ollama_running(),
-        "available_models": ollama_client.list_models(),
+        "ollama_running": await asyncio.to_thread(ollama_client.is_ollama_running),
+        "available_models": await asyncio.to_thread(ollama_client.list_models),
         "database_stats": db.get_stats()
     }
 
@@ -699,13 +780,20 @@ async def create_session(request: Request):
     """Create a new chat session"""
     try:
         data = await request.json()
-        title = data.get('title', 'New Chat')
-        model = data.get('model', 'llama3.2:latest')
+        try:
+            req = SessionRequest(
+                title=data.get('title') or 'New Chat',
+                model=data.get('model') or 'llama3.2:latest',
+            )
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=_validation_error_detail(e))
 
-        session_id = db.create_session(title, model)
+        session_id = db.create_session(req.title, req.model)
         session = db.get_session(session_id)
 
         return {"session": session, "session_id": session_id}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
 
@@ -813,10 +901,10 @@ async def session_chat(session_id: str, request: Request):
             raise HTTPException(status_code=404, detail="Session not found")
 
         data = await request.json()
-        message = data.get('message', '')
-
-        if not message:
-            raise HTTPException(status_code=400, detail="Message is required")
+        try:
+            message = MessageRequest(message=data.get('message', '')).message
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=_validation_error_detail(e))
 
         idx_ids = _raise_for_unhealthy_session_indexes(session_id)
 
@@ -887,9 +975,17 @@ async def session_chat(session_id: str, request: Request):
             print(f"⚠️ No overviews found for indices {idx_ids}")
         aggregated = aggregated[:40]
 
-        # Decide routing (force_rag bypasses heuristics entirely)
+        # Decide routing (force_rag / force_direct bypass heuristics entirely)
         force_rag = bool(data.get('force_rag', False))
-        use_rag = force_rag or (_route_using_overviews(message, aggregated) if aggregated else _simple_pattern_routing(message, idx_ids))
+        force_direct = bool(data.get('force_direct', False)) and not force_rag
+        if force_direct:
+            use_rag = False
+        else:
+            # _route_using_overviews makes a blocking LLM call — keep it off the event loop
+            use_rag = force_rag or (
+                await asyncio.to_thread(_route_using_overviews, message, aggregated)
+                if aggregated else _simple_pattern_routing(message, idx_ids)
+            )
 
         if use_rag:
             response_text, source_docs = await _handle_rag_query(session_id, message, data, idx_ids)
@@ -916,31 +1012,12 @@ async def session_chat(session_id: str, request: Request):
 @app.post("/sessions/{session_id}/upload")
 async def upload_files(session_id: str, files: List[UploadFile] = File(...)):
     """Handle file uploads and associate with the session."""
-    uploaded_files = []
-    upload_dir = "shared_uploads"
-    os.makedirs(upload_dir, exist_ok=True)
+    uploaded_files = await _save_uploads(files)
 
-    for file in files:
-        if not file.filename:
-            continue
-        ext = os.path.splitext(file.filename)[1].lower()
-        if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
-            raise HTTPException(status_code=415, detail=f"'{file.filename}': unsupported file type '{ext}'")
-        content = await file.read()
-        if len(content) > _MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail=f"'{file.filename}' exceeds the 500 MB upload limit")
-
-        unique_filename = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
-        file_path = os.path.join(upload_dir, unique_filename)
-        with open(file_path, 'wb') as f:
-            f.write(content)
-
-        absolute_file_path = os.path.abspath(file_path)
-        db.add_document_to_session(session_id, absolute_file_path)
-        uploaded_files.append({"filename": file.filename, "stored_path": absolute_file_path})
-
-    if not uploaded_files:
-        raise HTTPException(status_code=400, detail="No files were uploaded")
+    # Register in the DB only after every file is safely on disk, so a
+    # rejected batch never leaves half its documents attached to the session
+    for item in uploaded_files:
+        db.add_document_to_session(session_id, item["stored_path"])
 
     return {
         "message": f"Successfully uploaded {len(uploaded_files)} files.",
@@ -959,7 +1036,13 @@ async def index_documents(session_id: str):
         print(f"Found {len(file_paths)} documents to index. Sending to RAG API...")
 
         rag_api_url = f"{RAG_API_BASE_URL}/index"
-        rag_response = requests.post(rag_api_url, json={"file_paths": file_paths, "session_id": session_id})
+        # Run the blocking HTTP call in a worker thread so the event loop
+        # stays responsive while the RAG API indexes (can take a long time).
+        rag_response = await asyncio.to_thread(
+            requests.post, rag_api_url,
+            json={"file_paths": file_paths, "session_id": session_id},
+            timeout=(10, 3600),
+        )
 
         if rag_response.status_code == 200:
             print("✅ RAG API successfully indexed documents.")
@@ -985,10 +1068,10 @@ async def rename_session(session_id: str, request: Request):
             raise HTTPException(status_code=404, detail="Session not found")
 
         data = await request.json()
-        new_title: str = data.get('title', '').strip()
-
-        if not new_title:
-            raise HTTPException(status_code=400, detail="Title cannot be empty")
+        try:
+            new_title = RenameSessionRequest(title=data.get('title', '')).title
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=_validation_error_detail(e))
 
         db.update_session_title(session_id, new_title)
         updated_session = db.get_session(session_id)
@@ -1008,19 +1091,19 @@ async def legacy_chat(request: Request):
     """Handle legacy chat requests (without sessions)"""
     try:
         data = await request.json()
-        message = data.get('message', '')
+        try:
+            message = MessageRequest(message=data.get('message', '')).message
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=_validation_error_detail(e))
         model = data.get('model', 'llama3.2:latest')
         conversation_history = data.get('conversation_history', [])
 
-        if not message:
-            raise HTTPException(status_code=400, detail="Message is required")
-
         # Check if Ollama is running
-        if not ollama_client.is_ollama_running():
+        if not await asyncio.to_thread(ollama_client.is_ollama_running):
             raise HTTPException(status_code=503, detail="Ollama is not running. Please start Ollama first.")
 
-        # Get response from Ollama
-        response = ollama_client.chat(message, model, conversation_history)
+        # Get response from Ollama (worker thread: the call blocks up to 60s)
+        response = await asyncio.to_thread(ollama_client.chat, message, model, conversation_history)
 
         return {
             "response": response,
@@ -1030,6 +1113,8 @@ async def legacy_chat(request: Request):
 
     except HTTPException:
         raise
+    except OllamaError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
@@ -1141,7 +1226,7 @@ async def create_index(request: Request):
                 ),
                 'enrich_model': OLLAMA_CONFIG.get('enrichment_model', 'qwen3:8b'),
                 'overview_model': OLLAMA_CONFIG.get('enrichment_model', 'qwen3:8b'),
-                'enable_enrich': True,  # From default config
+                'enable_enrich': False,  # From default config
                 'latechunk': True,  # From default config
                 'docling_chunk': True,  # From default config
                 'note': 'Default configuration from RAG system'
@@ -1223,29 +1308,11 @@ async def delete_index(index_id: str):
 @app.post("/indexes/{index_id}/upload")
 async def index_file_upload(index_id: str, files: List[UploadFile] = File(...)):
     """Upload files to an index"""
-    uploaded_files = []
-    upload_dir = 'shared_uploads'
-    os.makedirs(upload_dir, exist_ok=True)
+    uploaded_files = await _save_uploads(files)
 
-    for f in files:
-        if not f.filename:
-            continue
-        ext = os.path.splitext(f.filename)[1].lower()
-        if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
-            raise HTTPException(status_code=415, detail=f"'{f.filename}': unsupported file type '{ext}'")
-        content = await f.read()
-        if len(content) > _MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail=f"'{f.filename}' exceeds the 500 MB upload limit")
-
-        unique = f"{uuid.uuid4()}_{os.path.basename(f.filename)}"
-        path = os.path.join(upload_dir, unique)
-        with open(path, 'wb') as out:
-            out.write(content)
-        db.add_document_to_index(index_id, f.filename, os.path.abspath(path))
-        uploaded_files.append({'filename': f.filename, 'stored_path': os.path.abspath(path)})
-
-    if not uploaded_files:
-        raise HTTPException(status_code=400, detail="No files uploaded")
+    # Register in the DB only after every file is safely on disk
+    for item in uploaded_files:
+        db.add_document_to_index(index_id, item["filename"], item["stored_path"])
 
     return {"message": f"Uploaded {len(uploaded_files)} files", "uploaded_files": uploaded_files}
 
@@ -1284,7 +1351,7 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     chunk_overlap = int(data.get('chunkOverlap', 64))
     retrieval_mode = str(data.get('retrievalMode', 'hybrid'))
     window_size = int(data.get('windowSize', 2))
-    enable_enrich = bool(data.get('enableEnrich', True))
+    enable_enrich = bool(data.get('enableEnrich', False))
     embedding_model = data.get('embeddingModel')
     enrich_model = data.get('enrichModel')
     enrich_provider = data.get('enrichProvider', 'ollama')
@@ -1378,7 +1445,9 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         _update_index_job(job_id, stage="indexing", progress=20, message="RAG pipeline is indexing documents")
 
     try:
-        rag_resp = requests.post(rag_api_url, json=payload)
+        # Connect timeout only: index builds legitimately run for hours, but a
+        # server that never accepts the connection should fail fast.
+        rag_resp = requests.post(rag_api_url, json=payload, timeout=(10, 24 * 3600))
     except requests.exceptions.ConnectionError as e:
         detail = (
             f"Could not reach the RAG indexing server at {RAG_API_BASE_URL}. "
@@ -1478,6 +1547,31 @@ async def build_index(index_id: str, request: Request):
     try:
         body = await request.body()
         data = json.loads(body.decode("utf-8")) if body else {}
+
+        # Validate option types/ranges up front: a bad chunkSize should be a
+        # 400, not an unhandled ValueError deep inside the build
+        try:
+            IndexBuildRequest(**{k: v for k, v in data.items() if k in IndexBuildRequest.model_fields})
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=f"Invalid build options — {_validation_error_detail(e)}")
+
+        # Reject concurrent builds: two builds of the same index write to the
+        # same LanceDB table and clobber each other's metadata updates
+        now_dt = datetime.now()
+        for job in db.list_unfinished_index_jobs():
+            if job.get("index_id") != index_id:
+                continue
+            updated = job.get("updated_at") or job.get("created_at")
+            try:
+                is_stale = bool(updated) and (now_dt - datetime.fromisoformat(updated)) > STALE_BUILD_AFTER
+            except ValueError:
+                is_stale = False
+            if not is_stale:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"A build for this index is already in progress (job {job['id']}). Cancel it or wait for it to finish.",
+                )
+
         if bool(data.get("background", False)):
             index = db.get_index(index_id)
             if not index:
@@ -1512,7 +1606,9 @@ async def build_index(index_id: str, request: Request):
             thread.start()
             return {"message": "Index build started", "job_id": job_id, "status": "queued"}
 
-        return _run_index_build(index_id, data)
+        # Foreground builds block for the whole build; run in a worker thread
+        # so the event loop keeps serving other requests meanwhile.
+        return await asyncio.to_thread(_run_index_build, index_id, data)
     except HTTPException:
         raise
     except Exception as e:
@@ -1715,8 +1811,11 @@ async def _handle_direct_llm_query(session_id: str, message: str, session: dict)
         # Use the session's model or default
         model = session.get('model', 'qwen3:8b')  # Default local model
 
-        # Direct Ollama call with thinking disabled for speed
-        response_text = ollama_client.chat(
+        # Direct Ollama call with thinking disabled for speed.
+        # Runs in a worker thread so the blocking HTTP call (up to 60s)
+        # doesn't freeze the event loop.
+        response_text = await asyncio.to_thread(
+            ollama_client.chat,
             message=message,
             model=model,
             conversation_history=conversation_history,
@@ -1778,7 +1877,11 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
                 payload[payload_key] = val
 
     try:
-        rag_response = requests.post(rag_api_url, json=payload)
+        # Blocking call in a worker thread: RAG queries take tens of seconds
+        # and must not stall the event loop for every other endpoint.
+        rag_response = await asyncio.to_thread(
+            requests.post, rag_api_url, json=payload, timeout=(10, 600)
+        )
         if rag_response.status_code == 200:
             rag_data = rag_response.json()
             response_text = rag_data.get("answer", "No answer found.")
@@ -1788,6 +1891,9 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
             raise HTTPException(status_code=502, detail=f"RAG API error ({rag_response.status_code}): {rag_response.text}")
     except HTTPException:
         raise
+    except requests.exceptions.Timeout:
+        print("❌ RAG API request timed out.")
+        raise HTTPException(status_code=504, detail="The RAG API did not respond in time.")
     except requests.exceptions.ConnectionError:
         print("❌ Connection to RAG API failed (port 8001).")
         raise HTTPException(status_code=503, detail="Could not connect to the RAG API server. Please ensure it is running.")
@@ -1853,7 +1959,9 @@ def main():
         print(f"\n🌐 Frontend should connect to: http://localhost:{PORT}")
         print("💬 Ready to chat!\n")
 
-        uvicorn.run(app, host="0.0.0.0", port=PORT)
+        # Loopback by default; set BIND_HOST=0.0.0.0 (e.g. in Docker) to
+        # expose the API beyond this machine deliberately.
+        uvicorn.run(app, host=os.getenv("BIND_HOST", "127.0.0.1"), port=PORT)
 
     except KeyboardInterrupt:
         print("\n🛑 Server stopped")

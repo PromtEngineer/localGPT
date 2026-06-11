@@ -1,3 +1,4 @@
+import os
 import requests
 import json
 from typing import List, Dict, Any
@@ -5,6 +6,12 @@ import base64
 from io import BytesIO
 from PIL import Image
 import httpx, asyncio
+
+# How long Ollama keeps a model loaded after a request. During indexing the
+# enrichment/overview/embedding models trade places constantly — without a
+# generous keep_alive they evict each other and every call pays a reload.
+KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
+
 
 class OllamaClient:
     """
@@ -25,7 +32,7 @@ class OllamaClient:
         try:
             response = requests.post(
                 f"{self.api_url}/embeddings",
-                json={"model": model, "prompt": text},
+                json={"model": model, "prompt": text, "keep_alive": KEEP_ALIVE},
                 timeout=timeout,
             )
             response.raise_for_status()
@@ -58,7 +65,8 @@ class OllamaClient:
             payload = {
                 "model": model,
                 "prompt": prompt,
-                "stream": False
+                "stream": False,
+                "keep_alive": KEEP_ALIVE,
             }
             if format:
                 payload["format"] = format
@@ -100,7 +108,7 @@ class OllamaClient:
     ) -> Dict[str, Any]:
         """Asynchronous version of generate_completion using httpx."""
 
-        payload = {"model": model, "prompt": prompt, "stream": False}
+        payload = {"model": model, "prompt": prompt, "stream": False, "keep_alive": KEEP_ALIVE}
         if format:
             payload["format"] = format
         if images:
@@ -136,13 +144,15 @@ class OllamaClient:
             for tok in client.stream_completion("qwen2", "Hello"):
                 print(tok, end="", flush=True)
         """
-        payload: Dict[str, Any] = {"model": model, "prompt": prompt, "stream": True}
+        payload: Dict[str, Any] = {"model": model, "prompt": prompt, "stream": True, "keep_alive": KEEP_ALIVE}
         if images:
             payload["images"] = [self._image_to_base64(img) for img in images]
         if enable_thinking is not None:
             payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
 
-        with requests.post(f"{self.api_url}/generate", json=payload, stream=True) as resp:
+        # connect timeout 10s; read timeout 300s between chunks so a wedged
+        # Ollama can't hang the calling thread forever
+        with requests.post(f"{self.api_url}/generate", json=payload, stream=True, timeout=(10, 300)) as resp:
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
                 if not raw_line:

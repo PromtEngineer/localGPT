@@ -73,7 +73,7 @@ class IndexBuildRequest(BaseModel):
     """Request model for building an index."""
     background: Optional[bool] = Field(False, description="Run build in background")
     forceReindex: Optional[bool] = Field(False, description="Force rebuild all files")
-    enableEnrich: Optional[bool] = Field(True, description="Enable context enrichment")
+    enableEnrich: Optional[bool] = Field(False, description="Enable context enrichment (one LLM call per chunk — slow on local hardware)")
     chunkSize: Optional[int] = Field(512, ge=128, le=2048, description="Chunk size in tokens")
     chunkOverlap: Optional[int] = Field(64, ge=0, le=256, description="Chunk overlap in tokens")
     retrievalMode: Optional[str] = Field("hybrid", pattern="^(hybrid|vector_only|bm25)$")

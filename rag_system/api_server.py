@@ -117,11 +117,69 @@ def _get_table_name_for_session(session_id):
         logger.info(f"📊 Using default table '{default_table}' for session {session_id[:8]}...")
         return default_table
 
+def _cors_allowed_origins() -> list[str]:
+    origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    return [o.strip() for o in origins.split(",") if o.strip()]
+
+
+def _execute_indexing_job(config, file_paths, *, index_id, force_reindex, job_id, backend_base_url):
+    """Run an index build in a spawned child process.
+
+    Isolation buys two things: the build's peak memory (torch, Docling,
+    embeddings) is returned to the OS when the child exits, and an OOM or
+    crash kills the build instead of the chat server. Set
+    RAG_INDEX_IN_PROCESS=1 to run in-process (debugging/tests).
+    """
+    from rag_system.indexing_worker import run_indexing_job
+
+    if os.getenv("RAG_INDEX_IN_PROCESS") == "1":
+        return run_indexing_job(
+            config, INDEXING_PIPELINE.ollama_config, file_paths,
+            index_id, force_reindex, job_id, backend_base_url,
+        )
+
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+    from concurrent.futures.process import BrokenProcessPool
+
+    ctx = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=1, mp_context=ctx) as executor:
+        future = executor.submit(
+            run_indexing_job, config, INDEXING_PIPELINE.ollama_config,
+            file_paths, index_id, force_reindex, job_id, backend_base_url,
+        )
+        try:
+            return future.result()
+        except BrokenProcessPool as e:
+            raise RuntimeError(
+                "Indexing process crashed (likely out of memory). Try a smaller "
+                "embedding batch size, disable enrichment, or index fewer files at once."
+            ) from e
+
+
 class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
+    def _cors_origin(self) -> str | None:
+        """Echo the request Origin only if it is in the configured allowlist.
+
+        A wildcard here would let any website the user visits call this
+        unauthenticated API from their browser.
+        """
+        allowed = _cors_allowed_origins()
+        origin = self.headers.get('Origin')
+        if origin and (origin in allowed or '*' in allowed):
+            return origin
+        return None
+
+    def _send_cors_headers(self):
+        origin = self._cors_origin()
+        if origin:
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Vary', 'Origin')
+
     def do_OPTIONS(self):
         """Handle CORS preflight requests for frontend integration."""
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self._send_cors_headers()
         self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
@@ -194,9 +252,6 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
         data = json.loads(post_data.decode('utf-8'))
 
         requested_model = data.get('model')
-        if isinstance(requested_model, str) and requested_model:
-            with _rag_agent_lock:
-                RAG_AGENT.ollama_config['generation_model'] = requested_model
 
         query = data.get('query')
         if not query:
@@ -210,6 +265,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
         return {
             "query": query,
+            "model": requested_model if isinstance(requested_model, str) and requested_model else None,
             "session_id": session_id,
             "table_name": table_name,
             "compose_flag": data.get('compose_sub_answers'),
@@ -253,72 +309,79 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
             # Decide execution path
             print(f"🔧 Force RAG flag: {force_rag}")
-            if force_rag:
-                # --- Apply runtime overrides manually because we skip Agent.run()
-                rp_cfg = RAG_AGENT.retrieval_pipeline.config
-                if retrieval_k is not None:
-                    rp_cfg["retrieval_k"] = retrieval_k
-                if reranker_top_k is not None:
-                    rp_cfg.setdefault("reranker", {})["top_k"] = reranker_top_k
-                if search_type is not None:
-                    rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
-                if dense_weight is not None:
-                    rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
+            # The shared agent/pipeline are mutated per request (generation
+            # model, embedding model, fusion config, active table), so chat
+            # execution must be serialized across handler threads — otherwise
+            # concurrent requests leak settings into each other.
+            with _rag_agent_lock:
+                if params["model"]:
+                    RAG_AGENT.ollama_config['generation_model'] = params["model"]
+                if force_rag:
+                    # --- Apply runtime overrides manually because we skip Agent.run()
+                    rp_cfg = RAG_AGENT.retrieval_pipeline.config
+                    if retrieval_k is not None:
+                        rp_cfg["retrieval_k"] = retrieval_k
+                    if reranker_top_k is not None:
+                        rp_cfg.setdefault("reranker", {})["top_k"] = reranker_top_k
+                    if search_type is not None:
+                        rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
+                    if dense_weight is not None:
+                        rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
 
-                # Provence overrides
-                if provence_prune is not None:
-                    rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
-                if provence_threshold is not None:
-                    rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
+                    # Provence overrides
+                    if provence_prune is not None:
+                        rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
+                    if provence_threshold is not None:
+                        rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
 
-                # 🔄 Apply embedding model for this session (same as in agent path)
-                if session_id:
-                    idx_ids = db.get_indexes_for_session(session_id)
-                    _apply_index_embedding_model(idx_ids)
+                    # 🔄 Apply embedding model for this session (same as in agent path)
+                    if session_id:
+                        idx_ids = db.get_indexes_for_session(session_id)
+                        _apply_index_embedding_model(idx_ids)
 
-                # Directly invoke retrieval pipeline to bypass triage
-                result = RAG_AGENT.retrieval_pipeline.run(
-                    query,
-                    table_name=table_name,
-                    window_size_override=context_window_size,
-                )
-            else:
-                # Use full agent with smart routing
-                # Apply Provence overrides even in agent path
-                rp_cfg = RAG_AGENT.retrieval_pipeline.config
-                if provence_prune is not None:
-                    rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
-                if provence_threshold is not None:
-                    rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
+                    # Directly invoke retrieval pipeline to bypass triage
+                    result = RAG_AGENT.retrieval_pipeline.run(
+                        query,
+                        table_name=table_name,
+                        window_size_override=context_window_size,
+                    )
+                else:
+                    # Use full agent with smart routing
+                    # Apply Provence overrides even in agent path
+                    rp_cfg = RAG_AGENT.retrieval_pipeline.config
+                    if provence_prune is not None:
+                        rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
+                    if provence_threshold is not None:
+                        rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
 
-                # 🔄 Refresh document overviews for this session
-                if session_id:
-                    idx_ids = db.get_indexes_for_session(session_id)
-                    _apply_index_embedding_model(idx_ids)
-                    RAG_AGENT.load_overviews_for_indexes(idx_ids)
+                    # 🔄 Refresh document overviews for this session
+                    if session_id:
+                        idx_ids = db.get_indexes_for_session(session_id)
+                        _apply_index_embedding_model(idx_ids)
+                        RAG_AGENT.load_overviews_for_indexes(idx_ids)
 
-                # 🔧 Set index-specific overview path
-                if session_id:
-                    rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
+                    # 🔧 Set index-specific overview path
+                    if session_id:
+                        rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
 
-                # 🔧 Configure late chunking
-                rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
+                    # 🔧 Configure late chunking
+                    rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
 
-                result = RAG_AGENT.run(
-                    query,
-                    table_name=table_name,
-                    session_id=session_id,
-                    compose_sub_answers=compose_flag,
-                    query_decompose=decomp_flag,
-                    ai_rerank=ai_rerank_flag,
-                    context_expand=ctx_expand_flag,
-                    verify=verify_flag,
-                    retrieval_k=retrieval_k,
-                    context_window_size=context_window_size,
-                    reranker_top_k=reranker_top_k,
-                    search_type=search_type,
-                    dense_weight=dense_weight,
-                )
+                    result = RAG_AGENT.run(
+                        query,
+                        table_name=table_name,
+                        session_id=session_id,
+                        compose_sub_answers=compose_flag,
+                        query_decompose=decomp_flag,
+                        ai_rerank=ai_rerank_flag,
+                        context_expand=ctx_expand_flag,
+                        verify=verify_flag,
+                        retrieval_k=retrieval_k,
+                        context_window_size=context_window_size,
+                        reranker_top_k=reranker_top_k,
+                        search_type=search_type,
+                        dense_weight=dense_weight,
+                    )
             
             # The result is a dict, so we need to dump it to a JSON string
             self.send_json_response(result)
@@ -359,7 +422,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             # Keep connection alive for SSE; no manual chunked encoding (Python http.server
             # does not add chunk sizes automatically, so declaring it breaks clients).
             self.send_header('Connection', 'keep-alive')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            self._send_cors_headers()
             self.end_headers()
 
             def emit(event_type: str, payload):
@@ -372,83 +435,89 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     # Client disconnected
                     raise
 
-            # Run the agent synchronously, emitting checkpoints
+            # Run the agent synchronously, emitting checkpoints.
+            # Serialized on _rag_agent_lock: the shared agent/pipeline are
+            # mutated per request, so concurrent chats would corrupt each
+            # other's settings (embedding model, active table, weights).
             try:
-                if force_rag:
-                    # Apply overrides same as above since we bypass Agent.run
-                    rp_cfg = RAG_AGENT.retrieval_pipeline.config
-                    if retrieval_k is not None:
-                        rp_cfg["retrieval_k"] = retrieval_k
-                    if reranker_top_k is not None:
-                        rp_cfg.setdefault("reranker", {})["top_k"] = reranker_top_k
-                    if search_type is not None:
-                        rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
-                    if dense_weight is not None:
-                        rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
+                with _rag_agent_lock:
+                    if params["model"]:
+                        RAG_AGENT.ollama_config['generation_model'] = params["model"]
+                    if force_rag:
+                        # Apply overrides same as above since we bypass Agent.run
+                        rp_cfg = RAG_AGENT.retrieval_pipeline.config
+                        if retrieval_k is not None:
+                            rp_cfg["retrieval_k"] = retrieval_k
+                        if reranker_top_k is not None:
+                            rp_cfg.setdefault("reranker", {})["top_k"] = reranker_top_k
+                        if search_type is not None:
+                            rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
+                        if dense_weight is not None:
+                            rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
 
-                    # Provence overrides
-                    if provence_prune is not None:
-                        rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
-                    if provence_threshold is not None:
-                        rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
+                        # Provence overrides
+                        if provence_prune is not None:
+                            rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
+                        if provence_threshold is not None:
+                            rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
 
-                    # 🔄 Apply embedding model for this session (same as in agent path)
-                    if session_id:
-                        idx_ids = db.get_indexes_for_session(session_id)
-                        _apply_index_embedding_model(idx_ids)
+                        # 🔄 Apply embedding model for this session (same as in agent path)
+                        if session_id:
+                            idx_ids = db.get_indexes_for_session(session_id)
+                            _apply_index_embedding_model(idx_ids)
 
-                    # 🔧 Set index-specific overview path so each index writes separate file
-                    if session_id:
-                        rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
+                        # 🔧 Set index-specific overview path so each index writes separate file
+                        if session_id:
+                            rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
 
-                    # 🔧 Configure late chunking
-                    rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
+                        # 🔧 Configure late chunking
+                        rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
 
-                    # Straight retrieval pipeline with streaming events
-                    final_result = RAG_AGENT.retrieval_pipeline.run(
-                        query,
-                        table_name=table_name,
-                        window_size_override=context_window_size,
-                        event_callback=emit,
-                    )
-                else:
-                    # Provence overrides
-                    rp_cfg = RAG_AGENT.retrieval_pipeline.config
-                    if provence_prune is not None:
-                        rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
-                    if provence_threshold is not None:
-                        rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
+                        # Straight retrieval pipeline with streaming events
+                        final_result = RAG_AGENT.retrieval_pipeline.run(
+                            query,
+                            table_name=table_name,
+                            window_size_override=context_window_size,
+                            event_callback=emit,
+                        )
+                    else:
+                        # Provence overrides
+                        rp_cfg = RAG_AGENT.retrieval_pipeline.config
+                        if provence_prune is not None:
+                            rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
+                        if provence_threshold is not None:
+                            rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
 
-                    # 🔄 Refresh overviews for this session
-                    if session_id:
-                        idx_ids = db.get_indexes_for_session(session_id)
-                        _apply_index_embedding_model(idx_ids)
-                        RAG_AGENT.load_overviews_for_indexes(idx_ids)
+                        # 🔄 Refresh overviews for this session
+                        if session_id:
+                            idx_ids = db.get_indexes_for_session(session_id)
+                            _apply_index_embedding_model(idx_ids)
+                            RAG_AGENT.load_overviews_for_indexes(idx_ids)
 
-                    # 🔧 Set index-specific overview path
-                    if session_id:
-                        rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
+                        # 🔧 Set index-specific overview path
+                        if session_id:
+                            rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
 
-                    # 🔧 Configure late chunking
-                    rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
+                        # 🔧 Configure late chunking
+                        rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
 
-                    final_result = RAG_AGENT.run(
-                        query,
-                        table_name=table_name,
-                        session_id=session_id,
-                        compose_sub_answers=compose_flag,
-                        query_decompose=decomp_flag,
-                        ai_rerank=ai_rerank_flag,
-                        context_expand=ctx_expand_flag,
-                        verify=verify_flag,
-                        # ✨ NEW RETRIEVAL PARAMETERS
-                        retrieval_k=retrieval_k,
-                        context_window_size=context_window_size,
-                        reranker_top_k=reranker_top_k,
-                        search_type=search_type,
-                        dense_weight=dense_weight,
-                        event_callback=emit,
-                    )
+                        final_result = RAG_AGENT.run(
+                            query,
+                            table_name=table_name,
+                            session_id=session_id,
+                            compose_sub_answers=compose_flag,
+                            query_decompose=decomp_flag,
+                            ai_rerank=ai_rerank_flag,
+                            context_expand=ctx_expand_flag,
+                            verify=verify_flag,
+                            # ✨ NEW RETRIEVAL PARAMETERS
+                            retrieval_k=retrieval_k,
+                            context_window_size=context_window_size,
+                            reranker_top_k=reranker_top_k,
+                            search_type=search_type,
+                            dense_weight=dense_weight,
+                            event_callback=emit,
+                        )
 
                 # Ensure the final answer is sent (in case callback missed it)
                 emit("complete", final_result)
@@ -488,7 +557,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             chunk_overlap = int(data.get("chunk_overlap", 64))
             retrieval_mode = data.get("retrieval_mode", "hybrid")
             window_size = int(data.get("window_size", 2))
-            enable_enrich = bool(data.get("enable_enrich", True))
+            # Default OFF: enrichment is one LLM call per chunk — opt-in only
+            enable_enrich = bool(data.get("enable_enrich", False))
             embedding_model = data.get('embedding_model') or data.get('embeddingModel')
             enrich_model = data.get('enrich_model') or data.get('enrichModel')
             overview_model = data.get('overviewModel') or data.get('overview_model_name')
@@ -528,32 +598,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 }, status_code=400)
                 return
             indexing_result = None
-
-            def report_progress(stage, progress, message, **extra):
-                if not job_id:
-                    return
-                try:
-                    payload = {"stage": stage, "progress": progress, "message": message}
-                    payload.update({k: v for k, v in extra.items() if v is not None})
-                    requests.post(
-                        f"{backend_base_url}/index-jobs/{job_id}/progress",
-                        json=payload,
-                        timeout=2,
-                    )
-                except Exception:
-                    pass
-
-            def is_cancelled():
-                if not job_id:
-                    return False
-                try:
-                    resp = requests.get(f"{backend_base_url}/index-jobs/{job_id}", timeout=2)
-                    if resp.status_code != 200:
-                        return False
-                    job = resp.json()
-                    return bool(job.get("cancel_requested")) or job.get("status") == "cancelled"
-                except Exception:
-                    return False
+            # Progress reporting and cancellation polling live in
+            # rag_system.indexing_worker — the build runs in a child process.
 
             # Allow explicit table_name override
             table_name = data.get('table_name')
@@ -623,21 +669,16 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
                 config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = enable_latechunk
 
-                # Create a temporary pipeline instance with the overridden config
-                temp_pipeline = INDEXING_PIPELINE.__class__(
-                    config_override, 
-                    INDEXING_PIPELINE.llm_client, 
-                    INDEXING_PIPELINE.ollama_config
-                )
                 if force_reindex:
-                    self._clear_index_artifacts(temp_pipeline, table_name, session_id)
-                indexing_result = temp_pipeline.run(
+                    self._clear_index_artifacts(INDEXING_PIPELINE, table_name, session_id)
+                # Run the build in an isolated child process (memory/crash isolation)
+                indexing_result = _execute_indexing_job(
+                    config_override,
                     file_paths,
                     index_id=session_id or table_name or "default",
                     force_reindex=force_reindex,
-                    progress_callback=report_progress,
-                    cancel_callback=is_cancelled,
                     job_id=job_id,
+                    backend_base_url=backend_base_url,
                 )
             else:
                 # Use the default pipeline with overrides
@@ -696,21 +737,16 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
                 config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = enable_latechunk
 
-                # Create temporary pipeline with overridden config
-                temp_pipeline = INDEXING_PIPELINE.__class__(
-                    config_override, 
-                    INDEXING_PIPELINE.llm_client, 
-                    INDEXING_PIPELINE.ollama_config
-                )
                 if force_reindex:
-                    self._clear_index_artifacts(temp_pipeline, table_name, session_id)
-                indexing_result = temp_pipeline.run(
+                    self._clear_index_artifacts(INDEXING_PIPELINE, table_name, session_id)
+                # Run the build in an isolated child process (memory/crash isolation)
+                indexing_result = _execute_indexing_job(
+                    config_override,
                     file_paths,
                     index_id=session_id or table_name or "default",
                     force_reindex=force_reindex,
-                    progress_callback=report_progress,
-                    cancel_callback=is_cancelled,
                     job_id=job_id,
+                    backend_base_url=backend_base_url,
                 )
 
             self.send_json_response({
@@ -817,7 +853,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
         """Utility to send a JSON response with CORS headers."""
         self.send_response(status_code)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self._send_cors_headers()
         self.end_headers()
         response = json.dumps(data, indent=2)
         self.wfile.write(response.encode('utf-8'))
@@ -829,8 +865,12 @@ def start_server(port=8001):
         allow_reuse_address = True
         daemon_threads = True
 
-    with ReusableTCPServer(("", port), AdvancedRagApiHandler) as httpd:
-        print(f"🚀 Starting Advanced RAG API server on port {port}")
+    # Loopback by default: this API is unauthenticated, so exposing it on all
+    # interfaces would let anyone on the LAN read indexed documents.
+    # Set BIND_HOST=0.0.0.0 (e.g. in Docker) to expose it deliberately.
+    bind_host = os.getenv("BIND_HOST", "127.0.0.1")
+    with ReusableTCPServer((bind_host, port), AdvancedRagApiHandler) as httpd:
+        print(f"🚀 Starting Advanced RAG API server on {bind_host}:{port}")
         print(f"💬 Chat endpoint: http://localhost:{port}/chat")
         print(f"✨ Indexing endpoint: http://localhost:{port}/index")
         httpd.serve_forever()

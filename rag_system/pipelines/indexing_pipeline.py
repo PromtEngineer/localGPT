@@ -152,6 +152,10 @@ class IndexingPipeline:
         self.conversion_timeout_seconds = indexing_config.get("conversion_timeout_seconds", 360)
         self.overview_timeout_seconds = indexing_config.get("overview_timeout_seconds", 60)
         self.enrichment_timeout_seconds = indexing_config.get("enrichment_timeout_seconds", 90)
+        # Enrichment is one LLM call per chunk; past this many chunks the
+        # enricher is disabled for the rest of the build (with a warning)
+        # instead of grinding through thousands of generations.
+        self.max_enrich_chunks = int(indexing_config.get("max_enrich_chunks", 1000))
 
         # Treat dense retrieval as enabled by default unless explicitly disabled
         dense_cfg = retriever_configs.setdefault("dense", {})
@@ -372,330 +376,352 @@ class IndexingPipeline:
         skipped_completed_files = 0
         chunk_cache_hits = 0
         graph_chunks = []
+        enriched_chunks_total = 0
 
         self._start_persistent_worker()
-        with timer("Complete Indexing Pipeline"):
-            for file_idx, file_path in enumerate(files_to_index, start=1):
-                document_id = os.path.basename(file_path)
-                file_base_progress = 10 + int(((file_idx - 1) / max(len(files_to_index), 1)) * 80)
-                file_done_progress = 10 + int((file_idx / max(len(files_to_index), 1)) * 80)
-                file_id = None
-                active_stage = None
-                try:
-                    check_cancelled()
-                    if tracker and job_id:
-                        file_id = tracker.get_or_create_file_record(job_id, index_id, file_path, document_id)
-                        if file_id is not None and not force_reindex and tracker.should_skip_stage(file_id, "storage"):
-                            skipped_completed_files += 1
-                            indexing_logger.info("skipping_previously_completed_file", document_id=document_id, job_id=job_id)
+        # Always shut the conversion worker down — including on
+        # cancellation — or each cancelled job leaks a Docling subprocess.
+        try:
+            with timer("Complete Indexing Pipeline"):
+                for file_idx, file_path in enumerate(files_to_index, start=1):
+                    document_id = os.path.basename(file_path)
+                    file_base_progress = 10 + int(((file_idx - 1) / max(len(files_to_index), 1)) * 80)
+                    file_done_progress = 10 + int((file_idx / max(len(files_to_index), 1)) * 80)
+                    file_id = None
+                    active_stage = None
+                    try:
+                        check_cancelled()
+                        if tracker and job_id:
+                            file_id = tracker.get_or_create_file_record(job_id, index_id, file_path, document_id)
+                            if file_id is not None and not force_reindex and tracker.should_skip_stage(file_id, "storage"):
+                                skipped_completed_files += 1
+                                indexing_logger.info("skipping_previously_completed_file", document_id=document_id, job_id=job_id)
+                                report(
+                                    "indexing",
+                                    file_done_progress,
+                                    f"Skipped previously indexed {document_id}",
+                                    file_path=file_path,
+                                    filename=document_id,
+                                    document_id=document_id,
+                                    file_status="done",
+                                )
+                                continue
+
+                        report(
+                            "converting",
+                            file_base_progress,
+                            f"Converting {document_id} ({file_idx}/{len(files_to_index)})",
+                            file_path=file_path,
+                            filename=document_id,
+                            document_id=document_id,
+                            file_status="processing",
+                        )
+                        indexing_logger.debug("processing_file", document_id=document_id, file_path=file_path)
+
+                        _file_hash = self.incremental_indexer.calculate_file_hash(file_path)
+                        cache_key = self._chunk_cache_key(file_path, file_hash=_file_hash)
+                        file_chunks = self._load_chunk_cache(cache_key)
+                        _chunk_cache_hit = file_chunks is not None
+                        if _chunk_cache_hit:
+                            chunk_cache_hits += 1
+                            indexing_logger.info("chunk_cache_hit", document_id=document_id, file_path=file_path)
+                            if file_id is not None:
+                                if not tracker.should_skip_stage(file_id, "conversion"):
+                                    active_stage = "conversion"
+                                    tracker.start_stage(file_id, job_id, active_stage)
+                                    complete_tracked_stage(file_id, active_stage, {"file_hash": _file_hash, "cache": True})
+                                if not tracker.should_skip_stage(file_id, "chunking"):
+                                    active_stage = "chunking"
+                                    tracker.start_stage(file_id, job_id, active_stage)
+                                    complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks), "cache": True})
+                                active_stage = None
+                        else:
+                            check_cancelled()
+                            active_stage = "conversion"
+                            conversion_completed = start_tracked_stage(file_id, active_stage)
                             report(
-                                "indexing",
-                                file_done_progress,
-                                f"Skipped previously indexed {document_id}",
+                                "chunking",
+                                file_base_progress + 3,
+                                f"Chunking {document_id}",
                                 file_path=file_path,
                                 filename=document_id,
                                 document_id=document_id,
-                                file_status="done",
+                                file_status="processing",
+                            )
+                            if conversion_completed:
+                                indexing_logger.info("conversion_stage_marked_complete_but_cache_missing", document_id=document_id)
+                            file_chunks = self._convert_and_chunk_file(file_path, document_id)
+                            complete_tracked_stage(file_id, "conversion", {"file_hash": _file_hash})
+                            active_stage = "chunking"
+                            if not start_tracked_stage(file_id, active_stage):
+                                complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
+                            self._save_chunk_cache(cache_key, file_chunks)
+                            active_stage = None
+
+                        for i, chunk in enumerate(file_chunks):
+                            chunk.setdefault("text", "")
+                            if 'metadata' not in chunk:
+                                chunk['metadata'] = {}
+                            chunk['metadata']['chunk_index'] = i
+
+                        if not file_chunks:
+                            indexing_logger.warning("file_no_chunks", document_id=document_id)
+                            failed_files += 1
+                            if tracker and file_id is not None:
+                                tracker.mark_file_failed(file_id, "No chunks generated", error_code="chunking_empty")
+                            report(
+                                "indexing",
+                                file_done_progress,
+                                f"Skipped {document_id}: no chunks generated",
+                                file_path=file_path,
+                                filename=document_id,
+                                document_id=document_id,
+                                file_status="skipped",
+                                chunks_generated=0,
+                                file_error="No chunks generated",
                             )
                             continue
 
-                    report(
-                        "converting",
-                        file_base_progress,
-                        f"Converting {document_id} ({file_idx}/{len(files_to_index)})",
-                        file_path=file_path,
-                        filename=document_id,
-                        document_id=document_id,
-                        file_status="processing",
-                    )
-                    indexing_logger.debug("processing_file", document_id=document_id, file_path=file_path)
-
-                    _file_hash = self.incremental_indexer.calculate_file_hash(file_path)
-                    cache_key = self._chunk_cache_key(file_path, file_hash=_file_hash)
-                    file_chunks = self._load_chunk_cache(cache_key)
-                    _chunk_cache_hit = file_chunks is not None
-                    if _chunk_cache_hit:
-                        chunk_cache_hits += 1
-                        indexing_logger.info("chunk_cache_hit", document_id=document_id, file_path=file_path)
-                        if file_id is not None:
-                            if not tracker.should_skip_stage(file_id, "conversion"):
-                                active_stage = "conversion"
-                                tracker.start_stage(file_id, job_id, active_stage)
-                                complete_tracked_stage(file_id, active_stage, {"file_hash": _file_hash, "cache": True})
-                            if not tracker.should_skip_stage(file_id, "chunking"):
-                                active_stage = "chunking"
-                                tracker.start_stage(file_id, job_id, active_stage)
-                                complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks), "cache": True})
-                            active_stage = None
-                    else:
                         check_cancelled()
-                        active_stage = "conversion"
-                        conversion_completed = start_tracked_stage(file_id, active_stage)
-                        report(
-                            "chunking",
-                            file_base_progress + 3,
-                            f"Chunking {document_id}",
-                            file_path=file_path,
-                            filename=document_id,
-                            document_id=document_id,
-                            file_status="processing",
-                        )
-                        if conversion_completed:
-                            indexing_logger.info("conversion_stage_marked_complete_but_cache_missing", document_id=document_id)
-                        file_chunks = self._convert_and_chunk_file(file_path, document_id)
-                        complete_tracked_stage(file_id, "conversion", {"file_hash": _file_hash})
-                        active_stage = "chunking"
-                        if not start_tracked_stage(file_id, active_stage):
-                            complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
-                        self._save_chunk_cache(cache_key, file_chunks)
-                        active_stage = None
-
-                    for i, chunk in enumerate(file_chunks):
-                        chunk.setdefault("text", "")
-                        if 'metadata' not in chunk:
-                            chunk['metadata'] = {}
-                        chunk['metadata']['chunk_index'] = i
-
-                    if not file_chunks:
-                        indexing_logger.warning("file_no_chunks", document_id=document_id)
-                        failed_files += 1
-                        if tracker and file_id is not None:
-                            tracker.mark_file_failed(file_id, "No chunks generated", error_code="chunking_empty")
-                        report(
-                            "indexing",
-                            file_done_progress,
-                            f"Skipped {document_id}: no chunks generated",
-                            file_path=file_path,
-                            filename=document_id,
-                            document_id=document_id,
-                            file_status="skipped",
-                            chunks_generated=0,
-                            file_error="No chunks generated",
-                        )
-                        continue
-
-                    check_cancelled()
-                    active_stage = "overview"
-                    overview_completed = start_tracked_stage(file_id, active_stage)
-                    if not overview_completed:
-                        report(
-                            "overview",
-                            file_base_progress + 5,
-                            f"Generating overview for {document_id}",
-                            file_path=file_path,
-                            filename=document_id,
-                            document_id=document_id,
-                            file_status="processing",
-                        )
-                        try:
-                            self.overview_builder.build_and_store(
-                                document_id, file_chunks, force=not _chunk_cache_hit
+                        active_stage = "overview"
+                        overview_completed = start_tracked_stage(file_id, active_stage)
+                        if not overview_completed:
+                            report(
+                                "overview",
+                                file_base_progress + 5,
+                                f"Generating overview for {document_id}",
+                                file_path=file_path,
+                                filename=document_id,
+                                document_id=document_id,
+                                file_status="processing",
                             )
-                            complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
-                        except Exception as e:
-                            fail_tracked_stage(file_id, active_stage, e)
-                            indexing_logger.warning("overview_creation_failed", document_id=document_id, error=str(e))
-                    active_stage = None
-
-                    check_cancelled()
-                    if hasattr(self, 'contextual_enricher') and enricher_enabled:
-                        active_stage = "enrichment"
-                        enrichment_completed = start_tracked_stage(file_id, active_stage)
-                        report(
-                            "enriching",
-                            file_base_progress + 8,
-                            f"Enriching {document_id}",
-                            file_path=file_path,
-                            filename=document_id,
-                            document_id=document_id,
-                            file_status="processing",
-                        )
-                        window_size = enricher_config.get("window_size", 1)
-                        _pre_enrich_chunks = file_chunks
-                        try:
-                            if enrichment_completed:
-                                indexing_logger.info("enrichment_stage_completed_previously_rerunning_for_chunks", document_id=document_id)
-                            file_chunks = self.contextual_enricher.enrich_chunks(file_chunks, window_size=window_size)
-                            if not file_chunks:
-                                indexing_logger.warning("enrichment_returned_empty", document_id=document_id, reverting=True)
-                                file_chunks = _pre_enrich_chunks
-                            complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
-                        except Exception as _enrich_err:
-                            fail_tracked_stage(file_id, active_stage, _enrich_err)
-                            indexing_logger.error("enrichment_failed", document_id=document_id, error=str(_enrich_err), reverting=True)
-                            file_chunks = _pre_enrich_chunks
+                            try:
+                                self.overview_builder.build_and_store(
+                                    document_id, file_chunks, force=not _chunk_cache_hit
+                                )
+                                complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
+                            except Exception as e:
+                                fail_tracked_stage(file_id, active_stage, e)
+                                indexing_logger.warning("overview_creation_failed", document_id=document_id, error=str(e))
                         active_stage = None
-                    else:
-                        indexing_logger.warning(
-                            "contextual_enrichment_skipped",
-                            enabled=enricher_enabled,
-                            has_enricher=hasattr(self, 'contextual_enricher'),
-                        )
 
-                    check_cancelled()
-                    active_stage = "embedding"
-                    embedding_completed = start_tracked_stage(file_id, active_stage)
-                    report(
-                        "embedding",
-                        file_base_progress + 12,
-                        f"Embedding {len(file_chunks)} chunks from {document_id}",
-                        file_path=file_path,
-                        filename=document_id,
-                        document_id=document_id,
-                        file_status="processing",
-                        chunks_generated=len(file_chunks),
-                    )
-                    if hasattr(self, 'vector_indexer') and hasattr(self, 'embedding_generator'):
-                        if embedding_completed:
-                            indexing_logger.info("embedding_stage_completed_previously_rerunning_for_storage", document_id=document_id)
-                        embeddings = self.embedding_generator.generate(file_chunks)
-                        complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
                         check_cancelled()
-                        active_stage = "storage"
-                        storage_completed = start_tracked_stage(file_id, active_stage)
+                        if (hasattr(self, 'contextual_enricher') and enricher_enabled
+                                and enriched_chunks_total + len(file_chunks) > self.max_enrich_chunks):
+                            # Budget exhausted: keep indexing, stop enriching —
+                            # otherwise huge corpora mean thousands of LLM calls.
+                            enricher_enabled = False
+                            indexing_logger.warning(
+                                "enrichment_budget_reached",
+                                budget=self.max_enrich_chunks,
+                                enriched_so_far=enriched_chunks_total,
+                            )
+                            report(
+                                "enriching",
+                                file_base_progress + 8,
+                                f"Enrichment budget reached ({self.max_enrich_chunks} chunks) — remaining files are indexed without enrichment",
+                            )
+                        if hasattr(self, 'contextual_enricher') and enricher_enabled:
+                            active_stage = "enrichment"
+                            enrichment_completed = start_tracked_stage(file_id, active_stage)
+                            report(
+                                "enriching",
+                                file_base_progress + 8,
+                                f"Enriching {document_id}",
+                                file_path=file_path,
+                                filename=document_id,
+                                document_id=document_id,
+                                file_status="processing",
+                            )
+                            window_size = enricher_config.get("window_size", 1)
+                            _pre_enrich_chunks = file_chunks
+                            try:
+                                if enrichment_completed:
+                                    indexing_logger.info("enrichment_stage_completed_previously_rerunning_for_chunks", document_id=document_id)
+                                file_chunks = self.contextual_enricher.enrich_chunks(file_chunks, window_size=window_size)
+                                if not file_chunks:
+                                    indexing_logger.warning("enrichment_returned_empty", document_id=document_id, reverting=True)
+                                    file_chunks = _pre_enrich_chunks
+                                enriched_chunks_total += len(file_chunks)
+                                complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
+                            except Exception as _enrich_err:
+                                fail_tracked_stage(file_id, active_stage, _enrich_err)
+                                indexing_logger.error("enrichment_failed", document_id=document_id, error=str(_enrich_err), reverting=True)
+                                file_chunks = _pre_enrich_chunks
+                            active_stage = None
+                        else:
+                            indexing_logger.info(
+                                "contextual_enrichment_skipped",
+                                enabled=enricher_enabled,
+                                has_enricher=hasattr(self, 'contextual_enricher'),
+                            )
+
+                        check_cancelled()
+                        active_stage = "embedding"
+                        embedding_completed = start_tracked_stage(file_id, active_stage)
                         report(
-                            "storing",
-                            file_base_progress + 16,
-                            f"Storing vectors for {document_id}",
+                            "embedding",
+                            file_base_progress + 12,
+                            f"Embedding {len(file_chunks)} chunks from {document_id}",
                             file_path=file_path,
                             filename=document_id,
                             document_id=document_id,
                             file_status="processing",
                             chunks_generated=len(file_chunks),
                         )
-                        if not storage_completed:
-                            if incremental and not force_reindex:
-                                self._delete_existing_documents_from_table(table_name, [document_id])
-                            self.vector_indexer.index(table_name, file_chunks, embeddings)
+                        if hasattr(self, 'vector_indexer') and hasattr(self, 'embedding_generator'):
+                            if embedding_completed:
+                                indexing_logger.info("embedding_stage_completed_previously_rerunning_for_storage", document_id=document_id)
+                            embeddings = self.embedding_generator.generate(file_chunks)
+                            complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks)})
+                            check_cancelled()
+                            active_stage = "storage"
+                            storage_completed = start_tracked_stage(file_id, active_stage)
+                            report(
+                                "storing",
+                                file_base_progress + 16,
+                                f"Storing vectors for {document_id}",
+                                file_path=file_path,
+                                filename=document_id,
+                                document_id=document_id,
+                                file_status="processing",
+                                chunks_generated=len(file_chunks),
+                            )
+                            if not storage_completed:
+                                if incremental and not force_reindex:
+                                    self._delete_existing_documents_from_table(table_name, [document_id])
+                                self.vector_indexer.index(table_name, file_chunks, embeddings)
 
-                            if self.latechunk_enabled:
-                                lc_table_name = self.latechunk_cfg.get("lancedb_table_name", f"{table_name}_lc")
-                                lc_vecs = self._generate_latechunk_vectors(document_id, file_chunks)
-                                if lc_vecs is not None and len(lc_vecs) > 0:
-                                    if incremental and not force_reindex:
-                                        self._delete_existing_documents_from_table(lc_table_name, [document_id])
-                                    self.vector_indexer.index(lc_table_name, file_chunks, lc_vecs)
-                            complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks), "table": table_name})
-                        active_stage = None
+                                if self.latechunk_enabled:
+                                    lc_table_name = self.latechunk_cfg.get("lancedb_table_name", f"{table_name}_lc")
+                                    lc_vecs = self._generate_latechunk_vectors(document_id, file_chunks)
+                                    if lc_vecs is not None and len(lc_vecs) > 0:
+                                        if incremental and not force_reindex:
+                                            self._delete_existing_documents_from_table(lc_table_name, [document_id])
+                                        self.vector_indexer.index(lc_table_name, file_chunks, lc_vecs)
+                                complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks), "table": table_name})
+                            active_stage = None
 
-                    self.incremental_indexer.update_document_metadata(
-                        file_path, index_id, len(file_chunks), "index", file_hash=_file_hash
-                    )
-                    if hasattr(self, 'graph_extractor'):
-                        graph_chunks.extend(file_chunks)
-                    total_chunks += len(file_chunks)
-                    processed_files += 1
-                    if tracker and file_id is not None:
-                        tracker.mark_file_done(file_id, chunks_generated=len(file_chunks))
-                    indexing_logger.info("file_indexed", document_id=document_id, chunk_count=len(file_chunks), memory_mb=estimate_memory_usage(file_chunks))
-                    report(
-                        "indexing",
-                        file_done_progress,
-                        f"Indexed {document_id}",
-                        file_path=file_path,
-                        filename=document_id,
-                        document_id=document_id,
-                        file_status="done",
-                        chunks_generated=len(file_chunks),
+                        self.incremental_indexer.update_document_metadata(
+                            file_path, index_id, len(file_chunks), "index", file_hash=_file_hash
+                        )
+                        if hasattr(self, 'graph_extractor'):
+                            graph_chunks.extend(file_chunks)
+                        total_chunks += len(file_chunks)
+                        processed_files += 1
+                        if tracker and file_id is not None:
+                            tracker.mark_file_done(file_id, chunks_generated=len(file_chunks))
+                        indexing_logger.info("file_indexed", document_id=document_id, chunk_count=len(file_chunks), memory_mb=estimate_memory_usage(file_chunks))
+                        report(
+                            "indexing",
+                            file_done_progress,
+                            f"Indexed {document_id}",
+                            file_path=file_path,
+                            filename=document_id,
+                            document_id=document_id,
+                            file_status="done",
+                            chunks_generated=len(file_chunks),
+                        )
+
+                    except RuntimeError as e:
+                        if str(e) == "indexing_cancelled":
+                            raise
+                        failed_files += 1
+                        fail_tracked_stage(file_id, active_stage, e)
+                        if tracker and file_id is not None:
+                            tracker.mark_file_failed(file_id, str(e), error_code=f"{active_stage or 'processing'}_failed")
+                        indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
+                        report(
+                            "indexing",
+                            file_done_progress,
+                            f"Skipped {document_id}: {e}",
+                            file_path=file_path,
+                            filename=document_id,
+                            document_id=document_id,
+                            file_status="failed",
+                            file_error=str(e),
+                        )
+                        continue
+                    except Exception as e:
+                        failed_files += 1
+                        fail_tracked_stage(file_id, active_stage, e)
+                        if tracker and file_id is not None:
+                            tracker.mark_file_failed(file_id, str(e), error_code=f"{active_stage or 'processing'}_failed")
+                        indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
+                        report(
+                            "indexing",
+                            file_done_progress,
+                            f"Skipped {document_id}: {e}",
+                            file_path=file_path,
+                            filename=document_id,
+                            document_id=document_id,
+                            file_status="failed",
+                            file_error=str(e),
+                        )
+                        continue
+
+                check_cancelled()
+                if processed_files == 0:
+                    if skipped_completed_files > 0:
+                        # All files were already complete from a prior run — validate the
+                        # existing table so a corrupted index isn't silently reported healthy.
+                        try:
+                            from rag_system.model_registry import get_dims
+                            embedding_model = self.config.get("embedding_model_name")
+                            expected_dim = get_dims(embedding_model) if embedding_model else None
+                            self._validate_built_index(table_name, expected_dim=expected_dim)
+                        except RuntimeError as val_err:
+                            indexing_logger.error("post_build_validation_failed", error=str(val_err))
+                            report("failed", 100, str(val_err))
+                            self._stop_persistent_worker()
+                            raise
+                    else:
+                        indexing_logger.warning("no_chunks_generated")
+                    self._stop_persistent_worker()
+                    return self._print_final_statistics(
+                        len(files_to_index) + len(unchanged_files),
+                        0,
+                        index_id=index_id,
+                        incremental=incremental,
+                        unchanged_count=len(unchanged_files),
+                        chunk_cache_hits=chunk_cache_hits,
+                        force_reindex=force_reindex,
                     )
 
-                except RuntimeError as e:
-                    if str(e) == "indexing_cancelled":
-                        raise
-                    failed_files += 1
-                    fail_tracked_stage(file_id, active_stage, e)
-                    if tracker and file_id is not None:
-                        tracker.mark_file_failed(file_id, str(e), error_code=f"{active_stage or 'processing'}_failed")
-                    indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
-                    report(
-                        "indexing",
-                        file_done_progress,
-                        f"Skipped {document_id}: {e}",
-                        file_path=file_path,
-                        filename=document_id,
-                        document_id=document_id,
-                        file_status="failed",
-                        file_error=str(e),
-                    )
-                    continue
-                except Exception as e:
-                    failed_files += 1
-                    fail_tracked_stage(file_id, active_stage, e)
-                    if tracker and file_id is not None:
-                        tracker.mark_file_failed(file_id, str(e), error_code=f"{active_stage or 'processing'}_failed")
-                    indexing_logger.error("file_processing_error", file_path=file_path, error=str(e))
-                    report(
-                        "indexing",
-                        file_done_progress,
-                        f"Skipped {document_id}: {e}",
-                        file_path=file_path,
-                        filename=document_id,
-                        document_id=document_id,
-                        file_status="failed",
-                        file_error=str(e),
-                    )
-                    continue
+                report("finalizing", 92, "Creating search indexes")
+                self._ensure_fts_index(table_name)
 
-            check_cancelled()
-            if processed_files == 0:
-                if skipped_completed_files > 0:
-                    # All files were already complete from a prior run — validate the
-                    # existing table so a corrupted index isn't silently reported healthy.
-                    try:
-                        from rag_system.model_registry import get_dims
-                        embedding_model = self.config.get("embedding_model_name")
-                        expected_dim = get_dims(embedding_model) if embedding_model else None
-                        self._validate_built_index(table_name, expected_dim=expected_dim)
-                    except RuntimeError as val_err:
-                        indexing_logger.error("post_build_validation_failed", error=str(val_err))
-                        report("failed", 100, str(val_err))
-                        self._stop_persistent_worker()
-                        raise
-                else:
-                    indexing_logger.warning("no_chunks_generated")
+                if hasattr(self, 'graph_extractor') and graph_chunks:
+                    report("graph", 94, "Extracting knowledge graph")
+                    self._extract_knowledge_graph(graph_chunks, retriever_configs)
+
+            # Post-build validation: ensure the table exists, is non-empty, and has correct dims
+            try:
+                from rag_system.model_registry import get_dims
+                embedding_model = self.config.get("embedding_model_name")
+                expected_dim = get_dims(embedding_model) if embedding_model else None
+                self._validate_built_index(table_name, expected_dim=expected_dim)
+            except RuntimeError as val_err:
+                indexing_logger.error("post_build_validation_failed", error=str(val_err))
+                report("failed", 100, str(val_err))
                 self._stop_persistent_worker()
-                return self._print_final_statistics(
-                    len(files_to_index) + len(unchanged_files),
-                    0,
-                    index_id=index_id,
-                    incremental=incremental,
-                    unchanged_count=len(unchanged_files),
-                    chunk_cache_hits=chunk_cache_hits,
-                    force_reindex=force_reindex,
-                )
+                raise
 
-            report("finalizing", 92, "Creating search indexes")
-            self._ensure_fts_index(table_name)
-
-            if hasattr(self, 'graph_extractor') and graph_chunks:
-                report("graph", 94, "Extracting knowledge graph")
-                self._extract_knowledge_graph(graph_chunks, retriever_configs)
-
-        # Post-build validation: ensure the table exists, is non-empty, and has correct dims
-        try:
-            from rag_system.model_registry import get_dims
-            embedding_model = self.config.get("embedding_model_name")
-            expected_dim = get_dims(embedding_model) if embedding_model else None
-            self._validate_built_index(table_name, expected_dim=expected_dim)
-        except RuntimeError as val_err:
-            indexing_logger.error("post_build_validation_failed", error=str(val_err))
-            report("failed", 100, str(val_err))
+            report("completed", 100, "Indexing complete")
             self._stop_persistent_worker()
-            raise
-
-        report("completed", 100, "Indexing complete")
-        self._stop_persistent_worker()
-        total_processed = len(files_to_index) + len(unchanged_files)
-        indexing_logger.info("indexing_complete", total_processed=total_processed, total_chunks=total_chunks, unchanged_count=len(unchanged_files), incremental=incremental, failed_files=failed_files)
-        return self._print_final_statistics(
-            total_processed,
-            total_chunks,
-            index_id=index_id,
-            incremental=incremental,
-            unchanged_count=len(unchanged_files),
-            chunk_cache_hits=chunk_cache_hits,
-            force_reindex=force_reindex,
-        )
+            total_processed = len(files_to_index) + len(unchanged_files)
+            indexing_logger.info("indexing_complete", total_processed=total_processed, total_chunks=total_chunks, unchanged_count=len(unchanged_files), incremental=incremental, failed_files=failed_files)
+            return self._print_final_statistics(
+                total_processed,
+                total_chunks,
+                index_id=index_id,
+                incremental=incremental,
+                unchanged_count=len(unchanged_files),
+                chunk_cache_hits=chunk_cache_hits,
+                force_reindex=force_reindex,
+            )
+        finally:
+            self._stop_persistent_worker()
 
     def process_documents(self, file_paths: List[str], index_id: str = "default",
                          incremental: bool = True, force_reindex: bool = False):
@@ -726,7 +752,10 @@ class IndexingPipeline:
                 [sys.executable, "-m", "rag_system.tools.persistent_convert_worker"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                # The worker routes all logging/progress prints to stderr;
+                # nothing drains it, so a PIPE would fill up and deadlock the
+                # worker mid-conversion. Discard it instead.
+                stderr=subprocess.DEVNULL,
                 cwd=str(project_root),
                 env=env,
                 text=True,

@@ -54,9 +54,12 @@ class QwenEmbedder(EmbeddingModel):
         self.tokenizer, self.model = _MODEL_CACHE[self.model_name]
         self._loaded = True
 
-    def create_embeddings(self, texts: List[str]) -> np.ndarray:
-        self._ensure_loaded()
-        print(f"Generating {len(texts)} embeddings with {self.model_name} model...")
+    # Activation memory of one forward pass scales with batch × padded length,
+    # so a single 50-chunk batch of 512-token chunks spikes hard on MPS/CPU.
+    # Micro-batching flattens the peak regardless of what callers pass in.
+    _DEVICE_MICROBATCH = {"cuda": 64, "mps": 16, "cpu": 8}
+
+    def _forward(self, texts: List[str]) -> np.ndarray:
         inputs = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt").to(self.device)
         with torch.no_grad():
             outputs = self.model(**inputs)
@@ -65,9 +68,14 @@ class QwenEmbedder(EmbeddingModel):
             seq_len = inputs["attention_mask"].sum(dim=1) - 1  # index of last token
             batch_indices = torch.arange(last_hidden.size(0), device=self.device)
             embeddings = last_hidden[batch_indices, seq_len]
-        
-        # Convert to numpy and validate
-        embeddings_np = embeddings.cpu().numpy()
+        return embeddings.cpu().numpy()
+
+    def create_embeddings(self, texts: List[str]) -> np.ndarray:
+        self._ensure_loaded()
+        print(f"Generating {len(texts)} embeddings with {self.model_name} model...")
+        micro = self._DEVICE_MICROBATCH.get(self.device, 8)
+        parts = [self._forward(texts[i:i + micro]) for i in range(0, len(texts), micro)]
+        embeddings_np = np.vstack(parts)
         
         # Check for NaN or infinite values
         if np.isnan(embeddings_np).any():
@@ -117,15 +125,25 @@ class EmbeddingGenerator:
         return all_embeddings
 
 class OllamaEmbedder(EmbeddingModel):
-    """Call Ollama's /api/embeddings endpoint for each text."""
-    def __init__(self, model_name: str, host: str | None = None, timeout: int = 60):
+    """Embed via Ollama — batched /api/embed with a legacy per-text fallback.
+
+    Running embeddings through Ollama keeps torch/transformers out of this
+    process entirely: Ollama serves a quantized model and unloads it when
+    idle, which is a large memory win for local indexing.
+    """
+    def __init__(self, model_name: str, host: str | None = None, timeout: int = 120,
+                 batch_size: int = 64):
         self.model_name = model_name
         self.host = (host or os.getenv("OLLAMA_HOST") or "http://localhost:11434").rstrip("/")
         self.timeout = timeout
+        self.batch_size = batch_size
+        self.keep_alive = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
+        # Set after the first 404 from /api/embed (Ollama < 0.1.45)
+        self._use_legacy_endpoint = False
 
     def _embed_single(self, text: str):
-        import requests, numpy as np, json
-        payload = {"model": self.model_name, "prompt": text}
+        import requests, numpy as np
+        payload = {"model": self.model_name, "prompt": text, "keep_alive": self.keep_alive}
         r = requests.post(f"{self.host}/api/embeddings", json=payload, timeout=self.timeout)
         r.raise_for_status()
         data = r.json()
@@ -135,9 +153,29 @@ class OllamaEmbedder(EmbeddingModel):
             raise ValueError("Unexpected Ollama embeddings response format")
         return np.array(vec, dtype="float32")
 
+    def _embed_batch(self, batch: List[str]):
+        import requests, numpy as np
+        payload = {"model": self.model_name, "input": batch, "keep_alive": self.keep_alive}
+        r = requests.post(f"{self.host}/api/embed", json=payload, timeout=self.timeout)
+        if r.status_code == 404:
+            # Old Ollama without the batched endpoint
+            self._use_legacy_endpoint = True
+            return [self._embed_single(t) for t in batch]
+        r.raise_for_status()
+        embeddings = r.json().get("embeddings")
+        if not embeddings or len(embeddings) != len(batch):
+            raise ValueError("Unexpected Ollama embed response format")
+        return [np.array(vec, dtype="float32") for vec in embeddings]
+
     def create_embeddings(self, texts: List[str]):
         import numpy as np
-        vectors = [self._embed_single(t) for t in texts]
+        vectors = []
+        for i in range(0, len(texts), self.batch_size):
+            batch = texts[i:i + self.batch_size]
+            if self._use_legacy_endpoint:
+                vectors.extend(self._embed_single(t) for t in batch)
+            else:
+                vectors.extend(self._embed_batch(batch))
         embeddings_np = np.vstack(vectors)
         
         # Check for NaN or infinite values

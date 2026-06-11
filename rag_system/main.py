@@ -100,15 +100,21 @@ PIPELINE_CONFIGS = {
         "context_window_size": 0,
         "semantic_cache_threshold": 0.98,
         "cache_scope": "global",
-        # 🔧 Contextual enrichment configuration
+        # 🔧 Contextual enrichment configuration.
+        # Off by default: enrichment makes one LLM call PER CHUNK, which turns
+        # a minutes-long local build into hours. Opt in per build when needed.
         "contextual_enricher": {
-            "enabled": True,
+            "enabled": False,
             "window_size": 1
         },
         # 🔧 Indexing configuration
         "indexing": {
             "embedding_batch_size": 50,
             "enrichment_batch_size": 10,
+            # Hard ceiling on enriched chunks per build — beyond this the
+            # enricher is switched off with a warning instead of grinding
+            # through thousands of per-chunk LLM calls.
+            "max_enrich_chunks": 1000,
             "enable_progress_tracking": True
         }
     },
