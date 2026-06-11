@@ -112,9 +112,19 @@ class OverviewBuilder:
             summary_raw = resp.get("response", "")
             summary = re.sub(r'<think[^>]*>.*?</think>', '', summary_raw, flags=re.IGNORECASE | re.DOTALL).strip()
         except Exception as e:
-            summary = f"Failed to generate overview: {e}"
+            logger.warning(f"Overview generation failed for {doc_id}: {e}")
+            summary = ""
 
-        record = {"doc_id": doc_id, "overview": summary.strip()}
+        # Never persist an empty/failed overview: existing entries are skipped
+        # on later runs, so writing one would permanently block regeneration
+        # (e.g. every overview attempted while Ollama is down).
+        if not summary:
+            logger.warning(
+                f"No overview for {doc_id} (LLM unavailable?) — not persisting so a later build can retry"
+            )
+            return
+
+        record = {"doc_id": doc_id, "overview": summary}
         with open(self.out_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
