@@ -17,7 +17,7 @@ export const generateUUID = () => {
 export interface Step {
   key: string;
   label: string;
-  status: 'pending' | 'active' | 'done';
+  status: 'pending' | 'active' | 'done' | 'error';
   details: unknown;
 }
 
@@ -388,6 +388,7 @@ class ChatAPI {
       searchType?: string;
       denseWeight?: number;
       forceRag?: boolean;
+      forceDirect?: boolean;
       provencePrune?: boolean;
     } = {}
   ): Promise<SessionChatResponse & { source_documents: SourceDocument[] }> {
@@ -412,6 +413,7 @@ class ChatAPI {
           ...(typeof opts.searchType === 'string' && { search_type: opts.searchType }),
           ...(typeof opts.denseWeight === 'number' && { dense_weight: opts.denseWeight }),
           ...(typeof opts.forceRag === 'boolean' && { force_rag: opts.forceRag }),
+          ...(typeof opts.forceDirect === 'boolean' && { force_direct: opts.forceDirect }),
           ...(typeof opts.provencePrune === 'boolean' && { provence_prune: opts.provencePrune }),
         }),
       });
@@ -836,6 +838,7 @@ class ChatAPI {
       provencePrune?: boolean;
     },
     onEvent: (event: { type: string; data: ApiRecord }) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune } = params;
 
@@ -861,6 +864,7 @@ class ChatAPI {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal,
     });
 
     if (!resp.ok || !resp.body) {
@@ -887,8 +891,9 @@ class ChatAPI {
         try {
           const evt = JSON.parse(jsonStr);
           onEvent(evt);
-          if (evt.type === 'complete') {
-            // Gracefully close the stream so the caller unblocks
+          if (evt.type === 'complete' || evt.type === 'error') {
+            // Both events are terminal on the server side; close the
+            // stream so the caller unblocks
             try { await reader.cancel(); } catch {}
             streamClosed = true;
             break;
@@ -927,10 +932,15 @@ export function streamIndexJob(
       buf = lines.pop() ?? '';
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
+        let parsed: { type?: string; data?: { message?: string } } | null = null;
         try {
-          const parsed = JSON.parse(line.slice(6));
-          if (parsed.type === 'progress') onEvent(parsed.data);
-        } catch { /* ignore malformed */ }
+          parsed = JSON.parse(line.slice(6));
+        } catch { continue; /* ignore malformed */ }
+        if (parsed?.type === 'progress') {
+          onEvent(parsed.data as Parameters<typeof onEvent>[0]);
+        } else if (parsed?.type === 'error') {
+          throw new Error(parsed.data?.message || 'Index build stream reported an error');
+        }
       }
     }
   })();

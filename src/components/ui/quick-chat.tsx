@@ -84,25 +84,41 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
     }
 
     try {
-      const history = api.messagesToHistory(messages);
-      const resp = await api.sendMessage({ message: content, conversation_history: history, model: selectedModel });
+      let responseText: string;
+      if (activeSessionId) {
+        // Session endpoint persists both turns; force the direct-LLM path
+        // since quick chat has no documents to search.
+        const resp = await api.sendSessionMessage(activeSessionId, content, {
+          model: selectedModel,
+          forceDirect: true,
+        });
+        responseText = resp.response;
+        if (resp.session && onSessionChange) onSessionChange(resp.session);
+      } else {
+        // Session creation failed — fall back to the stateless legacy endpoint
+        const history = api.messagesToHistory(messages);
+        const resp = await api.sendMessage({ message: content, conversation_history: history, model: selectedModel });
+        responseText = resp.response;
+      }
 
-    const assistantMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-        content: resp.response,
-      sender: 'assistant',
-      timestamp: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, assistantMsg]);
+      const assistantMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        content: responseText,
+        sender: 'assistant',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
       console.error('Quick chat failed', err);
+      const errorMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        content: `❌ ${err instanceof Error ? err.message : 'Failed to send message.'}`,
+        sender: 'assistant',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
-    }
-
-    // if session existed externally and callback provided, still sync id
-    if(onSessionChange && activeSessionId && activeSessionId!==externalSessionId){
-      // no additional action; already sent on creation
     }
   };
 

@@ -72,12 +72,15 @@ class PersistentCache:
         # Load existing cache on startup
         self._load_cache_index()
 
-    def _get_cache_key(self, query: str, query_type: str, session_id: Optional[str] = None) -> str:
+    def _get_cache_key(self, query: str, query_type: str, session_id: Optional[str] = None,
+                       scope: Optional[str] = None) -> str:
         """Generate a unique cache key"""
         if self.cache_scope == "session" and session_id:
             key_base = f"{session_id}:{query_type}:{query.strip().lower()}"
         else:
             key_base = f"{query_type}:{query.strip().lower()}"
+        if scope:
+            key_base = f"{scope}:{key_base}"
 
         # Use hash to avoid key length issues
         return hashlib.md5(key_base.encode()).hexdigest()
@@ -208,7 +211,8 @@ class PersistentCache:
                     self._metadata_index[key] = {
                         'session_id': data.get('session_id'),
                         'timestamp': data.get('timestamp', 0),
-                        'query_type': data.get('query_type', 'unknown')
+                        'query_type': data.get('query_type', 'unknown'),
+                        'scope': data.get('scope')
                     }
                     count += 1
 
@@ -218,7 +222,8 @@ class PersistentCache:
         logger.info("file_cache_index_loaded count=%s", count)
 
     def store(self, query: str, query_type: str, result: Dict[str, Any],
-              embedding: Optional[np.ndarray] = None, session_id: Optional[str] = None):
+              embedding: Optional[np.ndarray] = None, session_id: Optional[str] = None,
+              scope: Optional[str] = None):
         """
         Store a result in the persistent cache.
 
@@ -228,15 +233,19 @@ class PersistentCache:
             result: The result to cache
             embedding: Query embedding for semantic matching
             session_id: Session ID for session-scoped caching
+            scope: Retrieval scope (e.g. index table + embedding model); entries
+                   only match within the same scope so answers never leak
+                   across indexes
         """
-        cache_key = self._get_cache_key(query, query_type, session_id)
+        cache_key = self._get_cache_key(query, query_type, session_id, scope)
 
         cache_data = {
             'query': query,
             'query_type': query_type,
             'result': result,
             'timestamp': time.time(),
-            'session_id': session_id
+            'session_id': session_id,
+            'scope': scope
         }
 
         if embedding is not None:
@@ -254,14 +263,15 @@ class PersistentCache:
             self._metadata_index[cache_key] = {
                 'session_id': session_id,
                 'timestamp': cache_data['timestamp'],
-                'query_type': query_type
+                'query_type': query_type,
+                'scope': scope
             }
 
         # Enforce size limit
         self._enforce_size_limit()
 
     def retrieve(self, query: str, query_type: str, embedding: Optional[np.ndarray] = None,
-                session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+                session_id: Optional[str] = None, scope: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Retrieve a result from the cache using exact match or semantic similarity.
 
@@ -270,12 +280,13 @@ class PersistentCache:
             query_type: Type of query
             embedding: Query embedding for semantic matching
             session_id: Session ID for session-scoped caching
+            scope: Retrieval scope; only entries stored with the same scope match
 
         Returns:
             Cached result if found, None otherwise
         """
         # First try exact match
-        cache_key = self._get_cache_key(query, query_type, session_id)
+        cache_key = self._get_cache_key(query, query_type, session_id, scope)
 
         result = self._load_cache_entry(cache_key)
         if result:
@@ -284,7 +295,7 @@ class PersistentCache:
 
         # If we have an embedding, try semantic matching
         if embedding is not None:
-            semantic_result = self._find_semantic_match(embedding, session_id)
+            semantic_result = self._find_semantic_match(embedding, session_id, scope)
             if semantic_result:
                 return semantic_result
 
@@ -298,7 +309,8 @@ class PersistentCache:
             return self._load_from_file(key)
 
     def _find_semantic_match(self, query_embedding: np.ndarray,
-                           session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+                           session_id: Optional[str] = None,
+                           scope: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Find semantically similar cached queries.
 
@@ -310,6 +322,11 @@ class PersistentCache:
 
         # Search through in-memory embedding index
         for cache_key, cached_embedding in self._embedding_index.items():
+            # Never match across retrieval scopes (different index/table or
+            # embedding model) — that would return another index's answer.
+            cached_scope = self._metadata_index.get(cache_key, {}).get('scope')
+            if cached_scope != scope:
+                continue
             # Check session scope
             if self.cache_scope == "session" and session_id:
                 cached_session = self._metadata_index.get(cache_key, {}).get('session_id')

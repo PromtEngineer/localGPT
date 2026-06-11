@@ -109,6 +109,25 @@ class RetrievalPipeline:
             self._graph_retriever = GraphRetriever(graph_path=self.storage_config["graph_path"])
         return self._graph_retriever
 
+    def _resolve_latechunk_cfg(self) -> Dict[str, Any]:
+        """Resolve late-chunk config at query time.
+
+        Callers (the API server) toggle config["retrievers"]["latechunk"]
+        after construction, and older configs use retrieval.late_chunking —
+        the binding captured in __init__ sees neither.
+        """
+        cfg = (self.config.get("retrievers") or {}).get("latechunk")
+        if cfg is None:
+            cfg = (self.config.get("retrieval") or {}).get("late_chunking") or {}
+        return cfg
+
+    @staticmethod
+    def _lancedb_table_exists(retriever, table_name: str) -> bool:
+        try:
+            return table_name in set(retriever.db_manager.db.table_names())
+        except Exception:
+            return False
+
     def _get_reranker(self):
         """Initializes the reranker for hybrid search score fusion."""
         reranker_config = self.config.get("reranker", {})
@@ -180,8 +199,11 @@ class RetrievalPipeline:
         start_index = max(0, chunk_index - window_size)
         end_index = chunk_index + window_size
         
-        # Construct the SQL filter for an efficient metadata-based search
-        sql_filter = f"document_id = '{document_id}' AND chunk_index >= {start_index} AND chunk_index <= {end_index}"
+        # Construct the SQL filter for an efficient metadata-based search.
+        # document_id is the uploaded filename — escape quotes (O'Brien.pdf)
+        # the same way _delete_existing_documents_from_table does.
+        escaped_document_id = str(document_id).replace("'", "''")
+        sql_filter = f"document_id = '{escaped_document_id}' AND chunk_index >= {int(start_index)} AND chunk_index <= {int(end_index)}"
         
         try:
             # Execute a filter-only search, which is very fast on indexed metadata
@@ -271,19 +293,25 @@ ORIGINAL QUESTION: "{query}"
         # ---------------------------------------------------------------
         # Late-Chunk retrieval (optional)
         # ---------------------------------------------------------------
-        if self.retriever_configs.get("latechunk", {}).get("enabled"):
-            lc_table = self.retriever_configs["latechunk"].get("lancedb_table_name")
-            if lc_table:
+        lc_enabled = bool(self._resolve_latechunk_cfg().get("enabled"))
+        if lc_enabled and dense_retriever:
+            lc_cfg = self._resolve_latechunk_cfg()
+            active_table = table_name or self.storage_config.get("text_table_name")
+            lc_table = lc_cfg.get("lancedb_table_name") or (f"{active_table}_lc" if active_table else None)
+            if lc_table and self._lancedb_table_exists(dense_retriever, lc_table):
                 try:
+                    # vector_only: lc tables are built without an FTS index
                     lc_docs = dense_retriever.retrieve(
                         text_query=query,
                         table_name=lc_table,
                         k=retrieval_k,
-                        reranker=lancedb_reranker,
+                        vector_only=True,
                     )
                     retrieved_docs.extend(lc_docs)
                 except Exception as e:
                     logger.warning("latechunk_retrieval_failed table=%s error=%s", lc_table, e)
+            else:
+                logger.debug("latechunk_table_missing table=%s", lc_table)
 
         if event_callback:
             event_callback("retrieval_done", {"count": len(retrieved_docs)})
@@ -294,7 +322,7 @@ ORIGINAL QUESTION: "{query}"
         # -----------------------------------------------------------
         #  LATE-CHUNK MERGING (merge ±1 sub-vector into central hit)
         # -----------------------------------------------------------
-        if self.retriever_configs.get("latechunk", {}).get("enabled") and retrieved_docs:
+        if lc_enabled and retrieved_docs:
             merged_count = 0
             for doc in retrieved_docs:
                 try:
@@ -403,14 +431,13 @@ ORIGINAL QUESTION: "{query}"
                         logger.error("context_expansion_chunk_failed chunk_id=%s error=%s", seed_chunk.get('chunk_id'), e)
 
             final_docs = list(expanded_chunks.values())
-            # Sort by reranker score if present, otherwise by raw score/distance
+            # Sort by reranker score if present, otherwise by fused similarity
+            # (the retriever already converts vector distances to similarities,
+            # so higher `score` is better for both legs).
             if any('rerank_score' in d for d in final_docs):
                 final_docs.sort(key=lambda c: c.get('rerank_score', -1), reverse=True)
-            elif any('_distance' in d for d in final_docs):
-                # For vector search smaller distance is better
-                final_docs.sort(key=lambda c: c.get('_distance', 1e9))
-            elif any('score' in d for d in final_docs):
-                final_docs.sort(key=lambda c: c.get('score', 0), reverse=True)
+            elif any(d.get('score') is not None for d in final_docs):
+                final_docs.sort(key=lambda c: c.get('score') or 0, reverse=True)
             else:
                 # Fallback to document order
                 final_docs.sort(key=lambda c: (c.get('document_id', ''), c.get('chunk_index', 0)))

@@ -8,6 +8,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _connect(db_path: str) -> sqlite3.Connection:
+    """Open a connection with foreign-key enforcement.
+
+    SQLite disables foreign keys per-connection by default, so every
+    connection must opt in or ON DELETE CASCADE silently does nothing.
+    """
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
 class DatabaseTransaction:
     """Context manager for safe database transactions with automatic rollback on error."""
 
@@ -17,8 +28,7 @@ class DatabaseTransaction:
 
     def __enter__(self):
         """Open connection and enable foreign key constraints."""
-        self.conn = sqlite3.connect(self.db_path, timeout=30)
-        self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn = _connect(self.db_path)
         return self.conn
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -41,8 +51,8 @@ class ChatDatabase:
             import os
             if os.path.exists("/app"):  # Docker environment
                 self.db_path = "/app/backend/chat_data.db"
-            else:  # Local development environment
-                self.db_path = "backend/chat_data.db"
+            else:  # Local development: anchor to this file, not the CWD
+                self.db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_data.db")
         else:
             self.db_path = db_path
         self.init_database()
@@ -69,10 +79,9 @@ class ChatDatabase:
         # outside any transaction (isolation_level=None = autocommit).
         self._ensure_wal_mode()
 
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.cursor()
-        conn.execute("PRAGMA foreign_keys = ON")
-        
+
         # Sessions table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS sessions (
@@ -237,7 +246,7 @@ class ChatDatabase:
         session_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.execute('''
             INSERT INTO sessions (id, title, created_at, updated_at, model_used)
             VALUES (?, ?, ?, ?, ?)
@@ -250,7 +259,7 @@ class ChatDatabase:
     
     def get_sessions(self, limit: int = 50) -> List[Dict]:
         """Get all chat sessions, ordered by most recent"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
@@ -267,7 +276,7 @@ class ChatDatabase:
     
     def get_session(self, session_id: str) -> Optional[Dict]:
         """Get a specific session"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
@@ -287,7 +296,7 @@ class ChatDatabase:
         now = datetime.now().isoformat()
         metadata_json = json.dumps(metadata or {})
         
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         
         # Add the message
         conn.execute('''
@@ -309,25 +318,28 @@ class ChatDatabase:
         return message_id
     
     def get_messages(self, session_id: str, limit: int = 100) -> List[Dict]:
-        """Get all messages for a session"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        """Get the most recent messages for a session, in chronological order"""
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        
+
+        # Select the newest `limit` rows (rowid breaks same-timestamp ties),
+        # then reverse so callers still get oldest-to-newest order.
         cursor = conn.execute('''
             SELECT id, content, sender, timestamp, metadata
             FROM messages
             WHERE session_id = ?
-            ORDER BY timestamp ASC
+            ORDER BY timestamp DESC, rowid DESC
             LIMIT ?
         ''', (session_id, limit))
-        
+
         messages = []
         for row in cursor.fetchall():
             message = dict(row)
             message['metadata'] = json.loads(message['metadata'])
             messages.append(message)
-        
+
         conn.close()
+        messages.reverse()
         return messages
     
     def get_conversation_history(self, session_id: str) -> List[Dict]:
@@ -345,7 +357,7 @@ class ChatDatabase:
     
     def update_session_title(self, session_id: str, title: str):
         """Update session title"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.execute('''
             UPDATE sessions 
             SET title = ?, updated_at = ?
@@ -356,7 +368,7 @@ class ChatDatabase:
     
     def delete_session(self, session_id: str) -> bool:
         """Delete a session and all its messages"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.execute('DELETE FROM sessions WHERE id = ?', (session_id,))
         deleted = cursor.rowcount > 0
         conn.commit()
@@ -369,7 +381,7 @@ class ChatDatabase:
     
     def cleanup_empty_sessions(self) -> int:
         """Remove sessions with no messages"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         
         # Find sessions with no messages
         cursor = conn.execute('''
@@ -398,7 +410,7 @@ class ChatDatabase:
     
     def get_stats(self) -> Dict:
         """Get database statistics"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         
         # Get session count
         cursor = conn.execute('SELECT COUNT(*) FROM sessions')
@@ -428,7 +440,7 @@ class ChatDatabase:
 
     def add_document_to_session(self, session_id: str, file_path: str) -> int:
         """Adds a document file path to a session."""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.execute(
             "INSERT INTO session_documents (session_id, file_path) VALUES (?, ?)",
             (session_id, file_path)
@@ -441,7 +453,7 @@ class ChatDatabase:
 
     def get_documents_for_session(self, session_id: str) -> List[str]:
         """Retrieves all document file paths for a given session."""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.execute(
             "SELECT file_path FROM session_documents WHERE session_id = ?",
             (session_id,)
@@ -456,7 +468,7 @@ class ChatDatabase:
         idx_id = str(uuid.uuid4())
         created = datetime.now().isoformat()
         vector_table = f"text_pages_{idx_id}"
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.execute('''
             INSERT INTO indexes (id, name, description, created_at, updated_at, vector_table_name, metadata)
             VALUES (?,?,?,?,?,?,?)
@@ -467,7 +479,7 @@ class ChatDatabase:
         return idx_id
 
     def get_index(self, index_id: str) -> dict | None:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
         cur = conn.execute('SELECT * FROM indexes WHERE id=?', (index_id,))
         row = cur.fetchone()
@@ -483,7 +495,7 @@ class ChatDatabase:
         return idx
 
     def list_indexes(self) -> list[dict]:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
         rows = conn.execute('SELECT * FROM indexes').fetchall()
         res = []
@@ -499,19 +511,19 @@ class ChatDatabase:
         return res
 
     def add_document_to_index(self, index_id: str, filename: str, stored_path: str):
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.execute('INSERT INTO index_documents (index_id, original_filename, stored_path) VALUES (?,?,?)', (index_id, filename, stored_path))
         conn.commit()
         conn.close()
 
     def link_index_to_session(self, session_id: str, index_id: str):
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.execute('INSERT OR IGNORE INTO session_indexes (session_id, index_id, linked_at) VALUES (?,?,?)', (session_id, index_id, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
     def get_indexes_for_session(self, session_id: str) -> list[str]:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.execute('SELECT index_id FROM session_indexes WHERE session_id=? ORDER BY linked_at', (session_id,))
         ids = [r[0] for r in cursor.fetchall()]
         conn.close()
@@ -519,7 +531,7 @@ class ChatDatabase:
 
     def delete_index(self, index_id: str) -> bool:
         """Delete an index and its related records (documents, session links). Returns True if deleted."""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         try:
             # Get vector table name before deletion (optional, for LanceDB cleanup)
             cur = conn.execute('SELECT vector_table_name FROM indexes WHERE id = ?', (index_id,))
@@ -557,24 +569,36 @@ class ChatDatabase:
 
     def update_index_metadata(self, index_id: str, updates: dict):
         """Merge new key/values into an index's metadata JSON column."""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        cur = conn.execute('SELECT metadata FROM indexes WHERE id=?', (index_id,))
-        row = cur.fetchone()
-        if row is None:
+        try:
+            # BEGIN IMMEDIATE holds a write lock across the read-modify-write
+            # so concurrent writers (build thread, cancel endpoint) can't
+            # clobber each other's metadata keys.
+            conn.execute('BEGIN IMMEDIATE')
+            cur = conn.execute('SELECT metadata FROM indexes WHERE id=?', (index_id,))
+            row = cur.fetchone()
+            if row is None:
+                conn.rollback()
+                raise ValueError("Index not found")
+            existing = json.loads(row['metadata'] or '{}')
+            existing.update(updates)
+            conn.execute('UPDATE indexes SET metadata=?, updated_at=? WHERE id=?', (json.dumps(existing), datetime.now().isoformat(), index_id))
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+            raise
+        finally:
             conn.close()
-            raise ValueError("Index not found")
-        existing = json.loads(row['metadata'] or '{}')
-        existing.update(updates)
-        conn.execute('UPDATE indexes SET metadata=?, updated_at=? WHERE id=?', (json.dumps(existing), datetime.now().isoformat(), index_id))
-        conn.commit()
-        conn.close()
 
     # -------- Index job helpers ---------
 
     def create_index_job(self, job_id: str, index_id: str, options: dict, documents: list[dict]) -> dict:
         now = datetime.now().isoformat()
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.execute('''
             INSERT INTO index_jobs (
                 id, index_id, status, stage, progress, message,
@@ -612,7 +636,7 @@ class ChatDatabase:
         return self.get_index_job(job_id)
 
     def get_index_job(self, job_id: str, include_options: bool = True, include_files: bool = True) -> dict | None:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
         row = conn.execute('SELECT * FROM index_jobs WHERE id=?', (job_id,)).fetchone()
         if not row:
@@ -655,7 +679,7 @@ class ChatDatabase:
         if not assignments:
             return self.get_index_job(job_id)
         values.append(job_id)
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         # Safe SQL construction: all assignments are validated through allowlist
         sql = "UPDATE index_jobs SET " + ", ".join(assignments) + " WHERE id=?"
         conn.execute(sql, values)
@@ -666,7 +690,7 @@ class ChatDatabase:
     def get_index_job_files(self, job_id: str, conn=None) -> list[dict]:
         close_conn = False
         if conn is None:
-            conn = sqlite3.connect(self.db_path, timeout=30)
+            conn = _connect(self.db_path)
             close_conn = True
         conn.row_factory = sqlite3.Row
         rows = conn.execute('''
@@ -711,7 +735,7 @@ class ChatDatabase:
         else:
             return None
 
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
         # Safe SQL construction: assignments validated through allowlist, where clause parameterized
         sql_update = "UPDATE index_job_files SET " + ", ".join(assignments) + " WHERE " + where
@@ -725,7 +749,7 @@ class ChatDatabase:
         return item
 
     def list_unfinished_index_jobs(self) -> list[dict]:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
         rows = conn.execute('''
             SELECT * FROM index_jobs
@@ -743,7 +767,7 @@ class ChatDatabase:
         return jobs
 
     def get_latest_index_job(self, index_id: str, include_options: bool = False, include_files: bool = True) -> dict | None:
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         conn.row_factory = sqlite3.Row
         row = conn.execute('''
             SELECT id FROM index_jobs

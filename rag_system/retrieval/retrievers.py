@@ -77,11 +77,13 @@ class MultiVectorRetriever:
 
         self._embed_single = _embed_single
 
-    def retrieve(self, text_query: str, table_name: str, k: int, reranker=None) -> List[Dict[str, Any]]:
+    def retrieve(self, text_query: str, table_name: str, k: int, reranker=None,
+                 vector_only: bool = False) -> List[Dict[str, Any]]:
         """
         Performs a search on a single LanceDB table.
         If a reranker is provided, it performs a hybrid search.
-        Otherwise, it performs a standard vector search.
+        With vector_only=True the FTS leg is skipped — for tables (like the
+        late-chunk `_lc` tables) that have no FTS index.
         """
         print(f"\n--- Performing Retrieval for query: '{text_query}' on table '{table_name}' ---")
         
@@ -107,11 +109,13 @@ class MultiVectorRetriever:
                 logger.debug("Hybrid + reranker path not yet implemented with manual fusion; proceeding without extra reranker.")
 
             # Manual two-leg hybrid: take half from each modality
-            fts_k = k // 2
+            fts_k = 0 if vector_only else k // 2
             vec_k = k - fts_k
 
             # Run FTS and vector search in parallel to cut latency
             def _run_fts():
+                if fts_k == 0:
+                    return None
                 # Very short queries often underperform → add fuzzy wildcard
                 fts_query = text_query
                 if len(text_query.split()) == 1:
@@ -140,10 +144,10 @@ class MultiVectorRetriever:
                 fts_df = fts_future.result()
                 vec_df = vec_future.result()
 
-            if vec_df is not None:
-                combined = pd.concat([fts_df, vec_df])
-            else:
-                combined = fts_df
+            frames = [df for df in (fts_df, vec_df) if df is not None]
+            if not frames:
+                return []
+            combined = pd.concat(frames)
 
             # Remove duplicates preserving first occurrence, then trim to k
             dedup_subset = ["_rowid"] if "_rowid" in combined.columns else (["chunk_id"] if "chunk_id" in combined.columns else None)
@@ -154,44 +158,59 @@ class MultiVectorRetriever:
             results_df = combined
             logger.debug(
                 "Hybrid (fts=%s, vec=%s) → %s unique chunks",
-                len(fts_df),
+                0 if fts_df is None else len(fts_df),
                 0 if vec_df is None else len(vec_df),
                 len(results_df),
             )
             
+            def _row_value(row, *columns):
+                # LanceDB returns FTS relevance in '_score' (older versions used
+                # 'score'); after concat, rows from the other leg hold NaN there.
+                for col in columns:
+                    if col in row:
+                        val = row.get(col)
+                        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                            return float(val)
+                return None
+
+            # BM25 scores are unbounded; normalize against the best hit so they
+            # are comparable with the (0, 1] vector similarities before fusion.
+            max_bm25 = 0.0
+            for _, row in results_df.iterrows():
+                bm25 = _row_value(row, '_score', 'score')
+                if bm25 is not None and bm25 > max_bm25:
+                    max_bm25 = bm25
+
+            w_bm25 = float(self.fusion_config.get('bm25_weight', 0.5))
+            w_vec = float(self.fusion_config.get('vec_weight', 0.5))
+
             retrieved_docs = []
             for _, row in results_df.iterrows():
                 metadata = json.loads(row.get('metadata', '{}'))
                 # Add top-level fields back into metadata for consistency if they don't exist
                 metadata.setdefault('document_id', row.get('document_id'))
                 metadata.setdefault('chunk_index', row.get('chunk_index'))
-                
-                # Determine score (vector distance or FTS). Replace NaN with 0.0
-                raw_score = row.get('_distance') if '_distance' in row else row.get('score')
-                try:
-                    if raw_score is None or (isinstance(raw_score, float) and math.isnan(raw_score)):
-                        raw_score = 0.0
-                except Exception:
-                    raw_score = 0.0
 
-                combined_score = raw_score
-                # Optional linear-weight fusion if both FTS & vector scores exist
-                if '_distance' in row and 'score' in row:
-                    try:
-                        bm25 = row.get('score', 0.0)
-                        vec_sim = 1.0 / (1.0 + row.get('_distance', 1.0))  # convert distance to similarity
-                        w_bm25 = float(self.fusion_config.get('bm25_weight', 0.5))
-                        w_vec = float(self.fusion_config.get('vec_weight', 0.5))
-                        combined_score = w_bm25 * bm25 + w_vec * vec_sim
-                    except Exception:
-                        pass
+                bm25 = _row_value(row, '_score', 'score')
+                distance = _row_value(row, '_distance')
+                vec_sim = 1.0 / (1.0 + distance) if distance is not None else None
+                bm25_norm = (bm25 / max_bm25) if (bm25 is not None and max_bm25 > 0) else None
+
+                if bm25_norm is not None and vec_sim is not None:
+                    combined_score = w_bm25 * bm25_norm + w_vec * vec_sim
+                elif bm25_norm is not None:
+                    combined_score = w_bm25 * bm25_norm
+                elif vec_sim is not None:
+                    combined_score = w_vec * vec_sim
+                else:
+                    combined_score = 0.0
 
                 retrieved_docs.append({
                     'chunk_id': row.get('chunk_id'),
                     'text': metadata.get('original_text', row.get('text')),
                     'score': combined_score,
-                    'bm25': row.get('score'),
-                    '_distance': row.get('_distance'),
+                    'bm25': bm25,
+                    '_distance': distance,
                     'document_id': row.get('document_id'),
                     'chunk_index': row.get('chunk_index'),
                     'metadata': metadata

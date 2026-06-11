@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import time
 from typing import Dict, List, Any
@@ -407,14 +408,20 @@ class EnhancedRagApiHandler(http.server.BaseHTTPRequestHandler):
         response = json.dumps(data, indent=2)
         self.wfile.write(response.encode('utf-8'))
 
-def start_enhanced_server(port=8000):
-    """Start the enhanced API server with a reusable TCP socket."""
-    
-    # Use a custom TCPServer that allows address reuse
-    class ReusableTCPServer(socketserver.TCPServer):
-        allow_reuse_address = True
+def start_enhanced_server(port=8001):
+    """Start the enhanced API server with a reusable TCP socket.
 
-    with ReusableTCPServer(("", port), EnhancedRagApiHandler) as httpd:
+    Threading is required: the SSE /stream handler loops until the client
+    disconnects, which would permanently occupy a single-threaded server.
+    Default port is 8001 (the RAG API port) — 8000 belongs to the backend.
+    """
+
+    class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        allow_reuse_address = True
+        daemon_threads = True
+
+    bind_host = os.getenv("BIND_HOST", "127.0.0.1")
+    with ReusableTCPServer((bind_host, port), EnhancedRagApiHandler) as httpd:
         logger.info("server_starting port=%s", port)
         logger.info(
             "server_endpoints chat=%s indexing=%s progress=%s stream=%s",

@@ -20,7 +20,9 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
   const [rebuildSuccess, setRebuildSuccess] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
-  useEffect(() => { return () => { mountedRef.current = false; }; }, []);
+  // Re-set on mount: under StrictMode the effect cleanup runs once on the
+  // throwaway mount, which would otherwise leave the ref false forever.
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
   useEffect(() => {
     (async () => {

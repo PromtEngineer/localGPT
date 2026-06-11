@@ -180,9 +180,20 @@ export function IndexForm({ onClose, onIndexed }: Props) {
         if (data.status === 'cancelled') { cancel(); reject(new Error('Index build was cancelled')); }
       });
       cancelStreamRef.current = cancel;
-      promise.catch((err) => {
-        if ((err as Error).name !== 'AbortError') reject(err);
-      });
+      promise.then(
+        () => {
+          // Stream closed without a terminal status event (server restart,
+          // proxy timeout): poll the job once so we settle instead of hanging.
+          chatAPI.getIndexJob(jobId).then((job) => {
+            setBuildJob(job);
+            if (job.status === 'completed') resolve(job);
+            else reject(new Error(job.error || job.message || 'Build stream ended unexpectedly'));
+          }).catch(() => reject(new Error('Build stream ended unexpectedly')));
+        },
+        (err) => {
+          if ((err as Error).name !== 'AbortError') reject(err);
+        },
+      );
     });
   };
 

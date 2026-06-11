@@ -9,6 +9,7 @@ import { IndexForm } from "@/components/IndexForm";
 import SessionIndexInfo from "@/components/SessionIndexInfo";
 import IndexPicker from "@/components/IndexPicker";
 import { QuickChat } from '@/components/ui/quick-chat'
+import { useAlert } from '@/components/ui/confirm-dialog'
 
 export function Demo() {
     const [currentSessionId, setCurrentSessionId] = useState<string | undefined>()
@@ -20,6 +21,7 @@ export function Demo() {
     const [showIndexInfo, setShowIndexInfo] = useState(false)
     const [showIndexPicker, setShowIndexPicker] = useState(false)
     const [sidebarOpen, setSidebarOpen] = useState(true)
+    const { showAlert, dialog: alertDialog } = useAlert()
 
     useEffect(() => {
         checkBackendHealth()
@@ -167,14 +169,20 @@ export function Demo() {
                 {showIndexPicker && (
                   <IndexPicker onClose={()=>setShowIndexPicker(false)} onSelect={async (idxId)=>{
                     // create session and link index then open chat
-                    const session = await chatAPI.createSession()
-                    await chatAPI.linkIndexToSession(session.id, idxId)
-                    setShowIndexPicker(false)
-                    setHomeMode('CHAT_EXISTING')
-                    handleSessionSelect(session.id)
+                    try {
+                      const session = await chatAPI.createSession()
+                      await chatAPI.linkIndexToSession(session.id, idxId)
+                      setShowIndexPicker(false)
+                      setHomeMode('CHAT_EXISTING')
+                      handleSessionSelect(session.id)
+                    } catch (error) {
+                      console.error('Failed to open index:', error)
+                      await showAlert(error instanceof Error ? error.message : 'Failed to open the index. Is the backend running?')
+                    }
                   }} />
                 )}
+                {alertDialog}
             </div>
         </div>
     );
-} 
+}

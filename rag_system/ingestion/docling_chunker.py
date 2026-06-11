@@ -53,13 +53,20 @@ class DoclingChunker:
             sentences = [s.strip() for s in self._sent_re.split(ch["text"]) if s.strip()]
             if not sentences:
                 continue
-            window: List[str] = []
-            while sentences:
-                # Add until over limit
-                while sentences and self._token_len(" ".join(window + [sentences[0]])) <= self.max_tokens:
-                    window.append(sentences.pop(0))
+            # Walk with an absolute cursor that always advances; re-queueing
+            # overlap sentences in place can otherwise loop forever when an
+            # overlap sentence plus the next one exceed max_tokens.
+            i = 0
+            n = len(sentences)
+            while i < n:
+                window: List[str] = []
+                j = i
+                while j < n and self._token_len(" ".join(window + [sentences[j]])) <= self.max_tokens:
+                    window.append(sentences[j])
+                    j += 1
                 if not window:  # single sentence > limit → hard cut
-                    window.append(sentences.pop(0))
+                    window.append(sentences[j])
+                    j += 1
                 chunk_text = " ".join(window)
                 new_chunk = {
                     "chunk_id": f"{document_id}_{global_idx}",
@@ -75,11 +82,11 @@ class DoclingChunker:
                 }
                 new_chunks.append(new_chunk)
                 global_idx += 1
-                # Overlap: prepend last `overlap` sentences of the current window to the remaining queue
-                if self.overlap and sentences:
-                    back = window[-self.overlap:] if self.overlap <= len(window) else window[:]
-                    sentences = back + sentences
-                window = []
+                if j >= n:
+                    break
+                # Overlap: start the next window `overlap` sentences back, but
+                # always advance past the previous start to guarantee progress.
+                i = max(j - self.overlap, i + 1) if self.overlap else j
         return new_chunks
 
     # ------------------------------------------------------------------

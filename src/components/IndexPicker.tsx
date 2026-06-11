@@ -24,7 +24,9 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
   const [showHealthReport, setShowHealthReport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  // Re-set on mount: under StrictMode the effect cleanup runs once on the
+  // throwaway mount, which would otherwise leave the ref false forever.
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const { showConfirm, dialog: confirmDialog } = useConfirm();

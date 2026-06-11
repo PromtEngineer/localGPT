@@ -5,8 +5,7 @@ import { ConversationPage } from "./conversation-page"
 import { ChatInput } from "./chat-input"
 import { ApiRecord, ChatMessage, ChatSession, IndexSummary, SourceDocument, chatAPI, generateUUID } from "@/lib/api"
 import { AttachedFile } from "@/lib/types"
-import { useEffect, useState, forwardRef, useImperativeHandle, useCallback } from "react"
-import { normalizeStreamingToken } from "@/utils/textNormalization"
+import { useEffect, useState, forwardRef, useImperativeHandle, useCallback, useRef } from "react"
 import { Button } from "./button"
 import type { Step } from '@/lib/api'
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal'
@@ -82,6 +81,13 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
 
   const apiService = chatAPI
 
+  // Active answer stream — aborted on unmount and on session switch so a
+  // stale stream can't keep updating state for a conversation we left
+  const streamAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => {
+    return () => { streamAbortRef.current?.abort() }
+  }, [])
+
   const ensureIndexHealthyForChat = async (idxId: string | null, indexName?: string | null) => {
     if (!idxId) return;
     const diagnostics = await apiService.getIndexDiagnostics(idxId);
@@ -128,9 +134,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   useEffect(() => {
     if (sessionId) {
       if (loadedSessionId !== sessionId) {
+        streamAbortRef.current?.abort()
         loadSession(sessionId)
       }
     } else {
+      streamAbortRef.current?.abort()
       setMessages([])
       setCurrentSession(null)
     }
@@ -258,6 +266,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         })
         // keep global isLoading true so input disabled until completion
 
+        streamAbortRef.current?.abort()
+        const streamController = new AbortController()
+        streamAbortRef.current = streamController
+
         await apiService.streamSessionMessage(
           {
             query: content,
@@ -279,9 +291,34 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           },
           (evt) => {
             console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
+            // Side effects stay outside the setMessages updater — updaters
+            // must be pure (StrictMode invokes them twice).
+            if (['token', 'sub_query_token', 'final_answer', 'single_query_result', 'complete', 'error'].includes(evt.type)) {
+              setIsLoading(false);
+            }
+            if (evt.type === 'error') {
+              const detail = evt.data?.error;
+              setError(typeof detail === 'string' && detail ? detail : 'The server reported an error while answering.');
+            }
+            if (evt.type === 'complete' && activeSessionId) {
+              // 🔄 REFRESH SESSION: refresh session data so updated title & message count are reflected in the UI
+              setTimeout(async () => {
+                try {
+                  const { session } = await apiService.getSession(activeSessionId as string);
+                  setCurrentSession(session);
+                  if (onSessionChange) {
+                    onSessionChange(session);
+                  }
+                } catch (error) {
+                  console.error('Failed to refresh session after completion:', error);
+                }
+              }, 100); // Small delay to ensure backend has processed the title update
+            }
             setMessages(prev => prev.map(m => {
               if (m.id !== placeholder.id) return m;
-              const steps = [...((m.content as { steps: Step[] }).steps)];
+              // Copy each step object: they are shared with the previous state
+              // snapshot, and mutating them in place breaks updater purity.
+              const steps = ((m.content as { steps: Step[] }).steps).map(s => ({ ...s }));
               if (evt.type === 'analyze') {
                 steps[0].status = 'active';
                 steps[0].details = 'Analyzing your question...';
@@ -368,7 +405,6 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 steps[5].status = 'done';
                 steps[6].status = 'active';
                 steps[6].details = 'Synthesizing final answer...';
-                if (isLoading) setIsLoading(false);
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'token') {
@@ -389,11 +425,13 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                   current = detHolder;
                 }
                 const tok: string = (evt.data.text || '') as string;
-                if (!tok.trim()) {
-                  return m; // skip empty/whitespace-only chunks
+                if (!tok) {
+                  return m;
                 }
-                let updated = current.endsWith(tok) ? current : current + tok;
-                updated = normalizeStreamingToken('', updated);
+                // Append verbatim: whitespace-only chunks are paragraph breaks
+                // and repeated tokens ("had had") are legitimate output.
+                // Whitespace normalization happens at render time.
+                const updated = current + tok;
                 if (steps[finalIdx].key === 'direct') {
                   steps[0].details = updated;
                 } else {
@@ -405,26 +443,20 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 if (synthIdx !== -1 && steps[synthIdx].status !== 'done') {
                   steps[synthIdx].status = 'done';
                 }
-                if (isLoading) setIsLoading(false);
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'sub_query_token') {
                 const idx = evt.data.index as number;
                 const tok = String(evt.data.text || '');
-                if (!tok.trim()) return m;
+                if (!tok) return m;
                 steps[5].status = 'active';
-                const detailsArr: SubQueryDetail[] = Array.isArray(steps[5].details) ? steps[5].details as SubQueryDetail[] : [];
+                // Copy the array and its entries — they are shared with the previous state
+                const detailsArr: SubQueryDetail[] = (Array.isArray(steps[5].details) ? steps[5].details as SubQueryDetail[] : []).map(d => ({ ...d }));
                 while (detailsArr.length <= idx) {
                   detailsArr.push({ question: String(evt.data.question || `Sub-query ${idx+1}`), answer: '' });
                 }
-                const curAns: string = detailsArr[idx].answer || '';
-                if (!curAns.endsWith(tok)) {
-                  let updatedAnswer = curAns + tok;
-                  updatedAnswer = normalizeStreamingToken('', updatedAnswer);
-                  detailsArr[idx].answer = updatedAnswer;
-                }
+                detailsArr[idx].answer = (detailsArr[idx].answer || '') + tok;
                 steps[5].details = detailsArr;
-                if (isLoading) setIsLoading(false);
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'complete') {
@@ -442,28 +474,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                   };
                 }
 
-                setIsLoading(false);
                 // Make sure any lingering steps are marked done
                 steps.forEach(s => {
                   if (s.status !== 'done') s.status = 'done';
                 });
-                
-                // 🔄 REFRESH SESSION: After completion, refresh session data to get updated title
-                if (activeSessionId) {
-                  // Always refresh session data so updated title & message count are reflected in the UI
-                  setTimeout(async () => {
-                    try {
-                      const { session } = await apiService.getSession(activeSessionId as string);
-                      setCurrentSession(session);
-                      if (onSessionChange) {
-                        onSessionChange(session);
-                      }
-                    } catch (error) {
-                      console.error('Failed to refresh session after completion:', error);
-                    }
-                  }, 100); // Small delay to ensure backend has processed the title update
-                }
-                
+
                 return { ...m, content: { steps }, metadata: { message_type: 'complete' } };
               }
               if (evt.type === 'direct_answer') {
@@ -472,9 +487,18 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 ];
                 return { ...m, content: { steps: stepsDir } };
               }
+              if (evt.type === 'error') {
+                // Terminal failure: flag the step that was running so the
+                // spinner stops, and mark the message as no longer in progress.
+                steps.forEach(s => {
+                  if (s.status === 'active') s.status = 'error';
+                });
+                return { ...m, content: { steps }, metadata: { message_type: 'complete' } };
+              }
               return m;
             }));
-          }
+          },
+          streamController.signal,
         )
       } else {
         const response = await apiService.sendSessionMessage(activeSessionId, content, { 
@@ -514,6 +538,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
       }
 
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        // Deliberate cancellation (unmount or session switch) — not an error
+        return
+      }
       console.error('Failed to send message:', error)
       setError(error instanceof Error ? error.message : 'Failed to send message')
     } finally {
@@ -569,8 +597,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         if (messageIndex > 0 && messages[messageIndex].sender === 'assistant') {
           const userMessage = messages[messageIndex - 1]
           if (userMessage.sender === 'user') {
-            // Remove the AI message and resend the user message
-            setMessages(prev => prev.filter(m => m.id !== messageId))
+            // Remove the AI message and the old user message — sendMessage
+            // re-appends the user message, so keeping it would duplicate it
+            setMessages(prev => prev.filter(m => m.id !== messageId && m.id !== userMessage.id))
             await sendMessage(userMessage.content as string)
           }
         }

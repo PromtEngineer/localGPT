@@ -3,6 +3,11 @@ import json
 import os
 from typing import List, Dict, Optional
 
+
+class OllamaError(Exception):
+    """Raised when Ollama returns an error or cannot be reached."""
+
+
 class OllamaClient:
     def __init__(self, base_url: Optional[str] = None):
         if base_url is None:
@@ -21,7 +26,7 @@ class OllamaClient:
     def list_models(self) -> List[str]:
         """Get list of available models"""
         try:
-            response = requests.get(f"{self.api_url}/tags")
+            response = requests.get(f"{self.api_url}/tags", timeout=10)
             if response.status_code == 200:
                 models = response.json().get("models", [])
                 return [model["name"] for model in models]
@@ -103,10 +108,10 @@ class OllamaClient:
                 
                 return response_text
             else:
-                return f"Error: {response.status_code} - {response.text}"
-                
+                raise OllamaError(f"Ollama returned {response.status_code}: {response.text}")
+
         except requests.exceptions.RequestException as e:
-            return f"Connection error: {e}"
+            raise OllamaError(f"Could not reach Ollama: {e}") from e
     
     def chat_stream(self, message: str, model: str = "llama3.2", conversation_history: List[Dict] = None, enable_thinking: bool = True):
         """Stream chat response from Ollama"""
@@ -161,10 +166,10 @@ class OllamaClient:
                         except json.JSONDecodeError:
                             continue
             else:
-                yield f"Error: {response.status_code} - {response.text}"
-                
+                raise OllamaError(f"Ollama returned {response.status_code}: {response.text}")
+
         except requests.exceptions.RequestException as e:
-            yield f"Connection error: {e}"
+            raise OllamaError(f"Could not reach Ollama: {e}") from e
 
 def main():
     """Test the Ollama client"""

@@ -108,6 +108,14 @@ class Agent:
             self._load_overviews(self._global_overview_path)
             self._current_overview_session = "GLOBAL"
 
+        # Routing decisions depend on the overview set: a query triaged to
+        # direct_answer before documents were indexed must be re-triaged once
+        # overviews exist, or it stays pinned to the wrong path forever.
+        fingerprint = hash(tuple(self.doc_overviews or ()))
+        if fingerprint != getattr(self, "_overview_fingerprint", None):
+            self._overview_fingerprint = fingerprint
+            self._route_cache.clear()
+
     def _format_query_with_history(self, query: str, history: list) -> str:
         """Formats the user query with conversation history for context."""
         if not history:
@@ -280,6 +288,12 @@ Respond with JSON: {{"category": "<your_choice>"}}
             print(f"🔍 Dense search weight set to: {dense_weight}")
 
         query_embedding = None
+        # Cache entries are scoped to the active index table + embedding model
+        # so one index's answers are never served for another.
+        cache_scope = "{}|{}".format(
+            table_name or self.retrieval_pipeline.storage_config.get("text_table_name", ""),
+            self.retrieval_pipeline.config.get("embedding_model_name", ""),
+        )
         # 🚀 PERSISTENT CACHE: Check semantic cache for similar queries
         if query_type != "direct_answer":
             text_embedder = self.retrieval_pipeline._get_text_embedder()
@@ -293,7 +307,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     query_embedding = np.array(query_embedding_list[0])
 
                 # Check persistent cache for exact or semantic match
-                cached_result = self._query_cache.retrieve(raw_query, query_type, query_embedding, session_id)
+                cached_result = self._query_cache.retrieve(raw_query, query_type, query_embedding, session_id, scope=cache_scope)
 
                 if cached_result:
                     # Update history even on cache hit
@@ -532,17 +546,6 @@ FINAL ANSWER:
                                 event_callback("final_answer", result)
             else:
                 # Standard retrieval (single-query)
-                retrieved_docs = (self.retrieval_pipeline.retriever.retrieve(
-                    text_query=contextual_query,
-                    table_name=table_name or self.retrieval_pipeline.storage_config["text_table_name"],
-                    k=self.retrieval_pipeline.config.get("retrieval_k", 10),
-                ) if hasattr(self.retrieval_pipeline, "retriever") and self.retrieval_pipeline.retriever else [])
-
-                print("\n=== DEBUG: Original retrieval order ===")
-                for i, d in enumerate(retrieved_docs[:10]):
-                    snippet = (d.get('text','') or '')[:200].replace('\n',' ')
-                    print(f"Orig[{i}] id={d.get('chunk_id')} dist={d.get('_distance','') or d.get('score','')}  {snippet}")
-
                 result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback)
 
                 # After run, result['source_documents'] is reranked list
@@ -586,7 +589,7 @@ FINAL ANSWER:
             
         # 🚀 PERSISTENT CACHE: Store result for future queries
         if query_type != "direct_answer" and query_embedding is not None:
-            self._query_cache.store(raw_query, query_type, result, query_embedding, session_id)
+            self._query_cache.store(raw_query, query_type, result, query_embedding, session_id, scope=cache_scope)
         
         total_time = time.time() - start_time
         print(f"🚀 Total query processing time: {total_time:.2f}s")
@@ -655,12 +658,18 @@ FINAL ANSWER:
             print(f"⚠️ ROUTING DEBUG: Could not get embedder for overview routing: {e}")
             return None
 
-        # Cache overview embeddings keyed by (overview_count, first_overview_hash)
-        cache_key = (len(self.doc_overviews), self.doc_overviews[0][:80])
+        # Cache overview embeddings keyed by overview set + embedding model:
+        # the model is switched per index, and vectors from different models
+        # are not comparable (same-dimension ones silently produce garbage).
+        embedding_model = self.retrieval_pipeline.config.get("embedding_model_name", "")
+        cache_key = (embedding_model, len(self.doc_overviews), self.doc_overviews[0][:80])
         if cache_key not in Agent._overview_embedding_cache:
             try:
                 overview_embs = embedder.create_embeddings(self.doc_overviews)
                 norms = np.linalg.norm(overview_embs, axis=1, keepdims=True)
+                # Keep the cache bounded (dicts preserve insertion order)
+                while len(Agent._overview_embedding_cache) >= 16:
+                    Agent._overview_embedding_cache.pop(next(iter(Agent._overview_embedding_cache)))
                 Agent._overview_embedding_cache[cache_key] = overview_embs / np.maximum(norms, 1e-9)
                 print(f"📖 ROUTING DEBUG: Cached {len(self.doc_overviews)} overview embeddings")
             except Exception as e:
