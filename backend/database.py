@@ -389,6 +389,9 @@ class ChatDatabase:
     def delete_session(self, session_id: str) -> bool:
         """Delete a session and all its messages"""
         conn = _connect(self.db_path)
+        # session_indexes has no ON DELETE CASCADE — with foreign keys
+        # enforced, the link rows must go before the session row
+        conn.execute('DELETE FROM session_indexes WHERE session_id = ?', (session_id,))
         cursor = conn.execute('DELETE FROM sessions WHERE id = ?', (session_id,))
         deleted = cursor.rowcount > 0
         conn.commit()
@@ -412,9 +415,11 @@ class ChatDatabase:
         
         empty_sessions = [row[0] for row in cursor.fetchall()]
         
-        # Delete empty sessions
+        # Delete empty sessions (link rows first: session_indexes has no
+        # ON DELETE CASCADE and foreign keys are enforced)
         deleted_count = 0
         for session_id in empty_sessions:
+            conn.execute('DELETE FROM session_indexes WHERE session_id = ?', (session_id,))
             cursor = conn.execute('DELETE FROM sessions WHERE id = ?', (session_id,))
             if cursor.rowcount > 0:
                 deleted_count += 1
