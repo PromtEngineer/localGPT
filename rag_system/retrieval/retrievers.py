@@ -78,12 +78,14 @@ class MultiVectorRetriever:
         self._embed_single = _embed_single
 
     def retrieve(self, text_query: str, table_name: str, k: int, reranker=None,
-                 vector_only: bool = False) -> List[Dict[str, Any]]:
+                 vector_only: bool = False, fts_only: bool = False,
+                 fusion_override: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
         """
         Performs a search on a single LanceDB table.
         If a reranker is provided, it performs a hybrid search.
-        With vector_only=True the FTS leg is skipped — for tables (like the
-        late-chunk `_lc` tables) that have no FTS index.
+        vector_only=True skips the FTS leg (e.g. late-chunk `_lc` tables have
+        no FTS index); fts_only=True skips the vector leg. fusion_override
+        replaces the instance fusion weights for this call only.
         """
         print(f"\n--- Performing Retrieval for query: '{text_query}' on table '{table_name}' ---")
         
@@ -109,7 +111,13 @@ class MultiVectorRetriever:
                 logger.debug("Hybrid + reranker path not yet implemented with manual fusion; proceeding without extra reranker.")
 
             # Manual two-leg hybrid: take half from each modality
-            fts_k = 0 if vector_only else k // 2
+            # (or everything from one leg for single-mode searches)
+            if vector_only:
+                fts_k = 0
+            elif fts_only:
+                fts_k = k
+            else:
+                fts_k = k // 2
             vec_k = k - fts_k
 
             # Run FTS and vector search in parallel to cut latency
@@ -149,11 +157,12 @@ class MultiVectorRetriever:
                 return []
             combined = pd.concat(frames)
 
-            # Remove duplicates preserving first occurrence, then trim to k
+            # Remove duplicates preserving first occurrence. Truncation to k
+            # happens AFTER fused scores exist — trimming here would keep
+            # candidates by concat order (FTS leg first) instead of by score.
             dedup_subset = ["_rowid"] if "_rowid" in combined.columns else (["chunk_id"] if "chunk_id" in combined.columns else None)
             if dedup_subset:
                 combined = combined.drop_duplicates(subset=dedup_subset, keep="first")
-            combined = combined.head(k)
 
             results_df = combined
             logger.debug(
@@ -181,8 +190,9 @@ class MultiVectorRetriever:
                 if bm25 is not None and bm25 > max_bm25:
                     max_bm25 = bm25
 
-            w_bm25 = float(self.fusion_config.get('bm25_weight', 0.5))
-            w_vec = float(self.fusion_config.get('vec_weight', 0.5))
+            fusion_cfg = fusion_override or self.fusion_config
+            w_bm25 = float(fusion_cfg.get('bm25_weight', 0.5))
+            w_vec = float(fusion_cfg.get('vec_weight', 0.5))
 
             retrieved_docs = []
             for _, row in results_df.iterrows():
@@ -215,6 +225,10 @@ class MultiVectorRetriever:
                     'chunk_index': row.get('chunk_index'),
                     'metadata': metadata
                 })
+
+            # Rank by fused score and only now trim to k
+            retrieved_docs.sort(key=lambda d: d['score'], reverse=True)
+            retrieved_docs = retrieved_docs[:k]
 
             logger.debug("Hybrid search returned %s results", len(retrieved_docs))
             log_retrieval_results(retrieved_docs, k)

@@ -37,7 +37,10 @@ print("✅ RAG Agent initialized successfully.")
 # -------------- Helper ----------------
 
 def _apply_index_embedding_model(idx_ids):
-    """Ensure retrieval pipeline uses the embedding model + fusion weights from the first index."""
+    """Ensure retrieval pipeline uses the embedding model + fusion weights of
+    the LAST-linked index — the same one whose vector table the backend
+    queries. Using a different index here embeds queries with the wrong
+    model for the table being searched."""
     logger = logging.getLogger(__name__)
     logger.debug("apply_index_embedding_model idx_ids=%s", idx_ids)
 
@@ -45,7 +48,7 @@ def _apply_index_embedding_model(idx_ids):
         logger.warning("apply_index_embedding_model called without index IDs")
         return
     try:
-        idx = db.get_index(idx_ids[0])
+        idx = db.get_index(idx_ids[-1])
         logger.debug(
             "apply_index_embedding_model index_id=%s metadata=%s",
             idx.get("id"),
@@ -94,8 +97,9 @@ def _get_table_name_for_session(session_id):
             logger.info(f"📊 Using default table '{default_table}' for session {session_id[:8]}...")
             return default_table
         
-        # Use the first index's vector table name
-        idx = db.get_index(idx_ids[0])
+        # Use the LAST-linked index's vector table — must stay consistent
+        # with the backend's choice and _apply_index_embedding_model
+        idx = db.get_index(idx_ids[-1])
         if idx and idx.get('vector_table_name'):
             table_name = idx['vector_table_name']
             logger.info(f"📊 Using table '{table_name}' for session {session_id[:8]}...")

@@ -237,6 +237,26 @@ class ChatDatabase:
                 if "duplicate column" not in str(e) and "already exists" not in str(e):
                     raise
 
+        # One-time scrub: older versions persisted the cloud enrichment API
+        # key inside index_jobs.options. Remove it from any existing rows.
+        try:
+            rows = cursor.execute(
+                "SELECT id, options FROM index_jobs WHERE options LIKE '%enrichApiKey%'"
+            ).fetchall()
+            for job_id, options_json in rows:
+                try:
+                    opts = json.loads(options_json or '{}')
+                    if opts.pop('enrichApiKey', None) is not None:
+                        cursor.execute(
+                            "UPDATE index_jobs SET options=? WHERE id=?",
+                            (json.dumps(opts), job_id),
+                        )
+                        logger.info(f"Scrubbed enrichApiKey from job {job_id[:8]} options")
+                except (json.JSONDecodeError, TypeError):
+                    continue
+        except sqlite3.OperationalError:
+            pass  # table missing on a brand-new database
+
         conn.commit()
         conn.close()
         logger.info("Database initialized successfully")

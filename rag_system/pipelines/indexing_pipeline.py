@@ -346,6 +346,18 @@ class IndexingPipeline:
                     )
             if not files_to_index:
                 indexing_logger.info("indexing_not_required", message="All files are up-to-date", total_files=len(file_paths))
+                # Still validate the existing table: "all unchanged" must not
+                # report a missing/empty/mismatched index as a healthy build.
+                _rc = self.config.get("retrievers") or self.config.get("retrieval", {})
+                _table = self.config["storage"].get("text_table_name") or _rc.get("dense", {}).get("lancedb_table_name", "default_text_table")
+                try:
+                    from rag_system.model_registry import get_dims
+                    _em = self.config.get("embedding_model_name")
+                    self._validate_built_index(_table, expected_dim=get_dims(_em) if _em else None)
+                except RuntimeError as val_err:
+                    indexing_logger.error("post_build_validation_failed", error=str(val_err))
+                    report("failed", 100, str(val_err))
+                    raise
                 return self._print_final_statistics(
                     len(file_paths),
                     0,
@@ -675,6 +687,13 @@ class IndexingPipeline:
                             report("failed", 100, str(val_err))
                             self._stop_persistent_worker()
                             raise
+                    elif failed_files > 0:
+                        # Nothing succeeded and nothing was skipped: this is a
+                        # failed build, not a successful empty one.
+                        msg = f"Indexing failed: all {failed_files} file(s) failed to process"
+                        indexing_logger.error("all_files_failed", failed_files=failed_files)
+                        report("failed", 100, msg)
+                        raise RuntimeError(msg)
                     else:
                         indexing_logger.warning("no_chunks_generated")
                     self._stop_persistent_worker()

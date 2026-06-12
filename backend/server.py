@@ -1511,10 +1511,18 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     raise HTTPException(status_code=500, detail=f"RAG indexing failed: {rag_resp.text}")
 
 
-def _run_index_build_job(job_id: str):
+def _run_index_build_job(job_id: str, options_override: Dict[str, Any] | None = None):
+    """Run a queued build job.
+
+    options_override carries secrets (the cloud enrichment API key) that are
+    deliberately NOT persisted with the job — the DB copy is scrubbed. Resumed
+    jobs read from the DB and therefore run without the key.
+    """
     job = _get_index_job(job_id)
     if not job:
         return
+    if options_override is not None:
+        job["options"] = options_override
     if job.get("cancel_requested"):
         _update_index_job(job_id, status="cancelled", stage="cancelled", progress=100, message="Build cancelled before it started")
         db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
@@ -1529,13 +1537,14 @@ def _run_index_build_job(job_id: str):
         if status == "cancelled":
             db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
         _update_index_job(job_id, status=status, stage=status, progress=100, message=message, result=result, finished_at=datetime.now().isoformat())
-    except RuntimeError as e:
-        if str(e) == "indexing_cancelled":
+    except Exception as e:
+        if isinstance(e, RuntimeError) and str(e) == "indexing_cancelled":
             db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
             _update_index_job(job_id, status="cancelled", stage="cancelled", progress=100, message="Indexing cancelled", finished_at=datetime.now().isoformat())
             return
-        raise
-    except Exception as e:
+        # Everything else marks the job failed. Re-raising here would vanish
+        # into the daemon thread and leave the job "running" forever — e.g.
+        # the RuntimeError raised when the build child process crashes.
         db.update_index_metadata(job["index_id"], {
             "status": "failed",
             "build_failed_at": datetime.now().isoformat(),
@@ -1585,7 +1594,12 @@ async def build_index(index_id: str, request: Request):
                 raise HTTPException(status_code=503 if preflight.get("rag_api_available") is False else 400, detail=detail)
             job_id = str(uuid.uuid4())
             now = datetime.now().isoformat()
-            db_job = db.create_index_job(job_id, index_id, data, index.get("documents", []))
+            # The cloud-enrichment API key is needed at runtime but must never
+            # be persisted: the worker thread gets the full options in memory,
+            # while the DB and the job map only ever see a scrubbed copy.
+            runtime_options = dict(data)
+            persisted_options = {k: v for k, v in data.items() if k != "enrichApiKey"}
+            db_job = db.create_index_job(job_id, index_id, persisted_options, index.get("documents", []))
             with index_jobs_lock:
                 index_jobs[job_id] = {
                     "id": job_id,
@@ -1595,7 +1609,7 @@ async def build_index(index_id: str, request: Request):
                     "progress": 0,
                     "message": "Build queued",
                     "cancel_requested": False,
-                    "options": data,
+                    "options": persisted_options,
                     "created_at": now,
                     "updated_at": now,
                     "files": db_job.get("files", []) if db_job else [],
@@ -1605,7 +1619,10 @@ async def build_index(index_id: str, request: Request):
                 "build_job_id": job_id,
                 "build_started_at": now,
             })
-            thread = threading.Thread(target=_run_index_build_job, args=(job_id,), daemon=True)
+            thread = threading.Thread(
+                target=_run_index_build_job, args=(job_id,),
+                kwargs={"options_override": runtime_options}, daemon=True,
+            )
             thread.start()
             return {"message": "Index build started", "job_id": job_id, "status": "queued"}
 

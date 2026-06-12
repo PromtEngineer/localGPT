@@ -281,13 +281,31 @@ ORIGINAL QUESTION: "{query}"
         # Get the LanceDB reranker for initial score fusion
         lancedb_reranker = self._get_reranker()
         
+        # Honor the configured search mode and dense weight — these are set
+        # per request by the agent/API server and were previously ignored.
+        retrieval_cfg = self.config.get("retrieval", {}) or {}
+        search_type = str(retrieval_cfg.get("search_type") or "hybrid").lower()
+        vector_only_search = search_type in ("vector_only", "vector")
+        fts_only_search = search_type in ("bm25", "fts", "keyword")
+        fusion_override = None
+        dense_weight = (retrieval_cfg.get("dense") or {}).get("weight")
+        if dense_weight is not None:
+            try:
+                w = max(0.0, min(1.0, float(dense_weight)))
+                fusion_override = {"bm25_weight": 1.0 - w, "vec_weight": w}
+            except (TypeError, ValueError):
+                pass
+
         retrieved_docs = []
         if dense_retriever:
             retrieved_docs = dense_retriever.retrieve(
                 text_query=query,
                 table_name=table_name or self.storage_config["text_table_name"],
                 k=retrieval_k,
-                reranker=lancedb_reranker # Pass the reranker to enable hybrid search
+                reranker=lancedb_reranker, # Pass the reranker to enable hybrid search
+                vector_only=vector_only_search,
+                fts_only=fts_only_search,
+                fusion_override=fusion_override,
             )
 
         # ---------------------------------------------------------------
