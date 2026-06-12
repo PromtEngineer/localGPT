@@ -38,6 +38,7 @@ QUESTION_PROMPT = """You will receive a passage from a document. Write ONE speci
 Rules:
 - The question must be answerable from this passage alone.
 - Prefer questions about concrete facts: names, numbers, dates, equipment, recommendations.
+- The document is part of a collection of similar reports about DIFFERENT projects/sites. Make the question self-contained: include the project name, mine/site name, company, or document identifier (visible in the passage or the document name) so the question cannot be confused with another report. Questions like "What is the NPV of the project?" are useless; "What is the NPV of the Las Chispas base case?" is good.
 - Do not mention "the passage" or "the document" in the question.
 - Reply with JSON only: {{"question": "...", "answer": "..."}}
 
@@ -215,7 +216,11 @@ def cmd_run_e2e(args, full_id: str, table: str, _model: str):
 
     cases = _load_eval_set(full_id)
     judge = OllamaClient()
-    ranks, chunk_hits, correct = [], [], 0
+    ranks, chunk_hits, answers = [], [], []
+
+    # Phase 1: generate all answers. Judging is a separate pass so Ollama
+    # doesn't swap models between every question when --model differs from
+    # the judge model.
     for c in cases:
         payload = {
             "query": c["question"], "table_name": table, "force_rag": True,
@@ -228,14 +233,20 @@ def cmd_run_e2e(args, full_id: str, table: str, _model: str):
             payload["context_window_size"] = args.window
         if args.dense_weight is not None:
             payload["dense_weight"] = args.dense_weight
-        resp = requests.post(f"{RAG_API}/chat", json=payload, timeout=600)
+        if args.model:
+            payload["model"] = args.model
+        resp = requests.post(f"{RAG_API}/chat", json=payload, timeout=900)
         resp.raise_for_status()
         data = resp.json()
-        answer = data.get("answer", "")
+        answers.append(data.get("answer", ""))
         sources = data.get("source_documents", [])
         ranks.append(_doc_rank(c["expected_doc"], sources))
         chunk_hits.append(_chunk_hit(c["chunk_id"], sources))
+        print(f"  answered: {c['question'][:70]}")
 
+    # Phase 2: judge all answers
+    correct = 0
+    for c, answer in zip(cases, answers):
         verdict = judge.generate_completion(
             GENERATION_MODEL,
             JUDGE_PROMPT.format(reference=c["reference_answer"], candidate=answer[:3000]),
@@ -271,6 +282,7 @@ def main():
     r.add_argument("--window", type=int, default=None, help="context expansion window (0 disables)")
     r.add_argument("--dense-weight", type=float, default=None, help="vector weight in hybrid fusion (0..1)")
     r.add_argument("--reranker-top-k", type=int, default=None)
+    r.add_argument("--model", default=None, help="synthesis model override (e.g. gpt-oss:20b)")
 
     args = p.parse_args()
     full_id, table, model = resolve_index(args.index)
