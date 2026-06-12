@@ -11,11 +11,12 @@ class OverviewBuilder:
     """
 
     DEFAULT_PROMPT = (
-        "You will receive the beginning of a document. "
+        "You will receive excerpts from a document (its beginning, and for "
+        "long documents also its middle and end). "
         "In no more than 120 tokens, describe what the document is about, "
         "state its type (e.g. invoice, slide deck, policy, research paper, receipt) "
         "and mention 3-5 important entities, numbers or dates it contains.\n\n"
-        "DOCUMENT_START:\n{text}\n\nOVERVIEW:"
+        "DOCUMENT_EXCERPTS:\n{text}\n\nOVERVIEW:"
     )
 
     def __init__(self, llm_client, model: str = "qwen3:8b", first_n_chunks: int = 5,
@@ -83,6 +84,27 @@ class OverviewBuilder:
                 logger.warning(f"Could not compact overviews file: {e}")
         return duplicates
 
+    def _sample_document_text(self, chunks: List[Dict[str, Any]], cap: int = 5000) -> str:
+        """Excerpts spread across the document, within the same total budget.
+
+        Head-only sampling meant the overview of a 500-page report was based
+        on its title pages; routing then never saw what the body discusses.
+        """
+        texts = [c.get("text", "") for c in chunks if c.get("text")]
+        if not texts:
+            return ""
+        if len(texts) <= self.first_n:
+            return "\n".join(texts)[:cap]
+        head = "\n".join(texts[: max(1, self.first_n - 2)])
+        mid = len(texts) // 2
+        middle = "\n".join(texts[mid: mid + 2])
+        tail = "\n".join(texts[-2:])
+        return (
+            "BEGINNING:\n" + head[: cap // 2]
+            + "\n\nMIDDLE:\n" + middle[: cap // 4]
+            + "\n\nEND:\n" + tail[: cap // 4]
+        )
+
     def build_and_store(self, doc_id: str, chunks: List[Dict[str, Any]],
                         force: bool = False) -> None:
         """Generate and persist an overview for ``doc_id``.
@@ -100,8 +122,7 @@ class OverviewBuilder:
             logger.debug(f"Overview already exists for {doc_id}, skipping.")
             return
 
-        head_text = "\n".join(c["text"] for c in chunks[: self.first_n] if c.get("text"))
-        prompt = self.DEFAULT_PROMPT.format(text=head_text[:5000])  # safety cap
+        prompt = self.DEFAULT_PROMPT.format(text=self._sample_document_text(chunks))
         try:
             resp = self.llm_client.generate_completion(
                 model=self.model,

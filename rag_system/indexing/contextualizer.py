@@ -9,22 +9,27 @@ _MIN_ENRICH_CHARS = 100
 
 logger = logging.getLogger(__name__)
 
-# Define the structured prompt templates, adapted from the example
-SYSTEM_PROMPT = "You are an expert at summarizing and providing context for document sections based on their local surroundings."
+# Contextual-retrieval prompts, following Anthropic's published pattern:
+# situate the chunk within the OVERALL DOCUMENT (not just its neighbours),
+# explicitly for the purpose of improving search retrieval of the chunk.
+SYSTEM_PROMPT = "You situate document chunks within their source document to improve search retrieval."
 
-LOCAL_CONTEXT_PROMPT_TEMPLATE = """<local_context>
+DOCUMENT_CONTEXT_PROMPT_TEMPLATE = """Here is an excerpt from the beginning of the document this chunk belongs to:
+<document_excerpt>
+{document_excerpt}
+</document_excerpt>"""
+
+LOCAL_CONTEXT_PROMPT_TEMPLATE = """Here is the text immediately surrounding the chunk:
+<local_context>
 {local_context_text}
 </local_context>"""
 
-CHUNK_PROMPT_TEMPLATE = """Here is the specific chunk we want to situate within the local context provided:
+CHUNK_PROMPT_TEMPLATE = """Here is the chunk we want to situate:
 <chunk>
 {chunk_content}
 </chunk>
 
-Based *only* on the local context provided, give a very short (2-5 sentence) context summary to situate this specific chunk. 
-Focus on the chunk's topic and its relation to the immediately surrounding text shown in the local context. 
-Focus on the the overall theme of the context, make sure to include topics, concepts, and other relevant information.
-Answer *only* with the succinct context and nothing else."""
+Give a short succinct context (1-3 sentences) to situate this chunk within the overall document, for the purposes of improving search retrieval of the chunk. Name the document's subject and any entities, identifiers, project names, or section topics that connect this chunk to it. Answer only with the succinct context and nothing else."""
 
 class ContextualEnricher:
     """
@@ -42,13 +47,16 @@ class ContextualEnricher:
         provider = type(llm_client).__name__
         logger.info(f"Initialized ContextualEnricher with {provider} model '{self.llm_model}' (batch_size={batch_size}, timeout={timeout}s, max_workers={max_workers}).")
 
-    def _generate_summary(self, local_context_text: str, chunk_text: str) -> str:
+    def _generate_summary(self, local_context_text: str, chunk_text: str,
+                          document_excerpt: str = "") -> str:
         """Generates a contextual summary using a structured, multi-part prompt."""
         # Combine the templates to form the final content for the HumanMessage equivalent
-        human_prompt_content = (
-            f"{LOCAL_CONTEXT_PROMPT_TEMPLATE.format(local_context_text=local_context_text)}\n\n"
-            f"{CHUNK_PROMPT_TEMPLATE.format(chunk_content=chunk_text)}"
-        )
+        parts = []
+        if document_excerpt:
+            parts.append(DOCUMENT_CONTEXT_PROMPT_TEMPLATE.format(document_excerpt=document_excerpt))
+        parts.append(LOCAL_CONTEXT_PROMPT_TEMPLATE.format(local_context_text=local_context_text))
+        parts.append(CHUNK_PROMPT_TEMPLATE.format(chunk_content=chunk_text))
+        human_prompt_content = "\n\n".join(parts)
 
         try:
             # Although we don't use LangChain's message objects, we can simulate the
@@ -90,7 +98,15 @@ class ContextualEnricher:
             logger.error(f"LLM invocation failed during contextualization: {e}", exc_info=True)
             return "" # Gracefully fail by returning no summary
 
-    def _enrich_one(self, i: int, chunks: List[Dict[str, Any]], window_size: int) -> tuple[int, Dict[str, Any]]:
+    @staticmethod
+    def _document_excerpt(chunks: List[Dict[str, Any]], cap: int = 1500) -> str:
+        """Head of the document, used to ground every chunk's context in what
+        the document actually is (title, subject, project identifiers)."""
+        head = " ".join(c.get('text', '') for c in chunks[:3])
+        return head[:cap]
+
+    def _enrich_one(self, i: int, chunks: List[Dict[str, Any]], window_size: int,
+                    document_excerpt: str = "") -> tuple[int, Dict[str, Any]]:
         """Enrich a single chunk. Returns (index, result) so callers can reassemble order."""
         chunk = chunks[i]
         original_text = chunk.get('text', '')
@@ -101,7 +117,7 @@ class ContextualEnricher:
 
         try:
             local_context_text = create_contextual_window(chunks, chunk_index=i, window_size=window_size)
-            summary = self._generate_summary(local_context_text, original_text)
+            summary = self._generate_summary(local_context_text, original_text, document_excerpt)
 
             new_chunk = chunk.copy()
             if not isinstance(new_chunk.get('metadata'), dict):
@@ -128,9 +144,10 @@ class ContextualEnricher:
         )
 
         enriched: List[Dict[str, Any]] = [None] * len(chunks)  # type: ignore[list-item]
+        document_excerpt = self._document_excerpt(chunks)
 
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-            futures = {pool.submit(self._enrich_one, i, chunks, window_size): i for i in range(len(chunks))}
+            futures = {pool.submit(self._enrich_one, i, chunks, window_size, document_excerpt): i for i in range(len(chunks))}
             for future in as_completed(futures):
                 try:
                     idx, result = future.result()

@@ -24,6 +24,19 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+_UUID_PREFIX_RE = None
+
+
+def _source_display_name(document_id) -> str:
+    """Human-readable source name: stored filenames are '<uuid4>_<original>'."""
+    global _UUID_PREFIX_RE
+    import re
+    if _UUID_PREFIX_RE is None:
+        _UUID_PREFIX_RE = re.compile(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_", re.IGNORECASE
+        )
+    return _UUID_PREFIX_RE.sub("", str(document_id or "unknown"))
+
 # ---------------------------------------------------------------------------
 # Thread-safety helpers
 # ---------------------------------------------------------------------------
@@ -230,27 +243,30 @@ class RetrievalPipeline:
 You are an AI assistant specialised in answering questions from retrieved context.
 
 Context you receive
-• VERIFIED FACTS – text snippets retrieved from the user's documents. Some may be irrelevant noise.  
+• VERIFIED FACTS – text snippets retrieved from the user's documents, each labelled with its source document. Some may be irrelevant noise.
 • ORIGINAL QUESTION – the user's actual query.
 
 Instructions
-1. Evaluate each snippet for relevance to the ORIGINAL QUESTION; ignore those that do not help answer it.  
-2. Synthesise an answer **using only information from the relevant snippets**.  
-3. If snippets contradict one another, mention the contradiction explicitly.  
-4. If the snippets do not contain the needed information, reply exactly with:  
-   "I could not find that information in the provided documents."  
-5. Provide a thorough, well-structured answer. Use paragraphs or bullet points where helpful, and include any relevant numbers/names exactly as they appear. There is **no strict sentence limit**, but aim for clarity over brevity.  
+1. Evaluate each snippet for relevance to the ORIGINAL QUESTION; ignore those that do not help answer it.
+2. Synthesise an answer **using only information from the relevant snippets**.
+3. If snippets contradict one another, mention the contradiction explicitly.
+4. If the snippets do not contain the needed information, reply exactly with:
+   "I could not find that information in the provided documents."
+5. Provide a thorough, well-structured answer. Use paragraphs or bullet points where helpful, and include any relevant numbers/names exactly as they appear. There is **no strict sentence limit**, but aim for clarity over brevity.
 6. Do **not** introduce external knowledge unless step 4 applies; in that case you may add a clearly-labelled "General knowledge" sentence after the required statement.
+7. **Cite your sources inline.** Each snippet is numbered, e.g. "[Source 3: report.pdf]". After every fact you state, append the number(s) of the snippet(s) it came from in square brackets, e.g. [3] or [1][4]. Never attribute a fact to a snippet it did not come from.
 
 Output format
 Answer:
-<your answer here>
+<your answer here, with [N] after each fact>
 
 –––––  Retrieved Snippets  –––––
 {facts}
 ––––––––––––––––––––––––––––––
 
 ORIGINAL QUESTION: "{query}"
+
+Reminder: every fact in your answer must end with its source number in square brackets, e.g. "The budget is 7.3M [2]." — matching the numbered [Source N: ...] labels above. Do not skip this.
 """
         # Stream the answer token-by-token so the caller can forward them as SSE
         answer_parts: list[str] = []
@@ -527,7 +543,14 @@ ORIGINAL QUESTION: "{query}"
                 if key in doc:
                     doc[key] = _clean_val(doc[key])
 
-        context = "\n\n".join([doc['text'] for doc in final_docs])
+        # Number each snippet and label it with its source so the model can
+        # cite inline as [N] — the numbers match the order of the sources
+        # list shown in the UI, and blends across similar documents become
+        # visible in the answer
+        context = "\n\n".join(
+            f"[Source {i}: {_source_display_name(doc.get('document_id'))}]\n{doc['text']}"
+            for i, doc in enumerate(final_docs, start=1)
+        )
 
         # 👀 DEBUG: Show the exact context passed to the LLM after pruning
         logger.debug(

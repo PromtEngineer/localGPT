@@ -78,3 +78,4 @@ rag_system/documents/
 
 # Ensure docker.env remains tracked
 !docker.env
+evals/
