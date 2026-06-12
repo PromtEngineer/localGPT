@@ -333,6 +333,10 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                         rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
                     if dense_weight is not None:
                         rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
+                    if ai_rerank_flag is not None:
+                        # Let force_rag callers (e.g. the eval harness) toggle
+                        # the AI reranker, like the agent path already can
+                        rp_cfg.setdefault("reranker", {})["enabled"] = bool(ai_rerank_flag)
 
                     # Provence overrides
                     if provence_prune is not None:
@@ -460,6 +464,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                             rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
                         if dense_weight is not None:
                             rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
+                        if ai_rerank_flag is not None:
+                            rp_cfg.setdefault("reranker", {})["enabled"] = bool(ai_rerank_flag)
 
                         # Provence overrides
                         if provence_prune is not None:

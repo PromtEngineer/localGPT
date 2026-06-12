@@ -482,10 +482,11 @@ Reminder: every fact in your answer must end with its source number in square br
         else:
             final_docs = reranked_docs
 
-        # Optionally hide non-reranked chunks: if any chunk carries a
-        # `rerank_score`, we assume the caller wants to focus on those.
-        if any('rerank_score' in d for d in final_docs):
-            final_docs = [d for d in final_docs if 'rerank_score' in d]
+        # NOTE: there used to be a filter here dropping every doc without a
+        # rerank_score. The reranker only ever returns scored docs and the
+        # no-rerank path has no scores at all — so its sole effect was to
+        # strip the neighbor chunks that context expansion just fetched,
+        # making expansion dead code whenever reranking was on (the default).
 
         # ------------------------------------------------------------------
         # Sentence-level pruning (Provence)
@@ -542,6 +543,21 @@ Reminder: every fact in your answer must end with its source number in square br
             for key in ['score', '_distance', 'rerank_score']:
                 if key in doc:
                     doc[key] = _clean_val(doc[key])
+
+        # Budget the synthesis context to fit the model's allocated window
+        # (see OLLAMA_NUM_CTX): anything beyond it would be SILENTLY truncated
+        # from the front of the prompt — the instructions and the top-ranked
+        # snippets. final_docs is sorted best-first, so trimming keeps winners.
+        from rag_system.utils.ollama_client import NUM_CTX
+        max_context_chars = (NUM_CTX - 2500) * 4  # ≈4 chars/token, reserve for instructions+answer
+        kept, used = [], 0
+        for doc in final_docs:
+            used += len(doc.get('text', '')) + 60
+            if used > max_context_chars and kept:
+                logger.info("synthesis_context_trimmed kept=%s of=%s", len(kept), len(final_docs))
+                break
+            kept.append(doc)
+        final_docs = kept
 
         # Number each snippet and label it with its source so the model can
         # cite inline as [N] — the numbers match the order of the sources

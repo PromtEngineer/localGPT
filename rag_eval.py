@@ -192,9 +192,13 @@ def cmd_run_retrieval(args, full_id: str, table: str, embedding_model: str):
 
     cases = _load_eval_set(full_id)
     retriever = MultiVectorRetriever(LanceDBManager("./lancedb"), select_embedder(embedding_model))
+    fusion_override = None
+    if args.dense_weight is not None:
+        w = max(0.0, min(1.0, args.dense_weight))
+        fusion_override = {"bm25_weight": 1.0 - w, "vec_weight": w}
     ranks, chunk_hits = [], []
     for c in cases:
-        docs = retriever.retrieve(c["question"], table_name=table, k=args.k)
+        docs = retriever.retrieve(c["question"], table_name=table, k=args.k, fusion_override=fusion_override)
         rank = _doc_rank(c["expected_doc"], docs)
         ranks.append(rank)
         chunk_hits.append(_chunk_hit(c["chunk_id"], docs))
@@ -213,14 +217,18 @@ def cmd_run_e2e(args, full_id: str, table: str, _model: str):
     judge = OllamaClient()
     ranks, chunk_hits, correct = [], [], 0
     for c in cases:
-        resp = requests.post(
-            f"{RAG_API}/chat",
-            json={
-                "query": c["question"], "table_name": table, "force_rag": True,
-                "retrieval_k": args.k, "reranker_top_k": args.k,
-            },
-            timeout=600,
-        )
+        payload = {
+            "query": c["question"], "table_name": table, "force_rag": True,
+            "retrieval_k": args.k, "reranker_top_k": args.reranker_top_k or args.k,
+        }
+        # Sweepable pipeline knobs — only sent when explicitly set
+        if args.rerank is not None:
+            payload["ai_rerank"] = args.rerank
+        if args.window is not None:
+            payload["context_window_size"] = args.window
+        if args.dense_weight is not None:
+            payload["dense_weight"] = args.dense_weight
+        resp = requests.post(f"{RAG_API}/chat", json=payload, timeout=600)
         resp.raise_for_status()
         data = resp.json()
         answer = data.get("answer", "")
@@ -257,6 +265,12 @@ def main():
     r.add_argument("--index", required=True, help="index id (prefix ok)")
     r.add_argument("--mode", choices=["retrieval", "e2e"], default="retrieval")
     r.add_argument("--k", type=int, default=20)
+    # e2e sweep knobs (default: whatever the server config does)
+    r.add_argument("--rerank", action=argparse.BooleanOptionalAction, default=None,
+                   help="--rerank / --no-rerank: toggle the AI reranker")
+    r.add_argument("--window", type=int, default=None, help="context expansion window (0 disables)")
+    r.add_argument("--dense-weight", type=float, default=None, help="vector weight in hybrid fusion (0..1)")
+    r.add_argument("--reranker-top-k", type=int, default=None)
 
     args = p.parse_args()
     full_id, table, model = resolve_index(args.index)

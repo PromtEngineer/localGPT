@@ -12,6 +12,13 @@ import httpx, asyncio
 # generous keep_alive they evict each other and every call pays a reload.
 KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "10m")
 
+# Context window allocated per request. Ollama's server default (~4k) is far
+# below what RAG synthesis prompts need — without this, long prompts are
+# SILENTLY truncated from the front, cutting the instructions and the
+# top-ranked snippets. Kept uniform across all calls: a different num_ctx
+# per request makes Ollama spin up a new runner (full model reload).
+NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "16384"))
+
 
 class OllamaClient:
     """
@@ -67,6 +74,7 @@ class OllamaClient:
                 "prompt": prompt,
                 "stream": False,
                 "keep_alive": KEEP_ALIVE,
+                "options": {"num_ctx": NUM_CTX},
             }
             if format:
                 payload["format"] = format
@@ -108,7 +116,7 @@ class OllamaClient:
     ) -> Dict[str, Any]:
         """Asynchronous version of generate_completion using httpx."""
 
-        payload = {"model": model, "prompt": prompt, "stream": False, "keep_alive": KEEP_ALIVE}
+        payload = {"model": model, "prompt": prompt, "stream": False, "keep_alive": KEEP_ALIVE, "options": {"num_ctx": NUM_CTX}}
         if format:
             payload["format"] = format
         if images:
@@ -144,7 +152,7 @@ class OllamaClient:
             for tok in client.stream_completion("qwen2", "Hello"):
                 print(tok, end="", flush=True)
         """
-        payload: Dict[str, Any] = {"model": model, "prompt": prompt, "stream": True, "keep_alive": KEEP_ALIVE}
+        payload: Dict[str, Any] = {"model": model, "prompt": prompt, "stream": True, "keep_alive": KEEP_ALIVE, "options": {"num_ctx": NUM_CTX}}
         if images:
             payload["images"] = [self._image_to_base64(img) for img in images]
         if enable_thinking is not None:
