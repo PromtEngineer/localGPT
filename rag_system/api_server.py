@@ -283,7 +283,9 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             "context_window_size": data.get('context_window_size', 1),
             "reranker_top_k": data.get('reranker_top_k', 10),
             "search_type": data.get('search_type', 'hybrid'),
-            "dense_weight": data.get('dense_weight', 0.7),
+            # No default: a value here overrides the per-index fusion config
+            # stored with the index, so only explicit caller overrides count
+            "dense_weight": data.get('dense_weight'),
             "force_rag": bool(data.get('force_rag', False)),
             "provence_prune": data.get('provence_prune'),
             "provence_threshold": data.get('provence_threshold'),
@@ -331,8 +333,12 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                         rp_cfg.setdefault("reranker", {})["top_k"] = reranker_top_k
                     if search_type is not None:
                         rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
+                    # Set-or-clear: a stale weight from a previous request would
+                    # override the index's stored fusion config
                     if dense_weight is not None:
                         rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
+                    else:
+                        rp_cfg.setdefault("retrieval", {}).setdefault("dense", {}).pop("weight", None)
                     if ai_rerank_flag is not None:
                         # Let force_rag callers (e.g. the eval harness) toggle
                         # the AI reranker, like the agent path already can
@@ -464,6 +470,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                             rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
                         if dense_weight is not None:
                             rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
+                        else:
+                            rp_cfg.setdefault("retrieval", {}).setdefault("dense", {}).pop("weight", None)
                         if ai_rerank_flag is not None:
                             rp_cfg.setdefault("reranker", {})["enabled"] = bool(ai_rerank_flag)
 

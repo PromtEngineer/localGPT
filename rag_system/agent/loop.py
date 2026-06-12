@@ -282,10 +282,14 @@ Respond with JSON: {{"category": "<your_choice>"}}
             retrieval_cfg["search_type"] = search_type
             print(f"🔍 Search type set to: {search_type}")
             
+        dense_cfg = self.retrieval_pipeline.config.setdefault("retrieval", {}).setdefault("dense", {})
         if dense_weight is not None:
-            dense_cfg = self.retrieval_pipeline.config.setdefault("retrieval", {}).setdefault("dense", {})
             dense_cfg["weight"] = dense_weight
             print(f"🔍 Dense search weight set to: {dense_weight}")
+        else:
+            # Clear stale per-request overrides so the index's stored fusion
+            # config governs when the caller didn't move the slider
+            dense_cfg.pop("weight", None)
 
         query_embedding = None
         # Cache entries are scoped to the active index table + embedding model

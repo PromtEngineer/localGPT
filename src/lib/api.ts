@@ -14,6 +14,22 @@ export function pickDefaultChatModel(available: string[]): string {
   return available[0] ?? 'qwen3:8b';
 }
 
+// Resolved against the models actually installed, cached after first lookup.
+// Falls back to the conservative qwen3:8b if the models endpoint is down —
+// never to a model that may not exist on this machine.
+let _resolvedDefaultModel: string | null = null;
+export async function resolveDefaultChatModel(): Promise<string> {
+  if (_resolvedDefaultModel) return _resolvedDefaultModel;
+  try {
+    const resp = await fetch(`${API_BASE_URL}/models`);
+    const data = await resp.json();
+    _resolvedDefaultModel = pickDefaultChatModel(data.generation_models ?? []);
+  } catch {
+    _resolvedDefaultModel = PREFERRED_CHAT_MODELS[PREFERRED_CHAT_MODELS.length - 1];
+  }
+  return _resolvedDefaultModel;
+}
+
 // 🆕 Simple UUID generator for client-side message IDs
 export const generateUUID = () => {
   if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
@@ -349,8 +365,13 @@ class ChatAPI {
     }
   }
 
-  async createSession(title: string = 'New Chat', model: string = PREFERRED_CHAT_MODELS[0]): Promise<ChatSession> {
+  async createSession(title: string = 'New Chat', model?: string): Promise<ChatSession> {
     try {
+      // Don't persist a model this machine doesn't have: resolve the
+      // preference against the installed list (cached after first call)
+      if (!model) {
+        model = await resolveDefaultChatModel();
+      }
       const response = await fetch(`${API_BASE_URL}/sessions`, {
         method: 'POST',
         headers: {

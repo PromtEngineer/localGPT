@@ -17,7 +17,8 @@
     "lint": "next lint",
     "lint:python": "ruff check .",
     "format:python": "black .",
-    "test:python": "python -m unittest discover"
+    "test:python": "python -m unittest discover",
+    "start:local": "next start -H 127.0.0.1"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",

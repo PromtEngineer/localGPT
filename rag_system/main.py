@@ -65,9 +65,11 @@ PIPELINE_CONFIGS = {
                 "enabled": True,
                 "table_suffix": "_lc_v3"
         },
-            "dense": { 
-                "enabled": True,
-                "weight": 0.7
+            "dense": {
+                # No default weight: retrieval.dense.weight acts as an explicit
+                # per-request override; the baseline fusion weights come from
+                # the retriever (0.5/0.5) or the index's stored fusion_config
+                "enabled": True
             },
             "bm25": { 
                 "enabled": True,

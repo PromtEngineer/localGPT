@@ -994,7 +994,9 @@ async def session_chat(session_id: str, request: Request):
         if use_rag:
             response_text, source_docs = await _handle_rag_query(session_id, message, data, idx_ids)
         else:
-            response_text, source_docs = await _handle_direct_llm_query(session_id, message, session)
+            response_text, source_docs = await _handle_direct_llm_query(
+                session_id, message, session, requested_model=data.get('model')
+            )
 
         # Store both turns only after a successful response — prevents orphaned user messages
         # if the RAG/LLM call raises an HTTPException
@@ -1818,7 +1820,8 @@ def _simple_pattern_routing(message: str, idx_ids: List[str]) -> bool:
     # Default to Direct LLM unless there's clear indication of document query
     return False
 
-async def _handle_direct_llm_query(session_id: str, message: str, session: dict):
+async def _handle_direct_llm_query(session_id: str, message: str, session: dict,
+                                   requested_model: str | None = None):
     """
     Handle query using direct Ollama client with thinking disabled for speed.
 
@@ -1829,8 +1832,10 @@ async def _handle_direct_llm_query(session_id: str, message: str, session: dict)
         # Get conversation history for context
         conversation_history = db.get_conversation_history(session_id)
 
-        # Use the session's model or default
-        model = session.get('model', 'qwen3:8b')  # Default local model
+        # The model selected in the UI for this message wins; the session's
+        # stored model is the fallback. RAG answers already work this way —
+        # direct answers ignoring the dropdown was an inconsistency.
+        model = requested_model or session.get('model') or 'qwen3:8b'
 
         # Direct Ollama call with thinking disabled for speed.
         # Runs in a worker thread so the blocking HTTP call (up to 60s)
