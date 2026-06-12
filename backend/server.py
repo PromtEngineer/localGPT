@@ -52,6 +52,7 @@ except Exception as _wal_err:
 
 from ollama_client import OllamaClient, OllamaError
 from database import db, generate_session_title
+from rag_system.index_selection import select_active_index_id
 from pydantic import ValidationError
 from validators import (
     IndexBuildRequest,
@@ -1859,11 +1860,14 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
     response_text = ""
     source_docs: List[dict] = []
 
-    # Build payload for RAG API
+    # Build payload for RAG API. The active-index choice is shared with the
+    # RAG server (rag_system.index_selection): it resolves the embedding
+    # model for the same index whose table we name here.
     rag_api_url = f"{RAG_API_BASE_URL}/chat"
-    if idx_ids:
-        idx_meta = db.get_index(idx_ids[-1]) or {}
-        table_name = idx_meta.get("vector_table_name") or f"text_pages_{idx_ids[-1]}"
+    active_idx = select_active_index_id(idx_ids)
+    if active_idx:
+        idx_meta = db.get_index(active_idx) or {}
+        table_name = idx_meta.get("vector_table_name") or f"text_pages_{active_idx}"
     else:
         table_name = None
     payload: Dict[str, Any] = {

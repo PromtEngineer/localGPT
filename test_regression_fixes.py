@@ -9,8 +9,8 @@ Covers:
 - index builds failing when every file fails
 - "all files unchanged" builds validating the existing table
 
-Not covered here (needs the live RAG server): the last-linked-index
-consistency between backend table choice and api_server embedding model.
+- multi-index consistency: both servers resolve the active index through
+  rag_system.index_selection, pinned by a source-level tripwire
 """
 
 import json
@@ -318,6 +318,30 @@ class IndexingFailureTests(unittest.TestCase):
         pipeline2, _ = _make_pipeline(self.temp_dir)
         with self.assertRaises(RuntimeError):
             pipeline2.run([doc], index_id="regress-ok")
+
+
+class MultiIndexSelectionTests(unittest.TestCase):
+    """Backend (table) and RAG server (embedding model/fusion) must resolve
+    the same index for a session — they diverged once (last vs first)."""
+
+    def test_active_index_is_last_linked(self):
+        from rag_system.index_selection import select_active_index_id
+
+        self.assertEqual(select_active_index_id(["a", "b", "c"]), "c")
+        self.assertEqual(select_active_index_id(["only"]), "only")
+        self.assertIsNone(select_active_index_id([]))
+        self.assertIsNone(select_active_index_id(None))
+
+    def test_servers_have_no_private_index_picks(self):
+        # Tripwire: raw idx_ids[0]/idx_ids[-1] indexing in either server is
+        # exactly how the two sides diverged. All picks must go through
+        # rag_system.index_selection.select_active_index_id.
+        root = os.path.dirname(os.path.abspath(__file__))
+        for rel in ("backend/server.py", os.path.join("rag_system", "api_server.py")):
+            src = open(os.path.join(root, rel), encoding="utf-8").read()
+            self.assertNotIn("idx_ids[0]", src, f"private index pick in {rel}")
+            self.assertNotIn("idx_ids[-1]", src, f"private index pick in {rel}")
+            self.assertIn("select_active_index_id", src, f"{rel} no longer uses the shared helper")
 
 
 if __name__ == "__main__":
