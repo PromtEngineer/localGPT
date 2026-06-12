@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChatInput } from '@/components/ui/chat-input';
-import { chatAPI, ChatMessage, ChatSession } from '@/lib/api';
+import { chatAPI, ChatMessage, ChatSession, pickDefaultChatModel } from '@/lib/api';
 import { ConversationPage } from '@/components/ui/conversation-page';
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal';
 
@@ -48,8 +48,7 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
         const resp = await api.getModels();
         setGenerationModels(resp.generation_models||[]);
         if(resp.generation_models && resp.generation_models.length>0){
-          const def = resp.generation_models.find((m:string)=>m==='qwen3:8b');
-          setSelectedModel(def || resp.generation_models[0]);
+          setSelectedModel(pickDefaultChatModel(resp.generation_models));
         }
       }catch(e){console.warn('Failed to load models',e);}
     })();

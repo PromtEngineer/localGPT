@@ -3,7 +3,7 @@
 import * as React from "react"
 import { ConversationPage } from "./conversation-page"
 import { ChatInput } from "./chat-input"
-import { ApiRecord, ChatMessage, ChatSession, IndexSummary, SourceDocument, chatAPI, generateUUID } from "@/lib/api"
+import { ApiRecord, ChatMessage, ChatSession, IndexSummary, PREFERRED_CHAT_MODELS, SourceDocument, chatAPI, generateUUID, pickDefaultChatModel } from "@/lib/api"
 import { AttachedFile } from "@/lib/types"
 import { useEffect, useState, forwardRef, useImperativeHandle, useCallback, useRef } from "react"
 import { Button } from "./button"
@@ -68,7 +68,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   const [rerankerTopK, setRerankerTopK] = useState<number>(10)
   const [searchType, setSearchType] = useState<string>('hybrid')
   const [generationModels,setGenerationModels]=useState<string[]>([])
-  const [selectedModel,setSelectedModel]=useState<string>('qwen3:8b')
+  const [selectedModel,setSelectedModel]=useState<string>(PREFERRED_CHAT_MODELS[0])
   const [currentIndexId, setCurrentIndexId] = useState<string | null>(null)
   const [currentIndexName, setCurrentIndexName] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -151,8 +151,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         const resp=await apiService.getModels();
         setGenerationModels(resp.generation_models||[])
         if(resp.generation_models&&resp.generation_models.length>0){
-          const def = resp.generation_models.find((m:string)=>m==='qwen3:8b');
-          setSelectedModel(def || resp.generation_models[0])
+          setSelectedModel(pickDefaultChatModel(resp.generation_models))
         }
       }catch(e){console.warn('Failed to load models',e)}
     })()
