@@ -440,6 +440,24 @@ Reminder: every fact in your answer must end with its source number in square br
             # If no AI reranker, proceed with the initially retrieved docs
             reranked_docs = retrieved_docs
 
+        # Keep-union rescue: cross-encoder rerankers score flattened table
+        # chunks poorly against natural-language questions, so the chunks
+        # most likely to hold precise values get cut. Always retain the top
+        # few by retrieval (fused) score, slotted just below the reranker's
+        # picks so they outrank expansion neighbors and survive the context
+        # budget. Measured on the eval set: this is where answer-bearing
+        # chunks were being lost between retrieval (86%) and synthesis (71%).
+        keep_n = int(self.config.get("reranker", {}).get("keep_top_retrieval", 3))
+        if ai_reranker and keep_n > 0 and reranked_docs is not retrieved_docs:
+            have = {d.get('chunk_id') for d in reranked_docs}
+            rescued = [d for d in retrieved_docs[:keep_n] if d.get('chunk_id') not in have]
+            if rescued:
+                floor = min((d.get('rerank_score', 0.0) for d in reranked_docs), default=0.0)
+                for j, doc in enumerate(rescued, start=1):
+                    doc['rerank_score'] = floor - 0.001 * j
+                reranked_docs.extend(rescued)
+                logger.info("rerank_keep_union_rescued count=%s", len(rescued))
+
         window_size = self.config.get("context_window_size", 1)
         if window_size_override is not None:
             window_size = window_size_override
