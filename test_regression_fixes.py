@@ -331,6 +331,79 @@ class IndexingFailureTests(unittest.TestCase):
             pipeline2.run([doc], index_id="regress-ok")
 
 
+class McpServerTests(unittest.TestCase):
+    """MCP stdio server protocol contract — server-free (HTTP layer mocked)."""
+
+    def setUp(self):
+        from unittest.mock import patch
+        import rag_system.mcp_server as mcp
+
+        self.mcp = mcp
+        self.sent = []
+        self._send_patch = patch.object(mcp, "_send", self.sent.append)
+        self._send_patch.start()
+
+        def fake_http(method, url, payload=None, timeout=600):
+            if url.endswith("/indexes"):
+                return {"indexes": [{
+                    "id": "abc12345-0000", "name": "Demo",
+                    "vector_table_name": "text_pages_abc",
+                    "documents": [{"filename": "a.pdf"}],
+                    "metadata": {"status": "functional",
+                                 "metadata_schema": [{"name": "project", "type": "string"}]},
+                }]}
+            if url.endswith("/chat"):
+                return {"answer": "The budget is 5M.",
+                        "source_documents": [{"document_id": "3f3d4465-7491-43f8-8dda-874556dd8d1a_a.pdf", "chunk_id": "c1"}]}
+            return {}
+
+        self._http_patch = patch.object(mcp, "_http_json", fake_http)
+        self._http_patch.start()
+
+    def tearDown(self):
+        self._send_patch.stop()
+        self._http_patch.stop()
+
+    def _last(self):
+        return self.sent[-1]
+
+    def test_initialize_handshake(self):
+        self.mcp._handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+        r = self._last()["result"]
+        self.assertEqual(r["protocolVersion"], "2025-03-26")
+        self.assertIn("tools", r["capabilities"])
+
+    def test_initialized_notification_is_silent(self):
+        self.mcp._handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        self.assertEqual(self.sent, [])
+
+    def test_tools_list(self):
+        self.mcp._handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        names = [t["name"] for t in self._last()["result"]["tools"]]
+        self.assertEqual(set(names), {"list_indexes", "ask_index"})
+
+    def test_ask_index_returns_answer_with_sources(self):
+        self.mcp._handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+            "name": "ask_index", "arguments": {"index": "abc", "question": "budget?"}}})
+        r = self._last()["result"]
+        self.assertFalse(r["isError"])
+        text = r["content"][0]["text"]
+        self.assertIn("5M", text)
+        self.assertIn("a.pdf", text)        # source filename, uuid prefix stripped
+        self.assertNotIn("3f3d4465", text)  # the uuid4 prefix is gone
+
+    def test_unknown_tool_is_jsonrpc_error(self):
+        self.mcp._handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {
+            "name": "nope", "arguments": {}}})
+        self.assertEqual(self._last()["error"]["code"], -32601)
+
+    def test_unresolvable_index_is_tool_error_not_crash(self):
+        self.mcp._handle({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {
+            "name": "ask_index", "arguments": {"index": "does-not-exist", "question": "q"}}})
+        r = self._last()["result"]
+        self.assertTrue(r["isError"])  # surfaced as isError, never an unhandled crash
+
+
 class AgenticPlannerTests(unittest.TestCase):
     """Opt-in plan-and-execute helpers: complexity gate, evidence check, retry."""
 

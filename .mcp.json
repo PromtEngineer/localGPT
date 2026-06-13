@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "localgpt": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "rag_system.mcp_server"],
+      "env": {
+        "BACKEND_URL": "http://127.0.0.1:8000",
+        "RAG_API_URL": "http://127.0.0.1:8001"
+      }
+    }
+  }
+}
