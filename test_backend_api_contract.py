@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import sys
@@ -200,6 +201,82 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertTrue(ready_preflight["rag_api_available"])
         self.assertTrue(any("will be replaced" in warning for warning in ready_preflight["warnings"]))
 
+    def test_required_metadata_cannot_be_omitted_on_upload(self):
+        index_id = server.db.create_index(
+            "Required metadata",
+            metadata={
+                "status": "created",
+                "metadata_schema": [
+                    {"name": "project", "type": "string", "required": True},
+                ],
+            },
+        )
+        response = self.client.post(
+            f"/indexes/{index_id}/upload",
+            files={"files": ("report.txt", b"report contents", "text/plain")},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("required metadata field missing", response.json()["detail"])
+        self.assertEqual(server.db.get_index(index_id)["documents"], [])
+
+    def test_required_metadata_must_cover_every_uploaded_file(self):
+        index_id = server.db.create_index(
+            "Per-file metadata",
+            metadata={
+                "status": "created",
+                "metadata_schema": [
+                    {"name": "project", "type": "string", "required": True},
+                ],
+            },
+        )
+        response = self.client.post(
+            f"/indexes/{index_id}/upload",
+            files=[
+                ("files", ("first.txt", b"first", "text/plain")),
+                ("files", ("second.txt", b"second", "text/plain")),
+            ],
+            data={"metadata": json.dumps({"first.txt": {"project": "Aurora"}})},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("required metadata field missing", response.json()["detail"])
+        self.assertEqual(server.db.get_index(index_id)["documents"], [])
+
+    def test_schema_cannot_change_after_upload(self):
+        index_id = server.db.create_index(
+            "Locked metadata",
+            metadata={
+                "status": "created",
+                "metadata_schema": [{"name": "project", "type": "string"}],
+            },
+        )
+        path = os.path.join(self.temp_dir, "report.txt")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("report")
+        server.db.add_document_to_index(index_id, "report.txt", path, {"project": "Aurora"})
+
+        response = self.client.put(
+            f"/indexes/{index_id}/metadata-schema",
+            json={"schema": [{"name": "year", "type": "integer"}]},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            server.db.get_index(index_id)["metadata"]["metadata_schema"],
+            [{"name": "project", "type": "string"}],
+        )
+
+    def test_index_creation_rejects_invalid_embedded_metadata_schema(self):
+        response = self.client.post(
+            "/indexes",
+            json={
+                "name": "Invalid schema",
+                "metadata": {
+                    "metadata_schema": [{"name": "year", "type": "not-a-type"}],
+                },
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("type must be one of", response.json()["detail"])
+
     def test_index_diagnostics_contract(self):
         index_id = server.db.create_index("Diagnostics Contract")
         stored_path = os.path.join(self.temp_dir, "diagnostics-doc.txt")
@@ -245,6 +322,74 @@ class BackendApiContractTests(unittest.TestCase):
         chat_detail = chat_response.json()["detail"]
         self.assertIn("Cannot chat with unhealthy linked index", chat_detail["message"])
         self.assertEqual(chat_detail["diagnostics"][0]["recommended_action"], "force_rebuild")
+
+    def test_delete_index_removes_owned_storage_artifacts(self):
+        import lancedb
+
+        index_id = server.db.create_index("Delete artifacts")
+        index = server.db.get_index(index_id)
+        table_name = index["vector_table_name"]
+
+        upload_dir = os.path.join(self.temp_dir, "uploads")
+        overview_dir = os.path.join(self.temp_dir, "overviews")
+        lancedb_dir = os.path.join(self.temp_dir, "lancedb")
+        os.makedirs(upload_dir)
+        os.makedirs(overview_dir)
+
+        upload_path = os.path.join(upload_dir, "owned.txt")
+        with open(upload_path, "w", encoding="utf-8") as handle:
+            handle.write("owned upload")
+        server.db.add_document_to_index(index_id, "owned.txt", upload_path)
+
+        conn = lancedb.connect(lancedb_dir)
+        rows = [{"vector": [0.0, 1.0], "text": "owned"}]
+        conn.create_table(table_name, rows)
+        conn.create_table(f"{table_name}_lc", rows)
+
+        overview_path = os.path.join(overview_dir, f"{index_id}.jsonl")
+        with open(overview_path, "w", encoding="utf-8") as handle:
+            handle.write('{"document_id":"owned.txt"}\n')
+
+        with (
+            patch.object(server, "_UPLOAD_DIR", upload_dir),
+            patch.object(server, "_lancedb_path_candidates", return_value=[lancedb_dir]),
+            patch.object(server, "_overview_path_candidates", return_value=[overview_path]),
+        ):
+            response = self.client.delete(f"/indexes/{index_id}")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        removed = response.json()["removed"]
+        self.assertEqual(len(removed["tables"]), 2)
+        self.assertEqual(removed["files"], [os.path.realpath(upload_path)])
+        self.assertEqual(removed["overviews"], [overview_path])
+        self.assertFalse(os.path.exists(upload_path))
+        self.assertFalse(os.path.exists(overview_path))
+        self.assertNotIn(table_name, conn.list_tables().tables)
+        self.assertNotIn(f"{table_name}_lc", conn.list_tables().tables)
+        self.assertIsNone(server.db.get_index(index_id))
+
+    def test_delete_index_preserves_external_source_file(self):
+        index_id = server.db.create_index("External source")
+        external_path = os.path.join(self.temp_dir, "external.txt")
+        with open(external_path, "w", encoding="utf-8") as handle:
+            handle.write("external source")
+        server.db.add_document_to_index(index_id, "external.txt", external_path)
+
+        upload_dir = os.path.join(self.temp_dir, "uploads")
+        os.makedirs(upload_dir)
+        with (
+            patch.object(server, "_UPLOAD_DIR", upload_dir),
+            patch.object(server, "_lancedb_path_candidates", return_value=[]),
+            patch.object(server, "_overview_path_candidates", return_value=[]),
+        ):
+            response = self.client.delete(f"/indexes/{index_id}")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(os.path.exists(external_path))
+        self.assertEqual(
+            response.json()["removed"]["skipped_files"],
+            [os.path.realpath(external_path)],
+        )
 
     def test_maintenance_endpoints_contract(self):
         response = self.client.get("/maintenance/index-health")

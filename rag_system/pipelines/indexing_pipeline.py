@@ -612,7 +612,12 @@ class IndexingPipeline:
                             if not storage_completed:
                                 if incremental and not force_reindex:
                                     self._delete_existing_documents_from_table(table_name, [document_id])
-                                self.vector_indexer.index(table_name, file_chunks, embeddings)
+                                self.vector_indexer.index(
+                                    table_name,
+                                    file_chunks,
+                                    embeddings,
+                                    metadata_schema=_meta_schema,
+                                )
 
                                 if self.latechunk_enabled:
                                     lc_table_name = self.latechunk_cfg.get("lancedb_table_name", f"{table_name}_lc")
@@ -620,7 +625,12 @@ class IndexingPipeline:
                                     if lc_vecs is not None and len(lc_vecs) > 0:
                                         if incremental and not force_reindex:
                                             self._delete_existing_documents_from_table(lc_table_name, [document_id])
-                                        self.vector_indexer.index(lc_table_name, file_chunks, lc_vecs)
+                                        self.vector_indexer.index(
+                                            lc_table_name,
+                                            file_chunks,
+                                            lc_vecs,
+                                            metadata_schema=_meta_schema,
+                                        )
                                 complete_tracked_stage(file_id, active_stage, {"chunks": len(file_chunks), "table": table_name})
                             active_stage = None
 
@@ -1041,6 +1051,9 @@ class IndexingPipeline:
         chunking_config = self.config.get("chunking", {})
         cache_fingerprint = {
             "file_hash": file_hash,
+            # Cached chunks contain document_id/chunk_id values, so identical
+            # content uploaded under another document must not share an entry.
+            "document_id": os.path.basename(file_path),
             "chunker_mode": self.config.get("chunker_mode", "docling"),
             "chunk_size": chunking_config.get("chunk_size", self.config.get("chunk_size", 1500)),
             "chunk_overlap": chunking_config.get("chunk_overlap", self.config.get("chunk_overlap", 200)),

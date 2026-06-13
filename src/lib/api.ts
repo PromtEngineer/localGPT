@@ -680,13 +680,30 @@ class ChatAPI {
     return resp.json();
   }
 
-  async uploadFilesToIndex(indexId: string, files: File[]): Promise<{ message: string; uploaded_files: UploadedFile[] }> {
+  async setIndexMetadataSchema(indexId: string, schema: Array<Record<string, unknown>>): Promise<void> {
+    const resp = await fetch(`${API_BASE_URL}/indexes/${indexId}/metadata-schema`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schema }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(`Metadata schema error: ${err.detail || err.error || resp.statusText}`);
+    }
+  }
+
+  async uploadFilesToIndex(
+    indexId: string,
+    files: File[],
+    metadata?: Record<string, unknown> | Record<string, Record<string, unknown>>,
+  ): Promise<{ message: string; uploaded_files: UploadedFile[] }> {
     const fd = new FormData();
     files.forEach((f) => fd.append('files', f, f.name));
+    if (metadata) fd.append('metadata', JSON.stringify(metadata));
     const resp = await fetch(`${API_BASE_URL}/indexes/${indexId}/upload`, { method: 'POST', body: fd });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      throw new Error(`Upload to index error: ${err.error || resp.statusText}`);
+      throw new Error(`Upload to index error: ${err.detail || err.error || resp.statusText}`);
     }
     return resp.json();
   }

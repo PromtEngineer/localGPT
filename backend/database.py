@@ -561,13 +561,18 @@ class ChatDatabase:
         return ids
 
     def delete_index(self, index_id: str) -> bool:
-        """Delete an index and its related records (documents, session links). Returns True if deleted."""
+        """Delete an index and its related database records.
+
+        Filesystem and LanceDB artifacts are owned by the API/service layer,
+        which knows the configured storage paths and must clean them before
+        removing this row.
+        """
         conn = _connect(self.db_path)
         try:
-            # Get vector table name before deletion (optional, for LanceDB cleanup)
             cur = conn.execute('SELECT vector_table_name FROM indexes WHERE id = ?', (index_id,))
             row = cur.fetchone()
-            vector_table_name = row[0] if row else None
+            if row is None:
+                return False
 
             # Remove child rows first due to foreign‐key constraints
             conn.execute('DELETE FROM index_documents WHERE index_id = ?', (index_id,))
@@ -583,19 +588,6 @@ class ChatDatabase:
 
         if deleted:
             print(f"🗑️ Deleted index {index_id[:8]}... and related records")
-            # Optional: attempt to drop LanceDB table if available
-            if vector_table_name:
-                try:
-                    from rag_system.indexing.embedders import LanceDBManager
-                    import os
-                    db_path = os.getenv('LANCEDB_PATH') or './rag_system/index_store/lancedb'
-                    ldb = LanceDBManager(db_path)
-                    db = ldb.db
-                    if hasattr(db, 'table_names') and vector_table_name in db.table_names(limit=10_000):
-                        db.drop_table(vector_table_name)
-                        print(f"🚮 Dropped LanceDB table '{vector_table_name}'")
-                except Exception as e:
-                    print(f"⚠️ Could not drop LanceDB table '{vector_table_name}': {e}")
         return deleted
 
     def update_index_metadata(self, index_id: str, updates: dict):

@@ -111,6 +111,8 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const [enableDoclingChunk, setEnableDoclingChunk] = useState(INDEXING_PROFILES.balanced.enableDoclingChunk);
   const [enrichProvider, setEnrichProvider] = useState<EnrichProvider>('ollama');
   const [enrichApiKey, setEnrichApiKey] = useState('');
+  const [metadataSchemaJson, setMetadataSchemaJson] = useState('');
+  const [documentMetadataJson, setDocumentMetadataJson] = useState('');
 
   const { showAlert, dialog: alertDialog } = useAlert();
   const { showConfirm, dialog: confirmDialog } = useConfirm();
@@ -210,6 +212,30 @@ export function IndexForm({ onClose, onIndexed }: Props) {
 
   const handleSubmit = async () => {
     if (!files) return;
+    let metadataSchema: Array<Record<string, unknown>> | undefined;
+    let documentMetadata: Record<string, unknown> | Record<string, Record<string, unknown>> | undefined;
+    try {
+      if (metadataSchemaJson.trim()) {
+        const parsed = JSON.parse(metadataSchemaJson);
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          throw new Error('Metadata schema must be a non-empty JSON array.');
+        }
+        metadataSchema = parsed;
+      }
+      if (documentMetadataJson.trim()) {
+        const parsed = JSON.parse(documentMetadataJson);
+        if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+          throw new Error('Document metadata must be a JSON object.');
+        }
+        if (!metadataSchema) {
+          throw new Error('Define a metadata schema before adding document metadata.');
+        }
+        documentMetadata = parsed;
+      }
+    } catch (e) {
+      await showAlert(e instanceof Error ? e.message : 'Metadata JSON is invalid.');
+      return;
+    }
     if (hasLargeIndexingModel) {
       await showAlert('Large chat models such as gpt-oss:120b-cloud are blocked for indexing enrichment/overview. Use qwen3:8b for indexing, then use the large model for chat.');
       return;
@@ -221,7 +247,10 @@ export function IndexForm({ onClose, onIndexed }: Props) {
     try {
       const { index_id } = await chatAPI.createIndex(indexName);
 
-      await chatAPI.uploadFilesToIndex(index_id, Array.from(files));
+      if (metadataSchema) {
+        await chatAPI.setIndexMetadataSchema(index_id, metadataSchema);
+      }
+      await chatAPI.uploadFilesToIndex(index_id, Array.from(files), documentMetadata);
 
       const preflight = await chatAPI.preflightIndexBuild(index_id, buildOptions());
       if (!preflight.ok) {
@@ -502,6 +531,33 @@ export function IndexForm({ onClose, onIndexed }: Props) {
               </div>
             </div>
           )}
+        </AccordionGroup>
+
+        <AccordionGroup title={<><span>Document Metadata</span> <InfoTooltip text="Optional typed fields stored with every document and available as retrieval filters." /></>}>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">Schema</label>
+              <textarea
+                value={metadataSchemaJson}
+                onChange={(e) => setMetadataSchemaJson(e.target.value)}
+                placeholder={'[{"name":"project","type":"string","required":true}]'}
+                rows={4}
+                spellCheck={false}
+                className="w-full resize-y rounded border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-white outline-none focus:border-green-400"
+              />
+            </div>
+            <div>
+              <label className="block text-xs mb-1 text-gray-400">Upload values</label>
+              <textarea
+                value={documentMetadataJson}
+                onChange={(e) => setDocumentMetadataJson(e.target.value)}
+                placeholder={'{"project":"Aurora"}'}
+                rows={4}
+                spellCheck={false}
+                className="w-full resize-y rounded border border-white/10 bg-white/5 px-3 py-2 font-mono text-xs text-white outline-none focus:border-green-400"
+              />
+            </div>
+          </div>
         </AccordionGroup>
       </div>
 

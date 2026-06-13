@@ -60,6 +60,10 @@ def validate_schema(schema: Any) -> List[str]:
         seen.add(name)
         if ftype not in ALLOWED_TYPES:
             errors.append(f"field '{name}': type must be one of {sorted(ALLOWED_TYPES)}")
+        if "required" in field and not isinstance(field["required"], bool):
+            errors.append(f"field '{name}': required must be true or false")
+        if "description" in field and not isinstance(field["description"], str):
+            errors.append(f"field '{name}': description must be a string")
     return errors
 
 

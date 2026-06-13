@@ -266,9 +266,11 @@ def _make_pipeline(temp_dir):
     config["storage"]["db_path"] = os.path.join(temp_dir, "lancedb")
     config["storage"]["text_table_name"] = "t_regress"
     config["overview_path"] = os.path.join(temp_dir, "ov.jsonl")
-    # Unregistered model name: dimension validation is skipped, matching the
-    # 8-dim fake embedder instead of the real model's registered 1024
-    config["embedding_model_name"] = "fake-test-model"
+    # Unregistered fixture name skips dimension validation and uses the
+    # tokenizer-free chunker path instead of attempting a network download.
+    config["embedding_model_name"] = "fixture-hash-embedder"
+    config["db_path"] = os.path.join(temp_dir, "state.sqlite3")
+    config["index_store_path"] = os.path.join(temp_dir, "index_store")
     config["contextual_enricher"]["enabled"] = False
     config.setdefault("retrieval", {}).setdefault("late_chunking", {})["enabled"] = False
 
@@ -278,6 +280,15 @@ def _make_pipeline(temp_dir):
         pipeline = ip_mod.IndexingPipeline(
             config, _StubLLMClient(), {"host": "http://localhost:1", "generation_model": "x", "enrichment_model": "x"}
         )
+    pipeline._start_persistent_worker = lambda: setattr(pipeline, "_worker", None)
+
+    def _convert_in_process(file_path, document_id):
+        result = ip_mod.convert_and_chunk_document(file_path, document_id, config)
+        if result.get("error"):
+            raise RuntimeError(result["error"])
+        return result.get("chunks", [])
+
+    pipeline._convert_and_chunk_file = _convert_in_process
     return pipeline, config
 
 
@@ -335,6 +346,7 @@ class MetadataFilterTests(unittest.TestCase):
         self.assertTrue(validate_schema([{"name": "vector", "type": "string"}]))  # reserved
         self.assertTrue(validate_schema([{"name": "Bad Name", "type": "string"}]))
         self.assertTrue(validate_schema([{"name": "x", "type": "datetime2"}]))
+        self.assertTrue(validate_schema([{"name": "x", "type": "string", "required": "yes"}]))
         self.assertTrue(validate_schema([]))
 
     def test_document_metadata_strict(self):
@@ -375,6 +387,53 @@ class MetadataFilterTests(unittest.TestCase):
         cols = flatten_columns(self.SCHEMA, {"project": "alpha"})
         self.assertEqual(cols, {"meta_project": "alpha", "meta_year": None, "meta_confidential": None})
         self.assertEqual(flatten_columns(None, {"x": 1}), {})
+
+    def test_vector_index_uses_declared_types_when_first_value_is_none(self):
+        import pyarrow as pa
+        from rag_system.indexing.embedders import LanceDBManager, VectorIndexer
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            indexer = VectorIndexer(LanceDBManager(temp_dir))
+            schema = [
+                {"name": "year", "type": "integer"},
+                {"name": "score", "type": "float"},
+                {"name": "approved", "type": "boolean"},
+            ]
+            first = {
+                "chunk_id": "a_0",
+                "text": "first",
+                "metadata": {"document_id": "a", "chunk_index": 0},
+                "_meta_columns": {"meta_year": None, "meta_score": None, "meta_approved": None},
+            }
+            second = {
+                "chunk_id": "b_0",
+                "text": "second",
+                "metadata": {"document_id": "b", "chunk_index": 0},
+                "_meta_columns": {"meta_year": 2026, "meta_score": 0.75, "meta_approved": True},
+            }
+            indexer.index("typed", [first], [np.ones(8, dtype=np.float32)], metadata_schema=schema)
+            indexer.index("typed", [second], [np.ones(8, dtype=np.float32)], metadata_schema=schema)
+            table_schema = indexer.db_manager.get_table("typed").schema
+            self.assertEqual(table_schema.field("meta_year").type, pa.int64())
+            self.assertEqual(table_schema.field("meta_score").type, pa.float64())
+            self.assertEqual(table_schema.field("meta_approved").type, pa.bool_())
+            self.assertEqual(indexer.db_manager.get_table("typed").count_rows(), 2)
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_chunk_cache_key_includes_document_identity(self):
+        from rag_system.pipelines.indexing_pipeline import IndexingPipeline
+
+        pipeline = IndexingPipeline.__new__(IndexingPipeline)
+        pipeline.config = {
+            "chunker_mode": "docling",
+            "embedding_model_name": "fixture",
+            "chunking": {"chunk_size": 512, "chunk_overlap": 64},
+        }
+        first = pipeline._chunk_cache_key("/tmp/first/report.txt", file_hash="same-content")
+        second = pipeline._chunk_cache_key("/tmp/second/copy.txt", file_hash="same-content")
+        self.assertNotEqual(first, second)
 
 
 class MultiCollectionRetrievalTests(unittest.TestCase):
@@ -461,6 +520,68 @@ class MultiCollectionRetrievalTests(unittest.TestCase):
         result = self.pipeline.run("alpha", window_size_override=0, collections=many)
         self.assertTrue(result["source_documents"])
         self.assertLessEqual(MAX_COLLECTIONS, 5)
+
+    def test_same_chunk_id_from_two_indexes_is_not_deduplicated(self):
+        class _CollisionRetriever:
+            def retrieve(self, text_query, table_name, **kwargs):
+                return [{
+                    "chunk_id": "report.txt_0",
+                    "text": f"result from {table_name}",
+                    "document_id": "report.txt",
+                    "chunk_index": 0,
+                    "metadata": {},
+                    "score": 1.0,
+                }]
+
+        original = self.pipeline._get_retriever_for_model
+        self.pipeline._get_retriever_for_model = lambda _model: _CollisionRetriever()
+        try:
+            result = self.pipeline.run(
+                "report",
+                window_size_override=0,
+                collections=[
+                    {"index_id": "index-a", "table_name": "table_a", "embedding_model": "m1"},
+                    {"index_id": "index-b", "table_name": "table_b", "embedding_model": "m2"},
+                ],
+            )
+        finally:
+            self.pipeline._get_retriever_for_model = original
+        self.assertEqual(
+            {(d["index_id"], d["chunk_id"]) for d in result["source_documents"]},
+            {("index-a", "report.txt_0"), ("index-b", "report.txt_0")},
+        )
+
+    def test_each_collection_uses_its_fusion_config(self):
+        seen = {}
+
+        class _RecordingRetriever:
+            def retrieve(self, text_query, table_name, **kwargs):
+                seen[table_name] = kwargs.get("fusion_override")
+                return []
+
+        original = self.pipeline._get_retriever_for_model
+        self.pipeline._get_retriever_for_model = lambda _model: _RecordingRetriever()
+        try:
+            self.pipeline.run(
+                "report",
+                window_size_override=0,
+                collections=[
+                    {
+                        "table_name": "table_a",
+                        "embedding_model": "m1",
+                        "fusion_config": {"bm25_weight": 0.8, "vec_weight": 0.2},
+                    },
+                    {
+                        "table_name": "table_b",
+                        "embedding_model": "m2",
+                        "fusion_config": {"bm25_weight": 0.1, "vec_weight": 0.9},
+                    },
+                ],
+            )
+        finally:
+            self.pipeline._get_retriever_for_model = original
+        self.assertEqual(seen["table_a"]["bm25_weight"], 0.8)
+        self.assertEqual(seen["table_b"]["bm25_weight"], 0.1)
 
 
 class MultiIndexSelectionTests(unittest.TestCase):

@@ -427,10 +427,7 @@ def _inspect_vector_table(table_name: str | None) -> Dict[str, Any]:
 
 
 def _overview_diagnostics(index_id: str) -> Dict[str, Any]:
-    paths = [
-        os.path.join(PROJECT_ROOT, "index_store", "overviews", f"{index_id}.jsonl"),
-        os.path.join(PROJECT_ROOT, "rag_system", "index_store", "overviews", f"{index_id}.jsonl"),
-    ]
+    paths = _overview_path_candidates(index_id)
     for path in paths:
         if os.path.exists(path):
             try:
@@ -440,6 +437,84 @@ def _overview_diagnostics(index_id: str) -> Dict[str, Any]:
                 line_count = None
             return {"exists": True, "path": path, "line_count": line_count}
     return {"exists": False, "path": None, "line_count": 0}
+
+
+def _overview_path_candidates(index_id: str) -> List[str]:
+    return [
+        os.path.join(PROJECT_ROOT, "index_store", "overviews", f"{index_id}.jsonl"),
+        os.path.join(PROJECT_ROOT, "rag_system", "index_store", "overviews", f"{index_id}.jsonl"),
+    ]
+
+
+def _lancedb_table_names(conn) -> List[str]:
+    if hasattr(conn, "list_tables"):
+        return list(dict(conn.list_tables()).get("tables", []))
+    if hasattr(conn, "table_names"):
+        return list(conn.table_names(limit=10_000))
+    return []
+
+
+def _delete_index_artifacts(index: Dict[str, Any]) -> Dict[str, List[str]]:
+    """Delete storage artifacts while the index record still describes them."""
+    removed: Dict[str, List[str]] = {
+        "tables": [],
+        "files": [],
+        "overviews": [],
+        "skipped_files": [],
+    }
+    failures: List[str] = []
+    table_name = index.get("vector_table_name")
+
+    if table_name:
+        try:
+            import lancedb
+        except Exception as e:
+            failures.append(f"LanceDB is not importable: {e}")
+        else:
+            for db_path in _lancedb_path_candidates():
+                if not os.path.exists(db_path):
+                    continue
+                try:
+                    conn = lancedb.connect(db_path)
+                    names = _lancedb_table_names(conn)
+                    for candidate in (table_name, f"{table_name}_lc"):
+                        if candidate in names:
+                            conn.drop_table(candidate)
+                            removed["tables"].append(f"{db_path}:{candidate}")
+                except Exception as e:
+                    failures.append(f"Could not clean LanceDB at {db_path}: {e}")
+
+    upload_root = os.path.realpath(_UPLOAD_DIR)
+    for document in index.get("documents") or []:
+        stored_path = document.get("stored_path")
+        if not stored_path:
+            continue
+        real_path = os.path.realpath(stored_path)
+        try:
+            if os.path.commonpath([upload_root, real_path]) != upload_root:
+                removed["skipped_files"].append(real_path)
+                continue
+        except ValueError:
+            removed["skipped_files"].append(real_path)
+            continue
+        try:
+            if os.path.exists(real_path):
+                os.remove(real_path)
+                removed["files"].append(real_path)
+        except OSError as e:
+            failures.append(f"Could not remove upload {stored_path}: {e}")
+
+    for overview_path in _overview_path_candidates(index["id"]):
+        try:
+            if os.path.exists(overview_path):
+                os.remove(overview_path)
+                removed["overviews"].append(overview_path)
+        except OSError as e:
+            failures.append(f"Could not remove overview {overview_path}: {e}")
+
+    if failures:
+        raise RuntimeError("; ".join(failures))
+    return removed
 
 
 def _index_diagnostics(index_id: str) -> Dict[str, Any]:
@@ -1219,6 +1294,12 @@ async def create_index(request: Request):
 
         if not name:
             raise HTTPException(status_code=400, detail="Name required")
+        if not isinstance(metadata, dict):
+            raise HTTPException(status_code=400, detail="metadata must be an object")
+        if metadata.get("metadata_schema") is not None:
+            errors = validate_schema(metadata["metadata_schema"])
+            if errors:
+                raise HTTPException(status_code=400, detail="; ".join(errors))
 
         # Add complete metadata from RAG system configuration if available
         if RAG_SYSTEM_AVAILABLE and PIPELINE_CONFIGS.get('default'):
@@ -1307,10 +1388,18 @@ async def get_index_diagnostics(index_id: str):
 async def delete_index(index_id: str):
     """Remove an index, its documents, links, and the underlying LanceDB table."""
     try:
+        index = db.get_index(index_id)
+        if not index:
+            raise HTTPException(status_code=404, detail="Index not found")
+        removed = _delete_index_artifacts(index)
         deleted = db.delete_index(index_id)
         if not deleted:
-            raise HTTPException(status_code=404, detail="Index not found")
-        return {"message": "Index deleted successfully", "index_id": index_id}
+            raise HTTPException(status_code=409, detail="Index artifacts were removed, but the database record could not be deleted")
+        return {
+            "message": "Index deleted successfully",
+            "index_id": index_id,
+            "removed": removed,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -1330,6 +1419,7 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...),
         raise HTTPException(status_code=404, detail="Index not found")
     schema = (index.get("metadata") or {}).get("metadata_schema")
 
+    filenames = {f.filename for f in files if f.filename}
     meta_map: Dict[str, Any] = {}
     if metadata:
         try:
@@ -1340,14 +1430,22 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...),
             raise HTTPException(status_code=400, detail="metadata must be a JSON object")
         if not schema:
             raise HTTPException(status_code=400, detail="This index has no metadata schema — set one via PUT /indexes/{id}/metadata-schema first")
-        filenames = {f.filename for f in files if f.filename}
         per_file = bool(parsed) and all(isinstance(v, dict) for v in parsed.values()) and set(parsed) <= filenames
         try:
             if per_file:
-                meta_map = {fn: validate_document_metadata(schema, m) for fn, m in parsed.items()}
+                meta_map = {
+                    fn: validate_document_metadata(schema, parsed.get(fn, {}))
+                    for fn in filenames
+                }
             else:
                 shared = validate_document_metadata(schema, parsed)
                 meta_map = {fn: shared for fn in filenames}
+        except FilterError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    elif schema:
+        try:
+            empty = validate_document_metadata(schema, {})
+            meta_map = {fn: empty for fn in filenames}
         except FilterError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -1374,6 +1472,14 @@ async def set_index_metadata_schema(index_id: str, request: Request):
     errors = validate_schema(schema)
     if errors:
         raise HTTPException(status_code=400, detail="; ".join(errors))
+    current_schema = (index.get("metadata") or {}).get("metadata_schema")
+    if current_schema != schema:
+        status = (index.get("metadata") or {}).get("status", "created")
+        if index.get("documents") or status != "created":
+            raise HTTPException(
+                status_code=409,
+                detail="Metadata schema cannot be changed after documents are uploaded or a build has started. Create a new index or remove its documents first.",
+            )
     db.update_index_metadata(index_id, {"metadata_schema": schema})
     return {"message": "Metadata schema saved", "schema": schema}
 

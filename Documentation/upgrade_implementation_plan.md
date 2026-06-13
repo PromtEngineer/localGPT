@@ -12,6 +12,26 @@
 
 _Created: 2026-06-06_
 
+## Implementation Ledger
+
+Verified implementation status as of 2026-06-13:
+
+| Area | Status | Evidence |
+| --- | --- | --- |
+| Required document metadata | Done | Uploads validate every file, including omitted and partial per-file metadata |
+| Typed LanceDB metadata columns | Done | Arrow types derive from the declared schema; append-after-null is covered |
+| Metadata schema lifecycle | Done | Schema changes are rejected after documents are uploaded or a build starts |
+| Metadata creation UI | Partial | New-index creation supports schemas and upload metadata; add-files metadata editing remains pending |
+| Multi-collection embedding safety | Done | Collections are skipped when their configured embedder cannot initialize |
+| Multi-collection result identity | Done | Cross-index deduplication uses index/table plus chunk ID |
+| Per-index fusion settings | Done | Each collection carries and applies its stored fusion configuration |
+| Chunk cache document isolation | Done | Cache keys include document identity as well as content and chunking settings |
+| Index deletion cleanup | Done | Main/late-chunk tables, owned uploads, and per-index overviews are removed before database records |
+| Retrieval evaluation gate | Done | Offline deterministic fixture embedder, isolated temp DB/cache, wired into CI |
+| Request-scoped pipeline state | Pending | Global agent/config mutation still requires service extraction |
+| API server consolidation | Pending | FastAPI still delegates to the RAG service on port 8001 |
+| Full observability/guardrails | Pending | Structured logs exist; tracing and policy layers remain roadmap work |
+
 This is the canonical plan for moving LocalGPT from its current split-service,
 partially verified state to a release-ready application. A task is complete only
 when its behavior is covered by a meaningful test and the relevant release check

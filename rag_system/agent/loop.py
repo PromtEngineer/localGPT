@@ -472,15 +472,17 @@ Respond with JSON: {{"category": "<your_choice>"}}
                                     })
                                     # Keep up to 5 citations per sub-query for traceability
                                     for doc in sub_result.get("source_documents", [])[:5]:
-                                        if doc['chunk_id'] not in citations_seen:
+                                        identity = (doc.get("index_id"), doc["chunk_id"])
+                                        if identity not in citations_seen:
                                             all_source_docs.append(doc)
-                                            citations_seen.add(doc['chunk_id'])
+                                            citations_seen.add(identity)
                                 else:
                                     # Aggregate unique docs (single-stage path)
                                     for doc in sub_result.get('source_documents', []):
-                                        if doc['chunk_id'] not in citations_seen:
+                                        identity = (doc.get("index_id"), doc["chunk_id"])
+                                        if identity not in citations_seen:
                                             all_source_docs.append(doc)
-                                            citations_seen.add(doc['chunk_id'])
+                                            citations_seen.add(identity)
                             except Exception as e:
                                 print(f"❌ Sub-Query {i+1} failed: '{sub_query}' - {e}")
 

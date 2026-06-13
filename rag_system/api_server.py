@@ -142,10 +142,12 @@ def _get_collections_for_session(session_id):
         if idx and idx.get("vector_table_name"):
             meta = idx.get("metadata") or {}
             collections.append({
+                "index_id": iid,
                 "table_name": idx["vector_table_name"],
                 "embedding_model": meta.get("embedding_model"),
                 "index_name": idx.get("name"),
                 "metadata_schema": meta.get("metadata_schema"),
+                "fusion_config": meta.get("fusion_config"),
             })
     return collections or None
 
@@ -157,10 +159,12 @@ def _collection_for_table(table_name):
             if idx.get("vector_table_name") == table_name:
                 meta = idx.get("metadata") or {}
                 return [{
+                    "index_id": idx.get("id"),
                     "table_name": table_name,
                     "embedding_model": meta.get("embedding_model"),
                     "index_name": idx.get("name"),
                     "metadata_schema": meta.get("metadata_schema"),
+                    "fusion_config": meta.get("fusion_config"),
                 }]
     except Exception as e:
         logging.getLogger(__name__).warning("table_collection_lookup_failed table=%s error=%s", table_name, e)

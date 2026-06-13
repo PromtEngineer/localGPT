@@ -27,7 +27,8 @@ class VectorIndexer:
     def __init__(self, db_manager: LanceDBManager):
         self.db_manager = db_manager
 
-    def index(self, table_name: str, chunks: List[Dict[str, Any]], embeddings):
+    def index(self, table_name: str, chunks: List[Dict[str, Any]], embeddings,
+              metadata_schema: List[Dict[str, Any]] | None = None):
         # Drop None placeholders left by OOM-killed embedding batches.
         none_count = sum(1 for e in embeddings if e is None)
         if none_count > 0:
@@ -58,12 +59,20 @@ class VectorIndexer:
         # Typed custom-metadata columns (meta_*) for query-time filtering.
         # Chunks carry the same flattened column set per build (None when a
         # file is untagged) so the Arrow schema stays stable across files.
-        _ARROW_TYPES = {str: pa.string(), bool: pa.bool_(), int: pa.int64(), float: pa.float64()}
+        _SCHEMA_ARROW_TYPES = {
+            "string": pa.string(),
+            "boolean": pa.bool_(),
+            "integer": pa.int64(),
+            "float": pa.float64(),
+        }
+        _VALUE_ARROW_TYPES = {str: pa.string(), bool: pa.bool_(), int: pa.int64(), float: pa.float64()}
         meta_columns: dict = {}
+        for field in metadata_schema or []:
+            meta_columns[f"meta_{field['name']}"] = _SCHEMA_ARROW_TYPES[field["type"]]
         for c in chunks:
             for col, val in (c.get("_meta_columns") or {}).items():
                 if col not in meta_columns and val is not None:
-                    meta_columns[col] = _ARROW_TYPES.get(type(val), pa.string())
+                    meta_columns[col] = _VALUE_ARROW_TYPES.get(type(val), pa.string())
             if c.get("_meta_columns"):
                 for col in c["_meta_columns"]:
                     meta_columns.setdefault(col, pa.string())

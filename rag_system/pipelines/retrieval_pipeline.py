@@ -150,7 +150,7 @@ class RetrievalPipeline:
                 )
             except Exception as e:
                 logger.error("retriever_init_failed model=%s error=%s", embedding_model, e)
-                return self._get_dense_retriever()
+                return None
         return self._retrievers_by_model[embedding_model]
 
     def _resolve_latechunk_cfg(self) -> Dict[str, Any]:
@@ -319,7 +319,8 @@ Reminder: every fact in your answer must end with its source number in square br
         """Retrieve, rerank, and synthesize.
 
         collections: optional list of {"table_name", "embedding_model",
-        "index_name", "metadata_schema"} dicts to search together (capped at
+        "index_id", "index_name", "metadata_schema", "fusion_config"} dicts to
+        search together (capped at
         MAX_COLLECTIONS). When omitted, the single table_name/config table is
         used. filters: optional typed metadata filters, validated against
         each collection's schema and compiled to a LanceDB where clause —
@@ -397,7 +398,13 @@ Reminder: every fact in your answer must end with its source number in square br
 
             retriever = self._get_retriever_for_model(coll.get("embedding_model"))
             if not retriever:
+                logger.warning(
+                    "collection_skipped_no_compatible_embedder table=%s model=%s",
+                    coll_table,
+                    coll.get("embedding_model"),
+                )
                 continue
+            collection_fusion = fusion_override or coll.get("fusion_config")
             try:
                 docs = retriever.retrieve(
                     text_query=query,
@@ -406,7 +413,7 @@ Reminder: every fact in your answer must end with its source number in square br
                     reranker=lancedb_reranker,
                     vector_only=vector_only_search,
                     fts_only=fts_only_search,
-                    fusion_override=fusion_override,
+                    fusion_override=collection_fusion,
                     where=where,
                 )
                 searched += 1
@@ -432,6 +439,8 @@ Reminder: every fact in your answer must end with its source number in square br
                 # doc's own table, and citations should name the index
                 d['_source_table'] = coll_table
                 d['_collection_rank'] = rank
+                if coll.get("index_id"):
+                    d["index_id"] = coll["index_id"]
                 if coll.get("index_name"):
                     d['index_name'] = coll["index_name"]
             retrieved_docs.extend(docs)
@@ -557,10 +566,11 @@ Reminder: every fact in your answer must end with its source number in square br
         # synthesis (71%).
         keep_n = int(self.config.get("reranker", {}).get("keep_top_retrieval", 3))
         if ai_reranker and keep_n > 0 and reranked_docs is not retrieved_docs:
-            have = {d.get('chunk_id') for d in reranked_docs}
+            have = {(d.get('_source_table'), d.get('chunk_id')) for d in reranked_docs}
             rescued = [
                 d for d in retrieved_docs
-                if d.get('_collection_rank', 10**6) <= keep_n and d.get('chunk_id') not in have
+                if d.get('_collection_rank', 10**6) <= keep_n
+                and (d.get('_source_table'), d.get('chunk_id')) not in have
             ]
             if rescued:
                 floor = min((d.get('rerank_score', 0.0) for d in reranked_docs), default=0.0)
@@ -585,7 +595,8 @@ Reminder: every fact in your answer must end with its source number in square br
                         surrounding_chunks = future.result()
                         for surrounding_chunk in surrounding_chunks:
                             cid = surrounding_chunk['chunk_id']
-                            if cid not in expanded_chunks:
+                            identity = (seed_chunk.get('_source_table'), cid)
+                            if identity not in expanded_chunks:
                                 # If this is the *central* chunk we already reranked, carry over its score
                                 if cid == seed_chunk.get('chunk_id') and 'rerank_score' in seed_chunk:
                                     surrounding_chunk['rerank_score'] = seed_chunk['rerank_score']
@@ -594,7 +605,9 @@ Reminder: every fact in your answer must end with its source number in square br
                                     surrounding_chunk.setdefault('_source_table', seed_chunk['_source_table'])
                                 if seed_chunk.get('index_name'):
                                     surrounding_chunk.setdefault('index_name', seed_chunk['index_name'])
-                                expanded_chunks[cid] = surrounding_chunk
+                                if seed_chunk.get("index_id"):
+                                    surrounding_chunk.setdefault("index_id", seed_chunk["index_id"])
+                                expanded_chunks[identity] = surrounding_chunk
                     except Exception as e:
                         logger.error("context_expansion_chunk_failed chunk_id=%s error=%s", seed_chunk.get('chunk_id'), e)
 
