@@ -1,0 +1,17 @@
+Caldera Flats Solar Array Technical Specification
+
+The Caldera Flats photovoltaic array comprises 612,000 bifacial modules with
+a combined DC rating of 310 MW. The site occupies 1,150 hectares of former
+grazing land. Single-axis trackers are supplied by Helios Mounting Systems.
+
+Performance summary table:
+
+| Metric                  | Value      |
+|-------------------------|------------|
+| DC capacity             | 310 MW     |
+| AC capacity             | 255 MW     |
+| Annual yield            | 710 GWh    |
+| Performance ratio       | 84.2%      |
+| Degradation (year 1)    | 1.9%       |
+
+Grid connection is at the Pinyon substation via a 34 km, 230 kV line.

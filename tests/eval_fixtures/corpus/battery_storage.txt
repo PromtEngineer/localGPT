@@ -1,0 +1,7 @@
+Saltmarsh Battery Energy Storage System Commissioning Summary
+
+The Saltmarsh BESS provides 150 MW / 600 MWh using lithium iron phosphate
+cells in 96 containerised units. Round-trip efficiency measured during
+commissioning was 87.4 percent. The system passed grid-forming compliance
+tests on 14 February 2026. The EPC contractor was Coastal Grid Solutions
+and the warranty covers 7,000 equivalent full cycles.

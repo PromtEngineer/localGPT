@@ -26,6 +26,7 @@ import os
 import re
 import sqlite3
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -44,6 +45,27 @@ Rules:
 
 PASSAGE (from {doc_name}):
 {passage}
+"""
+
+GROUNDEDNESS_PROMPT = """You will see retrieved source snippets and an answer generated from them.
+
+SOURCES:
+{sources}
+
+ANSWER:
+{answer}
+
+Is every factual claim in the answer supported by the sources (no invented facts)? Reply with JSON only: {{"grounded": true}} or {{"grounded": false}}.
+"""
+
+RELEVANCY_PROMPT = """You will see a question and retrieved source snippets.
+
+QUESTION: {question}
+
+SOURCES:
+{sources}
+
+Do the sources contain information relevant to answering the question? Reply with JSON only: {{"relevant": true}} or {{"relevant": false}}.
 """
 
 JUDGE_PROMPT = """Compare a candidate answer against a reference answer.
@@ -173,17 +195,25 @@ def _chunk_hit(expected_chunk: str, docs: list) -> bool:
     return any(d.get("chunk_id") == expected_chunk for d in docs)
 
 
-def _summarize(name: str, ranks: list, chunk_hits: list, k: int):
+def _summarize(name: str, ranks: list, chunk_hits: list, k: int) -> dict:
+    """Print and return the metric set (returned dict feeds the CI gate)."""
     n = len(ranks)
-    hits5 = sum(1 for r in ranks if r is not None and r <= 5)
-    hitsk = sum(1 for r in ranks if r is not None)
-    mrr = sum(1.0 / r for r in ranks if r is not None) / n if n else 0.0
-    chunks = sum(chunk_hits)
+    metrics = {"n": n}
     print(f"\n=== {name} (n={n}) ===")
-    print(f"doc hit@5:    {hits5}/{n} ({100*hits5/n:.0f}%)")
-    print(f"doc hit@{k}:   {hitsk}/{n} ({100*hitsk/n:.0f}%)")
-    print(f"MRR (doc):    {mrr:.3f}")
-    print(f"chunk hit@{k}: {chunks}/{n} ({100*chunks/n:.0f}%)  ← the chunk that contains the answer")
+    for kk in (1, 3, 5, 10, k):
+        if kk > k:
+            continue
+        hits = sum(1 for r in ranks if r is not None and r <= kk)
+        metrics[f"doc_recall@{kk}"] = hits / n if n else 0.0
+        print(f"doc recall@{kk:<2}: {hits}/{n} ({100*hits/n:.0f}%)")
+    mrr = sum(1.0 / r for r in ranks if r is not None) / n if n else 0.0
+    metrics["mrr"] = mrr
+    print(f"MRR (doc):     {mrr:.3f}")
+    chunks = sum(chunk_hits)
+    metrics[f"chunk_hit@{k}"] = chunks / n if n else 0.0
+    metrics["chunk_hit"] = chunks / n if n else 0.0
+    print(f"chunk hit@{k}:  {chunks}/{n} ({100*chunks/n:.0f}%)  ← the chunk that contains the answer")
+    return metrics
 
 
 def cmd_run_retrieval(args, full_id: str, table: str, embedding_model: str):
@@ -206,7 +236,16 @@ def cmd_run_retrieval(args, full_id: str, table: str, embedding_model: str):
         mark = "✓" if rank is not None else "✗"
         cmark = "chunk✓" if chunk_hits[-1] else "chunk✗"
         print(f"  {mark} rank={rank if rank else '-'} {cmark}  {c['question'][:70]}")
-    _summarize(f"retrieval — {table}", ranks, chunk_hits, args.k)
+    metrics = _summarize(f"retrieval — {table}", ranks, chunk_hits, args.k)
+    _dump_results(full_id, "retrieval", metrics)
+
+
+def _dump_results(full_id: str, mode: str, metrics: dict):
+    os.makedirs(EVAL_DIR, exist_ok=True)
+    path = os.path.join(EVAL_DIR, f"results-{full_id[:8]}-{mode}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2)
+    print(f"(metrics written to {path})")
 
 
 def cmd_run_e2e(args, full_id: str, table: str, _model: str):
@@ -214,9 +253,11 @@ def cmd_run_e2e(args, full_id: str, table: str, _model: str):
 
     from rag_system.utils.ollama_client import OllamaClient
 
+    import time as _time
+
     cases = _load_eval_set(full_id)
     judge = OllamaClient()
-    ranks, chunk_hits, answers = [], [], []
+    ranks, chunk_hits, answers, latencies, source_sets, citation_ok = [], [], [], [], [], []
 
     # Phase 1: generate all answers. Judging is a separate pass so Ollama
     # doesn't swap models between every question when --model differs from
@@ -235,33 +276,134 @@ def cmd_run_e2e(args, full_id: str, table: str, _model: str):
             payload["dense_weight"] = args.dense_weight
         if args.model:
             payload["model"] = args.model
+        _t0 = _time.time()
         resp = requests.post(f"{RAG_API}/chat", json=payload, timeout=900)
+        latencies.append(_time.time() - _t0)
         resp.raise_for_status()
         data = resp.json()
-        answers.append(data.get("answer", ""))
+        answer = data.get("answer", "")
+        answers.append(answer)
         sources = data.get("source_documents", [])
+        source_sets.append(sources)
         ranks.append(_doc_rank(c["expected_doc"], sources))
         chunk_hits.append(_chunk_hit(c["chunk_id"], sources))
-        print(f"  answered: {c['question'][:70]}")
+        # Citation validity: every [N] in the answer must reference a source
+        # that exists (1-based, within range)
+        cited = {int(m) for m in re.findall(r"\[(\d+)\]", answer)}
+        citation_ok.append(bool(cited) and all(1 <= n <= len(sources) for n in cited))
+        print(f"  answered ({latencies[-1]:.0f}s): {c['question'][:62]}")
 
-    # Phase 2: judge all answers
-    correct = 0
-    for c, answer in zip(cases, answers):
+    # Phase 2: judge all answers (accuracy, groundedness, context relevancy)
+    def _judge(prompt, key):
         verdict = judge.generate_completion(
-            GENERATION_MODEL,
-            JUDGE_PROMPT.format(reference=c["reference_answer"], candidate=answer[:3000]),
-            format="json", enable_thinking=False, timeout=120,
+            GENERATION_MODEL, prompt, format="json", enable_thinking=False, timeout=120,
         )
         try:
-            ok = bool(json.loads(verdict.get("response", "")).get("correct"))
+            return bool(json.loads(verdict.get("response", "")).get(key))
         except (json.JSONDecodeError, AttributeError):
-            ok = False
+            return False
+
+    correct = grounded = relevant = 0
+    for c, answer, sources in zip(cases, answers, source_sets):
+        src_text = "\n\n".join(
+            f"[{i}] {s.get('text','')[:800]}" for i, s in enumerate(sources[:10], 1)
+        )
+        ok = _judge(JUDGE_PROMPT.format(reference=c["reference_answer"], candidate=answer[:3000]), "correct")
         correct += ok
+        grounded += _judge(GROUNDEDNESS_PROMPT.format(sources=src_text, answer=answer[:3000]), "grounded")
+        relevant += _judge(RELEVANCY_PROMPT.format(question=c["question"], sources=src_text), "relevant")
         print(f"  {'✓' if ok else '✗'} {c['question'][:75]}")
 
-    _summarize(f"e2e retrieval — {table}", ranks, chunk_hits, args.k)
+    metrics = _summarize(f"e2e retrieval — {table}", ranks, chunk_hits, args.k)
     n = len(cases)
+    metrics.update({
+        "answer_accuracy": correct / n,
+        "groundedness": grounded / n,
+        "context_relevancy": relevant / n,
+        "citation_validity": sum(citation_ok) / n,
+        "latency_avg_s": sum(latencies) / n,
+        "latency_p95_s": sorted(latencies)[max(0, int(0.95 * n) - 1)],
+    })
     print(f"answer accuracy (LLM judge): {correct}/{n} ({100*correct/n:.0f}%)")
+    print(f"groundedness:                {grounded}/{n} ({100*grounded/n:.0f}%)")
+    print(f"context relevancy:           {relevant}/{n} ({100*relevant/n:.0f}%)")
+    print(f"citation validity:           {sum(citation_ok)}/{n} ({100*sum(citation_ok)/n:.0f}%)")
+    print(f"latency avg/p95:             {metrics['latency_avg_s']:.0f}s / {metrics['latency_p95_s']:.0f}s")
+    _dump_results(full_id, "e2e", metrics)
+
+
+FIXTURES_DIR = os.path.join("tests", "eval_fixtures")
+
+
+def cmd_gate(args):
+    """CI gate: build the committed synthetic corpus into a temp index and
+    fail (exit 1) if retrieval metrics fall below the committed thresholds.
+
+    Deterministic and Ollama-free: real chunking + real embedder, stub LLM
+    (overviews skip, enrichment off), retrieval-only scoring. Golden cases
+    match by answer keyword, not chunk id, so chunker changes don't break it.
+    """
+    import shutil
+    import tempfile
+
+    from rag_system.indexing.embedders import LanceDBManager
+    from rag_system.indexing.representations import select_embedder
+    from rag_system.retrieval.retrievers import MultiVectorRetriever
+
+    corpus = sorted(
+        str(f) for f in Path(os.path.join(FIXTURES_DIR, "corpus")).glob("*.txt")
+    )
+    golden = [json.loads(l) for l in open(os.path.join(FIXTURES_DIR, "golden.jsonl"), encoding="utf-8") if l.strip()]
+    thresholds = json.load(open(os.path.join(FIXTURES_DIR, "thresholds.json"), encoding="utf-8"))
+    if not corpus or not golden:
+        raise SystemExit("eval fixtures missing")
+
+    embedding_model = "Qwen/Qwen3-Embedding-0.6B"
+    tmp = tempfile.mkdtemp(prefix="rag-gate-")
+    try:
+        from rag_system.pipelines.indexing_pipeline import IndexingPipeline
+
+        class _NoLLM:  # overviews skip persisting on empty responses
+            def generate_completion(self, *a, **k):
+                return {"response": ""}
+            def stream_completion(self, *a, **k):
+                yield ""
+
+        config = {
+            "storage": {"lancedb_uri": tmp, "db_path": tmp, "text_table_name": "gate_corpus"},
+            "embedding_model_name": embedding_model,
+            "contextual_enricher": {"enabled": False},
+            "retrieval": {"late_chunking": {"enabled": False}},
+            "overview_path": os.path.join(tmp, "ov.jsonl"),
+            "indexing": {"embedding_batch_size": 16},
+        }
+        print(f"Building gate corpus ({len(corpus)} docs) ...")
+        pipeline = IndexingPipeline(config, _NoLLM(), {"generation_model": "none", "enrichment_model": "none"})
+        pipeline.run(corpus, index_id="gate-corpus", force_reindex=True)
+
+        retriever = MultiVectorRetriever(LanceDBManager(tmp), select_embedder(embedding_model))
+        ranks, keyword_hits = [], []
+        for case in golden:
+            docs = retriever.retrieve(case["question"], table_name="gate_corpus", k=args.k)
+            ranks.append(_doc_rank(case["expected_doc"], docs))
+            kw = case["answer_keyword"].lower()
+            keyword_hits.append(any(kw in (d.get("text") or "").lower() for d in docs))
+        metrics = _summarize("CI gate — fixture corpus", ranks, keyword_hits, args.k)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    print("\n--- threshold check ---")
+    failed = []
+    for key, minimum in thresholds.items():
+        actual = metrics.get(key)
+        ok = actual is not None and actual >= minimum
+        print(f"  {'PASS' if ok else 'FAIL'}  {key}: {actual if actual is not None else 'missing'} (min {minimum})")
+        if not ok:
+            failed.append(key)
+    if failed:
+        print(f"\nGATE FAILED: {', '.join(failed)} below threshold")
+        raise SystemExit(1)
+    print("\nGATE PASSED")
 
 
 def main():
@@ -284,7 +426,13 @@ def main():
     r.add_argument("--reranker-top-k", type=int, default=None)
     r.add_argument("--model", default=None, help="synthesis model override (e.g. gpt-oss:20b)")
 
+    g2 = sub.add_parser("gate", help="CI gate: score the committed fixture corpus against thresholds")
+    g2.add_argument("--k", type=int, default=20)
+
     args = p.parse_args()
+    if args.cmd == "gate":
+        cmd_gate(args)
+        return
     full_id, table, model = resolve_index(args.index)
     print(f"index {full_id[:8]} → table {table} (embedding: {model})")
 

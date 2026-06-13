@@ -1,0 +1,12 @@
+{"question": "What is the installed capacity of the Aurora Dam project?", "expected_doc": "aurora_dam.txt", "answer_keyword": "240 MW"}
+{"question": "What is the installed capacity of the Boreal Dam project?", "expected_doc": "boreal_dam.txt", "answer_keyword": "410 MW"}
+{"question": "Who chairs the environmental review for the Aurora Dam?", "expected_doc": "aurora_dam.txt", "answer_keyword": "Sofia Ramirez"}
+{"question": "What turbine type does the Boreal Dam use?", "expected_doc": "boreal_dam.txt", "answer_keyword": "Kaplan"}
+{"question": "What is the performance ratio of the Caldera Flats solar array?", "expected_doc": "solar_array.txt", "answer_keyword": "84.2%"}
+{"question": "What is the AC capacity of the Caldera Flats array?", "expected_doc": "solar_array.txt", "answer_keyword": "255 MW"}
+{"question": "How many turbines operate at Greywater Ridge wind farm?", "expected_doc": "wind_farm.txt", "answer_keyword": "47"}
+{"question": "What was the 2025 availability at Greywater Ridge?", "expected_doc": "wind_farm.txt", "answer_keyword": "96.8"}
+{"question": "What is the round-trip efficiency of the Saltmarsh battery system?", "expected_doc": "battery_storage.txt", "answer_keyword": "87.4"}
+{"question": "How many equivalent full cycles does the Saltmarsh warranty cover?", "expected_doc": "battery_storage.txt", "answer_keyword": "7,000"}
+{"question": "What is the capital cost of the Aurora Dam?", "expected_doc": "aurora_dam.txt", "answer_keyword": "1.85 billion"}
+{"question": "Who is the site manager at Greywater Ridge?", "expected_doc": "wind_farm.txt", "answer_keyword": "Priya Natarajan"}
