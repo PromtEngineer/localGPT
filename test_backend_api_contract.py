@@ -408,7 +408,7 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertIn("orphans_found", orphan_response.json())
         self.assertTrue(orphan_response.json()["dry_run"])
 
-    def test_health_deep_uses_rag_api_and_ollama(self):
+    def test_health_deep_uses_local_rag_runtime_and_ollama(self):
         class DummyResponse:
             def __init__(self, status_code):
                 self.status_code = status_code
@@ -428,10 +428,37 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         status = response.json()
         self.assertEqual(status["status"], "ok")
-        self.assertEqual(status["checks"]["rag_api"], "ok")
+        self.assertEqual(status["checks"]["rag_runtime"], "ready")
         self.assertEqual(status["checks"]["ollama"], "ok")
         self.assertEqual(status["checks"]["db"], "ok")
         self.assertEqual(status["checks"]["lancedb"], "ok")
+
+    def test_fastapi_rag_chat_transport(self):
+        expected = {"answer": "local answer", "source_documents": []}
+        with (
+            patch("backend.server._get_local_rag_agent", return_value=object()),
+            patch("backend.server.execute_rag_chat", return_value=expected) as execute,
+        ):
+            response = self.client.post("/rag/chat", json={"query": "hello"})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), expected)
+        self.assertEqual(execute.call_args.args[2]["query"], "hello")
+
+    def test_fastapi_rag_stream_transport(self):
+        def fake_execute(agent, database, data, event_callback):
+            event_callback("token", {"text": "hello"})
+            return {"answer": "hello", "source_documents": []}
+
+        with (
+            patch("backend.server._get_local_rag_agent", return_value=object()),
+            patch("backend.server.execute_rag_chat", side_effect=fake_execute),
+        ):
+            response = self.client.post("/rag/chat/stream", json={"query": "hello"})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn('"type": "token"', response.text)
+        self.assertIn('"type": "complete"', response.text)
 
     def test_resume_paused_index_job(self):
         index_id = server.db.create_index("Resume API")

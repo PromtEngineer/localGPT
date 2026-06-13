@@ -53,6 +53,12 @@ except Exception as _wal_err:
 from ollama_client import OllamaClient, OllamaError
 from database import db, generate_session_title
 from rag_system.index_selection import select_active_index_id
+from rag_system.chat_runtime import execute_chat as execute_rag_chat
+from rag_system.factory import get_agent as create_rag_agent
+from rag_system.indexing_runtime import (
+    build_config as build_indexing_config,
+    execute_index_build,
+)
 from rag_system.metadata_filters import (
     FilterError,
     validate_document_metadata,
@@ -145,8 +151,9 @@ ollama_client = OllamaClient()
 pdf_processor = None
 index_jobs_lock = threading.Lock()
 index_jobs: Dict[str, Dict[str, Any]] = {}
+_rag_agent = None
+_rag_agent_init_lock = threading.Lock()
 STALE_BUILD_AFTER = timedelta(minutes=10)
-RAG_API_BASE_URL = os.getenv("RAG_API_URL", "http://localhost:8001").rstrip("/")
 BACKEND_BASE_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 
 # Upload safety limits
@@ -160,6 +167,16 @@ _UPLOAD_CHUNK_BYTES = 1024 * 1024  # stream uploads to disk 1 MB at a time
 # Anchor to the repo root: a CWD-relative path creates a second uploads
 # directory when the server is launched from backend/ instead of the root
 _UPLOAD_DIR = os.path.join(PROJECT_ROOT, "shared_uploads")
+
+
+def _get_local_rag_agent():
+    """Lazily initialize the shared agent used by FastAPI chat endpoints."""
+    global _rag_agent
+    if _rag_agent is None:
+        with _rag_agent_init_lock:
+            if _rag_agent is None:
+                _rag_agent = create_rag_agent(os.getenv("RAG_CONFIG_MODE", "default"))
+    return _rag_agent
 
 
 def _validation_error_detail(e: ValidationError) -> str:
@@ -324,20 +341,11 @@ def _index_build_preflight(index_id: str, data: Dict[str, Any] | None = None, *,
 
     rag_api_available = None
     if check_services:
-        try:
-            response = requests.get(f"{RAG_API_BASE_URL}/models", timeout=3)
-            rag_api_available = response.status_code == 200
-            if not rag_api_available:
-                errors.append(f"RAG API responded with HTTP {response.status_code} at {RAG_API_BASE_URL}.")
-        except requests.exceptions.RequestException as e:
-            rag_api_available = False
-            errors.append(f"RAG API is not reachable at {RAG_API_BASE_URL}: {e}")
-        # Only flag missing local imports when the RAG API is also down — in a healthy
-        # split-process setup (backend + separate RAG API) the local import is optional.
-        if not rag_api_available and not RAG_SYSTEM_AVAILABLE:
+        rag_api_available = RAG_SYSTEM_AVAILABLE
+        if not RAG_SYSTEM_AVAILABLE:
             errors.append(
-                "RAG indexing dependencies are not available in this backend Python process "
-                "and the RAG API is not reachable. Run './start-localgpt' to start both services."
+                "RAG indexing dependencies are not available in the FastAPI process. "
+                "Start LocalGPT with the project virtual environment."
             )
 
     return {
@@ -515,6 +523,25 @@ def _delete_index_artifacts(index: Dict[str, Any]) -> Dict[str, List[str]]:
     if failures:
         raise RuntimeError("; ".join(failures))
     return removed
+
+
+def _clear_index_build_artifacts(index_id: str, table_name: str | None) -> None:
+    """Remove generated vector/overview artifacts before a force rebuild."""
+    if table_name:
+        import lancedb
+
+        for db_path in _lancedb_path_candidates():
+            if not os.path.exists(db_path):
+                continue
+            conn = lancedb.connect(db_path)
+            names = _lancedb_table_names(conn)
+            for candidate in (table_name, f"{table_name}_lc"):
+                if candidate in names:
+                    conn.drop_table(candidate)
+
+    for overview_path in _overview_path_candidates(index_id):
+        if os.path.exists(overview_path):
+            os.remove(overview_path)
 
 
 def _index_diagnostics(index_id: str) -> Dict[str, Any]:
@@ -786,7 +813,7 @@ async def get_metrics(format: str = "json"):
 
 @app.get("/health/deep")
 async def health_deep():
-    """Deep health probe: checks DB, LanceDB, RAG API, Ollama, and embedding."""
+    """Deep health probe: checks DB, LanceDB, local RAG runtime, and Ollama."""
     checks: Dict[str, Any] = {}
     overall = "ok"
 
@@ -816,15 +843,13 @@ async def health_deep():
         checks["lancedb"] = f"error: {e}"
         overall = "degraded"
 
-    # 3. RAG API
+    # 3. In-process RAG runtime
     try:
-        # The lightweight RAG API exposes /models as its readiness endpoint.
-        resp = requests.get(f"{RAG_API_BASE_URL}/models", timeout=3)
-        checks["rag_api"] = "ok" if resp.status_code == 200 else f"http_{resp.status_code}"
-        if resp.status_code != 200:
+        checks["rag_runtime"] = "ready" if RAG_SYSTEM_AVAILABLE else "unavailable"
+        if not RAG_SYSTEM_AVAILABLE:
             overall = "degraded"
     except Exception as e:
-        checks["rag_api"] = f"error: {e}"
+        checks["rag_runtime"] = f"error: {e}"
         overall = "degraded"
 
     # 4. Ollama
@@ -1119,24 +1144,32 @@ async def index_documents(session_id: str):
         if not file_paths:
             return {"message": "No documents to index for this session."}
 
-        print(f"Found {len(file_paths)} documents to index. Sending to RAG API...")
-
-        rag_api_url = f"{RAG_API_BASE_URL}/index"
-        # Run the blocking HTTP call in a worker thread so the event loop
-        # stays responsive while the RAG API indexes (can take a long time).
-        rag_response = await asyncio.to_thread(
-            requests.post, rag_api_url,
-            json={"file_paths": file_paths, "session_id": session_id},
-            timeout=(10, 3600),
+        print(f"Found {len(file_paths)} documents to index.")
+        index_ids = db.get_indexes_for_session(session_id)
+        active_id = select_active_index_id(index_ids)
+        active_index = db.get_index(active_id) if active_id else None
+        table_name = (
+            active_index.get("vector_table_name")
+            if active_index
+            else PIPELINE_CONFIGS["default"]["storage"]["text_table_name"]
         )
-
-        if rag_response.status_code == 200:
-            print("✅ RAG API successfully indexed documents.")
-            return rag_response.json()
-        else:
-            error_info = rag_response.text
-            print(f"❌ RAG API indexing failed ({rag_response.status_code}): {error_info}")
-            raise HTTPException(status_code=500, detail=f"Indexing failed: {error_info}")
+        options = {"index_id": active_id or session_id, "table_name": table_name}
+        config = build_indexing_config(PIPELINE_CONFIGS["default"], options)
+        result = await asyncio.to_thread(
+            execute_index_build,
+            config,
+            OLLAMA_CONFIG,
+            file_paths,
+            index_id=active_id or session_id,
+            force_reindex=False,
+            job_id=None,
+            backend_base_url=BACKEND_BASE_URL,
+        )
+        return {
+            "message": f"Indexed {len(file_paths)} document(s).",
+            "table_name": table_name,
+            "indexing_result": result,
+        }
 
     except HTTPException:
         raise
@@ -1171,6 +1204,76 @@ async def rename_session(session_id: str, request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to rename session: {str(e)}")
+
+@app.post("/rag/chat")
+async def rag_chat(request: Request):
+    """Run the transport-neutral RAG pipeline through FastAPI."""
+    try:
+        data = await request.json()
+        return await asyncio.to_thread(execute_rag_chat, _get_local_rag_agent(), db, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except FilterError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"RAG processing failed: {e}")
+
+
+@app.post("/rag/chat/stream")
+async def rag_chat_stream(request: Request):
+    """Stream RAG pipeline events over SSE from the FastAPI process."""
+    data = await request.json()
+    if not isinstance(data.get("query"), str) or not data["query"].strip():
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    async def event_stream():
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        finished = object()
+
+        def emit(event_type: str, payload: Any):
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"type": event_type, "data": payload},
+            )
+
+        async def execute():
+            try:
+                result = await asyncio.to_thread(
+                    execute_rag_chat,
+                    _get_local_rag_agent(),
+                    db,
+                    data,
+                    emit,
+                )
+                emit("complete", result)
+            except Exception as e:
+                emit("error", {"error": str(e)})
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, finished)
+
+        task = asyncio.create_task(execute())
+        try:
+            while True:
+                event = await queue.get()
+                if event is finished:
+                    break
+                yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 
 @app.post("/chat")
 async def legacy_chat(request: Request):
@@ -1547,12 +1650,11 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     # Set per-index overview file path
     overview_path = f"index_store/overviews/{index_id}.jsonl"
 
-    # Delegate to advanced RAG API same as session indexing
-    rag_api_url = f"{RAG_API_BASE_URL}/index"
-    # Use the index's dedicated LanceDB table so retrieval matches
+    # Use the index's dedicated LanceDB table so retrieval matches.
     table_name = index.get("vector_table_name")
     _index_meta = index.get("metadata") or {}
     payload = {
+        "index_id": index_id,
         "file_paths": file_paths,
         "session_id": index_id,  # reuse index_id for progress tracking
         "table_name": table_name,
@@ -1618,67 +1720,51 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         _update_index_job(job_id, stage="indexing", progress=20, message="RAG pipeline is indexing documents")
 
     try:
-        # Connect timeout only: index builds legitimately run for hours, but a
-        # server that never accepts the connection should fail fast.
-        rag_resp = requests.post(rag_api_url, json=payload, timeout=(10, 24 * 3600))
-    except requests.exceptions.ConnectionError as e:
-        detail = (
-            f"Could not reach the RAG indexing server at {RAG_API_BASE_URL}. "
-            "Start it in Terminal 2 with 'source .venv/bin/activate' and "
-            "'python -m rag_system.api_server'."
+        if force_reindex:
+            _clear_index_build_artifacts(index_id, table_name)
+        config = build_indexing_config(PIPELINE_CONFIGS["default"], payload)
+        indexing_result = execute_index_build(
+            config,
+            OLLAMA_CONFIG,
+            file_paths,
+            index_id=index_id,
+            force_reindex=force_reindex,
+            job_id=job_id,
+            backend_base_url=BACKEND_BASE_URL,
         )
-        db.update_index_metadata(index_id, {
-            "status": "failed",
-            "build_failed_at": datetime.now().isoformat(),
-            "build_error": detail,
-        })
-        raise HTTPException(status_code=503, detail=detail) from e
-    except requests.exceptions.RequestException as e:
-        detail = f"RAG indexing request failed before completion: {e}"
-        db.update_index_metadata(index_id, {
-            "status": "failed",
-            "build_failed_at": datetime.now().isoformat(),
-            "build_error": detail,
-        })
-        raise HTTPException(status_code=503, detail=detail) from e
-    if rag_resp.status_code == 200:
         final_updates = {
             **meta_updates,
             "status": "functional",
             "rebuilt_at": datetime.now().isoformat(),
         }
         db.update_index_metadata(index_id, final_updates)
-
-        response_data = rag_resp.json()
-        response_data.update(final_updates)
-        return response_data
-
-    if rag_resp.status_code == 499:
-        db.update_index_metadata(index_id, {
-            "status": "cancelled",
-            "build_cancelled_at": datetime.now().isoformat(),
-        })
-        raise RuntimeError("indexing_cancelled")
-
-    # Gracefully handle scenario where table already exists (idempotent build)
-    try:
-        err_json = rag_resp.json()
-    except Exception:
-        err_json = {}
-    err_text = err_json.get('error') if isinstance(err_json, dict) else rag_resp.text
-    if err_text and 'already exists' in err_text:
-        db.update_index_metadata(index_id, {"status": "functional", "rebuilt_at": datetime.now().isoformat()})
         return {
-            "message": "Index already built – skipping rebuild.",
-            "note": err_text
+            "message": f"Indexing process for {len(file_paths)} file(s) completed successfully.",
+            "table_name": table_name,
+            "indexing_result": indexing_result,
+            "indexing_model_warnings": indexing_model_warnings,
+            **final_updates,
         }
-
-    db.update_index_metadata(index_id, {
-        "status": "failed",
-        "build_failed_at": datetime.now().isoformat(),
-        "build_error": rag_resp.text,
-    })
-    raise HTTPException(status_code=500, detail=f"RAG indexing failed: {rag_resp.text}")
+    except RuntimeError as e:
+        if str(e) == "indexing_cancelled":
+            db.update_index_metadata(index_id, {
+                "status": "cancelled",
+                "build_cancelled_at": datetime.now().isoformat(),
+            })
+            raise
+        db.update_index_metadata(index_id, {
+            "status": "failed",
+            "build_failed_at": datetime.now().isoformat(),
+            "build_error": str(e),
+        })
+        raise
+    except Exception as e:
+        db.update_index_metadata(index_id, {
+            "status": "failed",
+            "build_failed_at": datetime.now().isoformat(),
+            "build_error": str(e),
+        })
+        raise HTTPException(status_code=500, detail=f"RAG indexing failed: {e}") from e
 
 
 def _run_index_build_job(job_id: str, options_override: Dict[str, Any] | None = None):
@@ -2023,71 +2109,27 @@ async def _handle_direct_llm_query(session_id: str, message: str, session: dict,
 
 async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: List[str]):
     """
-    Handle query using the full RAG pipeline (delegates to the advanced RAG API running on port 8001).
+    Handle query using the in-process transport-neutral RAG runtime.
 
     Returns:
         tuple[str, List[dict]]: (response_text, source_documents)
     """
-    # Defaults
-    response_text = ""
-    source_docs: List[dict] = []
-
-    # Build payload for RAG API. No table_name: given only the session_id,
-    # the RAG server searches ALL of the session's linked indexes
-    # (multi-collection retrieval) and reranks across them. An explicit
-    # table_name would pin retrieval to a single index.
-    rag_api_url = f"{RAG_API_BASE_URL}/chat"
-    payload: Dict[str, Any] = {
-        "query": message,
-        "session_id": session_id,
-    }
-
-    # Copy optional parameters from the incoming request
-    optional_params: Dict[str, tuple[type, str]] = {
-        "compose_sub_answers": (bool, "compose_sub_answers"),
-        "query_decompose": (bool, "query_decompose"),
-        "ai_rerank": (bool, "ai_rerank"),
-        "context_expand": (bool, "context_expand"),
-        "verify": (bool, "verify"),
-        "retrieval_k": (int, "retrieval_k"),
-        "context_window_size": (int, "context_window_size"),
-        "reranker_top_k": (int, "reranker_top_k"),
-        "search_type": (str, "search_type"),
-        "dense_weight": (float, "dense_weight"),
-        "provence_prune": (bool, "provence_prune"),
-        "provence_threshold": (float, "provence_threshold"),
-        "filters": (dict, "filters"),
-        "agentic": (bool, "agentic"),
-    }
-    for key, (caster, payload_key) in optional_params.items():
-        val = data.get(key)
-        if val is not None:
-            try:
-                payload[payload_key] = caster(val)  # type: ignore[arg-type]
-            except Exception:
-                payload[payload_key] = val
-
     try:
-        # Blocking call in a worker thread: RAG queries take tens of seconds
-        # and must not stall the event loop for every other endpoint.
-        rag_response = await asyncio.to_thread(
-            requests.post, rag_api_url, json=payload, timeout=(10, 600)
+        payload = dict(data)
+        payload.update({
+            "query": message,
+            "session_id": session_id,
+        })
+        rag_data = await asyncio.to_thread(
+            execute_rag_chat,
+            _get_local_rag_agent(),
+            db,
+            payload,
         )
-        if rag_response.status_code == 200:
-            rag_data = rag_response.json()
-            response_text = rag_data.get("answer", "No answer found.")
-            source_docs = rag_data.get("source_documents", [])
-        else:
-            print(f"❌ RAG API error: {rag_response.status_code} {rag_response.text}")
-            raise HTTPException(status_code=502, detail=f"RAG API error ({rag_response.status_code}): {rag_response.text}")
+        response_text = rag_data.get("answer", "No answer found.")
+        source_docs = rag_data.get("source_documents", [])
     except HTTPException:
         raise
-    except requests.exceptions.Timeout:
-        print("❌ RAG API request timed out.")
-        raise HTTPException(status_code=504, detail="The RAG API did not respond in time.")
-    except requests.exceptions.ConnectionError:
-        print("❌ Connection to RAG API failed (port 8001).")
-        raise HTTPException(status_code=503, detail="Could not connect to the RAG API server. Please ensure it is running.")
     except Exception as e:
         print(f"❌ RAG processing error: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing RAG query: {str(e)}")

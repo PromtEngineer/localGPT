@@ -1,7 +1,6 @@
 import json
 import http.server
 import socketserver
-import threading
 from urllib.parse import urlparse, parse_qs
 import os
 import requests
@@ -28,7 +27,6 @@ AGENT_MODE = os.getenv("RAG_CONFIG_MODE", "default")
 print("🧠 Initializing RAG Agent... (This may take a moment)")
 RAG_AGENT = get_agent(AGENT_MODE)
 INDEXING_PIPELINE = get_indexing_pipeline(AGENT_MODE)
-_rag_agent_lock = threading.Lock()  # guards per-request mutations of RAG_AGENT shared state
 
 if RAG_AGENT is None:
     raise RuntimeError("RAG Agent could not be initialized")
@@ -36,47 +34,6 @@ print("✅ RAG Agent initialized successfully.")
 
 # Add helper near top after db & agent init
 # -------------- Helper ----------------
-
-def _apply_index_embedding_model(idx_ids):
-    """Ensure retrieval pipeline uses the embedding model + fusion weights of
-    the ACTIVE index — the same one whose vector table the backend queries
-    (see rag_system.index_selection). Using a different index here embeds
-    queries with the wrong model for the table being searched."""
-    logger = logging.getLogger(__name__)
-    logger.debug("apply_index_embedding_model idx_ids=%s", idx_ids)
-
-    active_idx = select_active_index_id(idx_ids)
-    if not active_idx:
-        logger.warning("apply_index_embedding_model called without index IDs")
-        return
-    try:
-        idx = db.get_index(active_idx)
-        logger.debug(
-            "apply_index_embedding_model index_id=%s metadata=%s",
-            idx.get("id"),
-            idx.get("metadata", {}),
-        )
-        meta = idx.get("metadata") or {}
-        model = meta.get("embedding_model")
-        logger.debug("apply_index_embedding_model metadata_embedding_model=%s", model)
-        rp = RAG_AGENT.retrieval_pipeline
-        if model:
-            current_model = rp.config.get("embedding_model_name")
-            rp.update_embedding_model(model)
-            logger.debug(
-                "apply_index_embedding_model updated_embedding_model previous=%s current=%s",
-                current_model,
-                model,
-            )
-        else:
-            logger.warning("apply_index_embedding_model no embedding model in index metadata")
-        # Apply per-index fusion weights if stored
-        fusion_config = meta.get("fusion_config")
-        if fusion_config and hasattr(rp, "retriever") and hasattr(rp.retriever, "fusion_config"):
-            rp.retriever.fusion_config = fusion_config
-            logger.debug("apply_index_embedding_model applied_fusion_config=%s", fusion_config)
-    except Exception as e:
-        logger.warning("apply_index_embedding_model failed: %s", e)
 
 def _get_table_name_for_session(session_id):
     """Get the correct vector table name for a session by looking up its linked indexes."""
@@ -99,8 +56,8 @@ def _get_table_name_for_session(session_id):
             logger.info(f"📊 Using default table '{default_table}' for session {session_id[:8]}...")
             return default_table
         
-        # Use the ACTIVE index's vector table — must stay consistent with
-        # the backend's choice and _apply_index_embedding_model
+        # Use the ACTIVE index's vector table — collection metadata carries
+        # the matching embedding model and fusion settings into retrieval.
         idx = db.get_index(select_active_index_id(idx_ids))
         if idx and idx.get('vector_table_name'):
             table_name = idx['vector_table_name']
@@ -335,9 +292,8 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             # single collection, preserving the old contract.
             collections = _get_collections_for_session(session_id)
             table_name = _get_table_name_for_session(session_id)
-        elif table_name and isinstance(data.get('filters'), dict):
-            # Explicit table + filters: resolve the index's metadata schema
-            # so the filter can be validated and compiled
+        elif table_name:
+            # Explicit tables still need their embedding/fusion/schema metadata.
             collections = _collection_for_table(table_name)
 
         return {
@@ -389,77 +345,54 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             provence_prune = params["provence_prune"]
             provence_threshold = params["provence_threshold"]
 
-            # Decide execution path
+            generation_model = params["model"] or RAG_AGENT.ollama_config["generation_model"]
+            document_overviews = []
+            if session_id:
+                idx_ids = db.get_indexes_for_session(session_id)
+                document_overviews = RAG_AGENT.get_overviews_for_indexes(idx_ids)
+
             print(f"🔧 Force RAG flag: {force_rag}")
-            # The shared agent/pipeline are mutated per request (generation
-            # model, embedding model, fusion config, active table), so chat
-            # execution must be serialized across handler threads — otherwise
-            # concurrent requests leak settings into each other.
-            with _rag_agent_lock:
-                if params["model"]:
-                    RAG_AGENT.ollama_config['generation_model'] = params["model"]
-                if force_rag:
-                    # Per-request overrides applied locally in run() — no
-                    # shared-config mutation (force_rag bypasses Agent.run).
-                    overrides = _force_rag_overrides(
-                        retrieval_k, reranker_top_k, search_type, dense_weight,
-                        ai_rerank_flag, provence_prune, provence_threshold,
-                    )
-
-                    # 🔄 Apply embedding model for this session (same as in agent path)
-                    if session_id:
-                        idx_ids = db.get_indexes_for_session(session_id)
-                        _apply_index_embedding_model(idx_ids)
-
-                    # Directly invoke retrieval pipeline to bypass triage
-                    result = RAG_AGENT.retrieval_pipeline.run(
-                        query,
-                        table_name=table_name,
-                        window_size_override=context_window_size,
-                        collections=params.get("collections"),
-                        filters=params.get("filters"),
-                        overrides=overrides,
-                    )
-                else:
-                    # Use full agent with smart routing
-                    # Apply Provence overrides even in agent path
-                    rp_cfg = RAG_AGENT.retrieval_pipeline.config
-                    if provence_prune is not None:
-                        rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
-                    if provence_threshold is not None:
-                        rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
-
-                    # 🔄 Refresh document overviews for this session
-                    if session_id:
-                        idx_ids = db.get_indexes_for_session(session_id)
-                        _apply_index_embedding_model(idx_ids)
-                        RAG_AGENT.load_overviews_for_indexes(idx_ids)
-
-                    # 🔧 Set index-specific overview path
-                    if session_id:
-                        rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
-
-                    # 🔧 Configure late chunking
-                    rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
-
-                    result = RAG_AGENT.run(
-                        query,
-                        table_name=table_name,
-                        collections=params.get("collections"),
-                        filters=params.get("filters"),
-                        session_id=session_id,
-                        compose_sub_answers=compose_flag,
-                        query_decompose=decomp_flag,
-                        ai_rerank=ai_rerank_flag,
-                        context_expand=ctx_expand_flag,
-                        verify=verify_flag,
-                        retrieval_k=retrieval_k,
-                        context_window_size=context_window_size,
-                        reranker_top_k=reranker_top_k,
-                        search_type=search_type,
-                        dense_weight=dense_weight,
-                        agentic=params.get("agentic"),
-                    )
+            if force_rag:
+                overrides = _force_rag_overrides(
+                    retrieval_k, reranker_top_k, search_type, dense_weight,
+                    ai_rerank_flag, provence_prune, provence_threshold,
+                )
+                overrides.update({
+                    "generation_model": generation_model,
+                    "latechunk_enabled": True,
+                })
+                result = RAG_AGENT.retrieval_pipeline.run(
+                    query,
+                    table_name=table_name,
+                    window_size_override=context_window_size,
+                    collections=params.get("collections"),
+                    filters=params.get("filters"),
+                    overrides=overrides,
+                )
+            else:
+                result = RAG_AGENT.run(
+                    query,
+                    table_name=table_name,
+                    collections=params.get("collections"),
+                    filters=params.get("filters"),
+                    session_id=session_id,
+                    compose_sub_answers=compose_flag,
+                    query_decompose=decomp_flag,
+                    ai_rerank=ai_rerank_flag,
+                    context_expand=ctx_expand_flag,
+                    verify=verify_flag,
+                    retrieval_k=retrieval_k,
+                    context_window_size=context_window_size,
+                    reranker_top_k=reranker_top_k,
+                    search_type=search_type,
+                    dense_weight=dense_weight,
+                    agentic=params.get("agentic"),
+                    generation_model=generation_model,
+                    document_overviews=document_overviews,
+                    provence_prune=provence_prune,
+                    provence_threshold=provence_threshold,
+                    latechunk_enabled=True,
+                )
             
             # The result is a dict, so we need to dump it to a JSON string
             self.send_json_response(result)
@@ -513,82 +446,57 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     # Client disconnected
                     raise
 
+            generation_model = params["model"] or RAG_AGENT.ollama_config["generation_model"]
+            document_overviews = []
+            if session_id:
+                idx_ids = db.get_indexes_for_session(session_id)
+                document_overviews = RAG_AGENT.get_overviews_for_indexes(idx_ids)
+
             # Run the agent synchronously, emitting checkpoints.
-            # Serialized on _rag_agent_lock: the shared agent/pipeline are
-            # mutated per request, so concurrent chats would corrupt each
-            # other's settings (embedding model, active table, weights).
             try:
-                with _rag_agent_lock:
-                    if params["model"]:
-                        RAG_AGENT.ollama_config['generation_model'] = params["model"]
-                    if force_rag:
-                        # Per-request overrides applied locally in run() — no
-                        # shared-config mutation (force_rag bypasses Agent.run).
-                        overrides = _force_rag_overrides(
-                            retrieval_k, reranker_top_k, search_type, dense_weight,
-                            ai_rerank_flag, provence_prune, provence_threshold,
-                        )
-
-                        # 🔄 Apply embedding model for this session (same as in agent path)
-                        if session_id:
-                            idx_ids = db.get_indexes_for_session(session_id)
-                            _apply_index_embedding_model(idx_ids)
-
-                        # 🔧 Configure late chunking
-                        rp_cfg = RAG_AGENT.retrieval_pipeline.config
-                        rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
-
-                        # Straight retrieval pipeline with streaming events
-                        final_result = RAG_AGENT.retrieval_pipeline.run(
-                            query,
-                            table_name=table_name,
-                            window_size_override=context_window_size,
-                            event_callback=emit,
-                            collections=params.get("collections"),
-                            filters=params.get("filters"),
-                            overrides=overrides,
-                        )
-                    else:
-                        # Provence overrides
-                        rp_cfg = RAG_AGENT.retrieval_pipeline.config
-                        if provence_prune is not None:
-                            rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
-                        if provence_threshold is not None:
-                            rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
-
-                        # 🔄 Refresh overviews for this session
-                        if session_id:
-                            idx_ids = db.get_indexes_for_session(session_id)
-                            _apply_index_embedding_model(idx_ids)
-                            RAG_AGENT.load_overviews_for_indexes(idx_ids)
-
-                        # 🔧 Set index-specific overview path
-                        if session_id:
-                            rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
-
-                        # 🔧 Configure late chunking
-                        rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
-
-                        final_result = RAG_AGENT.run(
-                            query,
-                            table_name=table_name,
-                            collections=params.get("collections"),
-                            filters=params.get("filters"),
-                            session_id=session_id,
-                            compose_sub_answers=compose_flag,
-                            query_decompose=decomp_flag,
-                            ai_rerank=ai_rerank_flag,
-                            context_expand=ctx_expand_flag,
-                            verify=verify_flag,
-                            # ✨ NEW RETRIEVAL PARAMETERS
-                            retrieval_k=retrieval_k,
-                            context_window_size=context_window_size,
-                            reranker_top_k=reranker_top_k,
-                            search_type=search_type,
-                            dense_weight=dense_weight,
-                            agentic=params.get("agentic"),
-                            event_callback=emit,
-                        )
+                if force_rag:
+                    overrides = _force_rag_overrides(
+                        retrieval_k, reranker_top_k, search_type, dense_weight,
+                        ai_rerank_flag, provence_prune, provence_threshold,
+                    )
+                    overrides.update({
+                        "generation_model": generation_model,
+                        "latechunk_enabled": True,
+                    })
+                    final_result = RAG_AGENT.retrieval_pipeline.run(
+                        query,
+                        table_name=table_name,
+                        window_size_override=context_window_size,
+                        event_callback=emit,
+                        collections=params.get("collections"),
+                        filters=params.get("filters"),
+                        overrides=overrides,
+                    )
+                else:
+                    final_result = RAG_AGENT.run(
+                        query,
+                        table_name=table_name,
+                        collections=params.get("collections"),
+                        filters=params.get("filters"),
+                        session_id=session_id,
+                        compose_sub_answers=compose_flag,
+                        query_decompose=decomp_flag,
+                        ai_rerank=ai_rerank_flag,
+                        context_expand=ctx_expand_flag,
+                        verify=verify_flag,
+                        retrieval_k=retrieval_k,
+                        context_window_size=context_window_size,
+                        reranker_top_k=reranker_top_k,
+                        search_type=search_type,
+                        dense_weight=dense_weight,
+                        agentic=params.get("agentic"),
+                        generation_model=generation_model,
+                        document_overviews=document_overviews,
+                        provence_prune=provence_prune,
+                        provence_threshold=provence_threshold,
+                        latechunk_enabled=True,
+                        event_callback=emit,
+                    )
 
                 # Ensure the final answer is sent (in case callback missed it)
                 emit("complete", final_result)

@@ -635,10 +635,12 @@ class MultiCollectionRetrievalTests(unittest.TestCase):
             self.assertNotIn("_collection_rank", d)
 
     def test_single_collection_path_unchanged(self):
+        configured_table = self.pipeline.storage_config["text_table_name"]
         result = self.pipeline.run("conveyor", table_name="table_b", window_size_override=0)
         docs = result["source_documents"]
         self.assertTrue(docs)
         self.assertTrue(all(d["document_id"] == "table_b-doc" for d in docs))
+        self.assertEqual(self.pipeline.storage_config["text_table_name"], configured_table)
 
     def test_collections_capped(self):
         from rag_system.pipelines.retrieval_pipeline import MAX_COLLECTIONS
@@ -709,6 +711,57 @@ class MultiCollectionRetrievalTests(unittest.TestCase):
             self.pipeline._get_retriever_for_model = original
         self.assertEqual(seen["table_a"]["bm25_weight"], 0.8)
         self.assertEqual(seen["table_b"]["bm25_weight"], 0.1)
+
+
+class RequestScopedConcurrencyTests(unittest.TestCase):
+    def test_concurrent_synthesis_keeps_generation_models_isolated(self):
+        import concurrent.futures
+        import threading
+        from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
+
+        barrier = threading.Barrier(2)
+
+        class _RecordingLLM:
+            def stream_completion(self, model, prompt):
+                barrier.wait(timeout=2)
+                yield model
+
+        config = {
+            "storage": {"text_table_name": "default", "db_path": tempfile.mkdtemp()},
+            "retrieval": {},
+            "reranker": {"enabled": False},
+        }
+        self.addCleanup(shutil.rmtree, config["storage"]["db_path"])
+        ollama_config = {"generation_model": "default-model"}
+        pipeline = RetrievalPipeline(config, _RecordingLLM(), ollama_config)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            first = executor.submit(
+                pipeline._synthesize_final_answer,
+                "q1",
+                "facts",
+                generation_model="model-a",
+            )
+            second = executor.submit(
+                pipeline._synthesize_final_answer,
+                "q2",
+                "facts",
+                generation_model="model-b",
+            )
+
+        self.assertEqual({first.result(), second.result()}, {"model-a", "model-b"})
+        self.assertEqual(ollama_config["generation_model"], "default-model")
+
+    def test_api_chat_path_has_no_global_serialization_or_config_writes(self):
+        root = os.path.dirname(os.path.abspath(__file__))
+        source = open(
+            os.path.join(root, "rag_system", "api_server.py"), encoding="utf-8"
+        ).read()
+
+        self.assertNotIn("_rag_agent_lock", source)
+        self.assertNotIn("_apply_index_embedding_model", source)
+        self.assertNotIn("ollama_config['generation_model'] =", source)
+        self.assertNotIn('setdefault("provence", {})["enabled"]', source)
 
 
 class MultiIndexSelectionTests(unittest.TestCase):

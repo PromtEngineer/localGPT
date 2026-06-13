@@ -30,8 +30,7 @@ start_with_local_ollama() {
     echo ""
     echo "🎉 LocalGPT is starting up!"
     echo "📱 Frontend: http://localhost:3000"
-    echo "🔧 Backend API: http://localhost:8000"
-    echo "🧠 RAG API: http://localhost:8001"
+    echo "🔧 Backend + RAG API: http://localhost:8000"
     echo "🤖 Ollama: http://localhost:11434 (local)"
     echo ""
     echo "📊 Check container status: docker compose ps"
@@ -52,8 +51,7 @@ start_with_container_ollama() {
     echo ""
     echo "🎉 LocalGPT is starting up!"
     echo "📱 Frontend: http://localhost:3000"
-    echo "🔧 Backend API: http://localhost:8000"
-    echo "🧠 RAG API: http://localhost:8001"
+    echo "🔧 Backend + RAG API: http://localhost:8000"
     echo "🤖 Ollama: http://localhost:11434 (containerized)"
     echo ""
     echo "⏳ Note: First startup may take longer as Ollama container initializes"
@@ -149,4 +147,4 @@ case "${1:-local}" in
         show_usage
         exit 1
         ;;
-esac 
+esac

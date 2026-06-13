@@ -20,7 +20,13 @@ class Verifier:
     # Synchronous verify() method removed – async version is used everywhere.
 
     # --- Async wrapper ------------------------------------------------
-    async def verify_async(self, query: str, context: str, answer: str) -> VerificationResult:
+    async def verify_async(
+        self,
+        query: str,
+        context: str,
+        answer: str,
+        model_override: str | None = None,
+    ) -> VerificationResult:
         """Async variant that calls the Ollama client asynchronously."""
         prompt = f"""
         You are an automated fact-checker. Determine whether the ANSWER is fully supported by the CONTEXT and output a single line of JSON.
@@ -83,7 +89,9 @@ class Verifier:
         </ANSWER>
         <OUTPUT>
         """
-        resp = await self.llm_client.generate_completion_async(self.llm_model, prompt, format="json")
+        resp = await self.llm_client.generate_completion_async(
+            model_override or self.llm_model, prompt, format="json"
+        )
         try:
             data = json.loads(resp.get("response", "{}"))
             return VerificationResult(

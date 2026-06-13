@@ -5,8 +5,7 @@ RAG System Unified Launcher
 
 A comprehensive launcher that starts all RAG system components:
 - Ollama server
-- RAG API server (port 8001)
-- Backend server (port 8000)  
+- Unified FastAPI backend with RAG runtime (port 8000)
 - Frontend server (port 3000)
 
 Features:
@@ -65,7 +64,6 @@ class ColoredFormatter(logging.Formatter):
     
     SERVICE_COLORS = {
         'ollama': '\033[94m',     # Blue
-        'rag-api': '\033[95m',    # Magenta
         'backend': '\033[96m',    # Cyan
         'frontend': '\033[93m',   # Yellow
         'system': '\033[92m',     # Green
@@ -147,16 +145,6 @@ class ServiceManager:
                 startup_delay=5,
                 required=True
             ),
-            'rag-api': ServiceConfig(
-                name='rag-api',
-                command=[python_executable, '-m', 'rag_system.api_server'],
-                port=8001,
-                cwd=str(PROJECT_ROOT),
-                env=base_env,
-                health_check_path="/models",
-                startup_delay=3,
-                required=True
-            ),
             'backend': ServiceConfig(
                 name='backend',
                 command=[python_executable, 'backend/server.py'],
@@ -182,7 +170,6 @@ class ServiceManager:
             # Use production build for frontend
             base_configs['frontend'].command = ['npm', 'run', 'start']
             # Add production environment variables
-            base_configs['rag-api'].env = {**base_env, 'NODE_ENV': 'production'}
             base_configs['backend'].env = {**base_env, 'NODE_ENV': 'production'}
         
         return base_configs
@@ -458,9 +445,9 @@ class ServiceManager:
             self.logger.error("❌ Failed to start required service: ollama")
             return False
 
-        # rag-api, backend, and frontend have no startup dependency on each other,
-        # so launch them concurrently and wait for all to report healthy.
-        parallel_services = [s for s in ('rag-api', 'backend') if s in self.services]
+        # Backend and frontend have no startup dependency on each other, so
+        # launch them concurrently and wait for both to report healthy.
+        parallel_services = [s for s in ('backend',) if s in self.services]
         if not skip_frontend and 'frontend' in self.services:
             parallel_services.append('frontend')
 

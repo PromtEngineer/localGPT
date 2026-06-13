@@ -1,5 +1,4 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
-const RAG_API_BASE_URL = process.env.NEXT_PUBLIC_RAG_API_URL ?? 'http://localhost:8001';
 
 // Preferred chat (synthesis) models, best first. The local gpt-oss:20b
 // answers measurably better on document questions (67% vs 53% judged
@@ -919,7 +918,7 @@ class ChatAPI {
     if (params.filters) payload.filters = params.filters;
     if (typeof params.agentic === 'boolean') payload.agentic = params.agentic;
 
-    const resp = await fetch(`${RAG_API_BASE_URL}/chat/stream`, {
+    const resp = await fetch(`${API_BASE_URL}/rag/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

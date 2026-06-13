@@ -2,11 +2,10 @@
   "mcpServers": {
     "localgpt": {
       "type": "stdio",
-      "command": "python",
+      "command": ".venv/bin/python",
       "args": ["-m", "rag_system.mcp_server"],
       "env": {
-        "BACKEND_URL": "http://127.0.0.1:8000",
-        "RAG_API_URL": "http://127.0.0.1:8001"
+        "BACKEND_URL": "http://127.0.0.1:8000"
       }
     }
   }

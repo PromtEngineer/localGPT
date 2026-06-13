@@ -7,7 +7,12 @@ class QueryDecomposer:
         self.llm_client = llm_client
         self.llm_model = llm_model
 
-    def decompose(self, query: str, chat_history: List[Dict[str, Any]] | None = None) -> List[str]:
+    def decompose(
+        self,
+        query: str,
+        chat_history: List[Dict[str, Any]] | None = None,
+        model_override: str | None = None,
+    ) -> List[str]:
         """Decompose *query* into standalone sub-queries.
 
         Parameters
@@ -263,7 +268,9 @@ Input payload:
         )
 
         # ---- Call the LLM ----
-        response = self.llm_client.generate_completion(self.llm_model, full_prompt, format="json")
+        response = self.llm_client.generate_completion(
+            model_override or self.llm_model, full_prompt, format="json"
+        )
 
         response_text = response.get('response', '{}')
         try:
@@ -318,9 +325,11 @@ User Question: "{query}"
 JSON Output:
 """
 
-    def translate(self, query: str) -> Dict[str, Any]:
+    def translate(self, query: str, model_override: str | None = None) -> Dict[str, Any]:
         prompt = self._generate_translation_prompt(query)
-        response = self.llm_client.generate_completion(self.llm_model, prompt, format="json")
+        response = self.llm_client.generate_completion(
+            model_override or self.llm_model, prompt, format="json"
+        )
         try:
             return json.loads(response.get('response', '{}'))
         except json.JSONDecodeError:

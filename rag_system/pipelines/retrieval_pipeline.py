@@ -59,6 +59,10 @@ _ai_reranker_init_lock: Lock = Lock()
 # Lock to serialise first-time Provence model load
 _sentence_pruner_lock: Lock = Lock()
 
+# Retriever construction is lazy and can be reached by simultaneous requests.
+# Protect only first-time initialization; retrieval itself remains concurrent.
+_retriever_init_lock: Lock = Lock()
+
 class RetrievalPipeline:
     """
     Orchestrates the state-of-the-art multimodal RAG pipeline.
@@ -106,19 +110,21 @@ class RetrievalPipeline:
             if self.retriever_configs.get("dense", {}).get("enabled", True) is False:
                 return None
 
-            try:
-                db_manager = self._get_db_manager()
-                text_embedder = self._get_text_embedder()
-                fusion_cfg = self.config.get("fusion", {})
-                self.dense_retriever = MultiVectorRetriever(
-                    db_manager,
-                    text_embedder,
-                    vision_model=None,
-                    fusion_config=fusion_cfg,
-                )
-            except Exception as e:
-                logger.error("dense_retriever_initialization_failed error=%s", e)
-                self.dense_retriever = None
+            with _retriever_init_lock:
+                if self.dense_retriever is None:
+                    try:
+                        db_manager = self._get_db_manager()
+                        text_embedder = self._get_text_embedder()
+                        fusion_cfg = self.config.get("fusion", {})
+                        self.dense_retriever = MultiVectorRetriever(
+                            db_manager,
+                            text_embedder,
+                            vision_model=None,
+                            fusion_config=fusion_cfg,
+                        )
+                    except Exception as e:
+                        logger.error("dense_retriever_initialization_failed error=%s", e)
+                        self.dense_retriever = None
         return self.dense_retriever
 
     def _get_graph_retriever(self):
@@ -141,16 +147,18 @@ class RetrievalPipeline:
         if not hasattr(self, "_retrievers_by_model"):
             self._retrievers_by_model: Dict[str, MultiVectorRetriever] = {}
         if embedding_model not in self._retrievers_by_model:
-            try:
-                self._retrievers_by_model[embedding_model] = MultiVectorRetriever(
-                    self._get_db_manager(),
-                    select_embedder(embedding_model),
-                    vision_model=None,
-                    fusion_config=self.config.get("fusion", {}),
-                )
-            except Exception as e:
-                logger.error("retriever_init_failed model=%s error=%s", embedding_model, e)
-                return None
+            with _retriever_init_lock:
+                if embedding_model not in self._retrievers_by_model:
+                    try:
+                        self._retrievers_by_model[embedding_model] = MultiVectorRetriever(
+                            self._get_db_manager(),
+                            select_embedder(embedding_model),
+                            vision_model=None,
+                            fusion_config=self.config.get("fusion", {}),
+                        )
+                    except Exception as e:
+                        logger.error("retriever_init_failed model=%s error=%s", embedding_model, e)
+                        return None
         return self._retrievers_by_model[embedding_model]
 
     def _resolve_latechunk_cfg(self) -> Dict[str, Any]:
@@ -282,7 +290,14 @@ class RetrievalPipeline:
             # If the query fails for any reason, fall back to the single chunk
             return [chunk]
 
-    def _synthesize_final_answer(self, query: str, facts: str, *, event_callback=None) -> str:
+    def _synthesize_final_answer(
+        self,
+        query: str,
+        facts: str,
+        *,
+        event_callback=None,
+        generation_model: Optional[str] = None,
+    ) -> str:
         """Uses a text LLM to synthesize a final answer from extracted facts."""
         prompt = f"""
 You are an AI assistant specialised in answering questions from retrieved context.
@@ -316,7 +331,7 @@ Reminder: every fact in your answer must end with its source number in square br
         # Stream the answer token-by-token so the caller can forward them as SSE
         answer_parts: list[str] = []
         for tok in self.ollama_client.stream_completion(
-            model=self.ollama_config["generation_model"],
+            model=generation_model or self.ollama_config["generation_model"],
             prompt=prompt,
         ):
             answer_parts.append(tok)
@@ -341,7 +356,8 @@ Reminder: every fact in your answer must end with its source number in square br
 
         overrides: per-request retrieval knobs applied locally for THIS call
         only (retrieval_k, reranker_top_k, ai_rerank, search_type,
-        dense_weight, provence_enabled, provence_threshold). These used to be
+        dense_weight, provence_enabled, provence_threshold, latechunk_enabled,
+        generation_model). These used to be
         written into self.config by callers, which forced a global lock to
         stop concurrent requests clobbering each other; resolving them per
         call instead keeps the shared pipeline config immutable.
@@ -355,11 +371,8 @@ Reminder: every fact in your answer must end with its source number in square br
 
         retrieval_k = _ov("retrieval_k", self.config.get("retrieval_k", 10))
 
-        logger.debug("--- Running Hybrid Search for query '%s' (table=%s) ---", query, table_name or self.storage_config.get("text_table_name"))
-
-        # If a custom table_name is provided, propagate it to storage config so helper methods use it
-        if table_name:
-            self.storage_config["text_table_name"] = table_name
+        active_table = table_name or self.storage_config.get("text_table_name")
+        logger.debug("--- Running Hybrid Search for query '%s' (table=%s) ---", query, active_table)
 
         if event_callback:
             event_callback("retrieval_started", {})
@@ -388,15 +401,15 @@ Reminder: every fact in your answer must end with its source number in square br
         # ---------------------------------------------------------------
         if not collections:
             collections = [{
-                "table_name": table_name or self.storage_config.get("text_table_name"),
+                "table_name": active_table,
                 "embedding_model": self.config.get("embedding_model_name"),
                 "index_name": None,
             }]
         collections = collections[:MAX_COLLECTIONS]
         multi_collection = len(collections) > 1
 
-        lc_enabled = bool(self._resolve_latechunk_cfg().get("enabled"))
         lc_cfg = self._resolve_latechunk_cfg()
+        lc_enabled = bool(_ov("latechunk_enabled", lc_cfg.get("enabled")))
 
         from rag_system.metadata_filters import FilterError, compile_filters
 
@@ -758,7 +771,12 @@ Reminder: every fact in your answer must end with its source number in square br
             preview=(context[:2000] + f"…\n[truncated] (total {len(context)} chars)") if len(context) > 2000 else context,
         )
 
-        final_answer = self._synthesize_final_answer(query, context, event_callback=event_callback)
+        final_answer = self._synthesize_final_answer(
+            query,
+            context,
+            event_callback=event_callback,
+            generation_model=ov.get("generation_model"),
+        )
         
         return {"answer": final_answer, "source_documents": final_docs}
 

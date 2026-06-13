@@ -1,38 +1,5 @@
 services:
-  # RAG API server (connects to host Ollama)
-  rag-api:
-    build:
-      context: .
-      dockerfile: Dockerfile.rag-api
-    container_name: rag-api
-    ports:
-      # Publish on loopback only — the RAG API is unauthenticated
-      - "127.0.0.1:8001:8001"
-    environment:
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - NODE_ENV=production
-      - BIND_HOST=0.0.0.0
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
-    extra_hosts:
-      # Make host.docker.internal resolve on Linux Docker Engine too
-      - "host.docker.internal:host-gateway"
-    volumes:
-      # backend mount shares chat_data.db (and its WAL files) with the
-      # backend service — both must see the same SQLite database
-      - ./backend:/app/backend
-      - ./lancedb:/app/lancedb
-      - ./index_store:/app/index_store
-      - ./shared_uploads:/app/shared_uploads
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/models"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
-    networks:
-      - rag-network
-
-  # Backend API server
+  # Unified backend + RAG runtime (connects to host Ollama)
   backend:
     build:
       context: .
@@ -43,18 +10,17 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       - NODE_ENV=production
-      - RAG_API_URL=http://rag-api:8001
       - BACKEND_URL=http://backend:8000
+      - OLLAMA_HOST=http://host.docker.internal:11434
       - BIND_HOST=0.0.0.0
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     volumes:
       # Mount the whole backend dir, not just chat_data.db: SQLite WAL mode
       # creates sidecar -wal/-shm files that a single-file bind mount misses
       - ./backend:/app/backend
+      - ./lancedb:/app/lancedb
+      - ./index_store:/app/index_store
       - ./shared_uploads:/app/shared_uploads
-    depends_on:
-      rag-api:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -73,7 +39,6 @@ services:
         # NEXT_PUBLIC_* vars are inlined into the bundle at BUILD time;
         # setting them as runtime environment has no effect
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-        - NEXT_PUBLIC_RAG_API_URL=${NEXT_PUBLIC_RAG_API_URL:-http://localhost:8001}
     container_name: rag-frontend
     ports:
       - "127.0.0.1:3000:3000"

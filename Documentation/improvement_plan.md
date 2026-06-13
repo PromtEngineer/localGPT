@@ -6,7 +6,8 @@
 > columns, dedup signal merging, fused ranking), shared-state serialization,
 > blocking-call removal, multi-index consistency and multi-collection
 > retrieval, stuck-job handling, all-files-failed handling, conversion/embedding
-> performance, num_ctx, citations, and an evaluation harness (rag_eval.py).
+> performance, num_ctx, citations, request-scoped RAG configuration, and an
+> evaluation harness (rag_eval.py).
 > Treat the item tables below as historical; verify against git log and
 > `test_regression_fixes.py` before acting on anything here.
 
@@ -36,7 +37,7 @@ The immediate order is:
 |----|--------|------|-----------|-------|
 | 1.1 | ✅ Done | Late-chunk result merging | Returned snippets can be single late-chunks → fragmented. | `retrieval_pipeline.py` — `_get_surrounding_chunks_lancedb()` gathers ±1 siblings concurrently; controlled by `context_window_size`. |
 | 1.2 | ✅ Done | Tiered retrieval (ANN pre-filter) | Large indexes → LanceDB full scan can be slow. | IVF-PQ index built after indexing ≥5000 rows; `nprobes=20` at query time in `retrievers.py`. |
-| 1.3 | ⚠️ Partial | Dynamic fusion weights | Different corpora favour dense vs BM25 differently. | Configuration is stored, but the current concat/dedup merge does not reliably fuse modality scores. The test does not assert a ranking change. |
+| 1.3 | ✅ Done | Dynamic fusion weights | Different corpora favour dense vs BM25 differently. | Modality scores are normalized and fused by stable chunk identity; controlled tests verify that changing weights changes ranking. |
 | 1.4 | ✅ Done | Query expansion via KG | Use extracted entities to enrich queries. | `_expand_queries_with_kg()` in `loop.py` appends 1-hop neighbor labels (≤5) to each sub-query when a KG GML file exists. |
 
 ## 2. Routing / Triage
@@ -76,7 +77,7 @@ The immediate order is:
 |--------|------|
 | ✅ Done | JSON structured logging — `StructuredLogger` fully implemented in `rag_system/utils/logging_utils.py`; used throughout the indexing pipeline. |
 | ✅ Done | `/metrics` endpoint — `backend/metrics.py` in-memory counters; `GET /metrics?format=prometheus` returns Prometheus text; middleware tracks latency per endpoint. |
-| ✅ Done | Deep health-probe — `GET /health/deep` in `backend/server.py` checks SQLite, LanceDB, RAG API, and Ollama; returns `{status, checks}`. |
+| ✅ Done | Deep health-probe — `GET /health/deep` in `backend/server.py` checks SQLite, LanceDB, the in-process RAG runtime, and Ollama; returns `{status, checks}`. |
 
 ## 7. Front-end UX
 
@@ -90,7 +91,7 @@ The immediate order is:
 
 | Status | Item |
 |--------|------|
-| ⚠️ Partial | LanceDB hybrid retriever tests pass in the project `.venv` (6 tests), but the fusion test lacks a ranking assertion and direct verification shows different weights currently return identical rankings. |
+| ✅ Done | LanceDB hybrid retrieval, fusion ranking, and search-mode behavior have controlled regression coverage. |
 | ✅ Done | Integration smoke test — `smoke_test.py` added (commit `5ebaf01`). |
 | ⚠️ Partial | GitHub Actions workflow exists, but the configured Python lint gates currently fail locally (`ruff`: 987 errors; `black`: 44 files plus one parse failure). |
 
@@ -103,7 +104,7 @@ The immediate order is:
 | ⚠️ Partial | CI invokes mypy + black, but adding a command is not completion: the current codebase does not pass the configured lint/format gates. |
 | ✅ Done | Dependency hygiene — duplicate top-level requirements were removed; `fuzzywuzzy` / `python-Levenshtein` were replaced with `rapidfuzz`; `rank_bm25`, `scikit-learn`, and `sentence_transformers` were removed from all three requirements files (zero real usage — confirmed via grep and `pip show` reverse-dependency checks; BM25 retrieval was already replaced by LanceDB native FTS), along with the dead `_get_bm25_retriever()` method in `retrieval_pipeline.py` that referenced a no-longer-existing `BM25Retriever` class. `requirements.txt` and `requirements-docker.txt` are now consistent. |
 | ✅ Done | Runtime health/config hygiene — CORS is driven by `CORS_ORIGINS`; RAG `/health` avoids eager embedder loading; Docker Compose sets `BACKEND_URL=http://backend:8000` so RAG index progress callbacks work across containers. |
-| ✅ Done | Clarify the FastAPI backend and legacy RAG HTTP server roles and document the port-8001 boundary. Current architecture is still split, but the service roles are now formally defined in `README.md`. |
+| ✅ Done | FastAPI owns chat, SSE, and index execution through transport-neutral runtimes. Standard startup, frontend, MCP, evaluation, and Docker configuration no longer depend on port 8001. The legacy HTTP module remains only as compatibility cleanup. |
 
 ---
 
@@ -122,17 +123,20 @@ Reduce complexity and improve maintainability.
 * **✅ COMPLETED**: Fix incorrect network name `localgpt_default` → `localgpt_rag-network`
 * **✅ COMPLETED**: Replace `ping` (unavailable in slim containers) with `curl -sf` in network debug commands
 
-### Verification Notes (updated 2026-06-05)
+### Verification Notes (updated 2026-06-13)
 
 Recent focused checks:
-- `python -m pytest test_backend_api_contract.py -q` -> 6 passed
-- `python -m py_compile backend/server.py rag_system/api_server.py rag_system/api_server_with_progress.py rag_system/main.py rag_system/retrieval/retrievers.py rag_system/agent/loop.py`
-- `npx tsc --noEmit`
+- `.venv/bin/python -m pytest -q` -> 70 passed
+- Retrieval evaluation gate -> 100%
+- `npm run lint:ui`
+- `npm run build`
+- Live parallel vector-only/qwen3:0.6b and BM25/qwen3:8b requests -> both HTTP 200 on separate worker threads
 
 Known release blockers:
-- Cloud enrichment API keys are persisted in index job options.
-- Hybrid retrieval tests pass in `.venv`, but fusion/search-mode behavior remains incomplete and the fusion assertion is not meaningful.
-- Shared mutable RAG configuration can leak settings across concurrent requests.
-- **Single API server migration** remains pending; documenting the split is not consolidation.
+- Stream and sanitize large uploads instead of buffering them in memory.
+- Enable SQLite foreign-key enforcement on every connection.
+- Resolve the existing `ruff` and `black` baseline failures.
+- Remove the unused legacy RAG HTTP compatibility modules after a final parity audit.
+- Validate Docker Compose in an environment with Docker installed.
 
 Feel free to rearrange based on team objectives and resource availability. 

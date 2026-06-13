@@ -6,7 +6,8 @@
 > columns, dedup signal merging, fused ranking), shared-state serialization,
 > blocking-call removal, multi-index consistency and multi-collection
 > retrieval, stuck-job handling, all-files-failed handling, conversion/embedding
-> performance, num_ctx, citations, and an evaluation harness (rag_eval.py).
+> performance, num_ctx, citations, request-scoped RAG configuration, and an
+> evaluation harness (rag_eval.py).
 > Treat the item tables below as historical; verify against git log and
 > `test_regression_fixes.py` before acting on anything here.
 
@@ -28,9 +29,27 @@ Verified implementation status as of 2026-06-13:
 | Chunk cache document isolation | Done | Cache keys include document identity as well as content and chunking settings |
 | Index deletion cleanup | Done | Main/late-chunk tables, owned uploads, and per-index overviews are removed before database records |
 | Retrieval evaluation gate | Done | Offline deterministic fixture embedder, isolated temp DB/cache, wired into CI |
-| Request-scoped pipeline state | Pending | Global agent/config mutation still requires service extraction |
-| API server consolidation | Pending | FastAPI still delegates to the RAG service on port 8001 |
+| Request-scoped pipeline state | Done | Generation, embedding/fusion, Provence, table, overview, and late-chunk choices are per request; chat no longer uses a global serialization lock |
+| API server consolidation | Partial | FastAPI now owns chat, SSE, and index execution and standard startup no longer uses port 8001; the legacy compatibility server still awaits deletion |
 | Full observability/guardrails | Pending | Structured logs exist; tracing and policy layers remain roadmap work |
+
+## Request Isolation and Transport Completion
+
+Verified on 2026-06-13:
+
+- [x] Audited the four remaining shared mutations and their downstream readers.
+- [x] Threaded `generation_model` through synthesis, decomposition, routing, and verification calls.
+- [x] Replaced request-time embedding and fusion mutation with per-collection configuration.
+- [x] Passed Provence settings through request overrides without mutating retrieval configuration.
+- [x] Removed the request-time `storage_config["text_table_name"]` write.
+- [x] Removed the global RAG-agent serialization lock and added mutation tripwire coverage.
+- [x] Moved chat, SSE, and index execution into FastAPI through transport-neutral runtimes.
+- [x] Passed the retrieval evaluation gate, 70 Python tests, UI lint, Next.js build, and a live parallel mixed-model/mixed-search request test.
+
+The live test ran vector-only (`retrieval_k=2`, `qwen3:0.6b`) and BM25
+(`retrieval_k=7`, `qwen3:8b`) requests concurrently on separate worker threads.
+Both returned HTTP 200 with grounded answers. Docker Compose validation remains
+pending because Docker was unavailable in the verification environment.
 
 This is the canonical plan for moving LocalGPT from its current split-service,
 partially verified state to a release-ready application. A task is complete only

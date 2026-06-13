@@ -2,13 +2,13 @@
 """Model Context Protocol (stdio) server exposing LocalGPT's indexes as tools.
 
 Lets an MCP client (Claude Desktop / Claude Code) list the local indexes and
-ask questions against them — reusing the running backend + RAG API over HTTP,
+ask questions against them through the unified FastAPI backend,
 so all of LocalGPT's retrieval, multi-collection search, metadata filtering,
 and citation logic applies unchanged. Nothing leaves the machine.
 
 Zero dependencies (stdlib only): newline-delimited JSON-RPC 2.0 over stdio,
-protocol version 2025-03-26. Requires the backend (8000) and RAG API (8001)
-to be running; URLs are configurable via BACKEND_URL / RAG_API_URL.
+protocol version 2025-03-26. Requires the backend on port 8000; its URL is
+configurable via BACKEND_URL.
 
 Register with Claude Code (from the repo root):
     claude mcp add localgpt -- python -m rag_system.mcp_server
@@ -23,7 +23,6 @@ import urllib.error
 
 PROTOCOL_VERSION = "2025-03-26"
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
-RAG_API_URL = os.getenv("RAG_API_URL", "http://127.0.0.1:8001").rstrip("/")
 SERVER_INFO = {"name": "localgpt", "version": "1.0.0"}
 
 
@@ -137,7 +136,7 @@ def _tool_ask_index(args: dict) -> str:
     if isinstance(args.get("filters"), dict) and args["filters"]:
         payload["filters"] = args["filters"]
 
-    result = _http_json("POST", f"{RAG_API_URL}/chat", payload)
+    result = _http_json("POST", f"{BACKEND_URL}/rag/chat", payload)
     if "error" in result:
         raise RuntimeError(result["error"])
 
@@ -200,7 +199,7 @@ def _handle(msg: dict) -> None:
             _result(req_id, {"content": [{"type": "text", "text": text}], "isError": False})
         except urllib.error.URLError as e:
             _result(req_id, {"content": [{"type": "text", "text":
-                f"Could not reach LocalGPT ({e}). Is it running on {BACKEND_URL} / {RAG_API_URL}?"}],
+                f"Could not reach LocalGPT ({e}). Is it running on {BACKEND_URL}?"}],
                 "isError": True})
         except Exception as e:
             _result(req_id, {"content": [{"type": "text", "text": f"Tool error: {e}"}], "isError": True})
@@ -210,7 +209,7 @@ def _handle(msg: dict) -> None:
 
 
 def main() -> None:
-    _log(f"started (backend={BACKEND_URL}, rag_api={RAG_API_URL})")
+    _log(f"started (backend={BACKEND_URL})")
     for line in sys.stdin:
         line = line.strip()
         if not line:

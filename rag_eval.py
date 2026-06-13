@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 GENERATION_MODEL = os.getenv("EVAL_MODEL", "qwen3:8b")
-RAG_API = os.getenv("RAG_API_URL", "http://127.0.0.1:8001").rstrip("/")
+BACKEND_API = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
 EVAL_DIR = "evals"
 
 QUESTION_PROMPT = """You will receive a passage from a document. Write ONE specific, factual question that this passage clearly answers, and the answer.
@@ -277,7 +277,7 @@ def cmd_run_e2e(args, full_id: str, table: str, _model: str):
         if args.model:
             payload["model"] = args.model
         _t0 = _time.time()
-        resp = requests.post(f"{RAG_API}/chat", json=payload, timeout=900)
+        resp = requests.post(f"{BACKEND_API}/rag/chat", json=payload, timeout=900)
         latencies.append(_time.time() - _t0)
         resp.raise_for_status()
         data = resp.json()

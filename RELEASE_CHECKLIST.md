@@ -38,9 +38,9 @@ This file is the canonical release readiness checklist for LocalGPT. It consolid
 
 ## 5. Known gaps and deferred items
 - ✅ Per-file progress display, resume/repair actions, and the maintenance health-report panel are implemented in `IndexPicker.tsx`; manual test cases for all three flows are documented in `Documentation/ui_manual_test_cases.md` (no headless-browser harness in CI yet, so these remain manual).
-- ⚠️ Consolidate the FastAPI backend and legacy RAG HTTP server. The boundary is documented, but the migration is not implemented.
-- ⚠️ Verify fusion weights and search modes affect retrieval rankings with behavioral tests.
-- ⚠️ Remove request-time mutation of shared RAG agent and retrieval configuration.
+- ✅ FastAPI owns chat, SSE, and index execution; standard startup and frontend traffic no longer use the legacy port-8001 server. Deleting the compatibility module is deferred cleanup.
+- ✅ Fusion weights and search modes affect retrieval behavior and have behavioral regression coverage.
+- ✅ Generation model, embedding/fusion, Provence, table selection, and late-chunk settings are request-scoped; the global RAG-agent lock has been removed.
 - ⚠️ Stream and sanitize uploads instead of reading up to 500 MB into memory.
 - ⚠️ Enable SQLite foreign-key enforcement on every connection.
 - ✅ Add a central release checklist reference in the primary documentation index if one exists.
@@ -54,12 +54,12 @@ This file is the canonical release readiness checklist for LocalGPT. It consolid
 - ⚠️ Review the high-level architecture and confirm service boundaries in `Documentation/system_overview.md`.
 - ⚠️ Confirm `RELEASE_CHECKLIST.md` remains up to date before merge.
 
-## Review Snapshot: 2026-06-06
+## Review Snapshot: 2026-06-13
 - ✅ `npm run lint:ui`
-- ✅ `npx tsc --noEmit`
-- ✅ `npm run lint`
 - ✅ `npm run build`
-- ⚠️ `.venv/bin/python -m pytest -q` (28 passed, environment-specific validation required)
+- ✅ `.venv/bin/python -m pytest -q` (70 passed)
+- ✅ Retrieval evaluation gate (100%)
+- ✅ Live parallel mixed-model/mixed-search RAG requests returned HTTP 200 without global serialization
 - ⚠️ Project commands should be validated with a clean target environment; the current environment still imports local `lancedb/` under system Python.
 - ⚠️ `ruff check rag_system/ backend/` currently reports lint failures.
 - ⚠️ `black --check rag_system/ backend/` currently reports formatting issues.

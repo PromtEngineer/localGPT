@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional
 import hashlib
 import json
-import time, asyncio, os
+import time, asyncio, os, threading
 import numpy as np
 import concurrent.futures
 from cachetools import LRUCache
@@ -45,6 +45,7 @@ class Agent:
         self.chat_histories: LRUCache = LRUCache(maxsize=100) # Stores history for 100 recent sessions
         # Routing memo: keyed by "session_id:query_hash" to avoid re-triaging identical queries
         self._route_cache: LRUCache = LRUCache(maxsize=2000)
+        self._state_lock = threading.RLock()
 
         graph_config = self.pipeline_configs.get("graph_strategy", {})
         if graph_config.get("enabled"):
@@ -79,8 +80,8 @@ class Agent:
         except Exception as e:
             print(f"⚠️  Failed to load document overviews from {path}: {e}")
 
-    def load_overviews_for_indexes(self, idx_ids: list[str]):
-        """Aggregate overviews for the given indexes or fall back to global file."""
+    def get_overviews_for_indexes(self, idx_ids: list[str]) -> list[str]:
+        """Return index overviews without changing shared agent state."""
         import os, json
         aggregated: list[str] = []
         for idx in idx_ids:
@@ -101,21 +102,29 @@ class Agent:
                 except Exception as e:
                     print(f"⚠️  Error reading {path}: {e}")
         if aggregated:
-            self.doc_overviews = aggregated
-            self._current_overview_session = "|".join(idx_ids)  # cache composite key so no overwrite
             print(f"📖 Loaded {len(aggregated)} overviews for indexes {[i[:8] for i in idx_ids]}")
-        else:
-            print(f"⚠️  No per-index overviews found for {idx_ids}. Using global overview file.")
-            self._load_overviews(self._global_overview_path)
-            self._current_overview_session = "GLOBAL"
+            return aggregated
 
-        # Routing decisions depend on the overview set: a query triaged to
-        # direct_answer before documents were indexed must be re-triaged once
-        # overviews exist, or it stays pinned to the wrong path forever.
-        fingerprint = hash(tuple(self.doc_overviews or ()))
-        if fingerprint != getattr(self, "_overview_fingerprint", None):
-            self._overview_fingerprint = fingerprint
-            self._route_cache.clear()
+        print(f"⚠️  No per-index overviews found for {idx_ids}. Using global overview file.")
+        fallback: list[str] = []
+        if os.path.exists(self._global_overview_path):
+            try:
+                with open(self._global_overview_path, encoding="utf-8") as fh:
+                    for line in fh:
+                        try:
+                            rec = json.loads(line)
+                            overview = rec.get("overview", "").strip()
+                            if overview:
+                                fallback.append(overview)
+                        except (json.JSONDecodeError, AttributeError):
+                            continue
+            except OSError as e:
+                print(f"⚠️  Failed to read global overview file: {e}")
+        return fallback
+
+    def load_overviews_for_indexes(self, idx_ids: list[str]):
+        """Legacy stateful wrapper; request paths use get_overviews_for_indexes."""
+        self.doc_overviews = self.get_overviews_for_indexes(idx_ids)
 
     def _format_query_with_history(self, query: str, history: list) -> str:
         """Formats the user query with conversation history for context."""
@@ -136,13 +145,25 @@ Latest User Query: "{query}"
         return prompt
 
     # ---------------- Asynchronous triage using Ollama ----------------
-    async def _triage_query_async(self, query: str, history: list) -> str:
+    async def _triage_query_async(
+        self,
+        query: str,
+        history: list,
+        *,
+        generation_model: str,
+        document_overviews: list[str],
+        embedding_model: Optional[str],
+    ) -> str:
         
         print(f"🔍 ROUTING DEBUG: Starting triage for query: '{query[:100]}...'")
         
         # 1️⃣ Fast routing using precomputed overviews (if available)
         print(f"📖 ROUTING DEBUG: Attempting overview-based routing...")
-        routed = self._route_via_overviews(query)
+        routed = self._route_via_overviews(
+            query,
+            document_overviews=document_overviews,
+            embedding_model=embedding_model,
+        )
         if routed:
             print(f"✅ ROUTING DEBUG: Overview routing decided: '{routed}'")
             return routed
@@ -175,7 +196,7 @@ User query: "{query}"
 Respond with JSON: {{"category": "<your_choice>"}}
 """
         resp = self.llm_client.generate_completion(
-            model=self.ollama_config["generation_model"], prompt=prompt, format="json"
+            model=generation_model, prompt=prompt, format="json"
         )
         try:
             data = json.loads(resp.get("response", "{}"))
@@ -186,14 +207,26 @@ Respond with JSON: {{"category": "<your_choice>"}}
             print(f"❌ ROUTING DEBUG: LLM fallback triage JSON parsing failed, defaulting to 'rag_query'")
             return "rag_query"
 
-    def _run_graph_query(self, query: str, history: list) -> Dict[str, Any]:
+    def _run_graph_query(
+        self,
+        query: str,
+        history: list,
+        generation_model: Optional[str] = None,
+        overrides: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         contextual_query = self._format_query_with_history(query, history)
-        structured_query = self.graph_query_translator.translate(contextual_query)
+        structured_query = self.graph_query_translator.translate(
+            contextual_query, generation_model
+        )
         if not structured_query.get("start_node"):
-            return self.retrieval_pipeline.run(contextual_query, window_size_override=0)
+            return self.retrieval_pipeline.run(
+                contextual_query, window_size_override=0, overrides=overrides
+            )
         results = self.graph_retriever.retrieve(structured_query)
         if not results:
-            return self.retrieval_pipeline.run(contextual_query, window_size_override=0)
+            return self.retrieval_pipeline.run(
+                contextual_query, window_size_override=0, overrides=overrides
+            )
         answer = ", ".join([res['details']['node_id'] for res in results])
         return {"answer": f"From the knowledge graph: {answer}", "source_documents": results}
 
@@ -204,7 +237,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
     # ---------------- Public sync API (kept for backwards compatibility) --------------
     async def _run_agentic(self, contextual_query, raw_query, history, table_name,
                            collections, filters, context_expand, event_callback,
-                           overrides=None) -> Dict[str, Any]:
+                           overrides=None, generation_model=None) -> Dict[str, Any]:
         """Plan-and-execute path (opt-in).
 
         1. complexity gate → simple questions run as a single retrieval.
@@ -213,7 +246,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
         4. synthesize one answer over the aggregated evidence (streamed).
         Verification/caching/history run in the shared flow after this returns.
         """
-        gen_model = self.ollama_config["generation_model"]
+        gen_model = generation_model or self.ollama_config["generation_model"]
         window = 0 if context_expand is False else None
 
         def _retrieve(q):
@@ -238,7 +271,12 @@ Respond with JSON: {{"category": "<your_choice>"}}
 
         # 2. Plan focused tasks
         recent_history = history[-5:] if history else []
-        tasks = await asyncio.to_thread(self.query_decomposer.decompose, raw_query, recent_history)
+        tasks = await asyncio.to_thread(
+            self.query_decomposer.decompose,
+            raw_query,
+            recent_history,
+            gen_model,
+        )
         tasks = self._expand_queries_with_kg(tasks) or [contextual_query]
         print(f"🧠 AGENTIC: planned {len(tasks)} task(s): {tasks}")
         if event_callback:
@@ -306,31 +344,42 @@ Respond with JSON: {{"category": "<your_choice>"}}
         context = "\n\n".join(d.get("text", "") for d in all_docs)
         answer = await asyncio.to_thread(
             self.retrieval_pipeline._synthesize_final_answer,
-            contextual_query, context, event_callback=event_callback,
+            contextual_query,
+            context,
+            event_callback=event_callback,
+            generation_model=gen_model,
         )
         result = {"answer": answer, "source_documents": all_docs}
         if event_callback:
             event_callback("final_answer", result)
         return result
 
-    def run(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, agentic: Optional[bool] = None, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, agentic: Optional[bool] = None, generation_model: Optional[str] = None, document_overviews: Optional[list[str]] = None, provence_prune: Optional[bool] = None, provence_threshold: Optional[float] = None, latechunk_enabled: Optional[bool] = None, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
 
             event_callback(phase:str, payload:Any)
         """
-        return asyncio.run(self._run_async(query, table_name, collections, filters, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, agentic, event_callback))
+        return asyncio.run(self._run_async(query, table_name, collections, filters, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, agentic, generation_model, document_overviews, provence_prune, provence_threshold, latechunk_enabled, event_callback))
 
     # ---------------- Main async implementation --------------------------------------
-    async def _run_async(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, agentic: Optional[bool] = None, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_async(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, agentic: Optional[bool] = None, generation_model: Optional[str] = None, document_overviews: Optional[list[str]] = None, provence_prune: Optional[bool] = None, provence_threshold: Optional[float] = None, latechunk_enabled: Optional[bool] = None, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         start_time = time.time()
+        gen_model = generation_model or self.ollama_config["generation_model"]
+        request_overviews = self.doc_overviews if document_overviews is None else document_overviews
+        request_embedding_model = (
+            collections[-1].get("embedding_model")
+            if collections
+            else self.retrieval_pipeline.config.get("embedding_model_name")
+        )
         
         # Emit analyze event at the start
         if event_callback:
             event_callback("analyze", {"query": query})
         
         # 🚀 NEW: Get conversation history
-        history = self.chat_histories.get(session_id, []) if session_id else []
+        with self._state_lock:
+            history = list(self.chat_histories.get(session_id, [])) if session_id else []
         
         # 🔄 Refresh overviews for this session if available
         # if session_id and session_id != getattr(self, "_current_overview_session", None):
@@ -346,14 +395,26 @@ Respond with JSON: {{"category": "<your_choice>"}}
         
         # Check routing memo before calling the (potentially LLM-backed) triage
         _q_hash = hashlib.md5(query[:200].encode("utf-8", errors="replace")).hexdigest()[:8]
-        _route_key = f"{session_id or ''}:{_q_hash}"
-        _cached_route = self._route_cache.get(_route_key)
+        overview_fingerprint = hash(tuple(request_overviews or ()))
+        _route_key = (
+            f"{session_id or ''}:{_q_hash}:{gen_model}:"
+            f"{request_embedding_model or ''}:{overview_fingerprint}"
+        )
+        with self._state_lock:
+            _cached_route = self._route_cache.get(_route_key)
         if _cached_route:
             print(f"🗂️ ROUTING DEBUG: routing_memo_hit for key {_route_key!r} → '{_cached_route}'")
             query_type = _cached_route
         else:
-            query_type = await self._triage_query_async(query, history)
-            self._route_cache[_route_key] = query_type
+            query_type = await self._triage_query_async(
+                query,
+                history,
+                generation_model=gen_model,
+                document_overviews=request_overviews,
+                embedding_model=request_embedding_model,
+            )
+            with self._state_lock:
+                self._route_cache[_route_key] = query_type
         print(f"🎯 ROUTING DEBUG: Final triage decision: '{query_type}'")
         print(f"Agent Triage Decision: '{query_type}'")
         
@@ -374,6 +435,10 @@ Respond with JSON: {{"category": "<your_choice>"}}
             "reranker_top_k": reranker_top_k,
             "search_type": search_type,
             "dense_weight": dense_weight,
+            "provence_enabled": provence_prune,
+            "provence_threshold": provence_threshold,
+            "latechunk_enabled": latechunk_enabled,
+            "generation_model": gen_model,
         }
 
         query_embedding = None
@@ -384,14 +449,29 @@ Respond with JSON: {{"category": "<your_choice>"}}
             if collections else
             (table_name or self.retrieval_pipeline.storage_config.get("text_table_name", ""))
         )
-        cache_scope = "{}|{}|{}".format(
+        cache_scope = "{}|{}|{}|{}".format(
             _scope_tables,
-            self.retrieval_pipeline.config.get("embedding_model_name", ""),
+            request_embedding_model or "",
             json.dumps(filters, sort_keys=True) if filters else "",
+            json.dumps(
+                {
+                    "agentic": agentic,
+                    "compose": compose_sub_answers,
+                    "decompose": query_decompose,
+                    "context_expand": context_expand,
+                    "generation_model": gen_model,
+                    "retrieval": retrieval_overrides,
+                    "verify": verify,
+                },
+                sort_keys=True,
+            ),
         )
         # 🚀 PERSISTENT CACHE: Check semantic cache for similar queries
         if query_type != "direct_answer":
-            text_embedder = self.retrieval_pipeline._get_text_embedder()
+            request_retriever = self.retrieval_pipeline._get_retriever_for_model(
+                request_embedding_model
+            )
+            text_embedder = request_retriever.text_embedder if request_retriever else None
             if text_embedder:
                 # The embedder expects a list, so we wrap the *raw* query only.
                 query_embedding_list = text_embedder.create_embeddings([raw_query])
@@ -408,7 +488,8 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     # Update history even on cache hit
                     if session_id:
                         history.append({"query": query, "answer": cached_result.get('answer', 'Cached answer not found.')})
-                        self.chat_histories[session_id] = history
+                        with self._state_lock:
+                            self.chat_histories[session_id] = history
                     return cached_result
 
         if query_type == "direct_answer":
@@ -428,7 +509,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
 
                 def _blocking_stream():
                     for tok in self.llm_client.stream_completion(
-                        model=self.ollama_config["generation_model"], prompt=prompt
+                        model=gen_model, prompt=prompt
                     ):
                         answer_parts.append(tok)
                         if event_callback:
@@ -443,7 +524,9 @@ Respond with JSON: {{"category": "<your_choice>"}}
         
         elif query_type == "graph_query" and hasattr(self, 'graph_retriever'):
             print(f"✅ ROUTING DEBUG: Executing GRAPH_QUERY path")
-            result = self._run_graph_query(query, history)
+            result = self._run_graph_query(
+                query, history, gen_model, retrieval_overrides
+            )
 
         # --- RAG Query Processing with Optional Query Decomposition ---
         else: # Default to rag_query
@@ -464,14 +547,16 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 result = await self._run_agentic(
                     contextual_query, raw_query, history, table_name,
                     collections, filters, context_expand, event_callback,
-                    retrieval_overrides,
+                    retrieval_overrides, gen_model,
                 )
             elif decomp_enabled:
                 print(f"\n--- Query Decomposition Enabled ---")
                 # Use the raw user query (without conversation history) for decomposition to avoid leakage of prior context
                 # Pass the last 5 conversation turns for context resolution within the decomposer
                 recent_history = history[-5:] if history else []
-                sub_queries = self.query_decomposer.decompose(raw_query, recent_history)
+                sub_queries = self.query_decomposer.decompose(
+                    raw_query, recent_history, gen_model
+                )
                 if event_callback:
                     event_callback("decomposition", {"sub_queries": sub_queries})
 
@@ -626,7 +711,7 @@ FINAL ANSWER:
                         answer_parts: list[str] = []
 
                         for tok in self.llm_client.stream_completion(
-                            model=self.ollama_config["generation_model"],
+                            model=gen_model,
                             prompt=compose_prompt,
                         ):
                             answer_parts.append(tok)
@@ -646,7 +731,11 @@ FINAL ANSWER:
 
                         if all_source_docs:
                             aggregated_context = "\n\n".join([doc['text'] for doc in all_source_docs])
-                            final_answer = self.retrieval_pipeline._synthesize_final_answer(contextual_query, aggregated_context)
+                            final_answer = self.retrieval_pipeline._synthesize_final_answer(
+                                contextual_query,
+                                aggregated_context,
+                                generation_model=gen_model,
+                            )
                             result = {
                                 "answer": final_answer,
                                 "source_documents": all_source_docs
@@ -680,7 +769,12 @@ FINAL ANSWER:
             context_str = "\n".join([doc['text'] for doc in result['source_documents']])
             try:
                 verification = await asyncio.wait_for(
-                    self.verifier.verify_async(contextual_query, context_str, result['answer']),
+                    self.verifier.verify_async(
+                        contextual_query,
+                        context_str,
+                        result['answer'],
+                        gen_model,
+                    ),
                     timeout=30.0,
                 )
             except asyncio.TimeoutError:
@@ -701,7 +795,8 @@ FINAL ANSWER:
         # 🚀 NEW: Update history
         if session_id:
             history.append({"query": query, "answer": result['answer']})
-            self.chat_histories[session_id] = history
+            with self._state_lock:
+                self.chat_histories[session_id] = history
             
         # 🚀 PERSISTENT CACHE: Store result for future queries
         if query_type != "direct_answer" and query_embedding is not None:
@@ -755,21 +850,32 @@ FINAL ANSWER:
     # ------------------------------------------------------------------
     # Module-level cache: overview_file_path+mtime → numpy embeddings array
     _overview_embedding_cache: dict = {}
+    _overview_embedding_cache_lock = threading.Lock()
 
-    def _route_via_overviews(self, query: str) -> str | None:
+    def _route_via_overviews(
+        self,
+        query: str,
+        *,
+        document_overviews: Optional[list[str]] = None,
+        embedding_model: Optional[str] = None,
+    ) -> str | None:
         """Route by cosine similarity between the query and precomputed overview embeddings.
 
         Returns 'rag_query' when max similarity > 0.3, 'direct_answer' when < 0.1,
         or None (fall through to LLM triage) when in the ambiguous band.
         """
-        if not self.doc_overviews:
+        overviews = self.doc_overviews if document_overviews is None else document_overviews
+        if not overviews:
             print("📖 ROUTING DEBUG: No document overviews available, returning None")
             return None
 
-        print(f"📖 ROUTING DEBUG: Found {len(self.doc_overviews)} overviews; using cosine similarity routing")
+        print(f"📖 ROUTING DEBUG: Found {len(overviews)} overviews; using cosine similarity routing")
 
         try:
-            embedder = self.retrieval_pipeline._get_text_embedder()
+            retriever = self.retrieval_pipeline._get_retriever_for_model(embedding_model)
+            embedder = retriever.text_embedder if retriever else None
+            if embedder is None:
+                return None
         except Exception as e:
             print(f"⚠️ ROUTING DEBUG: Could not get embedder for overview routing: {e}")
             return None
@@ -777,22 +883,21 @@ FINAL ANSWER:
         # Cache overview embeddings keyed by overview set + embedding model:
         # the model is switched per index, and vectors from different models
         # are not comparable (same-dimension ones silently produce garbage).
-        embedding_model = self.retrieval_pipeline.config.get("embedding_model_name", "")
-        cache_key = (embedding_model, len(self.doc_overviews), self.doc_overviews[0][:80])
-        if cache_key not in Agent._overview_embedding_cache:
-            try:
-                overview_embs = embedder.create_embeddings(self.doc_overviews)
-                norms = np.linalg.norm(overview_embs, axis=1, keepdims=True)
-                # Keep the cache bounded (dicts preserve insertion order)
-                while len(Agent._overview_embedding_cache) >= 16:
-                    Agent._overview_embedding_cache.pop(next(iter(Agent._overview_embedding_cache)))
-                Agent._overview_embedding_cache[cache_key] = overview_embs / np.maximum(norms, 1e-9)
-                print(f"📖 ROUTING DEBUG: Cached {len(self.doc_overviews)} overview embeddings")
-            except Exception as e:
-                print(f"⚠️ ROUTING DEBUG: Failed to embed overviews: {e}")
-                return None
-
-        norm_overviews = Agent._overview_embedding_cache[cache_key]
+        embedding_model = embedding_model or self.retrieval_pipeline.config.get("embedding_model_name", "")
+        cache_key = (embedding_model, len(overviews), hash(tuple(overviews)))
+        with Agent._overview_embedding_cache_lock:
+            if cache_key not in Agent._overview_embedding_cache:
+                try:
+                    overview_embs = embedder.create_embeddings(overviews)
+                    norms = np.linalg.norm(overview_embs, axis=1, keepdims=True)
+                    while len(Agent._overview_embedding_cache) >= 16:
+                        Agent._overview_embedding_cache.pop(next(iter(Agent._overview_embedding_cache)))
+                    Agent._overview_embedding_cache[cache_key] = overview_embs / np.maximum(norms, 1e-9)
+                    print(f"📖 ROUTING DEBUG: Cached {len(overviews)} overview embeddings")
+                except Exception as e:
+                    print(f"⚠️ ROUTING DEBUG: Failed to embed overviews: {e}")
+                    return None
+            norm_overviews = Agent._overview_embedding_cache[cache_key]
 
         try:
             q_emb = embedder.create_embeddings([query])[0]

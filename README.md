@@ -189,7 +189,7 @@ python system_health_check.py
 # Start in production mode
 ./start-localgpt --mode prod
 
-# Skip frontend (backend + RAG API only)
+# Skip frontend (backend only)
 ./start-localgpt --no-frontend
 
 # View aggregated logs
@@ -201,13 +201,12 @@ python system_health_check.py
 ```
 
 **Service Architecture:**
-The `run_system.py` launcher manages four key services:
+The `run_system.py` launcher manages three key services:
 - **Ollama Server** (port 11434): AI model serving
-- **RAG API Server** (port 8001): Document processing and retrieval
-- **Backend Server** (port 8000): Session management, user-facing API, and orchestration
+- **Backend Server** (port 8000): Session APIs plus in-process indexing, retrieval, and orchestration
 - **Frontend Server** (port 3000): React/Next.js web interface
 
-The backend currently delegates document indexing, retrieval, and advanced pipeline orchestration to the separate `rag_system` service on port `8001`. This boundary is intentional for modularity, but it should be formally documented until the services are consolidated into a single API.
+The frontend communicates only with FastAPI on port `8000`. RAG code remains modular under `rag_system/`, but chat, SSE streaming, and index builds execute in-process without a localhost HTTP hop.
 
 ### Architecture Diagram
 
@@ -215,19 +214,16 @@ The backend currently delegates document indexing, retrieval, and advanced pipel
 graph TB
     Browser[User Browser]<-->Frontend[Frontend (Next.js)\nport 3000]
     Frontend -->|REST API| Backend[Backend Server (FastAPI)\nport 8000]
-    Backend -->|Internal HTTP / API| RAG[RAG API Server (Python)\nport 8001]
+    Backend -->|Python service calls| RAG[RAG runtime]
     RAG -->|Embedding + Generation| Ollama[Ollama Server\nport 11434]
     Backend -->|Metadata / session| SQLite[(SQLite DB)]
     RAG -->|Vector store| Lance[(LanceDB)]
 ```
-```
 
 ### Role Definitions
 
-- **Backend (`backend/`)**: handles frontend-facing APIs, session state, chat routing, health checks, and maintenance tooling.
-- **RAG API (`rag_system/`)**: handles document ingestion, indexing, retrieval, embedding, reranking, and LLM orchestration.
-
-This split improves modularity and allows the RAG engine to evolve independently, but it also introduces an HTTP boundary that should be intentionally managed. If you want to simplify deployment, the next architecture step is to merge the backend service and RAG API into a single unified backend API.
+- **Backend (`backend/`)**: owns FastAPI routing, session state, chat/SSE transport, health checks, and maintenance tooling.
+- **RAG runtime (`rag_system/`)**: provides transport-neutral ingestion, indexing, retrieval, reranking, and LLM orchestration services.
 
 ### Option 3: Manual Component Startup
 
@@ -235,15 +231,11 @@ This split improves modularity and allows the RAG engine to evolve independently
 # Terminal 1: Start Ollama
 ollama serve
 
-# Terminal 2: Start RAG API
+# Terminal 2: Start unified backend
 source .venv/bin/activate
-python -m rag_system.api_server
+python -m backend.server
 
-# Terminal 3: Start Backend
-source .venv/bin/activate
-python backend/server.py
-
-# Terminal 4: Start Frontend
+# Terminal 3: Start Frontend
 npm run dev
 
 # Access at http://localhost:3000
@@ -307,7 +299,6 @@ VECTOR_DB_PATH=./lancedb
 # Server Settings (used by run_system.py)
 BACKEND_PORT=8000
 FRONTEND_PORT=3000
-RAG_API_PORT=8001
 
 # Optional: Override default models
 GENERATION_MODEL=qwen3:8b
@@ -569,8 +560,7 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 1. **Check Logs**: The system creates structured logs in the `logs/` directory:
    - `logs/system.log`: Main system events and errors
    - `logs/ollama.log`: Ollama server logs
-   - `logs/rag-api.log`: RAG API processing logs
-   - `logs/backend.log`: Backend server logs
+   - `logs/backend.log`: Backend and RAG runtime logs
    - `logs/frontend.log`: Frontend build and runtime logs
 
 2. **System Health**: Run comprehensive diagnostics:
@@ -582,7 +572,6 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 3. **Health Endpoints**: Check individual service health:
    - Backend: `http://localhost:8000/health`
    - Deep health: `http://localhost:8000/health/deep`
-   - RAG API: `http://localhost:8001/health`
    - Ollama: `http://localhost:11434/api/tags`
    - Metrics (Prometheus text or JSON): `http://localhost:8000/metrics?format=prometheus`
 

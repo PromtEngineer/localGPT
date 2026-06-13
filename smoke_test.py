@@ -29,7 +29,7 @@ except ImportError:
 # Configuration
 # ---------------------------------------------------------------------------
 BACKEND  = "http://localhost:8000"
-RAG_API  = "http://localhost:8001"
+RAG_API  = BACKEND
 OLLAMA   = "http://localhost:11434"
 FRONTEND = "http://localhost:3000"
 DEFAULT_GENERATION_MODEL = "qwen3:8b"
@@ -176,7 +176,7 @@ def _section_connectivity(state: RunState) -> None:
         return r.status_code == 200, "" if r.status_code == 200 else f"HTTP {r.status_code}"
 
     def chk_rag():
-        r = _get(f"{RAG_API}/models")
+        r = _get(f"{RAG_API}/health")
         return r.status_code == 200, "" if r.status_code == 200 else f"HTTP {r.status_code}"
 
     def chk_backend():
@@ -188,7 +188,7 @@ def _section_connectivity(state: RunState) -> None:
         return r.status_code == 200, "" if r.status_code == 200 else f"HTTP {r.status_code}"
 
     state.c_ollama   = _check("Ollama reachable    (11434)", chk_ollama,   state)
-    state.c_rag      = _check("RAG API reachable   (8001)",  chk_rag,      state)
+    state.c_rag      = _check("RAG runtime via FastAPI (8000)", chk_rag, state)
     state.c_backend  = _check("Backend reachable   (8000)",  chk_backend,  state)
     state.c_frontend = _check("Frontend reachable  (3000)",  chk_frontend, state)
 
@@ -432,7 +432,7 @@ def _section_chat(state: RunState) -> None:
     def chk_rag_chat():
         if not state.c_rag:
             return False, "RAG API offline"
-        r = _post(f"{RAG_API}/chat",
+        r = _post(f"{RAG_API}/rag/chat",
                   {"query": PING_PROMPT, "model": model},
                   timeout=state.llm_timeout)
         if r.status_code != 200:
