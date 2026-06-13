@@ -320,6 +320,92 @@ class IndexingFailureTests(unittest.TestCase):
             pipeline2.run([doc], index_id="regress-ok")
 
 
+class MultiCollectionRetrievalTests(unittest.TestCase):
+    """Multi-collection retrieval: per-collection search, RRF merge when no
+    reranker, per-source context expansion, index-named attribution."""
+
+    @classmethod
+    def setUpClass(cls):
+        import lancedb
+        from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
+        from rag_system.indexing.embedders import LanceDBManager
+        from rag_system.retrieval.retrievers import MultiVectorRetriever
+
+        cls.temp_dir = tempfile.mkdtemp()
+        db = lancedb.connect(cls.temp_dir)
+        rng = np.random.default_rng(7)
+
+        def make_table(name, texts):
+            rows = [{
+                "chunk_id": f"{name}-c{i}", "text": t, "document_id": f"{name}-doc",
+                "chunk_index": i, "metadata": json.dumps({"original_text": t}),
+                "vector": (rng.random(8) / 3).tolist(),
+            } for i, t in enumerate(texts)]
+            tbl = db.create_table(name, rows)
+            tbl.create_fts_index("text", use_tantivy=False)
+
+        make_table("table_a", ["alpha mine crusher report", "alpha budget is 12 million", "alpha schedule details"])
+        make_table("table_b", ["beta plant conveyor study", "beta crusher throughput data", "beta staffing plan"])
+
+        class _StubLLM:
+            def stream_completion(self, *a, **k):
+                yield "stub answer"
+            def generate_completion(self, *a, **k):
+                return {"response": "stub"}
+
+        config = {
+            "storage": {"text_table_name": "table_a", "lancedb_uri": cls.temp_dir, "db_path": cls.temp_dir},
+            "retrieval": {},
+            "reranker": {"enabled": False},
+            "retrieval_k": 3,
+        }
+        cls.pipeline = RetrievalPipeline(config, _StubLLM(), {"generation_model": "stub"})
+
+        manager = LanceDBManager(cls.temp_dir)
+        retriever = MultiVectorRetriever(manager, _FakeEmbedder())
+        # Same fake retriever serves both "models"; the point under test is
+        # the per-collection loop, merge, and attribution — not embedding.
+        cls.pipeline._get_retriever_for_model = lambda model: retriever
+        cls.pipeline._get_ai_reranker = lambda: None
+        cls.pipeline._get_reranker = lambda: None
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.temp_dir)
+
+    def test_multi_collection_search_merges_both_indexes(self):
+        result = self.pipeline.run(
+            "crusher",
+            window_size_override=0,
+            collections=[
+                {"table_name": "table_a", "embedding_model": "m1", "index_name": "Alpha Mine"},
+                {"table_name": "table_b", "embedding_model": "m2", "index_name": "Beta Plant"},
+            ],
+        )
+        docs = result["source_documents"]
+        self.assertTrue(docs)
+        indexes_seen = {d.get("index_name") for d in docs}
+        self.assertEqual(indexes_seen, {"Alpha Mine", "Beta Plant"})
+        # Internal bookkeeping must not leak into the response
+        for d in docs:
+            self.assertNotIn("_source_table", d)
+            self.assertNotIn("_collection_rank", d)
+
+    def test_single_collection_path_unchanged(self):
+        result = self.pipeline.run("conveyor", table_name="table_b", window_size_override=0)
+        docs = result["source_documents"]
+        self.assertTrue(docs)
+        self.assertTrue(all(d["document_id"] == "table_b-doc" for d in docs))
+
+    def test_collections_capped(self):
+        from rag_system.pipelines.retrieval_pipeline import MAX_COLLECTIONS
+        many = [{"table_name": "table_a", "embedding_model": None, "index_name": f"i{n}"} for n in range(9)]
+        # Must not raise; only the first MAX_COLLECTIONS entries are searched
+        result = self.pipeline.run("alpha", window_size_override=0, collections=many)
+        self.assertTrue(result["source_documents"])
+        self.assertLessEqual(MAX_COLLECTIONS, 5)
+
+
 class MultiIndexSelectionTests(unittest.TestCase):
     """Backend (table) and RAG server (embedding model/fusion) must resolve
     the same index for a session — they diverged once (last vs first)."""

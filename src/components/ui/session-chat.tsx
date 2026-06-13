@@ -273,7 +273,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           {
             query: content,
             session_id: activeSessionId,
-            table_name: idxId ? `text_pages_${idxId}` : undefined,
+            // table_name deliberately omitted: the RAG server searches all
+            // of the session's linked indexes (multi-collection retrieval)
             composeSubAnswers,
             decompose: enableDecompose,
             aiRerank: enableAiRerank,

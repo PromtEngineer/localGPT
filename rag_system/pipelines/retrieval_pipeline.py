@@ -24,6 +24,10 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+# Cap on collections searched per query (NVIDIA blueprint uses the same
+# limit) — each adds an embedding + retrieval + its share of rerank cost.
+MAX_COLLECTIONS = 5
+
 _UUID_PREFIX_RE = None
 
 
@@ -122,6 +126,33 @@ class RetrievalPipeline:
             self._graph_retriever = GraphRetriever(graph_path=self.storage_config["graph_path"])
         return self._graph_retriever
 
+    def _get_retriever_for_model(self, embedding_model: Optional[str]):
+        """Retriever for a specific embedding model (multi-collection support).
+
+        Each collection may have been embedded with a different model, so the
+        query must be embedded per-model. Instances are cached; the underlying
+        HF weights are additionally cached process-wide by select_embedder.
+        Falls back to the pipeline's default retriever when no model is given
+        or it matches the current config.
+        """
+        current = self.config.get("embedding_model_name")
+        if not embedding_model or embedding_model == current:
+            return self._get_dense_retriever()
+        if not hasattr(self, "_retrievers_by_model"):
+            self._retrievers_by_model: Dict[str, MultiVectorRetriever] = {}
+        if embedding_model not in self._retrievers_by_model:
+            try:
+                self._retrievers_by_model[embedding_model] = MultiVectorRetriever(
+                    self._get_db_manager(),
+                    select_embedder(embedding_model),
+                    vision_model=None,
+                    fusion_config=self.config.get("fusion", {}),
+                )
+            except Exception as e:
+                logger.error("retriever_init_failed model=%s error=%s", embedding_model, e)
+                return self._get_dense_retriever()
+        return self._retrievers_by_model[embedding_model]
+
     def _resolve_latechunk_cfg(self) -> Dict[str, Any]:
         """Resolve late-chunk config at query time.
 
@@ -201,7 +232,9 @@ class RetrievalPipeline:
         if document_id is None or chunk_index is None or chunk_index == -1:
             return [chunk]
 
-        table_name = self.config["storage"]["text_table_name"]
+        # Multi-collection: neighbors must come from the doc's OWN table,
+        # not whatever table the pipeline config currently points at
+        table_name = chunk.get('_source_table') or self.config["storage"]["text_table_name"]
         try:
             tbl = db_manager.get_table(table_name)
         except Exception:
@@ -280,7 +313,14 @@ Reminder: every fact in your answer must end with its source number in square br
 
         return "".join(answer_parts)
 
-    def run(self, query: str, table_name: str = None, window_size_override: Optional[int] = None, event_callback=None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: str = None, window_size_override: Optional[int] = None,
+            event_callback=None, collections: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+        """Retrieve, rerank, and synthesize.
+
+        collections: optional list of {"table_name", "embedding_model",
+        "index_name"} dicts to search together (capped at MAX_COLLECTIONS).
+        When omitted, the single table_name/config table is used.
+        """
         start_time = time.time()
         retrieval_k = self.config.get("retrieval_k", 10)
 
@@ -292,11 +332,9 @@ Reminder: every fact in your answer must end with its source number in square br
 
         if event_callback:
             event_callback("retrieval_started", {})
-        # Unified retrieval using the refactored MultiVectorRetriever
-        dense_retriever = self._get_dense_retriever()
         # Get the LanceDB reranker for initial score fusion
         lancedb_reranker = self._get_reranker()
-        
+
         # Honor the configured search mode and dense weight — these are set
         # per request by the agent/API server and were previously ignored.
         retrieval_cfg = self.config.get("retrieval", {}) or {}
@@ -312,40 +350,70 @@ Reminder: every fact in your answer must end with its source number in square br
             except (TypeError, ValueError):
                 pass
 
-        retrieved_docs = []
-        if dense_retriever:
-            retrieved_docs = dense_retriever.retrieve(
-                text_query=query,
-                table_name=table_name or self.storage_config["text_table_name"],
-                k=retrieval_k,
-                reranker=lancedb_reranker, # Pass the reranker to enable hybrid search
-                vector_only=vector_only_search,
-                fts_only=fts_only_search,
-                fusion_override=fusion_override,
-            )
+        # ---------------------------------------------------------------
+        # Multi-collection retrieval (NVIDIA blueprint contract): retrieve
+        # retrieval_k from EACH collection with that collection's embedding
+        # model, then rank globally across collections. Single-collection
+        # requests are the degenerate case of the same path.
+        # ---------------------------------------------------------------
+        if not collections:
+            collections = [{
+                "table_name": table_name or self.storage_config.get("text_table_name"),
+                "embedding_model": self.config.get("embedding_model_name"),
+                "index_name": None,
+            }]
+        collections = collections[:MAX_COLLECTIONS]
+        multi_collection = len(collections) > 1
 
-        # ---------------------------------------------------------------
-        # Late-Chunk retrieval (optional)
-        # ---------------------------------------------------------------
         lc_enabled = bool(self._resolve_latechunk_cfg().get("enabled"))
-        if lc_enabled and dense_retriever:
-            lc_cfg = self._resolve_latechunk_cfg()
-            active_table = table_name or self.storage_config.get("text_table_name")
-            lc_table = lc_cfg.get("lancedb_table_name") or (f"{active_table}_lc" if active_table else None)
-            if lc_table and self._lancedb_table_exists(dense_retriever, lc_table):
-                try:
-                    # vector_only: lc tables are built without an FTS index
-                    lc_docs = dense_retriever.retrieve(
-                        text_query=query,
-                        table_name=lc_table,
-                        k=retrieval_k,
-                        vector_only=True,
-                    )
-                    retrieved_docs.extend(lc_docs)
-                except Exception as e:
-                    logger.warning("latechunk_retrieval_failed table=%s error=%s", lc_table, e)
-            else:
-                logger.debug("latechunk_table_missing table=%s", lc_table)
+        lc_cfg = self._resolve_latechunk_cfg()
+
+        retrieved_docs = []
+        for coll in collections:
+            coll_table = coll.get("table_name")
+            if not coll_table:
+                continue
+            retriever = self._get_retriever_for_model(coll.get("embedding_model"))
+            if not retriever:
+                continue
+            try:
+                docs = retriever.retrieve(
+                    text_query=query,
+                    table_name=coll_table,
+                    k=retrieval_k,
+                    reranker=lancedb_reranker,
+                    vector_only=vector_only_search,
+                    fts_only=fts_only_search,
+                    fusion_override=fusion_override,
+                )
+            except Exception as e:
+                logger.warning("collection_retrieval_failed table=%s error=%s", coll_table, e)
+                continue
+
+            # Late-chunk leg per collection (vector_only: no FTS index there)
+            if lc_enabled:
+                lc_table = lc_cfg.get("lancedb_table_name") or f"{coll_table}_lc"
+                if self._lancedb_table_exists(retriever, lc_table):
+                    try:
+                        docs.extend(retriever.retrieve(
+                            text_query=query, table_name=lc_table,
+                            k=retrieval_k, vector_only=True,
+                        ))
+                    except Exception as e:
+                        logger.warning("latechunk_retrieval_failed table=%s error=%s", lc_table, e)
+
+            for rank, d in enumerate(docs, start=1):
+                # Source bookkeeping: expansion must fetch neighbors from the
+                # doc's own table, and citations should name the index
+                d['_source_table'] = coll_table
+                d['_collection_rank'] = rank
+                if coll.get("index_name"):
+                    d['index_name'] = coll["index_name"]
+            retrieved_docs.extend(docs)
+
+        if multi_collection:
+            logger.info("multi_collection_retrieval collections=%s docs=%s",
+                        [c.get("table_name") for c in collections], len(retrieved_docs))
 
         if event_callback:
             event_callback("retrieval_done", {"count": len(retrieved_docs)})
@@ -437,20 +505,34 @@ Reminder: every fact in your answer must end with its source number in square br
             if event_callback:
                 event_callback("rerank_done", {"count": len(reranked_docs)})
         else:
-            # If no AI reranker, proceed with the initially retrieved docs
-            reranked_docs = retrieved_docs
+            # No AI reranker. A single collection keeps its fused retrieval
+            # order; across collections the scores are not comparable
+            # (different tables/embedding models), so fall back to Reciprocal
+            # Rank Fusion over each collection's own ranking.
+            if multi_collection:
+                reranked_docs = sorted(
+                    retrieved_docs,
+                    key=lambda d: 1.0 / (60 + d.get('_collection_rank', 10**6)),
+                    reverse=True,
+                )
+            else:
+                reranked_docs = retrieved_docs
 
         # Keep-union rescue: cross-encoder rerankers score flattened table
         # chunks poorly against natural-language questions, so the chunks
-        # most likely to hold precise values get cut. Always retain the top
-        # few by retrieval (fused) score, slotted just below the reranker's
-        # picks so they outrank expansion neighbors and survive the context
-        # budget. Measured on the eval set: this is where answer-bearing
-        # chunks were being lost between retrieval (86%) and synthesis (71%).
+        # most likely to hold precise values get cut. Always retain EACH
+        # collection's top few by retrieval rank, slotted just below the
+        # reranker's picks so they outrank expansion neighbors and survive
+        # the context budget. Measured on the eval set: this is where
+        # answer-bearing chunks were lost between retrieval (86%) and
+        # synthesis (71%).
         keep_n = int(self.config.get("reranker", {}).get("keep_top_retrieval", 3))
         if ai_reranker and keep_n > 0 and reranked_docs is not retrieved_docs:
             have = {d.get('chunk_id') for d in reranked_docs}
-            rescued = [d for d in retrieved_docs[:keep_n] if d.get('chunk_id') not in have]
+            rescued = [
+                d for d in retrieved_docs
+                if d.get('_collection_rank', 10**6) <= keep_n and d.get('chunk_id') not in have
+            ]
             if rescued:
                 floor = min((d.get('rerank_score', 0.0) for d in reranked_docs), default=0.0)
                 for j, doc in enumerate(rescued, start=1):
@@ -478,6 +560,11 @@ Reminder: every fact in your answer must end with its source number in square br
                                 # If this is the *central* chunk we already reranked, carry over its score
                                 if cid == seed_chunk.get('chunk_id') and 'rerank_score' in seed_chunk:
                                     surrounding_chunk['rerank_score'] = seed_chunk['rerank_score']
+                                # Neighbors inherit the seed's collection attribution
+                                if seed_chunk.get('_source_table'):
+                                    surrounding_chunk.setdefault('_source_table', seed_chunk['_source_table'])
+                                if seed_chunk.get('index_name'):
+                                    surrounding_chunk.setdefault('index_name', seed_chunk['index_name'])
                                 expanded_chunks[cid] = surrounding_chunk
                     except Exception as e:
                         logger.error("context_expansion_chunk_failed chunk_id=%s error=%s", seed_chunk.get('chunk_id'), e)
@@ -555,8 +642,11 @@ Reminder: every fact in your answer must end with its source number in square br
 
         for doc in final_docs:
             # Remove heavy or internal-only fields before serialising
+            # (index_name stays: the UI sources list can show it)
             doc.pop("vector", None)
             doc.pop("_distance", None)
+            doc.pop("_source_table", None)
+            doc.pop("_collection_rank", None)
             # Clean numeric fields
             for key in ['score', '_distance', 'rerank_score']:
                 if key in doc:
@@ -580,9 +670,16 @@ Reminder: every fact in your answer must end with its source number in square br
         # Number each snippet and label it with its source so the model can
         # cite inline as [N] — the numbers match the order of the sources
         # list shown in the UI, and blends across similar documents become
-        # visible in the answer
+        # visible in the answer. With multiple indexes, the index name is
+        # part of the label so cross-index blends are visible too.
+        def _source_label(doc):
+            name = _source_display_name(doc.get('document_id'))
+            if doc.get('index_name'):
+                return f"{doc['index_name']} — {name}"
+            return name
+
         context = "\n\n".join(
-            f"[Source {i}: {_source_display_name(doc.get('document_id'))}]\n{doc['text']}"
+            f"[Source {i}: {_source_label(doc)}]\n{doc['text']}"
             for i, doc in enumerate(final_docs, start=1)
         )
 

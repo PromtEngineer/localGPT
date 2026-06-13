@@ -1,5 +1,15 @@
 # RAG System - Improvement Roadmap
 
+> **STATUS NOTE (2026-06-12):** This document predates a major fix cycle and
+> overstates open defects. Since 2026-06-06, the following have shipped with
+> regression coverage: secrets scrubbing, hybrid fusion semantics (score
+> columns, dedup signal merging, fused ranking), shared-state serialization,
+> blocking-call removal, multi-index consistency and multi-collection
+> retrieval, stuck-job handling, all-files-failed handling, conversion/embedding
+> performance, num_ctx, citations, and an evaluation harness (rag_eval.py).
+> Treat the item tables below as historical; verify against git log and
+> `test_regression_fixes.py` before acting on anything here.
+
 _Revision: 2026-06-06 (full-codebase review and verification refresh)_
 
 This document captures high-impact enhancements identified during review, updated to reflect current implementation status. Items marked ✅ are in the codebase and have at least focused verification; items marked ⏳ are pending or intentionally deferred.

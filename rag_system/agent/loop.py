@@ -201,16 +201,16 @@ Respond with JSON: {{"category": "<your_choice>"}}
         return asyncio.run(self._run_async(query, session_id=session_id))
 
     # ---------------- Public sync API (kept for backwards compatibility) --------------
-    def run(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: str = None, collections: list | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
 
             event_callback(phase:str, payload:Any)
         """
-        return asyncio.run(self._run_async(query, table_name, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback))
+        return asyncio.run(self._run_async(query, table_name, collections, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback))
 
     # ---------------- Main async implementation --------------------------------------
-    async def _run_async(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_async(self, query: str, table_name: str = None, collections: list | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         start_time = time.time()
         
         # Emit analyze event at the start
@@ -294,8 +294,13 @@ Respond with JSON: {{"category": "<your_choice>"}}
         query_embedding = None
         # Cache entries are scoped to the active index table + embedding model
         # so one index's answers are never served for another.
+        _scope_tables = (
+            ",".join(sorted(c.get("table_name") or "" for c in collections))
+            if collections else
+            (table_name or self.retrieval_pipeline.storage_config.get("text_table_name", ""))
+        )
         cache_scope = "{}|{}".format(
-            table_name or self.retrieval_pipeline.storage_config.get("text_table_name", ""),
+            _scope_tables,
             self.retrieval_pipeline.config.get("embedding_model_name", ""),
         )
         # 🚀 PERSISTENT CACHE: Check semantic cache for similar queries
@@ -389,7 +394,8 @@ Respond with JSON: {{"category": "<your_choice>"}}
                         sub_queries[0],
                         table_name,
                         0 if context_expand is False else None,
-                        event_callback=event_callback
+                        event_callback=event_callback,
+                        collections=collections,
                     )
                     if event_callback:
                         event_callback("single_query_result", result)
@@ -437,6 +443,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                                 table_name,
                                 0 if context_expand is False else None,
                                 make_cb(i),
+                                collections=collections,
                             ): (i, sub_query)
                             for i, sub_query in enumerate(sub_queries)
                         }
@@ -550,7 +557,7 @@ FINAL ANSWER:
                                 event_callback("final_answer", result)
             else:
                 # Standard retrieval (single-query)
-                result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback)
+                result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback, collections=collections)
 
                 # After run, result['source_documents'] is reranked list
                 reranked_docs = result.get('source_documents', [])

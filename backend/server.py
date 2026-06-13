@@ -1865,22 +1865,15 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
     response_text = ""
     source_docs: List[dict] = []
 
-    # Build payload for RAG API. The active-index choice is shared with the
-    # RAG server (rag_system.index_selection): it resolves the embedding
-    # model for the same index whose table we name here.
+    # Build payload for RAG API. No table_name: given only the session_id,
+    # the RAG server searches ALL of the session's linked indexes
+    # (multi-collection retrieval) and reranks across them. An explicit
+    # table_name would pin retrieval to a single index.
     rag_api_url = f"{RAG_API_BASE_URL}/chat"
-    active_idx = select_active_index_id(idx_ids)
-    if active_idx:
-        idx_meta = db.get_index(active_idx) or {}
-        table_name = idx_meta.get("vector_table_name") or f"text_pages_{active_idx}"
-    else:
-        table_name = None
     payload: Dict[str, Any] = {
         "query": message,
         "session_id": session_id,
     }
-    if table_name:
-        payload["table_name"] = table_name
 
     # Copy optional parameters from the incoming request
     optional_params: Dict[str, tuple[type, str]] = {

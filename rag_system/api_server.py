@@ -123,6 +123,32 @@ def _get_table_name_for_session(session_id):
         logger.info(f"📊 Using default table '{default_table}' for session {session_id[:8]}...")
         return default_table
 
+def _get_collections_for_session(session_id):
+    """All linked indexes as retrieval collections (most recent last, cap 5).
+
+    Each entry carries the table plus the embedding model that table was
+    built with, so the pipeline can embed the query per collection.
+    """
+    if not session_id:
+        return None
+    try:
+        idx_ids = db.get_indexes_for_session(session_id)
+    except Exception as e:
+        logging.getLogger(__name__).warning("collections_lookup_failed session=%s error=%s", session_id, e)
+        return None
+    collections = []
+    for iid in idx_ids[-5:]:
+        idx = db.get_index(iid)
+        if idx and idx.get("vector_table_name"):
+            meta = idx.get("metadata") or {}
+            collections.append({
+                "table_name": idx["vector_table_name"],
+                "embedding_model": meta.get("embedding_model"),
+                "index_name": idx.get("name"),
+            })
+    return collections or None
+
+
 def _cors_allowed_origins() -> list[str]:
     origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
     return [o.strip() for o in origins.split(",") if o.strip()]
@@ -266,7 +292,12 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
 
         session_id = data.get('session_id')
         table_name = data.get('table_name')
+        collections = None
         if not table_name and session_id:
+            # No explicit table: search ALL of the session's linked indexes.
+            # An explicit table_name (eval harness, API callers) pins a
+            # single collection, preserving the old contract.
+            collections = _get_collections_for_session(session_id)
             table_name = _get_table_name_for_session(session_id)
 
         return {
@@ -274,6 +305,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             "model": requested_model if isinstance(requested_model, str) and requested_model else None,
             "session_id": session_id,
             "table_name": table_name,
+            "collections": collections,
             "compose_flag": data.get('compose_sub_answers'),
             "decomp_flag": data.get('query_decompose'),
             "ai_rerank_flag": data.get('ai_rerank'),
@@ -360,6 +392,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                         query,
                         table_name=table_name,
                         window_size_override=context_window_size,
+                        collections=params.get("collections"),
                     )
                 else:
                     # Use full agent with smart routing
@@ -386,6 +419,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     result = RAG_AGENT.run(
                         query,
                         table_name=table_name,
+                        collections=params.get("collections"),
                         session_id=session_id,
                         compose_sub_answers=compose_flag,
                         query_decompose=decomp_flag,
@@ -499,6 +533,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                             table_name=table_name,
                             window_size_override=context_window_size,
                             event_callback=emit,
+                            collections=params.get("collections"),
                         )
                     else:
                         # Provence overrides
@@ -524,6 +559,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                         final_result = RAG_AGENT.run(
                             query,
                             table_name=table_name,
+                            collections=params.get("collections"),
                             session_id=session_id,
                             compose_sub_answers=compose_flag,
                             query_decompose=decomp_flag,
