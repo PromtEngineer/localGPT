@@ -424,6 +424,7 @@ class ChatAPI {
       forceRag?: boolean;
       forceDirect?: boolean;
       provencePrune?: boolean;
+      filters?: Record<string, unknown>;
     } = {}
   ): Promise<SessionChatResponse & { source_documents: SourceDocument[] }> {
     try {
@@ -449,6 +450,7 @@ class ChatAPI {
           ...(typeof opts.forceRag === 'boolean' && { force_rag: opts.forceRag }),
           ...(typeof opts.forceDirect === 'boolean' && { force_direct: opts.forceDirect }),
           ...(typeof opts.provencePrune === 'boolean' && { provence_prune: opts.provencePrune }),
+          ...(opts.filters && { filters: opts.filters }),
         }),
       });
 
@@ -870,6 +872,7 @@ class ChatAPI {
       denseWeight?: number;
       forceRag?: boolean;
       provencePrune?: boolean;
+      filters?: Record<string, unknown>;
     },
     onEvent: (event: { type: string; data: ApiRecord }) => void,
     signal?: AbortSignal,
@@ -893,6 +896,7 @@ class ChatAPI {
     if (typeof denseWeight === 'number') payload.dense_weight = denseWeight;
     if (typeof forceRag === 'boolean') payload.force_rag = forceRag;
     if (typeof provencePrune === 'boolean') payload.provence_prune = provencePrune;
+    if (params.filters) payload.filters = params.filters;
 
     const resp = await fetch(`${RAG_API_BASE_URL}/chat/stream`, {
       method: 'POST',

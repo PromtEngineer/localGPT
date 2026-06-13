@@ -61,6 +61,24 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   const [forceDocs, setForceDocs] = useState<boolean>(false)
   // Provence pruning toggle
   const [provencePrune, setProvencePrune] = useState<boolean>(false)
+  // Typed metadata filters, e.g. "project=Antapaccay, year>=2020" — parsed
+  // client-side into a filters object; types are validated server-side
+  // against the index's metadata schema
+  const [metadataFilters, setMetadataFilters] = useState<string>('')
+
+  const parseMetadataFilters = (raw: string): Record<string, unknown> | undefined => {
+    const filters: Record<string, unknown> = {}
+    for (const part of raw.split(',')) {
+      const entry = part.trim()
+      if (!entry) continue
+      const m = entry.match(/^([a-z][a-z0-9_]*)\s*(>=|<=|!=|==|=|>|<)\s*(.+)$/i)
+      if (!m) continue
+      const [, field, op, value] = m
+      if (op === '=' || op === '==') filters[field.toLowerCase()] = value.trim()
+      else filters[field.toLowerCase()] = { [op]: value.trim() }
+    }
+    return Object.keys(filters).length ? filters : undefined
+  }
   
   // ✨ NEW RETRIEVAL PARAMETERS
   const [retrievalK, setRetrievalK] = useState<number>(20)
@@ -288,6 +306,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             searchType,
             forceRag: forceDocs,
             provencePrune,
+            filters: parseMetadataFilters(metadataFilters),
           },
           (evt) => {
             console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
@@ -515,6 +534,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           searchType,
           forceRag: forceDocs,
           provencePrune,
+          filters: parseMetadataFilters(metadataFilters),
         })
       
       const aiMessage: ChatMessage = {
@@ -734,6 +754,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'slider', label:'Context window size', value: contextWindowSize, setter: setContextWindowSize, min: 0, max: 5, unit: ' chunks'},
             {type: 'toggle', label:'Prune irrelevant sentences', checked: provencePrune, setter: setProvencePrune},
             {type: 'toggle', label:'Always search documents', checked: forceDocs, setter: setForceDocs},
+            {type: 'text', label:'Metadata filters', value: metadataFilters, setter: setMetadataFilters, placeholder: 'project=Antapaccay, year>=2020'},
           ]}
         />
       )}

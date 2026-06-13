@@ -228,6 +228,7 @@ class ChatDatabase:
         _migrations = [
             "ALTER TABLE index_job_files ADD COLUMN attempt_count INTEGER DEFAULT 0",
             "ALTER TABLE index_job_files ADD COLUMN last_error_code TEXT",
+            "ALTER TABLE index_documents ADD COLUMN custom_metadata TEXT",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_session_indexes_unique ON session_indexes (session_id, index_id)",
         ]
         for _sql in _migrations:
@@ -513,8 +514,9 @@ class ChatDatabase:
             return None
         idx = dict(row)
         idx['metadata'] = json.loads(idx['metadata'] or '{}')
-        cur = conn.execute('SELECT original_filename, stored_path FROM index_documents WHERE index_id=?', (index_id,))
-        docs = [{'filename': r[0], 'stored_path': r[1]} for r in cur.fetchall()]
+        cur = conn.execute('SELECT original_filename, stored_path, custom_metadata FROM index_documents WHERE index_id=?', (index_id,))
+        docs = [{'filename': r[0], 'stored_path': r[1],
+                 'custom_metadata': json.loads(r[2]) if r[2] else None} for r in cur.fetchall()]
         idx['documents'] = docs
         conn.close()
         return idx
@@ -535,9 +537,13 @@ class ChatDatabase:
         conn.close()
         return res
 
-    def add_document_to_index(self, index_id: str, filename: str, stored_path: str):
+    def add_document_to_index(self, index_id: str, filename: str, stored_path: str,
+                              custom_metadata: dict | None = None):
         conn = _connect(self.db_path)
-        conn.execute('INSERT INTO index_documents (index_id, original_filename, stored_path) VALUES (?,?,?)', (index_id, filename, stored_path))
+        conn.execute(
+            'INSERT INTO index_documents (index_id, original_filename, stored_path, custom_metadata) VALUES (?,?,?,?)',
+            (index_id, filename, stored_path, json.dumps(custom_metadata) if custom_metadata else None),
+        )
         conn.commit()
         conn.close()
 
@@ -585,7 +591,7 @@ class ChatDatabase:
                     db_path = os.getenv('LANCEDB_PATH') or './rag_system/index_store/lancedb'
                     ldb = LanceDBManager(db_path)
                     db = ldb.db
-                    if hasattr(db, 'table_names') and vector_table_name in db.table_names():
+                    if hasattr(db, 'table_names') and vector_table_name in db.table_names(limit=10_000):
                         db.drop_table(vector_table_name)
                         print(f"🚮 Dropped LanceDB table '{vector_table_name}'")
                 except Exception as e:
@@ -836,13 +842,13 @@ class ChatDatabase:
                     ldb = LanceDBManager(db_path)
                     
                     # Check if table exists
-                    if not hasattr(ldb.db, 'table_names') or vector_table_name not in ldb.db.table_names():
+                    if not hasattr(ldb.db, 'table_names') or vector_table_name not in ldb.db.table_names(limit=10_000):
                         # Table doesn't exist - this means the index was never properly built
                         inferred_metadata = {
                             'status': 'incomplete',
                             'issue': 'Vector table not found - index may not have been built properly',
                             'vector_table_expected': vector_table_name,
-                            'available_tables': list(ldb.db.table_names()) if hasattr(ldb.db, 'table_names') else [],
+                            'available_tables': list(ldb.db.table_names(limit=10_000)) if hasattr(ldb.db, 'table_names') else [],
                             'metadata_inferred_at': datetime.now().isoformat(),
                             'metadata_source': 'lancedb_inspection'
                         }

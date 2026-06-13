@@ -29,7 +29,15 @@ export interface DropdownOption {
   options: { value: string; label: string }[];
 }
 
-export type SettingOption = ToggleOption | SliderOption | DropdownOption;
+export interface TextOption {
+  type: 'text';
+  label: string;
+  value: string;
+  setter: (v: string) => void;
+  placeholder?: string;
+}
+
+export type SettingOption = ToggleOption | SliderOption | DropdownOption | TextOption;
 
 interface Props {
   options: SettingOption[];
@@ -49,7 +57,8 @@ const optionHelp: Record<string,string> = {
   'Retrieval chunks':'Number of chunks fetched before reranking.',
   'LLM':'Select which model generates the final answer.',
   'Search type':'Choose retrieval strategy (Hybrid recommended).',
-  'Reranker top chunks':'Limit how many chunks are re-ranked to speed up processing.'
+  'Reranker top chunks':'Limit how many chunks are re-ranked to speed up processing.',
+  'Metadata filters':'Restrict retrieval to documents matching typed metadata, e.g. project=Antapaccay, year>=2020. Requires a metadata schema on the index.'
 };
 
 export function ChatSettingsModal({ options, onClose }: Props) {
@@ -94,6 +103,20 @@ export function ChatSettingsModal({ options, onClose }: Props) {
           </div>
         );
       
+      case 'text':
+        return (
+          <div key={opt.label} className="space-y-2">
+            <span className="text-sm text-gray-300 flex items-center gap-1">{displayName(opt.label)}{optionHelp[displayName(opt.label)] && <InfoTooltip text={optionHelp[displayName(opt.label)]} size={12} />}</span>
+            <input
+              type="text"
+              value={opt.value}
+              placeholder={opt.placeholder || ''}
+              onChange={(e) => opt.setter(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        );
+
       case 'dropdown':
         return (
           <div key={opt.label} className="space-y-2">
@@ -175,7 +198,7 @@ export function ChatSettingsModal({ options, onClose }: Props) {
             })()}
             {/* Sliders */}
             <div className="space-y-4">
-              {options.filter(opt => ['Retrieval chunks'].includes(opt.label)).map(renderOption)}
+              {options.filter(opt => ['Retrieval chunks', 'Metadata filters'].includes(opt.label)).map(renderOption)}
             </div>
           </div>
 

@@ -168,7 +168,7 @@ class RetrievalPipeline:
     @staticmethod
     def _lancedb_table_exists(retriever, table_name: str) -> bool:
         try:
-            return table_name in set(retriever.db_manager.db.table_names())
+            return table_name in set(retriever.db_manager.db.table_names(limit=10_000))
         except Exception:
             return False
 
@@ -314,12 +314,16 @@ Reminder: every fact in your answer must end with its source number in square br
         return "".join(answer_parts)
 
     def run(self, query: str, table_name: str = None, window_size_override: Optional[int] = None,
-            event_callback=None, collections: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+            event_callback=None, collections: Optional[List[Dict[str, Any]]] = None,
+            filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Retrieve, rerank, and synthesize.
 
         collections: optional list of {"table_name", "embedding_model",
-        "index_name"} dicts to search together (capped at MAX_COLLECTIONS).
-        When omitted, the single table_name/config table is used.
+        "index_name", "metadata_schema"} dicts to search together (capped at
+        MAX_COLLECTIONS). When omitted, the single table_name/config table is
+        used. filters: optional typed metadata filters, validated against
+        each collection's schema and compiled to a LanceDB where clause —
+        collections whose schema can't satisfy the filter are excluded.
         """
         start_time = time.time()
         retrieval_k = self.config.get("retrieval_k", 10)
@@ -368,11 +372,29 @@ Reminder: every fact in your answer must end with its source number in square br
         lc_enabled = bool(self._resolve_latechunk_cfg().get("enabled"))
         lc_cfg = self._resolve_latechunk_cfg()
 
+        from rag_system.metadata_filters import FilterError, compile_filters
+
         retrieved_docs = []
+        filter_errors: List[str] = []
+        searched = 0
         for coll in collections:
             coll_table = coll.get("table_name")
             if not coll_table:
                 continue
+
+            # Typed metadata filters: validated against this collection's
+            # schema and compiled to SQL. A collection whose schema cannot
+            # satisfy the filter is EXCLUDED (it can't contain matches) —
+            # never searched unfiltered, and never given raw filter input.
+            where = None
+            if filters:
+                try:
+                    where = compile_filters(coll.get("metadata_schema"), filters)
+                except FilterError as fe:
+                    logger.warning("filters_exclude_collection table=%s error=%s", coll_table, fe)
+                    filter_errors.append(str(fe))
+                    continue
+
             retriever = self._get_retriever_for_model(coll.get("embedding_model"))
             if not retriever:
                 continue
@@ -385,13 +407,16 @@ Reminder: every fact in your answer must end with its source number in square br
                     vector_only=vector_only_search,
                     fts_only=fts_only_search,
                     fusion_override=fusion_override,
+                    where=where,
                 )
+                searched += 1
             except Exception as e:
                 logger.warning("collection_retrieval_failed table=%s error=%s", coll_table, e)
                 continue
 
-            # Late-chunk leg per collection (vector_only: no FTS index there)
-            if lc_enabled:
+            # Late-chunk leg per collection (vector_only: no FTS index there;
+            # skipped for filtered queries — lc tables carry no meta columns)
+            if lc_enabled and not where:
                 lc_table = lc_cfg.get("lancedb_table_name") or f"{coll_table}_lc"
                 if self._lancedb_table_exists(retriever, lc_table):
                     try:
@@ -410,6 +435,10 @@ Reminder: every fact in your answer must end with its source number in square br
                 if coll.get("index_name"):
                     d['index_name'] = coll["index_name"]
             retrieved_docs.extend(docs)
+
+        if filters and searched == 0:
+            detail = "; ".join(sorted(set(filter_errors))) or "no collection accepts this filter"
+            raise FilterError(f"Metadata filter could not be applied: {detail}")
 
         if multi_collection:
             logger.info("multi_collection_retrieval collections=%s docs=%s",

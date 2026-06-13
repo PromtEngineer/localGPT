@@ -568,6 +568,16 @@ class IndexingPipeline:
                                 has_enricher=hasattr(self, 'contextual_enricher'),
                             )
 
+                        # Typed metadata: stamp every chunk with this file's
+                        # flattened meta_* column values (None when untagged)
+                        _meta_schema = self.config.get("metadata_schema")
+                        if _meta_schema:
+                            from rag_system.metadata_filters import flatten_columns
+                            _file_meta = (self.config.get("file_metadata") or {}).get(file_path)
+                            _cols = flatten_columns(_meta_schema, _file_meta)
+                            for _c in file_chunks:
+                                _c["_meta_columns"] = _cols
+
                         check_cancelled()
                         active_stage = "embedding"
                         embedding_completed = start_tracked_stage(file_id, active_stage)
@@ -1069,7 +1079,7 @@ class IndexingPipeline:
         if not hasattr(self, "lancedb_manager"):
             return
         db = self.lancedb_manager.db
-        if not hasattr(db, "table_names") or table_name not in db.table_names():
+        if not hasattr(db, "table_names") or table_name not in db.table_names(limit=10_000):
             return
         try:
             tbl = self.lancedb_manager.get_table(table_name)

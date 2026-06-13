@@ -812,7 +812,7 @@ class MaintenanceTools:
                 raw = conn.list_tables()
                 all_tables = [t.name if hasattr(t, "name") else str(t) for t in raw]
             else:
-                all_tables = conn.table_names() if hasattr(conn, "table_names") else []
+                all_tables = conn.table_names(limit=10_000) if hasattr(conn, "table_names") else []
         except Exception as e:
             result["error"] = f"Could not connect to LanceDB at {self.lancedb_path}: {e}"
             return result

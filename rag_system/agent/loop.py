@@ -201,16 +201,16 @@ Respond with JSON: {{"category": "<your_choice>"}}
         return asyncio.run(self._run_async(query, session_id=session_id))
 
     # ---------------- Public sync API (kept for backwards compatibility) --------------
-    def run(self, query: str, table_name: str = None, collections: list | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
 
             event_callback(phase:str, payload:Any)
         """
-        return asyncio.run(self._run_async(query, table_name, collections, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback))
+        return asyncio.run(self._run_async(query, table_name, collections, filters, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback))
 
     # ---------------- Main async implementation --------------------------------------
-    async def _run_async(self, query: str, table_name: str = None, collections: list | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_async(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         start_time = time.time()
         
         # Emit analyze event at the start
@@ -299,9 +299,10 @@ Respond with JSON: {{"category": "<your_choice>"}}
             if collections else
             (table_name or self.retrieval_pipeline.storage_config.get("text_table_name", ""))
         )
-        cache_scope = "{}|{}".format(
+        cache_scope = "{}|{}|{}".format(
             _scope_tables,
             self.retrieval_pipeline.config.get("embedding_model_name", ""),
+            json.dumps(filters, sort_keys=True) if filters else "",
         )
         # 🚀 PERSISTENT CACHE: Check semantic cache for similar queries
         if query_type != "direct_answer":
@@ -396,6 +397,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                         0 if context_expand is False else None,
                         event_callback=event_callback,
                         collections=collections,
+                        filters=filters,
                     )
                     if event_callback:
                         event_callback("single_query_result", result)
@@ -444,6 +446,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                                 0 if context_expand is False else None,
                                 make_cb(i),
                                 collections=collections,
+                                filters=filters,
                             ): (i, sub_query)
                             for i, sub_query in enumerate(sub_queries)
                         }
@@ -557,7 +560,7 @@ FINAL ANSWER:
                                 event_callback("final_answer", result)
             else:
                 # Standard retrieval (single-query)
-                result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback, collections=collections)
+                result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback, collections=collections, filters=filters)
 
                 # After run, result['source_documents'] is reranked list
                 reranked_docs = result.get('source_documents', [])

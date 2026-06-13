@@ -79,7 +79,8 @@ class MultiVectorRetriever:
 
     def retrieve(self, text_query: str, table_name: str, k: int, reranker=None,
                  vector_only: bool = False, fts_only: bool = False,
-                 fusion_override: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+                 fusion_override: Dict[str, Any] | None = None,
+                 where: str | None = None) -> List[Dict[str, Any]]:
         """
         Performs a search on a single LanceDB table.
         If a reranker is provided, it performs a hybrid search.
@@ -130,16 +131,23 @@ class MultiVectorRetriever:
                 fts_query = text_query
                 if len(text_query.split()) == 1:
                     fts_query = f"{text_query}* OR {text_query}~"
-                return (
-                     tbl.search(query=fts_query, query_type="fts")
-                        .limit(fts_k)
-                        .to_df()
-                 )
+                search = tbl.search(query=fts_query, query_type="fts")
+                if where:
+                    search = search.where(where)
+                return search.limit(fts_k).to_df()
 
             def _run_vec():
                 if vec_k == 0:
                     return None
-                search = tbl.search(text_query_embedding).limit(vec_k * 2)
+                search = tbl.search(text_query_embedding)
+                if where:
+                    # prefilter so the metadata filter narrows the ANN search
+                    # instead of post-filtering (which can empty the result)
+                    try:
+                        search = search.where(where, prefilter=True)
+                    except TypeError:
+                        search = search.where(where)
+                search = search.limit(vec_k * 2)
                 # Use approximate search (nprobes) when an IVF-PQ index exists
                 try:
                     if tbl.list_indices():

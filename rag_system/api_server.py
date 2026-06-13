@@ -145,8 +145,26 @@ def _get_collections_for_session(session_id):
                 "table_name": idx["vector_table_name"],
                 "embedding_model": meta.get("embedding_model"),
                 "index_name": idx.get("name"),
+                "metadata_schema": meta.get("metadata_schema"),
             })
     return collections or None
+
+
+def _collection_for_table(table_name):
+    """Single-collection entry (with metadata schema) for an explicit table."""
+    try:
+        for idx in db.list_indexes():
+            if idx.get("vector_table_name") == table_name:
+                meta = idx.get("metadata") or {}
+                return [{
+                    "table_name": table_name,
+                    "embedding_model": meta.get("embedding_model"),
+                    "index_name": idx.get("name"),
+                    "metadata_schema": meta.get("metadata_schema"),
+                }]
+    except Exception as e:
+        logging.getLogger(__name__).warning("table_collection_lookup_failed table=%s error=%s", table_name, e)
+    return None
 
 
 def _cors_allowed_origins() -> list[str]:
@@ -255,7 +273,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             lancedb_uri = os.getenv("LANCEDB_URI", "./lancedb")
             if os.path.exists(lancedb_uri):
                 conn = _lancedb.connect(lancedb_uri)
-                table_names = conn.table_names()
+                table_names = conn.table_names(limit=10_000)
                 checks["lancedb"] = f"ok ({len(table_names)} tables)"
             else:
                 checks["lancedb"] = "not_initialized"
@@ -299,6 +317,10 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             # single collection, preserving the old contract.
             collections = _get_collections_for_session(session_id)
             table_name = _get_table_name_for_session(session_id)
+        elif table_name and isinstance(data.get('filters'), dict):
+            # Explicit table + filters: resolve the index's metadata schema
+            # so the filter can be validated and compiled
+            collections = _collection_for_table(table_name)
 
         return {
             "query": query,
@@ -319,6 +341,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             # stored with the index, so only explicit caller overrides count
             "dense_weight": data.get('dense_weight'),
             "force_rag": bool(data.get('force_rag', False)),
+            "filters": data.get('filters') if isinstance(data.get('filters'), dict) else None,
             "provence_prune": data.get('provence_prune'),
             "provence_threshold": data.get('provence_threshold'),
         }
@@ -393,6 +416,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                         table_name=table_name,
                         window_size_override=context_window_size,
                         collections=params.get("collections"),
+                        filters=params.get("filters"),
                     )
                 else:
                     # Use full agent with smart routing
@@ -420,6 +444,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                         query,
                         table_name=table_name,
                         collections=params.get("collections"),
+                        filters=params.get("filters"),
                         session_id=session_id,
                         compose_sub_answers=compose_flag,
                         query_decompose=decomp_flag,
@@ -534,6 +559,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                             window_size_override=context_window_size,
                             event_callback=emit,
                             collections=params.get("collections"),
+                            filters=params.get("filters"),
                         )
                     else:
                         # Provence overrides
@@ -560,6 +586,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                             query,
                             table_name=table_name,
                             collections=params.get("collections"),
+                            filters=params.get("filters"),
                             session_id=session_id,
                             compose_sub_answers=compose_flag,
                             query_decompose=decomp_flag,
@@ -697,6 +724,13 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 config_override["indexing"].setdefault("overview_timeout_seconds", 45)
                 config_override["indexing"].setdefault("enrichment_timeout_seconds", 60)
                 
+
+                # Typed metadata: schema + per-file tags flow to the pipeline
+                # so chunk rows get meta_* columns for query-time filtering
+                if data.get("metadata_schema"):
+                    config_override["metadata_schema"] = data["metadata_schema"]
+                if data.get("file_metadata"):
+                    config_override["file_metadata"] = data["file_metadata"]
                 # 🔧 Configure chunking parameters
                 config_override.setdefault("chunking", {})
                 config_override["chunking"]["chunk_size"] = chunk_size
@@ -768,6 +802,13 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 config_override["indexing"].setdefault("overview_timeout_seconds", 45)
                 config_override["indexing"].setdefault("enrichment_timeout_seconds", 60)
                 
+
+                # Typed metadata: schema + per-file tags flow to the pipeline
+                # so chunk rows get meta_* columns for query-time filtering
+                if data.get("metadata_schema"):
+                    config_override["metadata_schema"] = data["metadata_schema"]
+                if data.get("file_metadata"):
+                    config_override["file_metadata"] = data["file_metadata"]
                 # 🔧 Configure chunking parameters
                 config_override.setdefault("chunking", {})
                 config_override["chunking"]["chunk_size"] = chunk_size
@@ -852,7 +893,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
         """Remove old vector/overview artifacts before a force rebuild."""
         if table_name and hasattr(pipeline, "lancedb_manager"):
             db = pipeline.lancedb_manager.db
-            table_names = db.table_names() if hasattr(db, "table_names") else []
+            table_names = db.table_names(limit=10_000) if hasattr(db, "table_names") else []
             for candidate in (table_name, f"{table_name}_lc"):
                 if candidate in table_names:
                     try:

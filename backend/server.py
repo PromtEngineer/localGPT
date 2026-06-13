@@ -53,6 +53,11 @@ except Exception as _wal_err:
 from ollama_client import OllamaClient, OllamaError
 from database import db, generate_session_title
 from rag_system.index_selection import select_active_index_id
+from rag_system.metadata_filters import (
+    FilterError,
+    validate_document_metadata,
+    validate_schema,
+)
 from pydantic import ValidationError
 from validators import (
     IndexBuildRequest,
@@ -394,7 +399,7 @@ def _inspect_vector_table(table_name: str | None) -> Dict[str, Any]:
                 names_map = dict(raw)  # {"tables": [...], "page_token": ...}
                 names = names_map.get("tables", [])
             elif hasattr(conn, "table_names"):
-                names = list(conn.table_names())
+                names = list(conn.table_names(limit=10_000))
             else:
                 names = []
             table_names = list(names)
@@ -1312,15 +1317,65 @@ async def delete_index(index_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/indexes/{index_id}/upload")
-async def index_file_upload(index_id: str, files: List[UploadFile] = File(...)):
-    """Upload files to an index"""
+async def index_file_upload(index_id: str, files: List[UploadFile] = File(...),
+                            metadata: Optional[str] = Form(None)):
+    """Upload files to an index.
+
+    `metadata` (optional, JSON): either one object applied to every file in
+    this upload, or {filename: object}. Validated strictly against the
+    index's metadata schema — unknown fields or type mismatches are a 400.
+    """
+    index = db.get_index(index_id)
+    if not index:
+        raise HTTPException(status_code=404, detail="Index not found")
+    schema = (index.get("metadata") or {}).get("metadata_schema")
+
+    meta_map: Dict[str, Any] = {}
+    if metadata:
+        try:
+            parsed = json.loads(metadata)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="metadata must be valid JSON")
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=400, detail="metadata must be a JSON object")
+        if not schema:
+            raise HTTPException(status_code=400, detail="This index has no metadata schema — set one via PUT /indexes/{id}/metadata-schema first")
+        filenames = {f.filename for f in files if f.filename}
+        per_file = bool(parsed) and all(isinstance(v, dict) for v in parsed.values()) and set(parsed) <= filenames
+        try:
+            if per_file:
+                meta_map = {fn: validate_document_metadata(schema, m) for fn, m in parsed.items()}
+            else:
+                shared = validate_document_metadata(schema, parsed)
+                meta_map = {fn: shared for fn in filenames}
+        except FilterError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     uploaded_files = await _save_uploads(files)
 
     # Register in the DB only after every file is safely on disk
     for item in uploaded_files:
-        db.add_document_to_index(index_id, item["filename"], item["stored_path"])
+        db.add_document_to_index(
+            index_id, item["filename"], item["stored_path"],
+            custom_metadata=meta_map.get(item["filename"]),
+        )
 
     return {"message": f"Uploaded {len(uploaded_files)} files", "uploaded_files": uploaded_files}
+
+
+@app.put("/indexes/{index_id}/metadata-schema")
+async def set_index_metadata_schema(index_id: str, request: Request):
+    """Define the typed metadata schema for an index (before its first build)."""
+    index = db.get_index(index_id)
+    if not index:
+        raise HTTPException(status_code=404, detail="Index not found")
+    data = await request.json()
+    schema = data.get("schema")
+    errors = validate_schema(schema)
+    if errors:
+        raise HTTPException(status_code=400, detail="; ".join(errors))
+    db.update_index_metadata(index_id, {"metadata_schema": schema})
+    return {"message": "Metadata schema saved", "schema": schema}
 
 
 @app.post("/indexes/{index_id}/build/preflight")
@@ -1390,10 +1445,16 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     rag_api_url = f"{RAG_API_BASE_URL}/index"
     # Use the index's dedicated LanceDB table so retrieval matches
     table_name = index.get("vector_table_name")
+    _index_meta = index.get("metadata") or {}
     payload = {
         "file_paths": file_paths,
         "session_id": index_id,  # reuse index_id for progress tracking
         "table_name": table_name,
+        "metadata_schema": _index_meta.get("metadata_schema"),
+        "file_metadata": {
+            d["stored_path"]: d.get("custom_metadata")
+            for d in index.get("documents", []) if d.get("custom_metadata")
+        },
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap,
         "retrieval_mode": retrieval_mode,
@@ -1889,6 +1950,7 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
         "dense_weight": (float, "dense_weight"),
         "provence_prune": (bool, "provence_prune"),
         "provence_threshold": (float, "provence_threshold"),
+        "filters": (dict, "filters"),
     }
     for key, (caster, payload_key) in optional_params.items():
         val = data.get(key)

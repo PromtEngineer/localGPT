@@ -320,6 +320,63 @@ class IndexingFailureTests(unittest.TestCase):
             pipeline2.run([doc], index_id="regress-ok")
 
 
+class MetadataFilterTests(unittest.TestCase):
+    """Typed metadata schemas: strict validation, safe SQL compilation."""
+
+    SCHEMA = [
+        {"name": "project", "type": "string"},
+        {"name": "year", "type": "integer"},
+        {"name": "confidential", "type": "boolean"},
+    ]
+
+    def test_schema_validation(self):
+        from rag_system.metadata_filters import validate_schema
+        self.assertEqual(validate_schema(self.SCHEMA), [])
+        self.assertTrue(validate_schema([{"name": "vector", "type": "string"}]))  # reserved
+        self.assertTrue(validate_schema([{"name": "Bad Name", "type": "string"}]))
+        self.assertTrue(validate_schema([{"name": "x", "type": "datetime2"}]))
+        self.assertTrue(validate_schema([]))
+
+    def test_document_metadata_strict(self):
+        from rag_system.metadata_filters import FilterError, validate_document_metadata
+        clean = validate_document_metadata(self.SCHEMA, {"project": "alpha", "year": "2024"})
+        self.assertEqual(clean, {"project": "alpha", "year": 2024, "confidential": None})
+        with self.assertRaises(FilterError):  # unknown field (typo) rejected
+            validate_document_metadata(self.SCHEMA, {"projet": "alpha"})
+        with self.assertRaises(FilterError):  # type mismatch
+            validate_document_metadata(self.SCHEMA, {"year": "not-a-year"})
+
+    def test_filter_compilation_and_escaping(self):
+        from rag_system.metadata_filters import FilterError, compile_filters
+        self.assertEqual(compile_filters(self.SCHEMA, {"project": "alpha"}), "meta_project = 'alpha'")
+        self.assertEqual(
+            compile_filters(self.SCHEMA, {"year": {">=": 2020, "<": 2024}}),
+            "meta_year >= 2020 AND meta_year < 2024",
+        )
+        self.assertEqual(
+            compile_filters(self.SCHEMA, {"project": ["a", "b"]}),
+            "meta_project IN ('a', 'b')",
+        )
+        # SQL injection attempt is escaped, never executed raw
+        self.assertEqual(
+            compile_filters(self.SCHEMA, {"project": "x' OR 1=1 --"}),
+            "meta_project = 'x'' OR 1=1 --'",
+        )
+        with self.assertRaises(FilterError):
+            compile_filters(self.SCHEMA, {"nope": 1})        # unknown field
+        with self.assertRaises(FilterError):
+            compile_filters(self.SCHEMA, {"project": {">": "a"}})  # bad op for type
+        with self.assertRaises(FilterError):
+            compile_filters(None, {"project": "alpha"})      # no schema → loud error
+        self.assertIsNone(compile_filters(self.SCHEMA, None))
+
+    def test_flatten_columns(self):
+        from rag_system.metadata_filters import flatten_columns
+        cols = flatten_columns(self.SCHEMA, {"project": "alpha"})
+        self.assertEqual(cols, {"meta_project": "alpha", "meta_year": None, "meta_confidential": None})
+        self.assertEqual(flatten_columns(None, {"x": 1}), {})
+
+
 class MultiCollectionRetrievalTests(unittest.TestCase):
     """Multi-collection retrieval: per-collection search, RRF merge when no
     reranker, per-source context expansion, index-named attribution."""

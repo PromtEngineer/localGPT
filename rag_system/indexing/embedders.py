@@ -43,17 +43,34 @@ class VectorIndexer:
             return
 
         vector_dim = embeddings[0].shape[0]
-        
+
         # The schema stores the text that was used for the embedding (potentially enriched)
         # and the full metadata object as a JSON string.
-        schema = pa.schema([
+        fields = [
             pa.field("vector", pa.list_(pa.float32(), vector_dim)),
             pa.field("text", pa.string(), nullable=False),
             pa.field("chunk_id", pa.string()),
             pa.field("document_id", pa.string()),
             pa.field("chunk_index", pa.int32()),
-            pa.field("metadata", pa.string())
-        ])
+            pa.field("metadata", pa.string()),
+        ]
+
+        # Typed custom-metadata columns (meta_*) for query-time filtering.
+        # Chunks carry the same flattened column set per build (None when a
+        # file is untagged) so the Arrow schema stays stable across files.
+        _ARROW_TYPES = {str: pa.string(), bool: pa.bool_(), int: pa.int64(), float: pa.float64()}
+        meta_columns: dict = {}
+        for c in chunks:
+            for col, val in (c.get("_meta_columns") or {}).items():
+                if col not in meta_columns and val is not None:
+                    meta_columns[col] = _ARROW_TYPES.get(type(val), pa.string())
+            if c.get("_meta_columns"):
+                for col in c["_meta_columns"]:
+                    meta_columns.setdefault(col, pa.string())
+        for col, pa_type in meta_columns.items():
+            fields.append(pa.field(col, pa_type, nullable=True))
+
+        schema = pa.schema(fields)
 
         data = []
         skipped_count = 0
@@ -84,14 +101,19 @@ class VectorIndexer:
             if not text_content or not isinstance(text_content, str):
                 text_content = ""
 
-            data.append({
+            row = {
                 "vector": vector.tolist(),
                 "text": text_content,
                 "chunk_id": chunk['chunk_id'],
                 "document_id": doc_id,
                 "chunk_index": chunk_idx,
-                "metadata": json.dumps(chunk)
-            })
+                "metadata": json.dumps({k: v for k, v in chunk.items() if k != "_meta_columns"})
+            }
+            if meta_columns:
+                chunk_meta = chunk.get("_meta_columns") or {}
+                for col in meta_columns:
+                    row[col] = chunk_meta.get(col)
+            data.append(row)
 
         if skipped_count > 0:
             print(f"⚠️ Skipped {skipped_count} chunks due to invalid embeddings (NaN or infinite values)")
@@ -103,7 +125,7 @@ class VectorIndexer:
         # Incremental indexing: append to existing table if present, otherwise create it
         db = self.db_manager.db  # underlying LanceDB connection
 
-        if hasattr(db, "table_names") and table_name in db.table_names():
+        if hasattr(db, "table_names") and table_name in db.table_names(limit=10_000):
             tbl = self.db_manager.get_table(table_name)
             print(f"Appending {len(data)} vectors to existing table '{table_name}'.")
         else:
