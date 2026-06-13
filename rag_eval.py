@@ -346,8 +346,10 @@ def cmd_gate(args):
     import shutil
     import tempfile
 
+    import hashlib
+    import numpy as np
+
     from rag_system.indexing.embedders import LanceDBManager
-    from rag_system.indexing.representations import select_embedder
     from rag_system.retrieval.retrievers import MultiVectorRetriever
 
     corpus = sorted(
@@ -358,10 +360,29 @@ def cmd_gate(args):
     if not corpus or not golden:
         raise SystemExit("eval fixtures missing")
 
-    embedding_model = "Qwen/Qwen3-Embedding-0.6B"
+    embedding_model = "fixture-hash-embedder"
     tmp = tempfile.mkdtemp(prefix="rag-gate-")
     try:
-        from rag_system.pipelines.indexing_pipeline import IndexingPipeline
+        import rag_system.pipelines.indexing_pipeline as indexing_module
+
+        class _FixtureEmbedder:
+            """Deterministic, dependency-free embeddings for the CI fixture."""
+
+            dimensions = 256
+
+            def create_embeddings(self, texts):
+                vectors = []
+                for text in texts:
+                    vector = np.zeros(self.dimensions, dtype=np.float32)
+                    for token in re.findall(r"[a-z0-9]+", text.lower()):
+                        digest = hashlib.sha256(token.encode("utf-8")).digest()
+                        slot = int.from_bytes(digest[:4], "big") % self.dimensions
+                        vector[slot] += 1.0
+                    norm = np.linalg.norm(vector)
+                    if norm:
+                        vector /= norm
+                    vectors.append(vector)
+                return np.vstack(vectors)
 
         class _NoLLM:  # overviews skip persisting on empty responses
             def generate_completion(self, *a, **k):
@@ -371,6 +392,8 @@ def cmd_gate(args):
 
         config = {
             "storage": {"lancedb_uri": tmp, "db_path": tmp, "text_table_name": "gate_corpus"},
+            "db_path": os.path.join(tmp, "gate.sqlite3"),
+            "index_store_path": os.path.join(tmp, "index_store"),
             "embedding_model_name": embedding_model,
             "contextual_enricher": {"enabled": False},
             "retrieval": {"late_chunking": {"enabled": False}},
@@ -378,10 +401,27 @@ def cmd_gate(args):
             "indexing": {"embedding_batch_size": 16},
         }
         print(f"Building gate corpus ({len(corpus)} docs) ...")
-        pipeline = IndexingPipeline(config, _NoLLM(), {"generation_model": "none", "enrichment_model": "none"})
-        pipeline.run(corpus, index_id="gate-corpus", force_reindex=True)
+        original_select_embedder = indexing_module.select_embedder
+        indexing_module.select_embedder = lambda *_args, **_kwargs: _FixtureEmbedder()
+        try:
+            pipeline = indexing_module.IndexingPipeline(
+                config,
+                _NoLLM(),
+                {"generation_model": "none", "enrichment_model": "none"},
+            )
+            # The gate favors isolation over the production worker optimization.
+            pipeline._start_persistent_worker = lambda: setattr(pipeline, "_worker", None)
+            def _convert_in_process(file_path, document_id):
+                result = indexing_module.convert_and_chunk_document(file_path, document_id, config)
+                if result.get("error"):
+                    raise RuntimeError(result["error"])
+                return result.get("chunks", [])
+            pipeline._convert_and_chunk_file = _convert_in_process
+            pipeline.run(corpus, index_id="gate-corpus", force_reindex=True)
+        finally:
+            indexing_module.select_embedder = original_select_embedder
 
-        retriever = MultiVectorRetriever(LanceDBManager(tmp), select_embedder(embedding_model))
+        retriever = MultiVectorRetriever(LanceDBManager(tmp), _FixtureEmbedder())
         ranks, keyword_hits = [], []
         for case in golden:
             docs = retriever.retrieve(case["question"], table_name="gate_corpus", k=args.k)

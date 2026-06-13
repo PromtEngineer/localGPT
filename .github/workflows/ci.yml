@@ -54,7 +54,11 @@ jobs:
             test_logging_utils.py \
             test_backend_api_contract.py \
             test_persistent_cache.py \
+            test_regression_fixes.py \
             -v --tb=short --cov=backend --cov=rag_system --cov-report=term-missing --cov-report=xml
+
+      - name: Run deterministic retrieval gate
+        run: python rag_eval.py gate
 
   frontend:
     name: Frontend Build

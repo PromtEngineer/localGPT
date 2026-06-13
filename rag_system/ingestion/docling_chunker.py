@@ -26,12 +26,15 @@ class DoclingChunker:
                 "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
             }.get(tokenizer_model.lower(), tokenizer_model)
         
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
-        except Exception as e:
-            print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
-            print("Falling back to character-based approximation (4 chars ≈ 1 token)")
+        if tokenizer_model == "fixture-hash-embedder":
             self.tokenizer = None
+        else:
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+            except Exception as e:
+                print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
+                print("Falling back to character-based approximation (4 chars ~= 1 token)")
+                self.tokenizer = None
         # Fallback simple sentence splitter (period, question, exclamation, newline)
         self._sent_re = re.compile(r"(?<=[\.\!\?])\s+|\n+")
         self.legacy = MarkdownRecursiveChunker(max_chunk_size=10_000, min_chunk_size=100)
@@ -254,4 +257,4 @@ class DoclingChunker:
 
     # Public API expected by IndexingPipeline --------------------------------
     def chunk(self, text: str, document_id: str, document_metadata: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
-        return self.split_markdown(text, document_id=document_id, metadata=document_metadata or {})    
+        return self.split_markdown(text, document_id=document_id, metadata=document_metadata or {})
