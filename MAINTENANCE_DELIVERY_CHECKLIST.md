@@ -1,6 +1,12 @@
-# ✅ Feature #10: Maintenance Tools - Delivery Checklist
+# Feature #10: Maintenance Tools - Delivery Checklist
 
-**Status**: 🎉 **COMPLETE AND READY FOR PRODUCTION**
+**Status**: ⚠️ **IMPLEMENTED; OPERATIONAL VERIFICATION PARTIAL**
+
+> Re-audited 2026-06-13. CLI dry-runs and focused backend tests pass. The audit
+> found and fixed absolute/relative upload-path mismatches, incomplete
+> broken-index artifact cleanup, and incorrect force-rebuild preparation.
+> Destructive execute-mode testing, fault injection, and concurrency testing
+> are still required before calling the toolkit production-ready.
 
 ---
 
@@ -214,17 +220,20 @@ report = tools.list_health()
 - [x] Type hints throughout
 - [x] Docstrings for all functions
 - [x] Error handling with try-catch
-- [x] Database connection pooling
+- [x] Fresh per-operation SQLite connections with foreign keys enabled
 - [x] SQL injection prevention
-- [x] File path validation
+- [x] Canonical path comparison for uploaded-file ownership checks
 - [x] Proper resource cleanup
 
-### ✅ Testing
+### ⚠️ Testing
 - [x] Python syntax validation passed
 - [x] CLI argument parsing validated
 - [x] Database schema compatibility verified
-- [x] File system operations verified
-- [x] Error handling paths tested
+- [x] Referenced-file preservation and broken-index artifact cleanup regression tests
+- [x] Force-rebuild preparation regression test
+- [ ] Destructive execute-mode test against disposable LanceDB and upload fixtures
+- [ ] Fault-injection and rollback test
+- [ ] Concurrent maintenance-operation test
 
 ---
 
@@ -274,16 +283,16 @@ report = tools.list_health()
 
 ---
 
-## Production Readiness
+## Operational Readiness
 
-- ✅ Error handling for all edge cases
-- ✅ Graceful degradation on errors
+- ⚠️ Common error paths handled; exhaustive edge-case coverage is pending
+- ⚠️ Graceful degradation exists but fault-injection coverage is pending
 - ✅ Clear error messages in output
 - ✅ Proper logging at INFO and ERROR levels
 - ✅ Dry-run safety by default
 - ✅ No external dependencies beyond existing stack
 - ✅ Compatible with existing database
-- ✅ Thread-safe database operations
+- ⚠️ Uses per-operation connections; concurrent destructive operations are not yet validated
 
 ---
 
@@ -324,19 +333,19 @@ report = tools.list_health()
 
 ---
 
-## Success Criteria - ALL MET ✅
+## Success Criteria
 
 - [x] Repair stuck builds - works
 - [x] Remove orphan files - works with dry-run
 - [x] Delete broken indexes - works with dry-run
-- [x] Rebuild failed files - works
+- [x] Rebuild preparation correctly handles failed-only and force-all modes
 - [x] List index health - works
 - [x] Export diagnostics - works
 - [x] Safe defaults (dry-run enabled)
 - [x] CLI interface working
 - [x] REST API endpoints working
 - [x] Documentation complete
-- [x] Production ready
+- [ ] Production ready after destructive, fault-injection, and concurrency validation
 
 ---
 
@@ -344,9 +353,9 @@ report = tools.list_health()
 
 **Feature Version**: 1.0.0  
 **Release Date**: May 8, 2025  
-**Status**: Production Ready  
-**Python Version**: 3.9+  
-**Dependencies**: Only existing stack (sqlite3, pathlib)
+**Status**: Implemented; operational verification partial
+**Python Version**: 3.11+
+**Dependencies**: Existing LocalGPT stack, including SQLite and LanceDB
 
 ---
 
@@ -379,7 +388,8 @@ localGPT/
 
 ## Conclusion
 
-**All deliverables complete and production-ready.**
+**All deliverables are implemented. Production readiness remains pending the
+unchecked operational tests above.**
 
 The maintenance toolkit provides:
 - 6 core operations for system health
@@ -389,8 +399,9 @@ The maintenance toolkit provides:
 - Zero additional dependencies
 - Immediate operational value
 
-Ready to use as-is. No additional setup required.
+Read-only and dry-run operations are ready for routine use. Keep destructive
+operations supervised until the remaining release checks are complete.
 
 ---
 
-**🎉 Feature #10: Maintenance Tools - COMPLETE**
+**Feature #10 implementation is complete; release verification is partial.**

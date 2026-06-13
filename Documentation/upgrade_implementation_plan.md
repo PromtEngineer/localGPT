@@ -44,7 +44,7 @@ Verified on 2026-06-13:
 - [x] Removed the request-time `storage_config["text_table_name"]` write.
 - [x] Removed the global RAG-agent serialization lock and added mutation tripwire coverage.
 - [x] Moved chat, SSE, and index execution into FastAPI through transport-neutral runtimes.
-- [x] Passed the retrieval evaluation gate, 70 Python tests, UI lint, Next.js build, and a live parallel mixed-model/mixed-search request test.
+- [x] Passed the retrieval evaluation gate, 74 Python tests, UI lint, Next.js build, and a live parallel mixed-model/mixed-search request test.
 
 The live test ran vector-only (`retrieval_k=2`, `qwen3:0.6b`) and BM25
 (`retrieval_k=7`, `qwen3:8b`) requests concurrently on separate worker threads.

@@ -210,7 +210,7 @@ Pipeline integration complete (commit `a114e6d`):
 
 **Phase 1 + Phase 2 Status**: ⚠️ INFRASTRUCTURE PRESENT; RELEASE VERIFICATION INCOMPLETE
 
-- ✅ JobProgressTracker class — 15+ methods, production-ready
+- ✅ JobProgressTracker class — 15+ methods implemented with focused coverage
 - ✅ Database schema — normalized design with constraints
 - ✅ REST API — 6 endpoints, proper error handling
 - ✅ Auto-recovery — startup hook implemented
@@ -234,4 +234,5 @@ specifically — use it instead of duplicating the steps here.
 
 ---
 
-**Feature #11 infrastructure and pipeline integration are production-ready. Testing and UI remain.**
+**Feature #11 infrastructure and pipeline integration are implemented. Release
+readiness remains blocked on the live crash/resume and manual UI checks above.**

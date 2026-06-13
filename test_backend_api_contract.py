@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sqlite3
 import sys
 import tempfile
 import types
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 from backend.database import ChatDatabase
 import backend.server as server
 from rag_system.job_persistence import JobProgressTracker
+from rag_system.maintenance import MaintenanceTools
 
 
 def _install_indexing_pipeline_import_stubs():
@@ -407,6 +409,143 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertEqual(orphan_response.status_code, 200)
         self.assertIn("orphans_found", orphan_response.json())
         self.assertTrue(orphan_response.json()["dry_run"])
+
+    def test_orphan_scan_preserves_absolute_and_relative_document_paths(self):
+        project_root = os.path.join(self.temp_dir, "project")
+        uploads_dir = os.path.join(project_root, "shared_uploads")
+        os.makedirs(uploads_dir)
+
+        absolute_file = os.path.join(uploads_dir, "absolute.txt")
+        relative_file = os.path.join(uploads_dir, "relative.txt")
+        orphan_file = os.path.join(uploads_dir, "orphan.txt")
+        for path in (absolute_file, relative_file, orphan_file):
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(path)
+
+        absolute_index = server.db.create_index("Absolute path")
+        relative_index = server.db.create_index("Relative path")
+        server.db.add_document_to_index(absolute_index, "absolute.txt", absolute_file)
+        server.db.add_document_to_index(
+            relative_index,
+            "relative.txt",
+            os.path.relpath(relative_file, project_root),
+        )
+
+        tools = MaintenanceTools(
+            db_path=self.db_path,
+            project_root=project_root,
+        )
+        report = tools.remove_orphan_files(dry_run=True)
+
+        self.assertEqual(report["orphans_found"], 1)
+        self.assertEqual(
+            [entry["path"] for entry in report["orphan_files"]],
+            ["shared_uploads/orphan.txt"],
+        )
+
+    def test_broken_index_cleanup_removes_owned_artifacts(self):
+        project_root = os.path.join(self.temp_dir, "maintenance-project")
+        uploads_dir = os.path.join(project_root, "shared_uploads")
+        overview_dir = os.path.join(project_root, "index_store", "overviews")
+        cache_dir = os.path.join(project_root, "index_store", "chunk_cache")
+        os.makedirs(uploads_dir)
+        os.makedirs(overview_dir)
+        os.makedirs(cache_dir)
+
+        index_id = server.db.create_index("Broken cleanup")
+        healthy_index_id = server.db.create_index("Shared upload owner")
+        owned_file = os.path.join(uploads_dir, "owned.txt")
+        shared_file = os.path.join(uploads_dir, "shared.txt")
+        external_file = os.path.join(self.temp_dir, "external.txt")
+        for path in (owned_file, shared_file, external_file):
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("content")
+        server.db.add_document_to_index(index_id, "owned.txt", owned_file)
+        server.db.add_document_to_index(index_id, "shared.txt", shared_file)
+        server.db.add_document_to_index(index_id, "external.txt", external_file)
+        server.db.add_document_to_index(
+            healthy_index_id,
+            "shared.txt",
+            os.path.relpath(shared_file, project_root),
+        )
+        server.db.update_index_metadata(index_id, {"status": "failed"})
+
+        overview_file = os.path.join(overview_dir, f"{index_id}.jsonl")
+        cache_file = os.path.join(cache_dir, f"chunks-{index_id}.json")
+        for path in (overview_file, cache_file):
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("{}")
+
+        tools = MaintenanceTools(
+            db_path=self.db_path,
+            project_root=project_root,
+        )
+        report = tools.delete_broken_indexes(dry_run=False)
+
+        self.assertEqual(report["deleted"], 1, report)
+        self.assertIsNone(server.db.get_index(index_id))
+        self.assertFalse(os.path.exists(owned_file))
+        self.assertTrue(os.path.exists(shared_file))
+        self.assertFalse(os.path.exists(overview_file))
+        self.assertFalse(os.path.exists(cache_file))
+        self.assertTrue(os.path.exists(external_file))
+
+    def test_force_rebuild_prepares_all_files_and_pauses_job(self):
+        index_id = server.db.create_index("Force maintenance rebuild")
+        job = server.db.create_index_job(
+            "force-maintenance-job",
+            index_id,
+            {"background": True},
+            [
+                {"filename": "done.txt", "stored_path": "/tmp/done.txt"},
+                {"filename": "failed.txt", "stored_path": "/tmp/failed.txt"},
+            ],
+        )
+        job_id = job["id"]
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute(
+                "UPDATE index_job_files SET status = 'done' WHERE job_id = ? AND filename = ?",
+                (job_id, "done.txt"),
+            )
+            conn.execute(
+                "UPDATE index_job_files SET status = 'failed' WHERE job_id = ? AND filename = ?",
+                (job_id, "failed.txt"),
+            )
+            conn.commit()
+
+        tools = MaintenanceTools(db_path=self.db_path, project_root=self.temp_dir)
+        report = tools.rebuild_failed_files_only(index_id, force=True)
+
+        self.assertEqual(report["files_prepared"], 2)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            statuses = {
+                row["status"]
+                for row in conn.execute(
+                    "SELECT status FROM index_job_files WHERE job_id = ?",
+                    (job_id,),
+                ).fetchall()
+            }
+            job_status = conn.execute(
+                "SELECT status FROM index_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()["status"]
+        self.assertEqual(statuses, {"pending"})
+        self.assertEqual(job_status, "paused")
+
+    def test_health_report_marks_missing_vector_table_unhealthy(self):
+        project_root = os.path.join(self.temp_dir, "health-project")
+        os.makedirs(os.path.join(project_root, "lancedb"))
+        index_id = server.db.create_index("Missing vector table")
+        server.db.update_index_metadata(index_id, {"status": "functional"})
+
+        tools = MaintenanceTools(db_path=self.db_path, project_root=project_root)
+        report = tools.get_index_health_report(index_id)
+
+        self.assertEqual(report["summary"]["unhealthy"], 1)
+        self.assertEqual(report["indexes"][0]["health"], "unhealthy")
+        self.assertFalse(report["indexes"][0]["vector_store"]["exists"])
 
     def test_health_deep_uses_local_rag_runtime_and_ollama(self):
         class DummyResponse:

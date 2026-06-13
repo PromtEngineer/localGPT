@@ -1,7 +1,7 @@
 # ✅ Feature #11 - Phases 1 & 2 Complete: Infrastructure + Pipeline Integrated
 
 **Date**: May 2025 (updated 2026-05-23)
-**Status**: ✅ Pipeline Integrated — UI Integration Pending
+**Status**: ⚠️ Pipeline integrated; live crash/resume and timeline UI validation pending
 
 ## What Was Accomplished
 
@@ -102,7 +102,7 @@ Application Layer
 
 ✅ **Job persistence** - All job state saved to database
 ✅ **Auto-recovery** - Stale jobs detected and paused on startup
-✅ **API access** - All endpoints functional and tested
+✅ **API access** - Endpoint contracts covered by backend tests
 ✅ **Timeline tracking** - Complete event history available
 ✅ **Error recording** - All failures logged with context
 ✅ **Performance metrics** - Timing data per stage
@@ -135,8 +135,8 @@ Application Layer
 
 | Metric | Before | After |
 |--------|--------|-------|
-| Job loss on crash | 100% | 0% |
-| Recovery time | N/A | <30 seconds |
+| Job loss on crash | 100% | Reduced through persisted stage state; live rate unmeasured |
+| Recovery time | N/A | Not benchmarked |
 | Duplicate work | Entire job | Only failed stages |
 | Progress visibility | Estimates | Exact per-file data |
 | Audit trail | Logs only | Complete DB timeline |
@@ -169,20 +169,20 @@ Modified:
 
 ## Integration Ready
 
-All components are complete and tested:
+All implementation components are present with focused automated coverage:
 - ✅ Database schema ready
 - ✅ JobProgressTracker ready
 - ✅ API endpoints ready
 - ✅ Startup hooks ready
 - ✅ Pipeline integration complete (wired into `indexing_pipeline.py`, commit `a114e6d`)
 
-## Reliability Guarantees
+## Reliability Status
 
-✅ **Atomic writes** - Each operation is a database transaction
-✅ **No data loss** - All progress persisted before continuing
-✅ **Crash safe** - Can resume from exact failure point
-✅ **Idempotent** - Safe to retry operations
-✅ **Audit trail** - Complete history for debugging
+✅ **Transactional stage writes** - Tracker state changes use SQLite transactions
+✅ **Persisted progress** - Completed stage metadata survives process restart
+⚠️ **Crash recovery** - Resume paths are implemented; live kill/restart validation remains pending
+⚠️ **Stage reuse** - Reuse depends on the persisted artifact still being available and valid
+✅ **Audit trail** - Stage history is available for debugging
 
 ## Quick Start
 
@@ -224,4 +224,5 @@ curl http://localhost:8000/index-jobs/my-job/statistics
 
 ---
 
-**Infrastructure and pipeline integration are complete. The system is designed for zero data loss and seamless crash recovery. End-to-end validation and UI are the remaining open items.**
+**Infrastructure and pipeline integration are complete. End-to-end crash/resume
+validation and timeline UI validation remain open.**

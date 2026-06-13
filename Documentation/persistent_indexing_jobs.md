@@ -1,6 +1,8 @@
 # 📊 Persistent Indexing Jobs - Implementation Guide
 
-**Status**: ✅ Complete - Pipeline integrated; resume, recovery, and post-build validation are implemented. UI timeline browsing remains API-only.
+**Status**: ⚠️ Implemented with focused coverage - Pipeline integration, resume,
+recovery, and post-build validation exist. Live kill/restart validation and UI
+timeline browsing remain pending.
 
 This feature adds crash recovery, resumable indexing, and detailed audit trails to the LocalGPT indexing system.
 
@@ -22,7 +24,7 @@ Instead of indexing jobs living in memory and being lost on crashes, all progres
 ## Verification Snapshot
 
 Verified on 2026-06-06:
-- `python -m pytest test_backend_api_contract.py -q` -> 11 passed
+- `.venv/bin/python -m pytest test_backend_api_contract.py -q` -> 23 passed
 - `python -m py_compile backend/server.py rag_system/api_server.py rag_system/api_server_with_progress.py rag_system/main.py rag_system/retrieval/retrievers.py rag_system/agent/loop.py`
 - `npx tsc --noEmit`
 
@@ -37,7 +39,8 @@ Current limitations:
 - recovery marks stale jobs as `paused`; a user/API resume is still required
 - completed stages can be skipped only when the persisted stage state and required artifacts are still usable
 - the UI shows live progress, failed-file errors, and resume controls; timeline browsing remains API-only
-- the backend and RAG API are still separate HTTP servers; consolidation is tracked as future architecture work
+- FastAPI now calls the transport-neutral indexing runtime in-process; the
+  legacy RAG HTTP module remains only as compatibility cleanup
 
 ## Architecture
 
@@ -546,17 +549,19 @@ curl http://localhost:8000/index-jobs/test-job/statistics
 ## Performance Impact
 
 - **Space**: ~1-2 KB per file (for stage tracking)
-- **Time**: <1ms per stage write (indexed database)
+- **Time**: Expected to be small for indexed SQLite writes; a formal benchmark
+  has not yet been run
 - **Memory**: No additional memory used (all persisted)
 
 ## Reliability Guarantees
 
 ✅ **Atomic writes** - Each stage write is a transaction
 ✅ **No data loss** - All progress persisted before continuing
-✅ **Crash safe** - Can resume from persisted stage state
+⚠️ **Crash recovery capable** - Can resume from persisted stage state; live kill/restart validation is pending
 ✅ **Audit trail** - Complete history for debugging
-✅ **Idempotent** - Can safely retry stages
+⚠️ **Conditional stage reuse** - Completed stages are reused only when required persisted artifacts remain valid
 
 ---
 
-This feature is the foundation for true **resumable, crash-safe, auditable indexing**.
+This feature provides the foundation for resumable, auditable indexing. Full
+crash-safety claims require the pending live failure tests.

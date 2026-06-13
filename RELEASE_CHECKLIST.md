@@ -43,6 +43,7 @@ This file is the canonical release readiness checklist for LocalGPT. It consolid
 - ✅ Generation model, embedding/fusion, Provence, table selection, and late-chunk settings are request-scoped; the global RAG-agent lock has been removed.
 - ⚠️ Stream and sanitize uploads instead of reading up to 500 MB into memory.
 - ⚠️ Enable SQLite foreign-key enforcement on every connection.
+- ⚠️ Complete destructive-mode, fault-injection, and concurrency validation for maintenance operations.
 - ✅ Add a central release checklist reference in the primary documentation index if one exists.
 
 ## 6. Release readiness signoff
@@ -57,9 +58,10 @@ This file is the canonical release readiness checklist for LocalGPT. It consolid
 ## Review Snapshot: 2026-06-13
 - ✅ `npm run lint:ui`
 - ✅ `npm run build`
-- ✅ `.venv/bin/python -m pytest -q` (70 passed)
+- ✅ `.venv/bin/python -m pytest -q` (74 passed)
 - ✅ Retrieval evaluation gate (100%)
 - ✅ Live parallel mixed-model/mixed-search RAG requests returned HTTP 200 without global serialization
+- ✅ Legacy live connectivity scripts are no longer misreported as pytest passes; run them explicitly when the required services are available.
 - ⚠️ Project commands should be validated with a clean target environment; the current environment still imports local `lancedb/` under system Python.
 - ⚠️ `ruff check rag_system/ backend/` currently reports lint failures.
 - ⚠️ `black --check rag_system/ backend/` currently reports formatting issues.

@@ -126,7 +126,7 @@ Reduce complexity and improve maintainability.
 ### Verification Notes (updated 2026-06-13)
 
 Recent focused checks:
-- `.venv/bin/python -m pytest -q` -> 70 passed
+- `.venv/bin/python -m pytest -q` -> 74 passed
 - Retrieval evaluation gate -> 100%
 - `npm run lint:ui`
 - `npm run build`

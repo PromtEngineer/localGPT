@@ -3,7 +3,7 @@
 import os
 import sys
 
-def test_ollama_connectivity():
+def check_ollama_connectivity():
     """Test Ollama connectivity from within Docker container"""
     print("🧪 Testing Ollama Connectivity")
     print("=" * 40)
@@ -33,5 +33,5 @@ def test_ollama_connectivity():
         return False
 
 if __name__ == "__main__":
-    success = test_ollama_connectivity()
+    success = check_ollama_connectivity()
     sys.exit(0 if success else 1)

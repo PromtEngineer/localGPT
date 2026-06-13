@@ -12,9 +12,8 @@ chat UI's "Select an index" picker (the `…` row menu and the header buttons).
 
 ## Setup
 
-- Start the backend (`http://localhost:8000`), the RAG API
-  (`http://localhost:8001`), and the frontend (`npm run dev`,
-  `http://localhost:3000`).
+- Start the unified backend (`http://localhost:8000`) and the frontend
+  (`npm run dev`, `http://localhost:3000`).
 - Have at least one index with several documents so a rebuild produces
   multiple per-file rows, and ideally one index in a `warning`/`unhealthy`
   state (e.g. with a missing source file) for the diagnostics cases.

@@ -1,6 +1,9 @@
 # 10. Add Maintenance Tools - Implementation Summary
 
-**Status**: ✅ Complete
+**Status**: ⚠️ Implemented; operational verification partial
+
+> Re-audited 2026-06-13. Focused tests and safe CLI dry-runs pass. Destructive
+> execute-mode, fault-injection, and concurrent-operation testing remain open.
 
 This feature adds a comprehensive maintenance toolkit for keeping the LocalGPT system healthy and repairable.
 
@@ -294,7 +297,8 @@ maintain delete-broken-indexes --execute
 
 ## Testing
 
-The maintenance tools are production-ready and can be tested safely:
+The maintenance tools are implemented and their read-only/dry-run paths can be
+tested safely:
 
 ```bash
 # Test repair (safe - doesn't delete anything)
@@ -347,4 +351,5 @@ For issues or questions:
 
 ---
 
-**Implementation complete and ready for production use.**
+**Implementation is complete. Production use of destructive modes should wait
+for the remaining operational tests in `MAINTENANCE_DELIVERY_CHECKLIST.md`.**

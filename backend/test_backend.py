@@ -5,7 +5,7 @@ Simple test script for the localGPT backend
 
 import requests
 
-def test_health_endpoint():
+def check_health_endpoint():
     """Test the health endpoint"""
     print("🔍 Testing health endpoint...")
     try:
@@ -23,7 +23,7 @@ def test_health_endpoint():
         print(f"❌ Health check failed: {e}")
         return False
 
-def test_chat_endpoint():
+def check_chat_endpoint():
     """Test the chat endpoint"""
     print("\n💬 Testing chat endpoint...")
     
@@ -56,7 +56,7 @@ def test_chat_endpoint():
         print(f"❌ Chat test failed: {e}")
         return False
 
-def test_conversation_history():
+def check_conversation_history():
     """Test conversation with history"""
     print("\n🗨️  Testing conversation history...")
     
@@ -126,20 +126,20 @@ def main():
     print("=" * 40)
     
     # Test health endpoint
-    health_ok = test_health_endpoint()
+    health_ok = check_health_endpoint()
     if not health_ok:
         print("\n❌ Backend server is not running or not healthy")
         print("   Make sure to run: python server.py")
         return
     
     # Test basic chat
-    chat_ok = test_chat_endpoint()
+    chat_ok = check_chat_endpoint()
     if not chat_ok:
         print("\n❌ Chat functionality is not working")
         return
     
     # Test conversation history
-    conversation_ok = test_conversation_history()
+    conversation_ok = check_conversation_history()
     
     print("\n" + "=" * 40)
     if health_ok and chat_ok and conversation_ok:
@@ -150,4 +150,4 @@ def main():
     print("\n🔗 Ready to connect to frontend at http://localhost:3000")
 
 if __name__ == "__main__":
-    main() 
+    main()

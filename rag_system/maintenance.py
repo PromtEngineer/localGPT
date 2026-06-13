@@ -31,10 +31,32 @@ class MaintenanceTools:
                  uploads_path: str = "shared_uploads",
                  index_store_path: str = "index_store"):
         self.db_path = db_path
-        self.project_root = Path(project_root)
-        self.lancedb_path = Path(project_root) / lancedb_path
-        self.uploads_path = Path(project_root) / uploads_path
-        self.index_store_path = Path(project_root) / index_store_path
+        self.project_root = Path(project_root).resolve()
+        self.lancedb_path = self.project_root / lancedb_path
+        self.uploads_path = self.project_root / uploads_path
+        self.index_store_path = self.project_root / index_store_path
+
+    def _canonical_project_path(self, stored_path: str) -> Path:
+        """Normalize absolute and legacy project-relative database paths."""
+        path = Path(stored_path).expanduser()
+        if not path.is_absolute():
+            path = self.project_root / path
+        return path.resolve(strict=False)
+
+    @staticmethod
+    def _lancedb_table_names(conn) -> List[str]:
+        if hasattr(conn, "list_tables"):
+            raw = conn.list_tables()
+            if isinstance(raw, dict):
+                raw = raw.get("tables", [])
+            return [
+                item.name if hasattr(item, "name") else str(item)
+                for item in raw
+            ]
+        if hasattr(conn, "table_names"):
+            return list(conn.table_names(limit=10_000))
+        return []
+
     def _get_db(self):
         """Open a fresh per-call connection (avoids persistent write-lock holders)."""
         try:
@@ -156,7 +178,11 @@ class MaintenanceTools:
             
             # Get all files referenced in index_documents
             cursor.execute("SELECT stored_path FROM index_documents")
-            referenced_files = {row["stored_path"] for row in cursor.fetchall()}
+            referenced_files = {
+                self._canonical_project_path(row["stored_path"])
+                for row in cursor.fetchall()
+                if row["stored_path"]
+            }
             
             # Scan uploads directory
             if not self.uploads_path.exists():
@@ -167,10 +193,11 @@ class MaintenanceTools:
                     continue
                     
                 report["total_scanned"] += 1
+                canonical_path = file_path.resolve(strict=False)
                 relative_path = str(file_path.relative_to(self.project_root))
                 
                 # Check if file is referenced
-                if relative_path not in referenced_files:
+                if canonical_path not in referenced_files:
                     report["orphans_found"] += 1
                     file_size = file_path.stat().st_size
                     
@@ -227,7 +254,7 @@ class MaintenanceTools:
             cursor = db.cursor()
             
             # Get all indexes
-            cursor.execute("SELECT id, name, metadata FROM indexes")
+            cursor.execute("SELECT id, name, metadata, vector_table_name FROM indexes")
             all_indexes = cursor.fetchall()
             report["total_indexes"] = len(all_indexes)
             
@@ -262,7 +289,12 @@ class MaintenanceTools:
                     })
                 else:
                     try:
-                        self._delete_index_completely(index_id, cursor, db)
+                        self._delete_index_completely(
+                            index_id,
+                            index_row["vector_table_name"],
+                            cursor,
+                            db,
+                        )
                         report["deleted"] += 1
                         report["total_freed_bytes"] += freed_bytes
                         report["deleted_indexes"].append({
@@ -397,19 +429,29 @@ class MaintenanceTools:
                     report["error"] = "No failed files found. Use force=True to rebuild all"
                     return report
             
-            # Reset failed/pending files to pending for next job
-            cursor.execute("""
-                UPDATE index_job_files
-                SET status = 'pending', error = NULL
-                WHERE job_id = ? AND status IN ('failed', 'pending')
-            """, (job_id,))
+            # Reset only failed/pending files unless the caller explicitly
+            # requests a full rebuild.
+            if force:
+                cursor.execute("""
+                    UPDATE index_job_files
+                    SET status = 'pending', error = NULL
+                    WHERE job_id = ?
+                """, (job_id,))
+            else:
+                cursor.execute("""
+                    UPDATE index_job_files
+                    SET status = 'pending', error = NULL
+                    WHERE job_id = ? AND status IN ('failed', 'pending')
+                """, (job_id,))
             
             report["files_prepared"] = cursor.rowcount
             
-            # Reset job to building
+            # Preparation does not launch a worker. Leave the job paused so
+            # the normal resume endpoint can start it without presenting a
+            # phantom in-progress build.
             cursor.execute("""
                 UPDATE index_jobs
-                SET status = 'building', error = NULL, updated_at = ?
+                SET status = 'paused', error = NULL, updated_at = ?
                 WHERE id = ?
             """, (datetime.utcnow().isoformat(), job_id))
             
@@ -451,11 +493,26 @@ class MaintenanceTools:
         try:
             db = self._get_db()
             cursor = db.cursor()
+            vector_db = None
+            vector_table_names = None
+            if self.lancedb_path.exists():
+                try:
+                    import lancedb
+
+                    vector_db = lancedb.connect(str(self.lancedb_path))
+                    vector_table_names = set(self._lancedb_table_names(vector_db))
+                except Exception as exc:
+                    report["vector_store_error"] = str(exc)
             
             if index_id:
-                cursor.execute("SELECT id, name, metadata FROM indexes WHERE id = ?", (index_id,))
+                cursor.execute(
+                    "SELECT id, name, metadata, vector_table_name FROM indexes WHERE id = ?",
+                    (index_id,),
+                )
             else:
-                cursor.execute("SELECT id, name, metadata FROM indexes ORDER BY created_at DESC")
+                cursor.execute(
+                    "SELECT id, name, metadata, vector_table_name FROM indexes ORDER BY created_at DESC"
+                )
                 
             indexes = cursor.fetchall()
             
@@ -477,12 +534,30 @@ class MaintenanceTools:
                     LIMIT 1
                 """, (idx_id,))
                 latest_job = cursor.fetchone()
-                
+
+                table_name = idx_row["vector_table_name"]
+                table_exists = None
+                vector_rows = None
+                if table_name and vector_table_names is not None:
+                    table_exists = table_name in vector_table_names
+                    if table_exists and vector_db is not None:
+                        try:
+                            vector_rows = vector_db.open_table(table_name).count_rows()
+                        except Exception:
+                            table_exists = False
+
                 # Determine health
                 metadata_status = metadata.get("status")
                 health = "unhealthy" if metadata_status in {"failed", "empty"} \
                     else "warning" if metadata_status in {"incomplete", "building"} \
                     else "healthy"
+                latest_job_status = latest_job["status"] if latest_job else None
+                if latest_job_status == "failed":
+                    health = "unhealthy"
+                elif latest_job_status in {"building", "queued", "paused"} and health == "healthy":
+                    health = "warning"
+                if table_exists is False or vector_rows == 0:
+                    health = "unhealthy"
                 
                 health_data = {
                     "index_id": idx_id,
@@ -491,7 +566,7 @@ class MaintenanceTools:
                     "status": metadata_status,
                     "documents": doc_count,
                     "latest_job": {
-                        "status": latest_job["status"] if latest_job else None,
+                        "status": latest_job_status,
                         "error": latest_job["error"] if latest_job else None,
                         "created_at": latest_job["created_at"] if latest_job else None
                     },
@@ -500,8 +575,13 @@ class MaintenanceTools:
                         "chunk_size": metadata.get("chunk_size"),
                         "embedding_model": metadata.get("embedding_model"),
                         "enable_enrich": metadata.get("enable_enrich"),
-                        "vector_table": metadata.get("vector_table")
-                    }
+                        "vector_table": table_name,
+                    },
+                    "vector_store": {
+                        "table": table_name,
+                        "exists": table_exists,
+                        "rows": vector_rows,
+                    },
                 }
                 
                 report["indexes"].append(health_data)
@@ -688,8 +768,67 @@ class MaintenanceTools:
             
         return total_size
 
-    def _delete_index_completely(self, index_id: str, cursor, db) -> None:
-        """Delete index and all associated data"""
+    def _delete_index_completely(
+        self,
+        index_id: str,
+        vector_table_name: Optional[str],
+        cursor,
+        db,
+    ) -> None:
+        """Delete generated artifacts and then remove the index records."""
+        document_rows = cursor.execute(
+            "SELECT stored_path FROM index_documents WHERE index_id = ?",
+            (index_id,),
+        ).fetchall()
+
+        # Drop the exact configured table and its late-chunk companion.
+        if self.lancedb_path.exists():
+            import lancedb
+
+            conn = lancedb.connect(str(self.lancedb_path))
+            table_names = set(self._lancedb_table_names(conn))
+
+            base_table = vector_table_name or f"text_pages_{index_id}"
+            for table_name in (base_table, f"{base_table}_lc"):
+                if table_name in table_names:
+                    conn.drop_table(table_name)
+
+        # Delete only files owned by the upload directory and not referenced
+        # by another index.
+        for row in document_rows:
+            stored_path = row["stored_path"]
+            if not stored_path:
+                continue
+            file_path = self._canonical_project_path(stored_path)
+            try:
+                file_path.relative_to(self.uploads_path.resolve(strict=False))
+            except ValueError:
+                continue
+            other_rows = cursor.execute(
+                """
+                SELECT stored_path
+                FROM index_documents
+                WHERE index_id != ?
+                """,
+                (index_id,),
+            ).fetchall()
+            is_shared = any(
+                row["stored_path"]
+                and self._canonical_project_path(row["stored_path"]) == file_path
+                for row in other_rows
+            )
+            if not is_shared and file_path.is_file():
+                file_path.unlink()
+
+        overview_file = self.index_store_path / "overviews" / f"{index_id}.jsonl"
+        overview_file.unlink(missing_ok=True)
+
+        cache_dir = self.index_store_path / "chunk_cache"
+        if cache_dir.exists():
+            for cache_file in cache_dir.glob(f"*{index_id}*"):
+                if cache_file.is_file():
+                    cache_file.unlink()
+
         # Delete from sessions_indexes
         cursor.execute("DELETE FROM session_indexes WHERE index_id = ?", (index_id,))
         
@@ -706,17 +845,6 @@ class MaintenanceTools:
         cursor.execute("DELETE FROM indexes WHERE id = ?", (index_id,))
         
         db.commit()
-        
-        # Delete files
-        table_pattern = f"text_pages_{index_id}*"
-        if self.lancedb_path.exists():
-            for table_dir in self.lancedb_path.glob(table_pattern):
-                if table_dir.is_dir():
-                    shutil.rmtree(table_dir, ignore_errors=True)
-        
-        overview_file = self.index_store_path / "overviews" / f"{index_id}.jsonl"
-        if overview_file.exists():
-            overview_file.unlink(missing_ok=True)
 
     @staticmethod
     def _format_bytes(size: int) -> str:
@@ -808,11 +936,7 @@ class MaintenanceTools:
 
         try:
             conn = lancedb.connect(str(self.lancedb_path))
-            if hasattr(conn, "list_tables"):
-                raw = conn.list_tables()
-                all_tables = [t.name if hasattr(t, "name") else str(t) for t in raw]
-            else:
-                all_tables = conn.table_names(limit=10_000) if hasattr(conn, "table_names") else []
+            all_tables = self._lancedb_table_names(conn)
         except Exception as e:
             result["error"] = f"Could not connect to LanceDB at {self.lancedb_path}: {e}"
             return result

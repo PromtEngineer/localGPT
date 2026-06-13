@@ -330,8 +330,8 @@ curl http://localhost:8000/index-jobs/{job_id}/timeline
 ✅ **Per-stage tracking**: Each stage has start/end/duration
 ✅ **Resumable**: Can skip completed stages on retry
 ✅ **Error tracking**: All failures recorded with error code + message
-✅ **Performance**: <1ms overhead per stage
-✅ **Crash recovery**: Auto-recovery on startup
+⚠️ **Performance**: Overhead target is not benchmarked
+⚠️ **Crash recovery**: Recovery logic and focused tests exist; live kill/restart validation is pending
 ✅ **Audit trail**: Complete timeline available via API
 
 ## Related Files
@@ -350,4 +350,5 @@ curl http://localhost:8000/index-jobs/{job_id}/timeline
 
 ---
 
-This integration unlocks the full power of persistent jobs: **resumable, crash-safe, fully auditable indexing**.
+This integration provides persisted stage state, resume support, and an audit
+trail. Live crash/restart and performance validation remain release gates.
