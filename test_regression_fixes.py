@@ -331,6 +331,60 @@ class IndexingFailureTests(unittest.TestCase):
             pipeline2.run([doc], index_id="regress-ok")
 
 
+class AgenticPlannerTests(unittest.TestCase):
+    """Opt-in plan-and-execute helpers: complexity gate, evidence check, retry."""
+
+    class _StubLLM:
+        def __init__(self, response="{}"):
+            self.response = response
+            self.calls = 0
+
+        def generate_completion(self, *a, **k):
+            self.calls += 1
+            return {"response": self.response}
+
+    def test_simple_query_skips_llm(self):
+        from rag_system.agent import agentic
+        llm = self._StubLLM('{"complex": true}')
+        # Short, no conjunction markers → decided simple WITHOUT an LLM call
+        self.assertFalse(agentic.assess_complexity(llm, "m", "what is the budget"))
+        self.assertEqual(llm.calls, 0)
+
+    def test_complex_marker_consults_llm(self):
+        from rag_system.agent import agentic
+        llm = self._StubLLM('{"complex": true}')
+        q = "compare the budget of project A and project B and their schedules"
+        self.assertTrue(agentic.assess_complexity(llm, "m", q))
+        self.assertEqual(llm.calls, 1)
+
+    def test_complexity_defaults_false_on_bad_json(self):
+        from rag_system.agent import agentic
+        llm = self._StubLLM("not json")
+        q = "compare alpha and beta and gamma across every dimension"
+        self.assertFalse(agentic.assess_complexity(llm, "m", q))
+
+    def test_evidence_thinness(self):
+        from rag_system.agent import agentic
+        self.assertTrue(agentic.is_evidence_thin(None))
+        self.assertTrue(agentic.is_evidence_thin({"source_documents": []}))
+        self.assertTrue(agentic.is_evidence_thin(
+            {"source_documents": [{"chunk_id": "c1"}], "answer": "I could not find that information in the provided documents."}
+        ))
+        self.assertFalse(agentic.is_evidence_thin(
+            {"source_documents": [{"chunk_id": "c1"}], "answer": "The budget is 5 million."}
+        ))
+
+    def test_reformulate_returns_new_query_or_none(self):
+        from rag_system.agent import agentic
+        llm = self._StubLLM('{"query": "broader search terms"}')
+        self.assertEqual(agentic.reformulate_task(llm, "m", "obscure phrasing"), "broader search terms")
+        # Identical reformulation → None (no point retrying the same query)
+        same = self._StubLLM('{"query": "same task"}')
+        self.assertIsNone(agentic.reformulate_task(same, "m", "same task"))
+        # Bad JSON → None
+        self.assertIsNone(agentic.reformulate_task(self._StubLLM("nope"), "m", "task"))
+
+
 class MetadataFilterTests(unittest.TestCase):
     """Typed metadata schemas: strict validation, safe SQL compilation."""
 

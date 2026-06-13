@@ -346,6 +346,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             "dense_weight": data.get('dense_weight'),
             "force_rag": bool(data.get('force_rag', False)),
             "filters": data.get('filters') if isinstance(data.get('filters'), dict) else None,
+            "agentic": data.get('agentic') if isinstance(data.get('agentic'), bool) else None,
             "provence_prune": data.get('provence_prune'),
             "provence_threshold": data.get('provence_threshold'),
         }
@@ -460,6 +461,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                         reranker_top_k=reranker_top_k,
                         search_type=search_type,
                         dense_weight=dense_weight,
+                        agentic=params.get("agentic"),
                     )
             
             # The result is a dict, so we need to dump it to a JSON string
@@ -603,6 +605,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                             reranker_top_k=reranker_top_k,
                             search_type=search_type,
                             dense_weight=dense_weight,
+                            agentic=params.get("agentic"),
                             event_callback=emit,
                         )
 

@@ -61,6 +61,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   const [forceDocs, setForceDocs] = useState<boolean>(false)
   // Provence pruning toggle
   const [provencePrune, setProvencePrune] = useState<boolean>(false)
+  // Agentic mode: plan-and-execute with evidence-driven retry. Opt-in,
+  // default off (adds latency). See rag_system/agent/agentic.py.
+  const [agenticMode, setAgenticMode] = useState<boolean>(false)
   // Typed metadata filters, e.g. "project=Antapaccay, year>=2020" — parsed
   // client-side into a filters object; types are validated server-side
   // against the index's metadata schema
@@ -307,6 +310,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             forceRag: forceDocs,
             provencePrune,
             filters: parseMetadataFilters(metadataFilters),
+            agentic: agenticMode,
           },
           (evt) => {
             console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
@@ -535,6 +539,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           forceRag: forceDocs,
           provencePrune,
           filters: parseMetadataFilters(metadataFilters),
+          agentic: agenticMode,
         })
       
       const aiMessage: ChatMessage = {
@@ -754,6 +759,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'slider', label:'Context window size', value: contextWindowSize, setter: setContextWindowSize, min: 0, max: 5, unit: ' chunks'},
             {type: 'toggle', label:'Prune irrelevant sentences', checked: provencePrune, setter: setProvencePrune},
             {type: 'toggle', label:'Always search documents', checked: forceDocs, setter: setForceDocs},
+            {type: 'toggle', label:'Agentic mode', checked: agenticMode, setter: setAgenticMode},
             {type: 'text', label:'Metadata filters', value: metadataFilters, setter: setMetadataFilters, placeholder: 'project=Antapaccay, year>=2020'},
           ]}
         />

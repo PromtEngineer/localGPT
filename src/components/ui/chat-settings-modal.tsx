@@ -58,7 +58,8 @@ const optionHelp: Record<string,string> = {
   'LLM':'Select which model generates the final answer.',
   'Search type':'Choose retrieval strategy (Hybrid recommended).',
   'Reranker top chunks':'Limit how many chunks are re-ranked to speed up processing.',
-  'Metadata filters':'Restrict retrieval to documents matching typed metadata, e.g. project=Antapaccay, year>=2020. Requires a metadata schema on the index.'
+  'Metadata filters':'Restrict retrieval to documents matching typed metadata, e.g. project=Antapaccay, year>=2020. Requires a metadata schema on the index.',
+  'Agentic mode':'Plan-and-execute: gauges question complexity, runs focused retrieval tasks, retries ones with weak evidence, then synthesizes once. Higher quality on complex/multi-part questions; adds latency.'
 };
 
 export function ChatSettingsModal({ options, onClose }: Props) {
@@ -147,6 +148,7 @@ export function ChatSettingsModal({ options, onClose }: Props) {
     'Always search documents', // will be displayed as RAG (no-triage)
     'Verify answer',
     'Stream phases',
+    'Agentic mode',
   ];
 
   const retrievalGridLabels = ['LLM model','Search type'];

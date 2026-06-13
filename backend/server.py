@@ -2057,6 +2057,7 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
         "provence_prune": (bool, "provence_prune"),
         "provence_threshold": (float, "provence_threshold"),
         "filters": (dict, "filters"),
+        "agentic": (bool, "agentic"),
     }
     for key, (caster, payload_key) in optional_params.items():
         val = data.get(key)

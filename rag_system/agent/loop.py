@@ -11,6 +11,7 @@ from rag_system.agent.verifier import Verifier
 from rag_system.retrieval.query_transformer import QueryDecomposer, GraphQueryTranslator
 from rag_system.retrieval.retrievers import GraphRetriever
 from rag_system.utils.persistent_cache import PersistentCache
+from rag_system.agent import agentic
 
 class Agent:
     """
@@ -201,16 +202,125 @@ Respond with JSON: {{"category": "<your_choice>"}}
         return asyncio.run(self._run_async(query, session_id=session_id))
 
     # ---------------- Public sync API (kept for backwards compatibility) --------------
-    def run(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_agentic(self, contextual_query, raw_query, history, table_name,
+                           collections, filters, context_expand, event_callback) -> Dict[str, Any]:
+        """Plan-and-execute path (opt-in).
+
+        1. complexity gate → simple questions run as a single retrieval.
+        2. plan focused sub-tasks (reuses the decomposer).
+        3. retrieve all in parallel; reformulate-and-retry the thin ones once.
+        4. synthesize one answer over the aggregated evidence (streamed).
+        Verification/caching/history run in the shared flow after this returns.
+        """
+        gen_model = self.ollama_config["generation_model"]
+        window = 0 if context_expand is False else None
+
+        def _retrieve(q):
+            return self.retrieval_pipeline.run(
+                q, table_name, window, collections=collections, filters=filters,
+            )
+
+        # 1. Complexity gate
+        complex_q = await asyncio.to_thread(
+            agentic.assess_complexity, self.llm_client, gen_model, raw_query
+        )
+        if not complex_q:
+            print("🧠 AGENTIC: simple question → single retrieval")
+            if event_callback:
+                event_callback("retrieval_started", {"count": 1})
+            result = await asyncio.to_thread(_retrieve, contextual_query)
+            if event_callback:
+                event_callback("retrieval_done", {"count": 1})
+                event_callback("single_query_result", result)
+            return result
+
+        # 2. Plan focused tasks
+        recent_history = history[-5:] if history else []
+        tasks = await asyncio.to_thread(self.query_decomposer.decompose, raw_query, recent_history)
+        tasks = self._expand_queries_with_kg(tasks) or [contextual_query]
+        print(f"🧠 AGENTIC: planned {len(tasks)} task(s): {tasks}")
+        if event_callback:
+            event_callback("decomposition", {"sub_queries": tasks})
+            event_callback("retrieval_started", {"count": len(tasks)})
+
+        # 3. Retrieve all tasks in parallel
+        def _run_all(task_list):
+            out = [None] * len(task_list)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(task_list))) as ex:
+                fut = {ex.submit(_retrieve, t): i for i, t in enumerate(task_list)}
+                for f in concurrent.futures.as_completed(fut):
+                    i = fut[f]
+                    try:
+                        out[i] = f.result()
+                    except Exception as e:
+                        print(f"❌ AGENTIC task {i} failed: {e}")
+            return out
+
+        results = await asyncio.to_thread(_run_all, tasks)
+
+        # 4. Evidence-driven retry: reformulate + re-retrieve thin tasks once
+        thin = [i for i, r in enumerate(results) if agentic.is_evidence_thin(r)]
+        if thin:
+            print(f"🧠 AGENTIC: {len(thin)} thin task(s) → reformulate + retry")
+            reform = {}
+            for i in thin:
+                nq = await asyncio.to_thread(agentic.reformulate_task, self.llm_client, gen_model, tasks[i])
+                if nq:
+                    reform[i] = nq
+            if reform:
+                retried = await asyncio.to_thread(_run_all, list(reform.values()))
+                for (i, _), r in zip(reform.items(), retried):
+                    # Keep the retry only if it actually found evidence
+                    if r and not agentic.is_evidence_thin(r):
+                        results[i] = r
+
+        # Aggregate unique docs across tasks
+        all_docs, seen = [], set()
+        for i, r in enumerate(results):
+            if not r:
+                continue
+            if event_callback:
+                event_callback("sub_query_result", {
+                    "index": i, "query": tasks[i],
+                    "answer": r.get("answer", ""),
+                    "source_documents": r.get("source_documents", []),
+                })
+            for doc in r.get("source_documents", []):
+                ident = (doc.get("index_id"), doc.get("chunk_id"))
+                if ident not in seen:
+                    seen.add(ident)
+                    all_docs.append(doc)
+        if event_callback:
+            event_callback("retrieval_done", {"count": len(tasks)})
+
+        if not all_docs:
+            result = {"answer": "I could not find relevant information to answer your question.",
+                      "source_documents": []}
+            if event_callback:
+                event_callback("final_answer", result)
+            return result
+
+        # 5. Single synthesis over the aggregated evidence (streamed)
+        context = "\n\n".join(d.get("text", "") for d in all_docs)
+        answer = await asyncio.to_thread(
+            self.retrieval_pipeline._synthesize_final_answer,
+            contextual_query, context, event_callback=event_callback,
+        )
+        result = {"answer": answer, "source_documents": all_docs}
+        if event_callback:
+            event_callback("final_answer", result)
+        return result
+
+    def run(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, agentic: Optional[bool] = None, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
 
             event_callback(phase:str, payload:Any)
         """
-        return asyncio.run(self._run_async(query, table_name, collections, filters, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback))
+        return asyncio.run(self._run_async(query, table_name, collections, filters, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, agentic, event_callback))
 
     # ---------------- Main async implementation --------------------------------------
-    async def _run_async(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_async(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, agentic: Optional[bool] = None, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         start_time = time.time()
         
         # Emit analyze event at the start
@@ -368,7 +478,19 @@ Respond with JSON: {{"category": "<your_choice>"}}
             if query_decompose is not None:
                 decomp_enabled = query_decompose
 
-            if decomp_enabled:
+            agentic_enabled = bool(self.pipeline_configs.get("agentic", {}).get("enabled", False))
+            if agentic is not None:
+                agentic_enabled = agentic
+
+            if agentic_enabled:
+                # Opt-in plan-and-execute: complexity gate → focused tasks →
+                # evidence-driven retry → single synthesis. Sets `result`,
+                # then the shared verify/cache/history flow below applies.
+                result = await self._run_agentic(
+                    contextual_query, raw_query, history, table_name,
+                    collections, filters, context_expand, event_callback,
+                )
+            elif decomp_enabled:
                 print(f"\n--- Query Decomposition Enabled ---")
                 # Use the raw user query (without conversation history) for decomposition to avoid leakage of prior context
                 # Pass the last 5 conversation turns for context resolution within the decomposer

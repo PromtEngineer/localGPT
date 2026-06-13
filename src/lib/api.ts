@@ -425,6 +425,7 @@ class ChatAPI {
       forceDirect?: boolean;
       provencePrune?: boolean;
       filters?: Record<string, unknown>;
+      agentic?: boolean;
     } = {}
   ): Promise<SessionChatResponse & { source_documents: SourceDocument[] }> {
     try {
@@ -451,6 +452,7 @@ class ChatAPI {
           ...(typeof opts.forceDirect === 'boolean' && { force_direct: opts.forceDirect }),
           ...(typeof opts.provencePrune === 'boolean' && { provence_prune: opts.provencePrune }),
           ...(opts.filters && { filters: opts.filters }),
+          ...(typeof opts.agentic === 'boolean' && { agentic: opts.agentic }),
         }),
       });
 
@@ -890,6 +892,7 @@ class ChatAPI {
       forceRag?: boolean;
       provencePrune?: boolean;
       filters?: Record<string, unknown>;
+      agentic?: boolean;
     },
     onEvent: (event: { type: string; data: ApiRecord }) => void,
     signal?: AbortSignal,
@@ -914,6 +917,7 @@ class ChatAPI {
     if (typeof forceRag === 'boolean') payload.force_rag = forceRag;
     if (typeof provencePrune === 'boolean') payload.provence_prune = provencePrune;
     if (params.filters) payload.filters = params.filters;
+    if (typeof params.agentic === 'boolean') payload.agentic = params.agentic;
 
     const resp = await fetch(`${RAG_API_BASE_URL}/chat/stream`, {
       method: 'POST',
