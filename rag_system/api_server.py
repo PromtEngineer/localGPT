@@ -171,6 +171,20 @@ def _collection_for_table(table_name):
     return None
 
 
+def _force_rag_overrides(retrieval_k, reranker_top_k, search_type, dense_weight,
+                         ai_rerank, provence_prune, provence_threshold) -> dict:
+    """Per-request retrieval overrides for the force_rag path (None = use config)."""
+    return {
+        "retrieval_k": retrieval_k,
+        "reranker_top_k": reranker_top_k,
+        "search_type": search_type,
+        "dense_weight": dense_weight,
+        "ai_rerank": ai_rerank,
+        "provence_enabled": provence_prune,
+        "provence_threshold": provence_threshold,
+    }
+
+
 def _cors_allowed_origins() -> list[str]:
     origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
     return [o.strip() for o in origins.split(",") if o.strip()]
@@ -385,30 +399,12 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                 if params["model"]:
                     RAG_AGENT.ollama_config['generation_model'] = params["model"]
                 if force_rag:
-                    # --- Apply runtime overrides manually because we skip Agent.run()
-                    rp_cfg = RAG_AGENT.retrieval_pipeline.config
-                    if retrieval_k is not None:
-                        rp_cfg["retrieval_k"] = retrieval_k
-                    if reranker_top_k is not None:
-                        rp_cfg.setdefault("reranker", {})["top_k"] = reranker_top_k
-                    if search_type is not None:
-                        rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
-                    # Set-or-clear: a stale weight from a previous request would
-                    # override the index's stored fusion config
-                    if dense_weight is not None:
-                        rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
-                    else:
-                        rp_cfg.setdefault("retrieval", {}).setdefault("dense", {}).pop("weight", None)
-                    if ai_rerank_flag is not None:
-                        # Let force_rag callers (e.g. the eval harness) toggle
-                        # the AI reranker, like the agent path already can
-                        rp_cfg.setdefault("reranker", {})["enabled"] = bool(ai_rerank_flag)
-
-                    # Provence overrides
-                    if provence_prune is not None:
-                        rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
-                    if provence_threshold is not None:
-                        rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
+                    # Per-request overrides applied locally in run() — no
+                    # shared-config mutation (force_rag bypasses Agent.run).
+                    overrides = _force_rag_overrides(
+                        retrieval_k, reranker_top_k, search_type, dense_weight,
+                        ai_rerank_flag, provence_prune, provence_threshold,
+                    )
 
                     # 🔄 Apply embedding model for this session (same as in agent path)
                     if session_id:
@@ -422,6 +418,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                         window_size_override=context_window_size,
                         collections=params.get("collections"),
                         filters=params.get("filters"),
+                        overrides=overrides,
                     )
                 else:
                     # Use full agent with smart routing
@@ -525,37 +522,20 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     if params["model"]:
                         RAG_AGENT.ollama_config['generation_model'] = params["model"]
                     if force_rag:
-                        # Apply overrides same as above since we bypass Agent.run
-                        rp_cfg = RAG_AGENT.retrieval_pipeline.config
-                        if retrieval_k is not None:
-                            rp_cfg["retrieval_k"] = retrieval_k
-                        if reranker_top_k is not None:
-                            rp_cfg.setdefault("reranker", {})["top_k"] = reranker_top_k
-                        if search_type is not None:
-                            rp_cfg.setdefault("retrieval", {})["search_type"] = search_type
-                        if dense_weight is not None:
-                            rp_cfg.setdefault("retrieval", {}).setdefault("dense", {})["weight"] = dense_weight
-                        else:
-                            rp_cfg.setdefault("retrieval", {}).setdefault("dense", {}).pop("weight", None)
-                        if ai_rerank_flag is not None:
-                            rp_cfg.setdefault("reranker", {})["enabled"] = bool(ai_rerank_flag)
-
-                        # Provence overrides
-                        if provence_prune is not None:
-                            rp_cfg.setdefault("provence", {})["enabled"] = bool(provence_prune)
-                        if provence_threshold is not None:
-                            rp_cfg.setdefault("provence", {})["threshold"] = float(provence_threshold)
+                        # Per-request overrides applied locally in run() — no
+                        # shared-config mutation (force_rag bypasses Agent.run).
+                        overrides = _force_rag_overrides(
+                            retrieval_k, reranker_top_k, search_type, dense_weight,
+                            ai_rerank_flag, provence_prune, provence_threshold,
+                        )
 
                         # 🔄 Apply embedding model for this session (same as in agent path)
                         if session_id:
                             idx_ids = db.get_indexes_for_session(session_id)
                             _apply_index_embedding_model(idx_ids)
 
-                        # 🔧 Set index-specific overview path so each index writes separate file
-                        if session_id:
-                            rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
-
                         # 🔧 Configure late chunking
+                        rp_cfg = RAG_AGENT.retrieval_pipeline.config
                         rp_cfg.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
 
                         # Straight retrieval pipeline with streaming events
@@ -566,6 +546,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                             event_callback=emit,
                             collections=params.get("collections"),
                             filters=params.get("filters"),
+                            overrides=overrides,
                         )
                     else:
                         # Provence overrides

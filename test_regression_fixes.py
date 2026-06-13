@@ -609,7 +609,7 @@ class MultiCollectionRetrievalTests(unittest.TestCase):
         # Same fake retriever serves both "models"; the point under test is
         # the per-collection loop, merge, and attribution — not embedding.
         cls.pipeline._get_retriever_for_model = lambda model: retriever
-        cls.pipeline._get_ai_reranker = lambda: None
+        cls.pipeline._get_ai_reranker = lambda enabled_override=None: None
         cls.pipeline._get_reranker = lambda: None
 
     @classmethod

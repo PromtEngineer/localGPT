@@ -182,10 +182,19 @@ class RetrievalPipeline:
             logger.info("linear_combination_reranker_initialized weight=%s", rerank_weight)
         return self.reranker
 
-    def _get_ai_reranker(self):
-        """Initializes a dedicated AI-based reranker."""
+    def _get_ai_reranker(self, enabled_override: Optional[bool] = None):
+        """Initializes a dedicated AI-based reranker.
+
+        enabled_override lets a single request turn reranking on/off without
+        mutating shared config: None → use config's reranker.enabled; False →
+        skip (return None); True → build even if config defaults it off,
+        falling back to sane model/strategy defaults when unset.
+        """
         reranker_config = self.config.get("reranker", {})
-        if self.ai_reranker is None and reranker_config.get("enabled"):
+        enabled = reranker_config.get("enabled") if enabled_override is None else enabled_override
+        if not enabled:
+            return None
+        if self.ai_reranker is None:
             # Serialise first-time initialisation so only one thread attempts
             # to load the (very large) model.  Other threads will wait and use
             # the instance once ready, preventing the meta-tensor crash.
@@ -193,8 +202,11 @@ class RetrievalPipeline:
                 # Another thread may have completed init while we waited
                 if self.ai_reranker is None:
                     try:
-                        model_name = reranker_config.get("model_name")
-                        strategy = reranker_config.get("strategy", "qwen")
+                        # Defaults cover a request that enables reranking when
+                        # config left it off (e.g. fast mode) — previously the
+                        # caller mutated config to inject these.
+                        model_name = reranker_config.get("model_name") or self.ollama_config.get("rerank_model", "answerai-colbert-small-v1")
+                        strategy = reranker_config.get("strategy") or ("rerankers-lib" if reranker_config.get("model_name") is None else "qwen")
 
                         logger.info("ai_reranker_initializing strategy=%s model_name=%s", strategy, model_name)
                         if strategy == "rerankers-lib":
@@ -315,7 +327,8 @@ Reminder: every fact in your answer must end with its source number in square br
 
     def run(self, query: str, table_name: str = None, window_size_override: Optional[int] = None,
             event_callback=None, collections: Optional[List[Dict[str, Any]]] = None,
-            filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            filters: Optional[Dict[str, Any]] = None,
+            overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Retrieve, rerank, and synthesize.
 
         collections: optional list of {"table_name", "embedding_model",
@@ -325,12 +338,25 @@ Reminder: every fact in your answer must end with its source number in square br
         used. filters: optional typed metadata filters, validated against
         each collection's schema and compiled to a LanceDB where clause —
         collections whose schema can't satisfy the filter are excluded.
+
+        overrides: per-request retrieval knobs applied locally for THIS call
+        only (retrieval_k, reranker_top_k, ai_rerank, search_type,
+        dense_weight, provence_enabled, provence_threshold). These used to be
+        written into self.config by callers, which forced a global lock to
+        stop concurrent requests clobbering each other; resolving them per
+        call instead keeps the shared pipeline config immutable.
         """
         start_time = time.time()
-        retrieval_k = self.config.get("retrieval_k", 10)
+        ov = overrides or {}
+
+        def _ov(key, default):
+            v = ov.get(key)
+            return default if v is None else v
+
+        retrieval_k = _ov("retrieval_k", self.config.get("retrieval_k", 10))
 
         logger.debug("--- Running Hybrid Search for query '%s' (table=%s) ---", query, table_name or self.storage_config.get("text_table_name"))
-        
+
         # If a custom table_name is provided, propagate it to storage config so helper methods use it
         if table_name:
             self.storage_config["text_table_name"] = table_name
@@ -340,14 +366,13 @@ Reminder: every fact in your answer must end with its source number in square br
         # Get the LanceDB reranker for initial score fusion
         lancedb_reranker = self._get_reranker()
 
-        # Honor the configured search mode and dense weight — these are set
-        # per request by the agent/API server and were previously ignored.
+        # Search mode + dense weight: per-request override wins, else config.
         retrieval_cfg = self.config.get("retrieval", {}) or {}
-        search_type = str(retrieval_cfg.get("search_type") or "hybrid").lower()
+        search_type = str(_ov("search_type", retrieval_cfg.get("search_type") or "hybrid")).lower()
         vector_only_search = search_type in ("vector_only", "vector")
         fts_only_search = search_type in ("bm25", "fts", "keyword")
         fusion_override = None
-        dense_weight = (retrieval_cfg.get("dense") or {}).get("weight")
+        dense_weight = _ov("dense_weight", (retrieval_cfg.get("dense") or {}).get("weight"))
         if dense_weight is not None:
             try:
                 w = max(0.0, min(1.0, float(dense_weight)))
@@ -490,7 +515,7 @@ Reminder: every fact in your answer must end with its source number in square br
                 logger.info("latechunk_merge_applied merged_count=%s", merged_count)
 
         # --- AI Reranking Step ---
-        ai_reranker = self._get_ai_reranker()
+        ai_reranker = self._get_ai_reranker(enabled_override=ov.get("ai_rerank"))
         if ai_reranker and retrieved_docs:
             if event_callback:
                 event_callback("rerank_started", {"count": len(retrieved_docs)})
@@ -498,7 +523,7 @@ Reminder: every fact in your answer must end with its source number in square br
             start_rerank_time = time.time()
 
             rerank_cfg = self.config.get("reranker", {})
-            top_k_cfg = rerank_cfg.get("top_k")
+            top_k_cfg = _ov("reranker_top_k", rerank_cfg.get("top_k"))
             top_percent = rerank_cfg.get("top_percent")  # value in range 0–1
 
             if top_percent is not None:
@@ -579,7 +604,7 @@ Reminder: every fact in your answer must end with its source number in square br
                 reranked_docs.extend(rescued)
                 logger.info("rerank_keep_union_rescued count=%s", len(rescued))
 
-        window_size = self.config.get("context_window_size", 1)
+        window_size = _ov("context_window_size", self.config.get("context_window_size", 1))
         if window_size_override is not None:
             window_size = window_size_override
         if window_size > 0 and reranked_docs:
@@ -639,10 +664,11 @@ Reminder: every fact in your answer must end with its source number in square br
         # Sentence-level pruning (Provence)
         # ------------------------------------------------------------------
         prov_cfg = self.config.get("provence", {})
-        if prov_cfg.get("enabled"):
+        prov_enabled = _ov("provence_enabled", prov_cfg.get("enabled"))
+        if prov_enabled:
             if event_callback:
                 event_callback("prune_started", {"count": len(final_docs)})
-            thresh = float(prov_cfg.get("threshold", 0.1))
+            thresh = float(_ov("provence_threshold", prov_cfg.get("threshold", 0.1)))
             logger.info("provence_pruning_enabled threshold=%s", thresh)
             pruner = self._get_sentence_pruner()
             final_docs = pruner.prune_documents(query, final_docs, threshold=thresh)

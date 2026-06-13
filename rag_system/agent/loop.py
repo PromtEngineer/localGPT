@@ -203,7 +203,8 @@ Respond with JSON: {{"category": "<your_choice>"}}
 
     # ---------------- Public sync API (kept for backwards compatibility) --------------
     async def _run_agentic(self, contextual_query, raw_query, history, table_name,
-                           collections, filters, context_expand, event_callback) -> Dict[str, Any]:
+                           collections, filters, context_expand, event_callback,
+                           overrides=None) -> Dict[str, Any]:
         """Plan-and-execute path (opt-in).
 
         1. complexity gate → simple questions run as a single retrieval.
@@ -218,6 +219,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
         def _retrieve(q):
             return self.retrieval_pipeline.run(
                 q, table_name, window, collections=collections, filters=filters,
+                overrides=overrides,
             )
 
         # 1. Complexity gate
@@ -359,47 +361,20 @@ Respond with JSON: {{"category": "<your_choice>"}}
         contextual_query = self._format_query_with_history(query, history)
         raw_query = query.strip()
         
-        # --- Apply runtime AI reranker override (must happen before any retrieval calls) ---
-        if ai_rerank is not None:
-            rr_cfg = self.retrieval_pipeline.config.setdefault("reranker", {})
-            rr_cfg["enabled"] = bool(ai_rerank)
-            if ai_rerank:
-                # Ensure the pipeline knows to use the external ColBERT reranker
-                rr_cfg.setdefault("type", "ai")
-                rr_cfg.setdefault("strategy", "rerankers-lib")
-                rr_cfg.setdefault(
-                    "model_name",
-                    # Falls back to ColBERT-small if the caller did not supply one
-                    self.ollama_config.get("rerank_model", "answerai-colbert-small-v1"),
-                )
-
-        # --- Apply runtime retrieval configuration overrides ---
-        if retrieval_k is not None:
-            self.retrieval_pipeline.config["retrieval_k"] = retrieval_k
-            print(f"🔍 Retrieval K set to: {retrieval_k}")
-            
-        if context_window_size is not None:
-            self.retrieval_pipeline.config["context_window_size"] = context_window_size
-            print(f"🔍 Context window size set to: {context_window_size}")
-            
-        if reranker_top_k is not None:
-            rr_cfg = self.retrieval_pipeline.config.setdefault("reranker", {})
-            rr_cfg["top_k"] = reranker_top_k
-            print(f"🔍 Reranker top K set to: {reranker_top_k}")
-            
-        if search_type is not None:
-            retrieval_cfg = self.retrieval_pipeline.config.setdefault("retrieval", {})
-            retrieval_cfg["search_type"] = search_type
-            print(f"🔍 Search type set to: {search_type}")
-            
-        dense_cfg = self.retrieval_pipeline.config.setdefault("retrieval", {}).setdefault("dense", {})
-        if dense_weight is not None:
-            dense_cfg["weight"] = dense_weight
-            print(f"🔍 Dense search weight set to: {dense_weight}")
-        else:
-            # Clear stale per-request overrides so the index's stored fusion
-            # config governs when the caller didn't move the slider
-            dense_cfg.pop("weight", None)
+        # --- Per-request retrieval overrides ---
+        # Passed into RetrievalPipeline.run for THIS call only, instead of
+        # mutating the shared pipeline config. None means "use config / the
+        # index's stored value", so a request that doesn't move a knob has no
+        # lingering effect on the next request (and no global lock is needed
+        # to protect against that).
+        retrieval_overrides = {
+            "ai_rerank": ai_rerank,
+            "retrieval_k": retrieval_k,
+            "context_window_size": context_window_size,
+            "reranker_top_k": reranker_top_k,
+            "search_type": search_type,
+            "dense_weight": dense_weight,
+        }
 
         query_embedding = None
         # Cache entries are scoped to the active index table + embedding model
@@ -489,6 +464,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 result = await self._run_agentic(
                     contextual_query, raw_query, history, table_name,
                     collections, filters, context_expand, event_callback,
+                    retrieval_overrides,
                 )
             elif decomp_enabled:
                 print(f"\n--- Query Decomposition Enabled ---")
@@ -520,6 +496,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                         event_callback=event_callback,
                         collections=collections,
                         filters=filters,
+                        overrides=retrieval_overrides,
                     )
                     if event_callback:
                         event_callback("single_query_result", result)
@@ -569,6 +546,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                                 make_cb(i),
                                 collections=collections,
                                 filters=filters,
+                                overrides=retrieval_overrides,
                             ): (i, sub_query)
                             for i, sub_query in enumerate(sub_queries)
                         }
@@ -684,7 +662,7 @@ FINAL ANSWER:
                                 event_callback("final_answer", result)
             else:
                 # Standard retrieval (single-query)
-                result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback, collections=collections, filters=filters)
+                result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback, collections=collections, filters=filters, overrides=retrieval_overrides)
 
                 # After run, result['source_documents'] is reranked list
                 reranked_docs = result.get('source_documents', [])
