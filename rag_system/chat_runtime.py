@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
-from rag_system.agent import reflection
+from rag_system.agent import query_rewrite, reflection
 from rag_system.index_selection import select_active_index_id
 from rag_system.utils.logging_utils import StageTimings, timings_enabled
 
@@ -133,18 +133,31 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
             ),
             "overrides": overrides,
         }
+        # Standalone multi-turn rewrite (opt-in): condense a follow-up into a
+        # self-contained query so retrieval doesn't choke on pronouns. One extra
+        # LLM call; only on this retrieval path, only when there's history.
+        retrieval_query = query
+        if bool(data.get("rewrite_query", False)) and session_id:
+            turns = query_rewrite.messages_to_turns(db.get_messages(session_id, 10))
+            if turns:
+                retrieval_query = query_rewrite.standalone_query(
+                    agent.retrieval_pipeline.ollama_client,
+                    generation_model,
+                    query,
+                    turns,
+                )
         if reflect_on:
             result = reflection.reflective_run(
                 agent.retrieval_pipeline,
                 verifier,
-                query,
+                retrieval_query,
                 run_kwargs=run_kwargs,
                 event_callback=callback,
                 cfg=reflect_cfg,
             )
         else:
             result = agent.retrieval_pipeline.run(
-                query, event_callback=callback, **run_kwargs
+                retrieval_query, event_callback=callback, **run_kwargs
             )
     else:
         result = agent.run(

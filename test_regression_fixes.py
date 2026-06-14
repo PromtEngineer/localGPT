@@ -1185,5 +1185,135 @@ class ReflectionWiringTests(unittest.TestCase):
         self.assertEqual(out["answer"], "agent-path")
 
 
+class _RewriteLLM:
+    def __init__(self, response):
+        self._response = response
+        self.calls = 0
+
+    def generate_completion(self, model, prompt, format=None):
+        self.calls += 1
+        return self._response
+
+
+class _RewriteFakeDB:
+    def __init__(self, messages):
+        self._messages = messages
+
+    def list_indexes(self):
+        return []
+
+    def get_indexes_for_session(self, _sid):
+        return []
+
+    def get_index(self, _iid):
+        return None
+
+    def get_messages(self, session_id, limit=100):
+        return self._messages
+
+
+class QueryRewriteTests(unittest.TestCase):
+    """Standalone multi-turn query rewrite (opt-in, retrieval path)."""
+
+    def test_messages_to_turns_pairs_and_caps(self):
+        from rag_system.agent import query_rewrite
+
+        msgs = [
+            {"sender": "user", "content": "a"},
+            {"sender": "assistant", "content": "A"},
+            {"sender": "user", "content": "b"},
+            {"sender": "assistant", "content": "B"},
+            {"sender": "user", "content": "dangling"},  # unpaired → dropped
+        ]
+        self.assertEqual(
+            query_rewrite.messages_to_turns(msgs, max_turns=1),
+            [{"user": "b", "assistant": "B"}],
+        )
+
+    def test_standalone_query_no_history_returns_original(self):
+        from rag_system.agent import query_rewrite
+
+        llm = _RewriteLLM({"response": json.dumps({"query": "X"})})
+        self.assertEqual(query_rewrite.standalone_query(llm, "m", "q", []), "q")
+        self.assertEqual(llm.calls, 0)  # no LLM call without history
+
+    def test_standalone_query_rewrites_with_history(self):
+        from rag_system.agent import query_rewrite
+
+        llm = _RewriteLLM({"response": json.dumps({"query": "standalone Q"})})
+        out = query_rewrite.standalone_query(
+            llm, "m", "what about it?", [{"user": "tell me about X", "assistant": "X."}]
+        )
+        self.assertEqual(out, "standalone Q")
+
+    def test_standalone_query_falls_back_on_bad_json(self):
+        from rag_system.agent import query_rewrite
+
+        llm = _RewriteLLM({"response": "not json at all"})
+        out = query_rewrite.standalone_query(
+            llm, "m", "q", [{"user": "a", "assistant": "A"}]
+        )
+        self.assertEqual(out, "q")
+
+    def test_execute_chat_rewrites_query_for_retrieval(self):
+        from rag_system import chat_runtime
+
+        pipe = _ReflectFakePipeline(["RES"], [_one_source()])  # rewrite → "REWRITTEN"
+        agent = _ReflectFakeAgent(pipe, _ReflectFakeVerifier(rel=[2], ground=[2]))
+        db = _RewriteFakeDB(
+            [
+                {"sender": "user", "content": "about X"},
+                {"sender": "assistant", "content": "X is ..."},
+            ]
+        )
+        chat_runtime.execute_chat(
+            agent,
+            db,
+            {
+                "query": "what about it?",
+                "session_id": "s",
+                "force_rag": True,
+                "rewrite_query": True,
+            },
+        )
+        self.assertEqual(pipe.run_queries, ["REWRITTEN"])
+
+    def test_execute_chat_no_rewrite_by_default(self):
+        from rag_system import chat_runtime
+
+        pipe = _ReflectFakePipeline(["RES"], [_one_source()])
+        agent = _ReflectFakeAgent(pipe, _ReflectFakeVerifier(rel=[2], ground=[2]))
+        db = _RewriteFakeDB(
+            [
+                {"sender": "user", "content": "about X"},
+                {"sender": "assistant", "content": "X is ..."},
+            ]
+        )
+        chat_runtime.execute_chat(
+            agent,
+            db,
+            {"query": "what about it?", "session_id": "s", "force_rag": True},
+        )
+        self.assertEqual(pipe.run_queries, ["what about it?"])  # original, no rewrite
+
+    def test_execute_chat_rewrite_noop_without_history(self):
+        from rag_system import chat_runtime
+
+        pipe = _ReflectFakePipeline(["RES"], [_one_source()])
+        agent = _ReflectFakeAgent(pipe, _ReflectFakeVerifier(rel=[2], ground=[2]))
+        db = _RewriteFakeDB([])  # no prior messages
+        chat_runtime.execute_chat(
+            agent,
+            db,
+            {
+                "query": "q",
+                "session_id": "s",
+                "force_rag": True,
+                "rewrite_query": True,
+            },
+        )
+        self.assertEqual(pipe.run_queries, ["q"])
+
+
 if __name__ == "__main__":
     unittest.main()
