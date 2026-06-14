@@ -87,6 +87,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   const [enableReflect, setEnableReflect] = useState<boolean>(false)
   // Standalone multi-turn query rewrite. Default off.
   const [enableRewrite, setEnableRewrite] = useState<boolean>(false)
+  // Reflection advanced controls. Empty model = judge with the answer model;
+  // pick a small fast model to keep scoring cheap. Loops cap the retry depth.
+  const [reflectionModel, setReflectionModel] = useState<string>('')
+  const [reflectionMaxLoops, setReflectionMaxLoops] = useState<number>(2)
   // Typed metadata filters, e.g. "project=Antapaccay, year>=2020" — parsed
   // client-side into a filters object; types are validated server-side
   // against the index's metadata schema
@@ -336,6 +340,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             agentic: agenticMode,
             reflect: enableReflect,
             rewriteQuery: enableRewrite,
+            reflectionModel,
+            reflectionMaxLoops,
           },
           (evt) => {
             console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
@@ -569,6 +575,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           agentic: agenticMode,
           reflect: enableReflect,
           rewriteQuery: enableRewrite,
+          reflectionModel,
+          reflectionMaxLoops,
         })
       
       const aiMessage: ChatMessage = {
@@ -770,8 +778,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'toggle', label:'Query decomposition', checked: enableDecompose, setter: setEnableDecompose},
             {type: 'toggle', label:'Compose sub-answers', checked: composeSubAnswers, setter: setComposeSubAnswers},
             {type: 'toggle', label:'Verify answer', checked: enableVerify, setter: setEnableVerify},
-            {type: 'toggle', label:'Self-reflection (slower, higher quality)', checked: enableReflect, setter: setEnableReflect},
+            {type: 'toggle', label:'Self-reflection', checked: enableReflect, setter: setEnableReflect},
             {type: 'toggle', label:'Multi-turn query rewrite', checked: enableRewrite, setter: setEnableRewrite},
+            {type: 'dropdown', label:'Reflection model', value: reflectionModel, setter: setReflectionModel, options: [{value:'',label:'Same as answer model'}, ...generationModels.map(m=>({value:m,label:m}))]},
+            {type: 'slider', label:'Max reflection loops', value: reflectionMaxLoops, setter: setReflectionMaxLoops, min: 1, max: 3, unit: ' loops'},
             {type: 'toggle', label:'Stream phases', checked: enableStream, setter: setEnableStream},
             
             // Retrieval Settings

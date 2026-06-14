@@ -427,6 +427,8 @@ class ChatAPI {
       agentic?: boolean;
       reflect?: boolean;
       rewriteQuery?: boolean;
+      reflectionModel?: string;
+      reflectionMaxLoops?: number;
     } = {}
   ): Promise<SessionChatResponse & { source_documents: SourceDocument[] }> {
     try {
@@ -456,6 +458,8 @@ class ChatAPI {
           ...(typeof opts.agentic === 'boolean' && { agentic: opts.agentic }),
           ...(typeof opts.reflect === 'boolean' && { reflect: opts.reflect }),
           ...(typeof opts.rewriteQuery === 'boolean' && { rewrite_query: opts.rewriteQuery }),
+          ...(opts.reflectionModel && { reflection_model: opts.reflectionModel }),
+          ...(typeof opts.reflectionMaxLoops === 'number' && { reflection_max_loops: opts.reflectionMaxLoops }),
         }),
       });
 
@@ -898,11 +902,13 @@ class ChatAPI {
       agentic?: boolean;
       reflect?: boolean;
       rewriteQuery?: boolean;
+      reflectionModel?: string;
+      reflectionMaxLoops?: number;
     },
     onEvent: (event: { type: string; data: ApiRecord }) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune, reflect, rewriteQuery } = params;
+    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune, reflect, rewriteQuery, reflectionModel, reflectionMaxLoops } = params;
 
     const payload: Record<string, unknown> = { query };
     if (model) payload.model = model;
@@ -925,6 +931,8 @@ class ChatAPI {
     if (typeof params.agentic === 'boolean') payload.agentic = params.agentic;
     if (typeof reflect === 'boolean') payload.reflect = reflect;
     if (typeof rewriteQuery === 'boolean') payload.rewrite_query = rewriteQuery;
+    if (reflectionModel) payload.reflection_model = reflectionModel;
+    if (typeof reflectionMaxLoops === 'number') payload.reflection_max_loops = reflectionMaxLoops;
 
     const resp = await fetch(`${API_BASE_URL}/rag/chat/stream`, {
       method: 'POST',
