@@ -1,10 +1,9 @@
 import json
-import http.server
-import socketserver
-from urllib.parse import urlparse, parse_qs
 import os
+import queue
 import requests
 import sys
+import threading
 import logging
 
 # Add backend directory to path for database imports
@@ -182,698 +181,435 @@ def _execute_indexing_job(config, file_paths, *, index_id, force_reindex, job_id
             ) from e
 
 
-class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
-    def _cors_origin(self) -> str | None:
-        """Echo the request Origin only if it is in the configured allowlist.
+# ===========================================================================
+# FastAPI transport (replaces the hand-rolled threading http.server).
+# Routes are thin; all retrieval/index logic lives in the module functions
+# below and the request-scoped Agent — no shared mutable state, so requests
+# run concurrently in the threadpool with no lock.
+# ===========================================================================
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
-        A wildcard here would let any website the user visits call this
-        unauthenticated API from their browser.
-        """
-        allowed = _cors_allowed_origins()
-        origin = self.headers.get('Origin')
-        if origin and (origin in allowed or '*' in allowed):
-            return origin
+app = FastAPI(title="LocalGPT RAG API")
+
+_cors_origins = _cors_allowed_origins()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials="*" not in _cors_origins,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+
+def _parse_chat_request(data: dict):
+    """Parse/normalize a chat body. Returns a params dict, or None if the
+    query is missing (caller returns 400)."""
+    query = data.get("query")
+    if not query:
         return None
 
-    def _send_cors_headers(self):
-        origin = self._cors_origin()
-        if origin:
-            self.send_header('Access-Control-Allow-Origin', origin)
-            self.send_header('Vary', 'Origin')
+    requested_model = data.get("model")
+    session_id = data.get("session_id")
+    table_name = data.get("table_name")
+    collections = None
+    if not table_name and session_id:
+        # No explicit table: search ALL of the session's linked indexes.
+        # An explicit table_name (eval harness, API callers) pins a single
+        # collection, preserving the old contract.
+        collections = _get_collections_for_session(session_id)
+        table_name = _get_table_name_for_session(session_id)
+    elif table_name:
+        # Explicit tables still need their embedding/fusion/schema metadata.
+        collections = _collection_for_table(table_name)
 
-    def do_OPTIONS(self):
-        """Handle CORS preflight requests for frontend integration."""
-        self.send_response(200)
-        self._send_cors_headers()
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
+    return {
+        "query": query,
+        "model": requested_model if isinstance(requested_model, str) and requested_model else None,
+        "session_id": session_id,
+        "table_name": table_name,
+        "collections": collections,
+        "compose_flag": data.get("compose_sub_answers"),
+        "decomp_flag": data.get("query_decompose"),
+        "ai_rerank_flag": data.get("ai_rerank"),
+        "ctx_expand_flag": data.get("context_expand"),
+        "verify_flag": data.get("verify"),
+        "retrieval_k": data.get("retrieval_k", 20),
+        "context_window_size": data.get("context_window_size", 1),
+        "reranker_top_k": data.get("reranker_top_k", 10),
+        "search_type": data.get("search_type", "hybrid"),
+        # No default: a value here overrides the per-index fusion config
+        # stored with the index, so only explicit caller overrides count
+        "dense_weight": data.get("dense_weight"),
+        "force_rag": bool(data.get("force_rag", False)),
+        "filters": data.get("filters") if isinstance(data.get("filters"), dict) else None,
+        "agentic": data.get("agentic") if isinstance(data.get("agentic"), bool) else None,
+        "provence_prune": data.get("provence_prune"),
+        "provence_threshold": data.get("provence_threshold"),
+    }
 
-    def do_POST(self):
-        """Handle POST requests for chat and indexing."""
-        parsed_path = urlparse(self.path)
 
-        if parsed_path.path == '/chat':
-            self.handle_chat()
-        elif parsed_path.path == '/chat/stream':
-            self.handle_chat_stream()
-        elif parsed_path.path == '/index':
-            self.handle_index()
-        else:
-            self.send_json_response({"error": "Not Found"}, status_code=404)
+def _run_chat(params, event_callback=None):
+    """Execute a chat request (force_rag bypass or full agent) and return the
+    result dict. event_callback (SSE emit) is threaded through when streaming."""
+    query = params["query"]
+    session_id = params["session_id"]
+    table_name = params["table_name"]
+    force_rag = params["force_rag"]
 
-    def do_GET(self):
-        parsed_path = urlparse(self.path)
+    generation_model = params["model"] or RAG_AGENT.ollama_config["generation_model"]
+    document_overviews = []
+    if session_id:
+        idx_ids = db.get_indexes_for_session(session_id)
+        document_overviews = RAG_AGENT.get_overviews_for_indexes(idx_ids)
 
-        if parsed_path.path == '/models':
-            self.handle_models()
-        elif parsed_path.path == '/health':
-            self.handle_health()
-        else:
-            self.send_json_response({"error": "Not Found"}, status_code=404)
+    print(f"🔧 Force RAG flag: {force_rag}")
+    if force_rag:
+        overrides = _force_rag_overrides(
+            params["retrieval_k"], params["reranker_top_k"], params["search_type"],
+            params["dense_weight"], params["ai_rerank_flag"],
+            params["provence_prune"], params["provence_threshold"],
+        )
+        overrides.update({"generation_model": generation_model, "latechunk_enabled": True})
+        return RAG_AGENT.retrieval_pipeline.run(
+            query,
+            table_name=table_name,
+            window_size_override=params["context_window_size"],
+            collections=params.get("collections"),
+            filters=params.get("filters"),
+            overrides=overrides,
+            event_callback=event_callback,
+        )
+    return RAG_AGENT.run(
+        query,
+        table_name=table_name,
+        collections=params.get("collections"),
+        filters=params.get("filters"),
+        session_id=session_id,
+        compose_sub_answers=params["compose_flag"],
+        query_decompose=params["decomp_flag"],
+        ai_rerank=params["ai_rerank_flag"],
+        context_expand=params["ctx_expand_flag"],
+        verify=params["verify_flag"],
+        retrieval_k=params["retrieval_k"],
+        context_window_size=params["context_window_size"],
+        reranker_top_k=params["reranker_top_k"],
+        search_type=params["search_type"],
+        dense_weight=params["dense_weight"],
+        agentic=params.get("agentic"),
+        generation_model=generation_model,
+        document_overviews=document_overviews,
+        provence_prune=params["provence_prune"],
+        provence_threshold=params["provence_threshold"],
+        latechunk_enabled=True,
+        event_callback=event_callback,
+    )
 
-    def handle_health(self):
-        """Lightweight health probe that avoids loading large ML models."""
-        checks: dict = {}
-        overall = "ok"
 
-        # Agent
-        checks["agent"] = "ok" if RAG_AGENT is not None else "error"
-        if RAG_AGENT is None:
-            overall = "degraded"
+def _stream_chat(params):
+    """Bridge the agent's push-based event_callback into a pull-based SSE
+    generator: the agent runs in a worker thread, pushing onto a queue."""
+    q: queue.Queue = queue.Queue()
+    sentinel = object()
 
-        # LanceDB
+    def emit(event_type, payload):
+        q.put("data: " + json.dumps({"type": event_type, "data": payload}) + "\n\n")
+
+    def worker():
         try:
-            import lancedb as _lancedb
-            lancedb_uri = os.getenv("LANCEDB_URI", "./lancedb")
-            if os.path.exists(lancedb_uri):
-                conn = _lancedb.connect(lancedb_uri)
-                table_names = conn.table_names(limit=10_000)
-                checks["lancedb"] = f"ok ({len(table_names)} tables)"
-            else:
-                checks["lancedb"] = "not_initialized"
-        except Exception as e:
-            checks["lancedb"] = f"error: {e}"
-            overall = "degraded"
+            final_result = _run_chat(params, event_callback=emit)
+            emit("complete", final_result)
+        except Exception as e:  # surface as an SSE error event, then close
+            print(f"❌ Stream error: {e}")
+            emit("error", {"error": str(e)})
+        finally:
+            q.put(sentinel)
 
-        # Embedder readiness without forcing model initialization.
-        try:
-            if RAG_AGENT is not None:
-                retrieval_pipeline = getattr(RAG_AGENT, "retrieval_pipeline", None)
-                embedder = getattr(retrieval_pipeline, "text_embedder", None)
-                checks["embedder"] = "loaded" if embedder is not None else "not_loaded"
-            else:
-                checks["embedder"] = "agent_unavailable"
-        except Exception as e:
-            checks["embedder"] = f"error: {e}"
-            overall = "degraded"
+    threading.Thread(target=worker, daemon=True).start()
+    while True:
+        item = q.get()
+        if item is sentinel:
+            break
+        yield item
 
-        self.send_json_response({"status": overall, "checks": checks})
 
-    def _parse_chat_request(self):
-        """Parse and validate a chat POST body. Returns a params dict, or None if a response was already sent."""
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        data = json.loads(post_data.decode('utf-8'))
+@app.post("/chat")
+async def chat(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    params = _parse_chat_request(data)
+    if params is None:
+        return JSONResponse({"error": "Query is required"}, status_code=400)
+    try:
+        result = await run_in_threadpool(_run_chat, params)
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse({"error": f"Server error: {str(e)}"}, status_code=500)
 
-        requested_model = data.get('model')
 
-        query = data.get('query')
-        if not query:
-            self.send_json_response({"error": "Query is required"}, status_code=400)
-            return None
+@app.post("/chat/stream")
+async def chat_stream(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    params = _parse_chat_request(data)
+    if params is None:
+        return JSONResponse({"error": "Query is required"}, status_code=400)
+    return StreamingResponse(
+        _stream_chat(params),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
-        session_id = data.get('session_id')
-        table_name = data.get('table_name')
-        collections = None
-        if not table_name and session_id:
-            # No explicit table: search ALL of the session's linked indexes.
-            # An explicit table_name (eval harness, API callers) pins a
-            # single collection, preserving the old contract.
-            collections = _get_collections_for_session(session_id)
-            table_name = _get_table_name_for_session(session_id)
-        elif table_name:
-            # Explicit tables still need their embedding/fusion/schema metadata.
-            collections = _collection_for_table(table_name)
 
-        return {
-            "query": query,
-            "model": requested_model if isinstance(requested_model, str) and requested_model else None,
-            "session_id": session_id,
-            "table_name": table_name,
-            "collections": collections,
-            "compose_flag": data.get('compose_sub_answers'),
-            "decomp_flag": data.get('query_decompose'),
-            "ai_rerank_flag": data.get('ai_rerank'),
-            "ctx_expand_flag": data.get('context_expand'),
-            "verify_flag": data.get('verify'),
-            "retrieval_k": data.get('retrieval_k', 20),
-            "context_window_size": data.get('context_window_size', 1),
-            "reranker_top_k": data.get('reranker_top_k', 10),
-            "search_type": data.get('search_type', 'hybrid'),
-            # No default: a value here overrides the per-index fusion config
-            # stored with the index, so only explicit caller overrides count
-            "dense_weight": data.get('dense_weight'),
-            "force_rag": bool(data.get('force_rag', False)),
-            "filters": data.get('filters') if isinstance(data.get('filters'), dict) else None,
-            "agentic": data.get('agentic') if isinstance(data.get('agentic'), bool) else None,
-            "provence_prune": data.get('provence_prune'),
-            "provence_threshold": data.get('provence_threshold'),
-        }
-
-    def handle_chat(self):
-        """Handles a chat query by calling the agentic RAG pipeline."""
-        try:
-            params = self._parse_chat_request()
-            if params is None:
-                return
-
-            query = params["query"]
-            session_id = params["session_id"]
-            table_name = params["table_name"]
-            compose_flag = params["compose_flag"]
-            decomp_flag = params["decomp_flag"]
-            ai_rerank_flag = params["ai_rerank_flag"]
-            ctx_expand_flag = params["ctx_expand_flag"]
-            verify_flag = params["verify_flag"]
-            retrieval_k = params["retrieval_k"]
-            context_window_size = params["context_window_size"]
-            reranker_top_k = params["reranker_top_k"]
-            search_type = params["search_type"]
-            dense_weight = params["dense_weight"]
-            force_rag = params["force_rag"]
-            provence_prune = params["provence_prune"]
-            provence_threshold = params["provence_threshold"]
-
-            generation_model = params["model"] or RAG_AGENT.ollama_config["generation_model"]
-            document_overviews = []
-            if session_id:
-                idx_ids = db.get_indexes_for_session(session_id)
-                document_overviews = RAG_AGENT.get_overviews_for_indexes(idx_ids)
-
-            print(f"🔧 Force RAG flag: {force_rag}")
-            if force_rag:
-                overrides = _force_rag_overrides(
-                    retrieval_k, reranker_top_k, search_type, dense_weight,
-                    ai_rerank_flag, provence_prune, provence_threshold,
-                )
-                overrides.update({
-                    "generation_model": generation_model,
-                    "latechunk_enabled": True,
-                })
-                result = RAG_AGENT.retrieval_pipeline.run(
-                    query,
-                    table_name=table_name,
-                    window_size_override=context_window_size,
-                    collections=params.get("collections"),
-                    filters=params.get("filters"),
-                    overrides=overrides,
-                )
-            else:
-                result = RAG_AGENT.run(
-                    query,
-                    table_name=table_name,
-                    collections=params.get("collections"),
-                    filters=params.get("filters"),
-                    session_id=session_id,
-                    compose_sub_answers=compose_flag,
-                    query_decompose=decomp_flag,
-                    ai_rerank=ai_rerank_flag,
-                    context_expand=ctx_expand_flag,
-                    verify=verify_flag,
-                    retrieval_k=retrieval_k,
-                    context_window_size=context_window_size,
-                    reranker_top_k=reranker_top_k,
-                    search_type=search_type,
-                    dense_weight=dense_weight,
-                    agentic=params.get("agentic"),
-                    generation_model=generation_model,
-                    document_overviews=document_overviews,
-                    provence_prune=provence_prune,
-                    provence_threshold=provence_threshold,
-                    latechunk_enabled=True,
-                )
-            
-            # The result is a dict, so we need to dump it to a JSON string
-            self.send_json_response(result)
-
-        except json.JSONDecodeError:
-            self.send_json_response({"error": "Invalid JSON"}, status_code=400)
-        except Exception as e:
-            self.send_json_response({"error": f"Server error: {str(e)}"}, status_code=500)
-
-    def handle_chat_stream(self):
-        """Stream internal phases and final answer using SSE (text/event-stream)."""
-        try:
-            params = self._parse_chat_request()
-            if params is None:
-                return
-
-            query = params["query"]
-            session_id = params["session_id"]
-            table_name = params["table_name"]
-            compose_flag = params["compose_flag"]
-            decomp_flag = params["decomp_flag"]
-            ai_rerank_flag = params["ai_rerank_flag"]
-            ctx_expand_flag = params["ctx_expand_flag"]
-            verify_flag = params["verify_flag"]
-            retrieval_k = params["retrieval_k"]
-            context_window_size = params["context_window_size"]
-            reranker_top_k = params["reranker_top_k"]
-            search_type = params["search_type"]
-            dense_weight = params["dense_weight"]
-            force_rag = params["force_rag"]
-            provence_prune = params["provence_prune"]
-            provence_threshold = params["provence_threshold"]
-
-            # Prepare response headers for SSE
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/event-stream')
-            self.send_header('Cache-Control', 'no-cache')
-            # Keep connection alive for SSE; no manual chunked encoding (Python http.server
-            # does not add chunk sizes automatically, so declaring it breaks clients).
-            self.send_header('Connection', 'keep-alive')
-            self._send_cors_headers()
-            self.end_headers()
-
-            def emit(event_type: str, payload):
-                """Send a single SSE event."""
+def _clear_index_artifacts(pipeline, table_name, index_id):
+    """Remove old vector/overview artifacts before a force rebuild."""
+    if table_name and hasattr(pipeline, "lancedb_manager"):
+        _db = pipeline.lancedb_manager.db
+        table_names = _db.table_names(limit=10_000) if hasattr(_db, "table_names") else []
+        for candidate in (table_name, f"{table_name}_lc"):
+            if candidate in table_names:
                 try:
-                    data_str = json.dumps({"type": event_type, "data": payload})
-                    self.wfile.write(f"data: {data_str}\n\n".encode('utf-8'))
-                    self.wfile.flush()
-                except BrokenPipeError:
-                    # Client disconnected
-                    raise
-
-            generation_model = params["model"] or RAG_AGENT.ollama_config["generation_model"]
-            document_overviews = []
-            if session_id:
-                idx_ids = db.get_indexes_for_session(session_id)
-                document_overviews = RAG_AGENT.get_overviews_for_indexes(idx_ids)
-
-            # Run the agent synchronously, emitting checkpoints.
-            try:
-                if force_rag:
-                    overrides = _force_rag_overrides(
-                        retrieval_k, reranker_top_k, search_type, dense_weight,
-                        ai_rerank_flag, provence_prune, provence_threshold,
-                    )
-                    overrides.update({
-                        "generation_model": generation_model,
-                        "latechunk_enabled": True,
-                    })
-                    final_result = RAG_AGENT.retrieval_pipeline.run(
-                        query,
-                        table_name=table_name,
-                        window_size_override=context_window_size,
-                        event_callback=emit,
-                        collections=params.get("collections"),
-                        filters=params.get("filters"),
-                        overrides=overrides,
-                    )
-                else:
-                    final_result = RAG_AGENT.run(
-                        query,
-                        table_name=table_name,
-                        collections=params.get("collections"),
-                        filters=params.get("filters"),
-                        session_id=session_id,
-                        compose_sub_answers=compose_flag,
-                        query_decompose=decomp_flag,
-                        ai_rerank=ai_rerank_flag,
-                        context_expand=ctx_expand_flag,
-                        verify=verify_flag,
-                        retrieval_k=retrieval_k,
-                        context_window_size=context_window_size,
-                        reranker_top_k=reranker_top_k,
-                        search_type=search_type,
-                        dense_weight=dense_weight,
-                        agentic=params.get("agentic"),
-                        generation_model=generation_model,
-                        document_overviews=document_overviews,
-                        provence_prune=provence_prune,
-                        provence_threshold=provence_threshold,
-                        latechunk_enabled=True,
-                        event_callback=emit,
-                    )
-
-                # Ensure the final answer is sent (in case callback missed it)
-                emit("complete", final_result)
-            except BrokenPipeError:
-                print("🔌 Client disconnected from SSE stream.")
-            except Exception as e:
-                # Send error event then close
-                error_payload = {"error": str(e)}
-                try:
-                    emit("error", error_payload)
-                finally:
-                    print(f"❌ Stream error: {e}")
-
-        except json.JSONDecodeError:
-            self.send_json_response({"error": "Invalid JSON"}, status_code=400)
-        except Exception as e:
-            self.send_json_response({"error": f"Server error: {str(e)}"}, status_code=500)
-
-    def handle_index(self):
-        """Triggers the document indexing pipeline for specific files."""
-        try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-            
-            file_paths = data.get('file_paths')
-            session_id = data.get('session_id')
-            compose_flag = data.get('compose_sub_answers')
-            decomp_flag = data.get('query_decompose')
-            ai_rerank_flag = data.get('ai_rerank')
-            ctx_expand_flag = data.get('context_expand')
-            enable_latechunk = bool(data.get("enable_latechunk", False))
-            enable_docling_chunk = bool(data.get("enable_docling_chunk", False))
-            
-            # 🆕 NEW CONFIGURATION OPTIONS:
-            chunk_size = int(data.get("chunk_size", 512))
-            chunk_overlap = int(data.get("chunk_overlap", 64))
-            retrieval_mode = data.get("retrieval_mode", "hybrid")
-            window_size = int(data.get("window_size", 2))
-            # Default OFF: enrichment is one LLM call per chunk — opt-in only
-            enable_enrich = bool(data.get("enable_enrich", False))
-            embedding_model = data.get('embedding_model') or data.get('embeddingModel')
-            enrich_model = data.get('enrich_model') or data.get('enrichModel')
-            overview_model = data.get('overviewModel') or data.get('overview_model_name')
-            enrich_provider = data.get('enrich_provider', 'ollama')
-            enrich_api_key = data.get('enrich_api_key')  # never logged or stored
-            batch_size_embed = int(data.get("batch_size_embed", 50))
-            batch_size_enrich = int(data.get("batch_size_enrich", 25))
-            force_reindex = bool(data.get("force_reindex", False))
-            job_id = data.get("job_id")
-            backend_base_url = data.get("backend_base_url", "http://localhost:8000")
-            indexing_model_warnings = []
-
-            def is_large_indexing_model(model):
-                if not model:
-                    return False
-                lowered = str(model).lower()
-                return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
-
-            # Guard only applies to Ollama local models; cloud providers manage their own limits
-            if enrich_provider == 'ollama' and is_large_indexing_model(enrich_model):
-                indexing_model_warnings.append(
-                    f"Replaced enrichment model '{enrich_model}' with qwen3:8b for indexing safety."
-                )
-                enrich_model = "qwen3:8b"
-            if is_large_indexing_model(overview_model):
-                indexing_model_warnings.append(
-                    f"Replaced overview model '{overview_model}' with qwen3:8b for indexing safety."
-                )
-                overview_model = "qwen3:8b"
-
-            window_size = max(0, min(window_size, 2))
-            batch_size_enrich = max(1, min(batch_size_enrich, 8))
-            
-            if not file_paths or not isinstance(file_paths, list):
-                self.send_json_response({
-                    "error": "A 'file_paths' list is required."
-                }, status_code=400)
-                return
-            indexing_result = None
-            # Progress reporting and cancellation polling live in
-            # rag_system.indexing_worker — the build runs in a child process.
-
-            # Allow explicit table_name override
-            table_name = data.get('table_name')
-            if not table_name and session_id:
-                table_name = _get_table_name_for_session(session_id)
-
-            # The INDEXING_PIPELINE is already initialized. We just need to use it.
-            # If a session-specific table is needed, we can override the config for this run.
-            if table_name:
-                import copy
-                config_override = copy.deepcopy(INDEXING_PIPELINE.config)
-                config_override["storage"]["text_table_name"] = table_name
-                config_override.setdefault("retrievers", {}).setdefault("dense", {})["lancedb_table_name"] = table_name
-                
-                # 🔧 Configure late chunking
-                if enable_latechunk:
-                    config_override["retrievers"].setdefault("latechunk", {})["enabled"] = True
-                else:
-                    # ensure disabled if not requested
-                    config_override["retrievers"].setdefault("latechunk", {})["enabled"] = False
-                
-                # 🔧 Configure docling chunking
-                if enable_docling_chunk:
-                    config_override["chunker_mode"] = "docling"
-                
-                # 🔧 Configure contextual enrichment (THIS WAS MISSING!)
-                config_override.setdefault("contextual_enricher", {})
-                config_override["contextual_enricher"]["enabled"] = enable_enrich
-                config_override["contextual_enricher"]["window_size"] = window_size
-                
-                # 🔧 Configure indexing batch sizes
-                config_override.setdefault("indexing", {})
-                config_override["indexing"]["embedding_batch_size"] = batch_size_embed
-                config_override["indexing"]["enrichment_batch_size"] = batch_size_enrich
-                # 900s: a 500-page PDF legitimately needs >180s for layout analysis;
-                # a timeout also kills the conversion worker, so the next file pays
-                # a full Docling reload on top of the failure
-                config_override["indexing"].setdefault("conversion_timeout_seconds", int(os.getenv("CONVERSION_TIMEOUT_SECONDS", "900")))
-                config_override["indexing"].setdefault("overview_timeout_seconds", 45)
-                config_override["indexing"].setdefault("enrichment_timeout_seconds", 60)
-                
-
-                # Typed metadata: schema + per-file tags flow to the pipeline
-                # so chunk rows get meta_* columns for query-time filtering
-                if data.get("metadata_schema"):
-                    config_override["metadata_schema"] = data["metadata_schema"]
-                if data.get("file_metadata"):
-                    config_override["file_metadata"] = data["file_metadata"]
-                # 🔧 Configure chunking parameters
-                config_override.setdefault("chunking", {})
-                config_override["chunking"]["chunk_size"] = chunk_size
-                config_override["chunking"]["chunk_overlap"] = chunk_overlap
-                
-                # 🔧 Configure embedding model if specified
-                if embedding_model:
-                    config_override["embedding_model_name"] = embedding_model
-                
-                # 🔧 Configure enrichment model and provider if specified
-                if enrich_model:
-                    config_override["enrich_model"] = enrich_model
-                if enrich_provider and enrich_provider != 'ollama':
-                    config_override["enrich_provider"] = enrich_provider
-                    if enrich_api_key:
-                        config_override["enrich_api_key"] = enrich_api_key
-                
-                # 🔧 Overview model (can differ from enrichment)
-                if overview_model:
-                    config_override["overview_model_name"] = overview_model
-                
-                print(f"🔧 INDEXING CONFIG: Contextual Enrichment: {enable_enrich}, Window Size: {window_size}")
-                print(f"🔧 CHUNKING CONFIG: Size: {chunk_size}, Overlap: {chunk_overlap}")
-                print(f"🔧 MODEL CONFIG: Embedding: {embedding_model or 'default'}, Enrichment: {enrich_model or 'default'}")
-                
-                # 🔧 Set index-specific overview path so each index writes separate file
-                if session_id:
-                    config_override["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
-
-                config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = enable_latechunk
-
-                if force_reindex:
-                    self._clear_index_artifacts(INDEXING_PIPELINE, table_name, session_id)
-                # Run the build in an isolated child process (memory/crash isolation)
-                indexing_result = _execute_indexing_job(
-                    config_override,
-                    file_paths,
-                    index_id=session_id or table_name or "default",
-                    force_reindex=force_reindex,
-                    job_id=job_id,
-                    backend_base_url=backend_base_url,
-                )
-            else:
-                # Use the default pipeline with overrides
-                import copy
-                config_override = copy.deepcopy(INDEXING_PIPELINE.config)
-                
-                # 🔧 Configure late chunking
-                if enable_latechunk:
-                    config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = True
-                
-                # 🔧 Configure docling chunking
-                if enable_docling_chunk:
-                    config_override["chunker_mode"] = "docling"
-                
-                # 🔧 Configure contextual enrichment (THIS WAS MISSING!)
-                config_override.setdefault("contextual_enricher", {})
-                config_override["contextual_enricher"]["enabled"] = enable_enrich
-                config_override["contextual_enricher"]["window_size"] = window_size
-                
-                # 🔧 Configure indexing batch sizes
-                config_override.setdefault("indexing", {})
-                config_override["indexing"]["embedding_batch_size"] = batch_size_embed
-                config_override["indexing"]["enrichment_batch_size"] = batch_size_enrich
-                # 900s: a 500-page PDF legitimately needs >180s for layout analysis;
-                # a timeout also kills the conversion worker, so the next file pays
-                # a full Docling reload on top of the failure
-                config_override["indexing"].setdefault("conversion_timeout_seconds", int(os.getenv("CONVERSION_TIMEOUT_SECONDS", "900")))
-                config_override["indexing"].setdefault("overview_timeout_seconds", 45)
-                config_override["indexing"].setdefault("enrichment_timeout_seconds", 60)
-                
-
-                # Typed metadata: schema + per-file tags flow to the pipeline
-                # so chunk rows get meta_* columns for query-time filtering
-                if data.get("metadata_schema"):
-                    config_override["metadata_schema"] = data["metadata_schema"]
-                if data.get("file_metadata"):
-                    config_override["file_metadata"] = data["file_metadata"]
-                # 🔧 Configure chunking parameters
-                config_override.setdefault("chunking", {})
-                config_override["chunking"]["chunk_size"] = chunk_size
-                config_override["chunking"]["chunk_overlap"] = chunk_overlap
-                
-                # 🔧 Configure embedding model if specified
-                if embedding_model:
-                    config_override["embedding_model_name"] = embedding_model
-                
-                # 🔧 Configure enrichment model and provider if specified
-                if enrich_model:
-                    config_override["enrich_model"] = enrich_model
-                if enrich_provider and enrich_provider != 'ollama':
-                    config_override["enrich_provider"] = enrich_provider
-                    if enrich_api_key:
-                        config_override["enrich_api_key"] = enrich_api_key
-                
-                # 🔧 Overview model (can differ from enrichment)
-                if overview_model:
-                    config_override["overview_model_name"] = overview_model
-                
-                print(f"🔧 INDEXING CONFIG: Contextual Enrichment: {enable_enrich}, Window Size: {window_size}")
-                print(f"🔧 CHUNKING CONFIG: Size: {chunk_size}, Overlap: {chunk_overlap}")
-                print(f"🔧 MODEL CONFIG: Embedding: {embedding_model or 'default'}, Enrichment: {enrich_model or 'default'}")
-                
-                # 🔧 Set index-specific overview path so each index writes separate file
-                if session_id:
-                    config_override["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
-
-                config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = enable_latechunk
-
-                if force_reindex:
-                    self._clear_index_artifacts(INDEXING_PIPELINE, table_name, session_id)
-                # Run the build in an isolated child process (memory/crash isolation)
-                indexing_result = _execute_indexing_job(
-                    config_override,
-                    file_paths,
-                    index_id=session_id or table_name or "default",
-                    force_reindex=force_reindex,
-                    job_id=job_id,
-                    backend_base_url=backend_base_url,
-                )
-
-            self.send_json_response({
-                "message": f"Indexing process for {len(file_paths)} file(s) completed successfully.",
-                "table_name": table_name or "default_text_table",
-                "latechunk": enable_latechunk,
-                "docling_chunk": enable_docling_chunk,
-                "indexing_config": {
-                    "chunk_size": chunk_size,
-                    "chunk_overlap": chunk_overlap,
-                    "retrieval_mode": retrieval_mode,
-                    "window_size": window_size,
-                    "enable_enrich": enable_enrich,
-                    "embedding_model": embedding_model,
-                    "enrich_model": enrich_model,
-                    "batch_size_embed": batch_size_embed,
-                    "batch_size_enrich": batch_size_enrich,
-                    "force_reindex": force_reindex,
-                },
-                "indexing_result": indexing_result,
-                "indexing_model_warnings": indexing_model_warnings,
-            })
-
-            if embedding_model:
-                try:
-                    db.update_index_metadata(session_id, {"embedding_model": embedding_model})
+                    _db.drop_table(candidate)
+                    print(f"🚮 Dropped existing LanceDB table '{candidate}' for force rebuild")
                 except Exception as e:
-                    print(f"⚠️ Could not update embedding_model metadata: {e}")
-
-        except json.JSONDecodeError:
-            self.send_json_response({"error": "Invalid JSON"}, status_code=400)
-        except RuntimeError as e:
-            if str(e) == "indexing_cancelled":
-                self.send_json_response({"error": "Indexing cancelled"}, status_code=499)
-            else:
-                self.send_json_response({"error": f"Failed to start indexing: {str(e)}"}, status_code=500)
-        except Exception as e:
-            self.send_json_response({"error": f"Failed to start indexing: {str(e)}"}, status_code=500)
-
-    def _clear_index_artifacts(self, pipeline, table_name: str | None, index_id: str | None):
-        """Remove old vector/overview artifacts before a force rebuild."""
-        if table_name and hasattr(pipeline, "lancedb_manager"):
-            db = pipeline.lancedb_manager.db
-            table_names = db.table_names(limit=10_000) if hasattr(db, "table_names") else []
-            for candidate in (table_name, f"{table_name}_lc"):
-                if candidate in table_names:
-                    try:
-                        db.drop_table(candidate)
-                        print(f"🚮 Dropped existing LanceDB table '{candidate}' for force rebuild")
-                    except Exception as e:
-                        print(f"⚠️ Could not drop LanceDB table '{candidate}': {e}")
-
-        if index_id:
-            overview_path = f"index_store/overviews/{index_id}.jsonl"
-            try:
-                if os.path.exists(overview_path):
-                    os.remove(overview_path)
-                    print(f"🚮 Removed overview file '{overview_path}' for force rebuild")
-            except Exception as e:
-                print(f"⚠️ Could not remove overview file '{overview_path}': {e}")
-
-    def handle_models(self):
-        """Return a list of locally installed Ollama models and supported HuggingFace models, grouped by capability."""
+                    print(f"⚠️ Could not drop LanceDB table '{candidate}': {e}")
+    if index_id:
+        overview_path = f"index_store/overviews/{index_id}.jsonl"
         try:
-            generation_models = []
-            embedding_models = []
-            
-            # Get Ollama models if available
-            try:
-                resp = requests.get(f"{RAG_AGENT.ollama_config['host']}/api/tags", timeout=5)
-                resp.raise_for_status()
-                data = resp.json()
-
-                all_ollama_models = [m.get('name') for m in data.get('models', [])]
-
-                # Very naive classification
-                ollama_embedding_models = [m for m in all_ollama_models if any(k in m for k in ['embed','bge','embedding','text'])]
-                ollama_generation_models = [m for m in all_ollama_models if m not in ollama_embedding_models]
-                
-                generation_models.extend(ollama_generation_models)
-                embedding_models.extend(ollama_embedding_models)
-            except Exception as e:
-                print(f"⚠️ Could not get Ollama models: {e}")
-            
-            # Add supported HuggingFace embedding models from registry
-            try:
-                from rag_system.model_registry import huggingface_models
-                embedding_models.extend(huggingface_models())
-            except ImportError:
-                embedding_models.extend(["Qwen/Qwen3-Embedding-0.6B"])
-            
-            # Sort models for consistent ordering
-            generation_models.sort()
-            embedding_models.sort()
-
-            self.send_json_response({
-                "generation_models": generation_models,
-                "embedding_models": embedding_models
-            })
+            if os.path.exists(overview_path):
+                os.remove(overview_path)
+                print(f"🚮 Removed overview file '{overview_path}' for force rebuild")
         except Exception as e:
-            self.send_json_response({"error": f"Could not list models: {e}"}, status_code=500)
+            print(f"⚠️ Could not remove overview file '{overview_path}': {e}")
 
-    def send_json_response(self, data, status_code=200):
-        """Utility to send a JSON response with CORS headers."""
-        self.send_response(status_code)
-        self.send_header('Content-Type', 'application/json')
-        self._send_cors_headers()
-        self.end_headers()
-        response = json.dumps(data, indent=2)
-        self.wfile.write(response.encode('utf-8'))
+
+def _run_index(data: dict) -> dict:
+    """Build/rebuild an index. Raises ValueError (->400) for bad input and
+    RuntimeError('indexing_cancelled') (->499); other errors ->500."""
+    import copy
+
+    file_paths = data.get("file_paths")
+    session_id = data.get("session_id")
+    enable_latechunk = bool(data.get("enable_latechunk", False))
+    enable_docling_chunk = bool(data.get("enable_docling_chunk", False))
+    chunk_size = int(data.get("chunk_size", 512))
+    chunk_overlap = int(data.get("chunk_overlap", 64))
+    retrieval_mode = data.get("retrieval_mode", "hybrid")
+    window_size = int(data.get("window_size", 2))
+    # Default OFF: enrichment is one LLM call per chunk — opt-in only
+    enable_enrich = bool(data.get("enable_enrich", False))
+    embedding_model = data.get("embedding_model") or data.get("embeddingModel")
+    enrich_model = data.get("enrich_model") or data.get("enrichModel")
+    overview_model = data.get("overviewModel") or data.get("overview_model_name")
+    enrich_provider = data.get("enrich_provider", "ollama")
+    enrich_api_key = data.get("enrich_api_key")  # never logged or stored
+    batch_size_embed = int(data.get("batch_size_embed", 50))
+    batch_size_enrich = int(data.get("batch_size_enrich", 25))
+    force_reindex = bool(data.get("force_reindex", False))
+    job_id = data.get("job_id")
+    backend_base_url = data.get("backend_base_url", "http://localhost:8000")
+    indexing_model_warnings = []
+
+    def is_large_indexing_model(model):
+        if not model:
+            return False
+        lowered = str(model).lower()
+        return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
+
+    if enrich_provider == "ollama" and is_large_indexing_model(enrich_model):
+        indexing_model_warnings.append(
+            f"Replaced enrichment model '{enrich_model}' with qwen3:8b for indexing safety."
+        )
+        enrich_model = "qwen3:8b"
+    if is_large_indexing_model(overview_model):
+        indexing_model_warnings.append(
+            f"Replaced overview model '{overview_model}' with qwen3:8b for indexing safety."
+        )
+        overview_model = "qwen3:8b"
+
+    window_size = max(0, min(window_size, 2))
+    batch_size_enrich = max(1, min(batch_size_enrich, 8))
+
+    if not file_paths or not isinstance(file_paths, list):
+        raise ValueError("A 'file_paths' list is required.")
+
+    table_name = data.get("table_name")
+    if not table_name and session_id:
+        table_name = _get_table_name_for_session(session_id)
+
+    config_override = copy.deepcopy(INDEXING_PIPELINE.config)
+    if table_name:
+        config_override["storage"]["text_table_name"] = table_name
+        config_override.setdefault("retrievers", {}).setdefault("dense", {})["lancedb_table_name"] = table_name
+
+    config_override.setdefault("retrievers", {}).setdefault("latechunk", {})["enabled"] = enable_latechunk
+    if enable_docling_chunk:
+        config_override["chunker_mode"] = "docling"
+    config_override.setdefault("contextual_enricher", {})
+    config_override["contextual_enricher"]["enabled"] = enable_enrich
+    config_override["contextual_enricher"]["window_size"] = window_size
+    config_override.setdefault("indexing", {})
+    config_override["indexing"]["embedding_batch_size"] = batch_size_embed
+    config_override["indexing"]["enrichment_batch_size"] = batch_size_enrich
+    config_override["indexing"].setdefault("conversion_timeout_seconds", int(os.getenv("CONVERSION_TIMEOUT_SECONDS", "900")))
+    config_override["indexing"].setdefault("overview_timeout_seconds", 45)
+    config_override["indexing"].setdefault("enrichment_timeout_seconds", 60)
+    if data.get("metadata_schema"):
+        config_override["metadata_schema"] = data["metadata_schema"]
+    if data.get("file_metadata"):
+        config_override["file_metadata"] = data["file_metadata"]
+    config_override.setdefault("chunking", {})
+    config_override["chunking"]["chunk_size"] = chunk_size
+    config_override["chunking"]["chunk_overlap"] = chunk_overlap
+    if embedding_model:
+        config_override["embedding_model_name"] = embedding_model
+    if enrich_model:
+        config_override["enrich_model"] = enrich_model
+    if enrich_provider and enrich_provider != "ollama":
+        config_override["enrich_provider"] = enrich_provider
+        if enrich_api_key:
+            config_override["enrich_api_key"] = enrich_api_key
+    if overview_model:
+        config_override["overview_model_name"] = overview_model
+    if session_id:
+        config_override["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
+
+    print(f"🔧 INDEXING CONFIG: Contextual Enrichment: {enable_enrich}, Window Size: {window_size}")
+    print(f"🔧 CHUNKING CONFIG: Size: {chunk_size}, Overlap: {chunk_overlap}")
+    print(f"🔧 MODEL CONFIG: Embedding: {embedding_model or 'default'}, Enrichment: {enrich_model or 'default'}")
+
+    if force_reindex:
+        _clear_index_artifacts(INDEXING_PIPELINE, table_name, session_id)
+    indexing_result = _execute_indexing_job(
+        config_override,
+        file_paths,
+        index_id=session_id or table_name or "default",
+        force_reindex=force_reindex,
+        job_id=job_id,
+        backend_base_url=backend_base_url,
+    )
+
+    if embedding_model:
+        try:
+            db.update_index_metadata(session_id, {"embedding_model": embedding_model})
+        except Exception as e:
+            print(f"⚠️ Could not update embedding_model metadata: {e}")
+
+    return {
+        "message": f"Indexing process for {len(file_paths)} file(s) completed successfully.",
+        "table_name": table_name or "default_text_table",
+        "latechunk": enable_latechunk,
+        "docling_chunk": enable_docling_chunk,
+        "indexing_config": {
+            "chunk_size": chunk_size,
+            "chunk_overlap": chunk_overlap,
+            "retrieval_mode": retrieval_mode,
+            "window_size": window_size,
+            "enable_enrich": enable_enrich,
+            "embedding_model": embedding_model,
+            "enrich_model": enrich_model,
+            "batch_size_embed": batch_size_embed,
+            "batch_size_enrich": batch_size_enrich,
+            "force_reindex": force_reindex,
+        },
+        "indexing_result": indexing_result,
+        "indexing_model_warnings": indexing_model_warnings,
+    }
+
+
+@app.post("/index")
+async def index(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    try:
+        result = await run_in_threadpool(_run_index, data)
+        return JSONResponse(result)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except RuntimeError as e:
+        if str(e) == "indexing_cancelled":
+            return JSONResponse({"error": "Indexing cancelled"}, status_code=499)
+        return JSONResponse({"error": f"Failed to start indexing: {str(e)}"}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": f"Failed to start indexing: {str(e)}"}, status_code=500)
+
+
+@app.get("/health")
+def health():
+    """Lightweight health probe that avoids loading large ML models."""
+    checks: dict = {}
+    overall = "ok"
+    checks["agent"] = "ok" if RAG_AGENT is not None else "error"
+    if RAG_AGENT is None:
+        overall = "degraded"
+    try:
+        import lancedb as _lancedb
+        lancedb_uri = os.getenv("LANCEDB_URI", "./lancedb")
+        if os.path.exists(lancedb_uri):
+            conn = _lancedb.connect(lancedb_uri)
+            checks["lancedb"] = f"ok ({len(conn.table_names(limit=10_000))} tables)"
+        else:
+            checks["lancedb"] = "not_initialized"
+    except Exception as e:
+        checks["lancedb"] = f"error: {e}"
+        overall = "degraded"
+    try:
+        if RAG_AGENT is not None:
+            embedder = getattr(getattr(RAG_AGENT, "retrieval_pipeline", None), "text_embedder", None)
+            checks["embedder"] = "loaded" if embedder is not None else "not_loaded"
+        else:
+            checks["embedder"] = "agent_unavailable"
+    except Exception as e:
+        checks["embedder"] = f"error: {e}"
+        overall = "degraded"
+    return {"status": overall, "checks": checks}
+
+
+@app.get("/models")
+def models():
+    """Locally installed Ollama models + supported HuggingFace models."""
+    generation_models, embedding_models = [], []
+    try:
+        resp = requests.get(f"{RAG_AGENT.ollama_config['host']}/api/tags", timeout=5)
+        resp.raise_for_status()
+        all_ollama = [m.get("name") for m in resp.json().get("models", [])]
+        emb = [m for m in all_ollama if any(k in m for k in ["embed", "bge", "embedding", "text"])]
+        generation_models.extend([m for m in all_ollama if m not in emb])
+        embedding_models.extend(emb)
+    except Exception as e:
+        print(f"⚠️ Could not get Ollama models: {e}")
+    try:
+        from rag_system.model_registry import huggingface_models
+        embedding_models.extend(huggingface_models())
+    except ImportError:
+        embedding_models.extend(["Qwen/Qwen3-Embedding-0.6B"])
+    generation_models.sort()
+    embedding_models.sort()
+    return {"generation_models": generation_models, "embedding_models": embedding_models}
+
 
 def start_server(port=8001):
-    """Starts the API server."""
-    # Use a reusable TCP server to avoid "address in use" errors on restart
-    class ReusableTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-        allow_reuse_address = True
-        daemon_threads = True
+    """Starts the FastAPI RAG API via uvicorn."""
+    import uvicorn
 
     # Loopback by default: this API is unauthenticated, so exposing it on all
     # interfaces would let anyone on the LAN read indexed documents.
     # Set BIND_HOST=0.0.0.0 (e.g. in Docker) to expose it deliberately.
     bind_host = os.getenv("BIND_HOST", "127.0.0.1")
-    with ReusableTCPServer((bind_host, port), AdvancedRagApiHandler) as httpd:
-        print(f"🚀 Starting Advanced RAG API server on {bind_host}:{port}")
-        print(f"💬 Chat endpoint: http://localhost:{port}/chat")
-        print(f"✨ Indexing endpoint: http://localhost:{port}/index")
-        httpd.serve_forever()
+    print(f"🚀 Starting Advanced RAG API server (FastAPI) on {bind_host}:{port}")
+    print(f"💬 Chat endpoint: http://localhost:{port}/chat")
+    print(f"✨ Indexing endpoint: http://localhost:{port}/index")
+    uvicorn.run(app, host=bind_host, port=port, log_level="info")
+
 
 if __name__ == "__main__":
     # To run this server: python -m rag_system.api_server
-    start_server() 
+    start_server()
