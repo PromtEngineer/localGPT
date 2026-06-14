@@ -4,6 +4,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from datetime import datetime, timedelta
@@ -392,6 +393,139 @@ class BackendApiContractTests(unittest.TestCase):
             response.json()["removed"]["skipped_files"],
             [os.path.realpath(external_path)],
         )
+
+    def test_delete_index_artifact_failure_preserves_db_record(self):
+        """If artifact cleanup fails, the DB record must survive so the delete
+        is retryable — deletion does artifacts first (1501) then the DB row
+        (1502), so a RuntimeError from _delete_index_artifacts aborts before
+        any row is touched. The alternative — orphaning the row — is the bug
+        this guards against."""
+        index_id = server.db.create_index("Artifact failure")
+        upload_dir = os.path.join(self.temp_dir, "uploads")
+        os.makedirs(upload_dir)
+        owned_path = os.path.join(upload_dir, "owned.txt")
+        with open(owned_path, "w", encoding="utf-8") as handle:
+            handle.write("owned upload")
+        server.db.add_document_to_index(index_id, "owned.txt", owned_path)
+
+        def _boom(_path):
+            raise OSError("simulated disk failure")
+
+        with (
+            patch.object(server, "_UPLOAD_DIR", upload_dir),
+            patch.object(server, "_lancedb_path_candidates", return_value=[]),
+            patch.object(server, "_overview_path_candidates", return_value=[]),
+            patch.object(server.os, "remove", side_effect=_boom),
+        ):
+            response = self.client.delete(f"/indexes/{index_id}")
+
+        self.assertEqual(response.status_code, 500, response.text)
+        # The record (and its document link) survived — nothing was orphaned.
+        surviving = server.db.get_index(index_id)
+        self.assertIsNotNone(surviving)
+        self.assertEqual(
+            [doc["filename"] for doc in surviving.get("documents") or []],
+            ["owned.txt"],
+        )
+        # The file the remove() failed on is still on disk, not half-deleted.
+        self.assertTrue(os.path.exists(owned_path))
+
+    def test_delete_index_db_deletion_is_atomic(self):
+        """db.delete_index commits once, after every child + parent DELETE
+        (database.py:585). A failure on the final 'DELETE FROM indexes' must
+        leave the already-issued child deletes uncommitted, so close() rolls
+        them back — no half-deleted index left behind."""
+        import backend.database as database
+
+        index_id = server.db.create_index("Atomic delete")
+        session_id = server.db.create_session("s", "m")
+        server.db.add_document_to_index(index_id, "a.txt", "/tmp/a.txt")
+        server.db.link_index_to_session(session_id, index_id)
+
+        real_connect = database._connect
+
+        class _FailOnIndexDelete:
+            def __init__(self, conn):
+                self._conn = conn
+
+            def execute(self, sql, *args):
+                if sql.lstrip().upper().startswith("DELETE FROM INDEXES"):
+                    raise sqlite3.OperationalError("simulated mid-delete failure")
+                return self._conn.execute(sql, *args)
+
+            def commit(self):
+                return self._conn.commit()
+
+            def close(self):
+                return self._conn.close()
+
+            def __getattr__(self, name):
+                return getattr(self._conn, name)
+
+        with patch.object(
+            database, "_connect", lambda path: _FailOnIndexDelete(real_connect(path))
+        ):
+            with self.assertRaises(sqlite3.OperationalError):
+                server.db.delete_index(index_id)
+
+        # Nothing committed: the index, its document, and its session link are
+        # all still present — the child deletes rolled back with the parent.
+        surviving = server.db.get_index(index_id)
+        self.assertIsNotNone(surviving)
+        self.assertEqual(
+            [doc["filename"] for doc in surviving.get("documents") or []],
+            ["a.txt"],
+        )
+        self.assertIn(index_id, server.db.get_indexes_for_session(session_id))
+
+    def test_concurrent_delete_index_is_race_safe(self):
+        """Two simultaneous deletes of the same index: exactly one wins
+        (rowcount>0 -> True), the other sees it already gone (-> False). No
+        exception, and the row is gone once. Guards the read-then-delete gap
+        in delete_index under WAL + busy-timeout serialization."""
+        index_id = server.db.create_index("Race delete")
+        server.db.add_document_to_index(index_id, "a.txt", "/tmp/a.txt")
+
+        barrier = threading.Barrier(2)
+        results: List[object] = []
+        errors: List[Exception] = []
+
+        def worker():
+            try:
+                barrier.wait(timeout=10)
+                results.append(server.db.delete_index(index_id))
+            except Exception as exc:  # noqa: BLE001 — surface races, don't swallow
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        self.assertEqual(errors, [], f"concurrent delete raised: {errors}")
+        self.assertEqual(
+            sorted(bool(r) for r in results),
+            [False, True],
+            f"expected exactly one winner, got {results}",
+        )
+        self.assertIsNone(server.db.get_index(index_id))
+
+    def test_delete_index_twice_is_idempotent_not_found(self):
+        """A second delete of an already-deleted index is a clean 404, not a
+        500 — the get_index guard (1500) short-circuits before any artifact or
+        DB work runs again."""
+        index_id = server.db.create_index("Double delete")
+        with (
+            patch.object(server, "_UPLOAD_DIR", os.path.join(self.temp_dir, "u")),
+            patch.object(server, "_lancedb_path_candidates", return_value=[]),
+            patch.object(server, "_overview_path_candidates", return_value=[]),
+        ):
+            first = self.client.delete(f"/indexes/{index_id}")
+            second = self.client.delete(f"/indexes/{index_id}")
+
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 404, second.text)
 
     def test_maintenance_endpoints_contract(self):
         response = self.client.get("/maintenance/index-health")
