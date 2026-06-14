@@ -8,6 +8,7 @@ import { AttachedFile } from "@/lib/types"
 import { useEffect, useState, forwardRef, useImperativeHandle, useCallback, useRef } from "react"
 import { Button } from "./button"
 import type { Step } from '@/lib/api'
+import { buildChatRequestSettings } from '@/components/ui/chat-request'
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal'
 import { IndexForm } from '@/components/IndexForm'
 import IndexPicker from '@/components/IndexPicker'
@@ -205,6 +206,15 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
     })()
   },[apiService])
 
+  // Source the reflection max-loops default from the backend (single source of
+  // truth); falls back to the local default if the request fails. Runs once on
+  // mount, before the settings panel can be opened.
+  useEffect(()=>{
+    apiService.getReflectionDefaults()
+      .then(d=>{ if(typeof d.max_loops==='number') setReflectionMaxLoops(d.max_loops) })
+      .catch(()=>{})
+  },[apiService])
+
   const sendMessage = async (content: string, attachedFiles?: AttachedFile[]) => {
     // --- Guard Clauses ---
     // If files are being indexed, do nothing.
@@ -323,25 +333,13 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             session_id: activeSessionId,
             // table_name deliberately omitted: the RAG server searches all
             // of the session's linked indexes (multi-collection retrieval)
-            composeSubAnswers,
-            decompose: enableDecompose,
-            aiRerank: enableAiRerank,
-            contextExpand: enableContextExpand,
-            verify: enableVerify,
-            model: selectedModel,
-            // ✨ NEW RETRIEVAL PARAMETERS
-            retrievalK,
-            contextWindowSize,
-            rerankerTopK,
-            searchType,
-            forceRag: forceDocs,
-            provencePrune,
-            filters: parseMetadataFilters(metadataFilters),
-            agentic: agenticMode,
-            reflect: enableReflect,
-            rewriteQuery: enableRewrite,
-            reflectionModel,
-            reflectionMaxLoops,
+            ...buildChatRequestSettings({
+              composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand,
+              enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
+              searchType, forceDocs, provencePrune, agenticMode, enableReflect,
+              enableRewrite, reflectionModel, reflectionMaxLoops,
+              filters: parseMetadataFilters(metadataFilters),
+            }),
           },
           (evt) => {
             console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
@@ -557,27 +555,14 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           streamController.signal,
         )
       } else {
-        const response = await apiService.sendSessionMessage(activeSessionId, content, { 
-          composeSubAnswers, 
-          decompose: enableDecompose, 
-          aiRerank: enableAiRerank, 
-          contextExpand: enableContextExpand, 
-          verify: enableVerify,
-          model: selectedModel,
-          // ✨ NEW RETRIEVAL PARAMETERS
-          retrievalK,
-          contextWindowSize,
-          rerankerTopK,
-          searchType,
-          forceRag: forceDocs,
-          provencePrune,
-          filters: parseMetadataFilters(metadataFilters),
-          agentic: agenticMode,
-          reflect: enableReflect,
-          rewriteQuery: enableRewrite,
-          reflectionModel,
-          reflectionMaxLoops,
-        })
+        const response = await apiService.sendSessionMessage(activeSessionId, content,
+          buildChatRequestSettings({
+            composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand,
+            enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
+            searchType, forceDocs, provencePrune, agenticMode, enableReflect,
+            enableRewrite, reflectionModel, reflectionMaxLoops,
+            filters: parseMetadataFilters(metadataFilters),
+          }))
       
       const aiMessage: ChatMessage = {
         id: response.ai_message_id || generateUUID(),

@@ -637,6 +637,16 @@ class BackendApiContractTests(unittest.TestCase):
         with open(saved[0]["stored_path"], "rb") as handle:
             self.assertEqual(handle.read(), b"alpha")
 
+    def test_reflection_defaults_endpoint(self):
+        # The UI sources the reflection defaults from here instead of hard-coding
+        # them; the values must match reflection.REFLECTION_DEFAULTS.
+        from rag_system.agent.reflection import REFLECTION_DEFAULTS
+
+        response = self.client.get("/rag/reflection-defaults")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), dict(REFLECTION_DEFAULTS))
+        self.assertEqual(response.json()["max_loops"], 2)
+
     def test_maintenance_endpoints_contract(self):
         response = self.client.get("/maintenance/index-health")
         self.assertEqual(response.status_code, 200)

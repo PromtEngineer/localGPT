@@ -1398,6 +1398,15 @@ async def rename_session(session_id: str, request: Request):
         )
 
 
+@app.get("/rag/reflection-defaults")
+async def rag_reflection_defaults():
+    """Default knobs for the self-reflection loop, so the UI doesn't duplicate
+    them. Single source: rag_system.agent.reflection.REFLECTION_DEFAULTS."""
+    from rag_system.agent.reflection import REFLECTION_DEFAULTS
+
+    return dict(REFLECTION_DEFAULTS)
+
+
 @app.post("/rag/chat")
 async def rag_chat(request: Request):
     """Run the transport-neutral RAG pipeline through FastAPI."""

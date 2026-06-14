@@ -666,6 +666,16 @@ class ChatAPI {
     return resp.json();
   }
 
+  // Default self-reflection knobs (max_loops, thresholds), so the UI sources
+  // them from the backend instead of duplicating the magic numbers.
+  async getReflectionDefaults(): Promise<{ max_loops: number; relevance_threshold: number; groundedness_threshold: number }> {
+    const resp = await fetch(`${API_BASE_URL}/rag/reflection-defaults`);
+    if (!resp.ok) {
+      throw new Error(`Failed to fetch reflection defaults: ${resp.status}`);
+    }
+    return resp.json();
+  }
+
   async getSessionDocuments(sessionId: string): Promise<{ files: string[]; file_count: number; session: ChatSession }> {
     const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/documents`);
     if (!resp.ok) {

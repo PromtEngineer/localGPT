@@ -23,6 +23,14 @@ from typing import Any, Callable, Dict, List, Optional
 
 EventCallback = Optional[Callable[[str, Any], None]]
 
+# Single source of truth for the reflection defaults — also served to the UI
+# via GET /rag/reflection-defaults so the frontend slider doesn't hard-code them.
+REFLECTION_DEFAULTS: Dict[str, int] = {
+    "max_loops": 2,
+    "relevance_threshold": 1,
+    "groundedness_threshold": 1,
+}
+
 
 def parse_config(data: Dict[str, Any], generation_model: Any) -> Dict[str, Any]:
     """Parse per-request reflection knobs from a chat request payload."""
@@ -37,9 +45,15 @@ def parse_config(data: Dict[str, Any], generation_model: Any) -> Dict[str, Any]:
     judge = data.get("reflection_model")
     return {
         "enabled": bool(data.get("reflect", False)),
-        "max_loops": max(1, _int("reflection_max_loops", 2)),
-        "relevance_threshold": _int("relevance_threshold", 1),
-        "groundedness_threshold": _int("groundedness_threshold", 1),
+        "max_loops": max(
+            1, _int("reflection_max_loops", REFLECTION_DEFAULTS["max_loops"])
+        ),
+        "relevance_threshold": _int(
+            "relevance_threshold", REFLECTION_DEFAULTS["relevance_threshold"]
+        ),
+        "groundedness_threshold": _int(
+            "groundedness_threshold", REFLECTION_DEFAULTS["groundedness_threshold"]
+        ),
         # "model" judges (scores + rewrites) — point reflection_model at a small
         # fast model to cut latency; "generation_model" always regenerates the
         # answer, so a fast judge never degrades answer quality.
