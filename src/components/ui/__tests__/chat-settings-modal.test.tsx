@@ -23,6 +23,8 @@ function reflectionOptions(reflectChecked: boolean): SettingOption[] {
       ],
     },
     { type: 'slider', label: 'Max reflection loops', value: 2, setter: vi.fn(), min: 1, max: 3, unit: ' loops' },
+    { type: 'slider', label: 'Relevance threshold', value: 1, setter: vi.fn(), min: 0, max: 2, unit: '/2' },
+    { type: 'slider', label: 'Groundedness threshold', value: 1, setter: vi.fn(), min: 0, max: 2, unit: '/2' },
   ]
 }
 
@@ -33,16 +35,20 @@ describe('ChatSettingsModal — reflection controls', () => {
     expect(screen.getByText('Multi-turn query rewrite')).toBeInTheDocument()
   })
 
-  it('hides the model/loops controls until self-reflection is on', () => {
+  it('hides the advanced controls until self-reflection is on', () => {
     render(<ChatSettingsModal options={reflectionOptions(false)} onClose={() => {}} />)
     expect(screen.queryByText('Reflection model')).not.toBeInTheDocument()
     expect(screen.queryByText('Max reflection loops')).not.toBeInTheDocument()
+    expect(screen.queryByText('Relevance threshold')).not.toBeInTheDocument()
+    expect(screen.queryByText('Groundedness threshold')).not.toBeInTheDocument()
   })
 
-  it('reveals the model/loops controls when self-reflection is on', () => {
+  it('reveals the advanced controls (model, loops, thresholds) when on', () => {
     render(<ChatSettingsModal options={reflectionOptions(true)} onClose={() => {}} />)
     expect(screen.getByText('Reflection model')).toBeInTheDocument()
     expect(screen.getByText('Max reflection loops')).toBeInTheDocument()
+    expect(screen.getByText('Relevance threshold')).toBeInTheDocument()
+    expect(screen.getByText('Groundedness threshold')).toBeInTheDocument()
   })
 
   it('omits the whole section when the host does not provide it (e.g. quick chat)', () => {

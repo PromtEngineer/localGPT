@@ -21,6 +21,8 @@ export interface ChatUiState {
   enableRewrite: boolean;
   reflectionModel: string;
   reflectionMaxLoops: number;
+  relevanceThreshold: number;
+  groundednessThreshold: number;
   filters?: Record<string, unknown>;
 }
 
@@ -42,6 +44,8 @@ export interface ChatRequestSettings {
   rewriteQuery: boolean;
   reflectionModel: string;
   reflectionMaxLoops: number;
+  relevanceThreshold: number;
+  groundednessThreshold: number;
   filters?: Record<string, unknown>;
 }
 
@@ -64,6 +68,8 @@ export function buildChatRequestSettings(s: ChatUiState): ChatRequestSettings {
     rewriteQuery: s.enableRewrite,
     reflectionModel: s.reflectionModel,
     reflectionMaxLoops: s.reflectionMaxLoops,
+    relevanceThreshold: s.relevanceThreshold,
+    groundednessThreshold: s.groundednessThreshold,
     filters: s.filters,
   };
 }

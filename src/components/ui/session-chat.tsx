@@ -92,6 +92,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   // pick a small fast model to keep scoring cheap. Loops cap the retry depth.
   const [reflectionModel, setReflectionModel] = useState<string>('')
   const [reflectionMaxLoops, setReflectionMaxLoops] = useState<number>(2)
+  // Min acceptable relevance/groundedness scores (0-2) before reflection
+  // rewrites/regenerates. Seeded from the backend defaults on mount.
+  const [relevanceThreshold, setRelevanceThreshold] = useState<number>(1)
+  const [groundednessThreshold, setGroundednessThreshold] = useState<number>(1)
   // Typed metadata filters, e.g. "project=Antapaccay, year>=2020" — parsed
   // client-side into a filters object; types are validated server-side
   // against the index's metadata schema
@@ -211,7 +215,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   // mount, before the settings panel can be opened.
   useEffect(()=>{
     apiService.getReflectionDefaults()
-      .then(d=>{ if(typeof d.max_loops==='number') setReflectionMaxLoops(d.max_loops) })
+      .then(d=>{
+        if(typeof d.max_loops==='number') setReflectionMaxLoops(d.max_loops)
+        if(typeof d.relevance_threshold==='number') setRelevanceThreshold(d.relevance_threshold)
+        if(typeof d.groundedness_threshold==='number') setGroundednessThreshold(d.groundedness_threshold)
+      })
       .catch(()=>{})
   },[apiService])
 
@@ -338,6 +346,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
               searchType, forceDocs, provencePrune, agenticMode, enableReflect,
               enableRewrite, reflectionModel, reflectionMaxLoops,
+              relevanceThreshold, groundednessThreshold,
               filters: parseMetadataFilters(metadataFilters),
             }),
           },
@@ -561,6 +570,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
             searchType, forceDocs, provencePrune, agenticMode, enableReflect,
             enableRewrite, reflectionModel, reflectionMaxLoops,
+            relevanceThreshold, groundednessThreshold,
             filters: parseMetadataFilters(metadataFilters),
           }))
       
@@ -767,6 +777,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'toggle', label:'Multi-turn query rewrite', checked: enableRewrite, setter: setEnableRewrite},
             {type: 'dropdown', label:'Reflection model', value: reflectionModel, setter: setReflectionModel, options: [{value:'',label:'Same as answer model'}, ...generationModels.map(m=>({value:m,label:m}))]},
             {type: 'slider', label:'Max reflection loops', value: reflectionMaxLoops, setter: setReflectionMaxLoops, min: 1, max: 3, unit: ' loops'},
+            {type: 'slider', label:'Relevance threshold', value: relevanceThreshold, setter: setRelevanceThreshold, min: 0, max: 2, unit: '/2'},
+            {type: 'slider', label:'Groundedness threshold', value: groundednessThreshold, setter: setGroundednessThreshold, min: 0, max: 2, unit: '/2'},
             {type: 'toggle', label:'Stream phases', checked: enableStream, setter: setEnableStream},
             
             // Retrieval Settings

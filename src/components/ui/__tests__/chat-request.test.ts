@@ -22,6 +22,8 @@ const base: ChatUiState = {
   enableRewrite: false,
   reflectionModel: '',
   reflectionMaxLoops: 2,
+  relevanceThreshold: 1,
+  groundednessThreshold: 1,
 }
 
 describe('buildChatRequestSettings', () => {
@@ -32,12 +34,16 @@ describe('buildChatRequestSettings', () => {
       enableRewrite: true,
       reflectionModel: 'qwen3:0.6b',
       reflectionMaxLoops: 3,
+      relevanceThreshold: 2,
+      groundednessThreshold: 0,
     })
     expect(out).toMatchObject({
       reflect: true,
       rewriteQuery: true,
       reflectionModel: 'qwen3:0.6b',
       reflectionMaxLoops: 3,
+      relevanceThreshold: 2,
+      groundednessThreshold: 0,
     })
   })
 
