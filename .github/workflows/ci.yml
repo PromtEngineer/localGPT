@@ -10,11 +10,10 @@ jobs:
   lint:
     name: Lint (ruff + black + mypy)
     runs-on: ubuntu-latest
-    # Advisory: this codebase predates black/ruff/mypy adoption, so lint runs
-    # and reports but does not block. Correctness is gated by unit-tests and
-    # the deterministic retrieval gate below. Tighten to a hard gate after a
-    # one-time format pass + typing work.
-    continue-on-error: true
+    # Enforced: rag_system/ and backend/ are ruff-clean, black-formatted, and
+    # mypy-clean (--check-untyped-defs). Linter versions are pinned so a new
+    # release can't break the gate on unrelated changes. ruff config (select +
+    # curated ignores) lives in pyproject.toml [tool.ruff.lint].
     steps:
       - uses: actions/checkout@v4
 
@@ -24,10 +23,10 @@ jobs:
           cache: "pip"
 
       - name: Install linters
-        run: pip install ruff black mypy
+        run: pip install ruff==0.15.17 black==26.5.1 mypy==2.1.0
 
       - name: ruff check
-        run: ruff check rag_system/ backend/ --ignore E501,ANN
+        run: ruff check rag_system/ backend/
 
       - name: black check
         run: black --check rag_system/ backend/
