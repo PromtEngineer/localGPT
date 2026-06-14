@@ -6,7 +6,6 @@ from typing import Any, Callable, Dict, Optional
 
 from rag_system.index_selection import select_active_index_id
 
-
 EventCallback = Optional[Callable[[str, Any], None]]
 
 
@@ -98,7 +97,9 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
             window_size_override=context_window_size,
             event_callback=event_callback,
             collections=collections,
-            filters=data.get("filters") if isinstance(data.get("filters"), dict) else None,
+            filters=(
+                data.get("filters") if isinstance(data.get("filters"), dict) else None
+            ),
             overrides=overrides,
         )
 

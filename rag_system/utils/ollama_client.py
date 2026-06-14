@@ -1,11 +1,13 @@
-import os
-import requests
-import json
-from typing import List, Dict, Any
+import asyncio
 import base64
+import json
+import os
 from io import BytesIO
+from typing import Any, Dict, List
+
+import httpx
+import requests
 from PIL import Image
-import httpx, asyncio
 
 # How long Ollama keeps a model loaded after a request. During indexing the
 # enrichment/overview/embedding models trade places constantly — without a
@@ -24,6 +26,7 @@ class OllamaClient:
     """
     An enhanced client for Ollama that now handles image data for VLM models.
     """
+
     def __init__(self, host: str = "http://localhost:11434"):
         self.host = host
         self.api_url = f"{host}/api"
@@ -33,9 +36,11 @@ class OllamaClient:
         """Converts a Pillow Image to a base64 string."""
         buffered = BytesIO()
         image.save(buffered, format="PNG")
-        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+        return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
-    def generate_embedding(self, model: str, text: str, timeout: int = 120) -> List[float]:
+    def generate_embedding(
+        self, model: str, text: str, timeout: int = 120
+    ) -> List[float]:
         try:
             response = requests.post(
                 f"{self.api_url}/embeddings",
@@ -78,7 +83,7 @@ class OllamaClient:
             }
             if format:
                 payload["format"] = format
-            
+
             if images:
                 payload["images"] = [self._image_to_base64(img) for img in images]
 
@@ -92,7 +97,7 @@ class OllamaClient:
                 timeout=timeout,
             )
             response.raise_for_status()
-            response_lines = response.text.strip().split('\n')
+            response_lines = response.text.strip().split("\n")
             final_response = json.loads(response_lines[-1])
             return final_response
 
@@ -116,7 +121,13 @@ class OllamaClient:
     ) -> Dict[str, Any]:
         """Asynchronous version of generate_completion using httpx."""
 
-        payload = {"model": model, "prompt": prompt, "stream": False, "keep_alive": KEEP_ALIVE, "options": {"num_ctx": NUM_CTX}}
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "keep_alive": KEEP_ALIVE,
+            "options": {"num_ctx": NUM_CTX},
+        }
         if format:
             payload["format"] = format
         if images:
@@ -152,7 +163,13 @@ class OllamaClient:
             for tok in client.stream_completion("qwen2", "Hello"):
                 print(tok, end="", flush=True)
         """
-        payload: Dict[str, Any] = {"model": model, "prompt": prompt, "stream": True, "keep_alive": KEEP_ALIVE, "options": {"num_ctx": NUM_CTX}}
+        payload: Dict[str, Any] = {
+            "model": model,
+            "prompt": prompt,
+            "stream": True,
+            "keep_alive": KEEP_ALIVE,
+            "options": {"num_ctx": NUM_CTX},
+        }
         if images:
             payload["images"] = [self._image_to_base64(img) for img in images]
         if enable_thinking is not None:
@@ -160,7 +177,9 @@ class OllamaClient:
 
         # connect timeout 10s; read timeout 300s between chunks so a wedged
         # Ollama can't hang the calling thread forever
-        with requests.post(f"{self.api_url}/generate", json=payload, stream=True, timeout=(10, 300)) as resp:
+        with requests.post(
+            f"{self.api_url}/generate", json=payload, stream=True, timeout=(10, 300)
+        ) as resp:
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
                 if not raw_line:
@@ -177,24 +196,25 @@ class OllamaClient:
                 if data.get("done"):
                     break
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # This test now requires a VLM model like 'llava' or 'qwen-vl' to be pulled.
     print("Ollama client updated for multimodal (VLM) support.")
     try:
         client = OllamaClient()
         # Create a dummy black image for testing
-        dummy_image = Image.new('RGB', (100, 100), 'black')
-        
+        dummy_image = Image.new("RGB", (100, 100), "black")
+
         # Test VLM completion
         vlm_response = client.generate_completion(
-            model="llava", # Make sure you have run 'ollama pull llava'
+            model="llava",  # Make sure you have run 'ollama pull llava'
             prompt="What color is this image?",
-            images=[dummy_image]
+            images=[dummy_image],
         )
-        
-        if vlm_response and 'response' in vlm_response:
+
+        if vlm_response and "response" in vlm_response:
             print("\n--- VLM Test Response ---")
-            print(vlm_response['response'])
+            print(vlm_response["response"])
         else:
             print("\nFailed to get VLM response. Is 'llava' model pulled and running?")
 

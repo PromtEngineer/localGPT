@@ -9,17 +9,15 @@ Provides:
 """
 
 import sqlite3
-import time
-import hashlib
-import json
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 class PipelineStage(str, Enum):
     """Pipeline stages in order"""
+
     CONVERSION = "conversion"
     CHUNKING = "chunking"
     OVERVIEW = "overview"
@@ -71,7 +69,9 @@ class JobProgressTracker:
 
         try:
             # Get job info
-            cursor.execute("SELECT status, updated_at FROM index_jobs WHERE id = ?", (job_id,))
+            cursor.execute(
+                "SELECT status, updated_at FROM index_jobs WHERE id = ?", (job_id,)
+            )
             job = cursor.fetchone()
 
             if not job:
@@ -134,7 +134,7 @@ class JobProgressTracker:
             # Get files and their stage progress
             cursor.execute(
                 """
-                SELECT 
+                SELECT
                     f.id, f.filename, f.status, f.attempt_count,
                     COUNT(CASE WHEN s.status = 'completed' THEN 1 END) as completed_stages,
                     COUNT(s.id) as total_stages
@@ -172,9 +172,15 @@ class JobProgressTracker:
                 "finished_at": job["finished_at"],
                 "files": files_timeline,
                 "total_files": len(files_timeline),
-                "completed_files": sum(1 for f in files_timeline if f["status"] == "done"),
-                "failed_files": sum(1 for f in files_timeline if f["status"] == "failed"),
-                "pending_files": sum(1 for f in files_timeline if f["status"] == "pending"),
+                "completed_files": sum(
+                    1 for f in files_timeline if f["status"] == "done"
+                ),
+                "failed_files": sum(
+                    1 for f in files_timeline if f["status"] == "failed"
+                ),
+                "pending_files": sum(
+                    1 for f in files_timeline if f["status"] == "pending"
+                ),
             }
 
         except Exception as e:
@@ -215,7 +221,11 @@ class JobProgressTracker:
                     SET status = 'in_progress', started_at = COALESCE(started_at, ?), updated_at = ?
                     WHERE id = ? AND status IN ('pending', 'failed', 'in_progress')
                     """,
-                    (datetime.utcnow().isoformat(), datetime.utcnow().isoformat(), file_id),
+                    (
+                        datetime.utcnow().isoformat(),
+                        datetime.utcnow().isoformat(),
+                        file_id,
+                    ),
                 )
                 db.commit()
                 return file_id
@@ -427,13 +437,17 @@ class JobProgressTracker:
                 "stages": stages,
                 "completed_stages": completed_stages,
                 "total_stages": total_stages,
-                "progress_percent": int((completed_stages / total_stages * 100) if total_stages > 0 else 0),
+                "progress_percent": int(
+                    (completed_stages / total_stages * 100) if total_stages > 0 else 0
+                ),
             }
 
         except Exception as e:
             return {"error": str(e)}
 
-    def mark_file_failed(self, file_id: int, error: str, error_code: str = "unknown") -> None:
+    def mark_file_failed(
+        self, file_id: int, error: str, error_code: str = "unknown"
+    ) -> None:
         """Mark a file as failed and increment attempt count"""
         db = self._get_conn()
         cursor = db.cursor()
@@ -467,7 +481,12 @@ class JobProgressTracker:
                 SET status = 'done', chunks_generated = ?, finished_at = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (chunks_generated, datetime.utcnow().isoformat(), datetime.utcnow().isoformat(), file_id),
+                (
+                    chunks_generated,
+                    datetime.utcnow().isoformat(),
+                    datetime.utcnow().isoformat(),
+                    file_id,
+                ),
             )
 
             db.commit()
@@ -561,7 +580,7 @@ class JobProgressTracker:
             # Overall stats
             cursor.execute(
                 """
-                SELECT 
+                SELECT
                     COUNT(*) as total_files,
                     SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as completed_files,
                     SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_files,
@@ -580,7 +599,7 @@ class JobProgressTracker:
             # Stage timing stats
             cursor.execute(
                 """
-                SELECT 
+                SELECT
                     stage_name,
                     COUNT(*) as count,
                     AVG(duration_seconds) as avg_duration,
@@ -615,7 +634,7 @@ class JobProgressTracker:
         try:
             cursor.execute(
                 """
-                SELECT 
+                SELECT
                     f.filename,
                     s.stage_name,
                     s.status,

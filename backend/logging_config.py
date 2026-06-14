@@ -2,9 +2,10 @@
 Centralized logging configuration for localGPT backend.
 Provides structured logging to both console and file with rotation.
 """
+
 import logging
-import sys
 import os
+import sys
 from logging.handlers import RotatingFileHandler
 
 
@@ -19,7 +20,7 @@ class LogConfig:
         log_file: str = "localgpt.log",
         max_bytes: int = 10 * 1024 * 1024,  # 10MB
         backup_count: int = 5,
-        console_enabled: bool = True
+        console_enabled: bool = True,
     ) -> logging.Logger:
         """
         Configure logger with file and optional console output.
@@ -52,8 +53,8 @@ class LogConfig:
 
         # Formatter for detailed logging
         detailed_formatter = logging.Formatter(
-            fmt='%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
+            fmt="%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
         # Console handler (simple format for readability)
@@ -61,8 +62,7 @@ class LogConfig:
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setLevel(log_level)
             console_formatter = logging.Formatter(
-                fmt='%(asctime)s - %(levelname)s - %(message)s',
-                datefmt='%H:%M:%S'
+                fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S"
             )
             console_handler.setFormatter(console_formatter)
             logger.addHandler(console_handler)
@@ -73,7 +73,7 @@ class LogConfig:
             filename=log_path,
             maxBytes=max_bytes,
             backupCount=backup_count,
-            encoding='utf-8'
+            encoding="utf-8",
         )
         file_handler.setLevel(log_level)
         file_handler.setFormatter(detailed_formatter)

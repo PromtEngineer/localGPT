@@ -1,22 +1,16 @@
-import lancedb
-import pickle
-import json
-from typing import List, Dict, Any
-import numpy as np
-import networkx as nx
-import os
-from PIL import Image
-from transformers import CLIPProcessor, CLIPModel
-import torch
-import logging
-import pandas as pd
-import math
 import concurrent.futures
+import json
+import logging
+import math
 from functools import lru_cache
+from typing import Any, Dict, List
+
+import networkx as nx
+import pandas as pd
 
 from rag_system.indexing.embedders import LanceDBManager
-from rag_system.indexing.representations import QwenEmbedder
 from rag_system.indexing.multimodal import LocalVisionModel
+from rag_system.indexing.representations import QwenEmbedder
 from rag_system.utils.logging_utils import log_retrieval_results
 
 # BM25Retriever is no longer needed.
@@ -30,45 +24,65 @@ except ImportError:  # pragma: no cover - graph retrieval is optional.
         "rapidfuzz is not installed; graph retrieval is disabled. Run: pip install rapidfuzz"
     )
 
+
 class GraphRetriever:
     def __init__(self, graph_path: str):
         self.graph = nx.read_gml(graph_path)
 
-    def retrieve(self, query: str, k: int = 5, score_cutoff: int = 80) -> List[Dict[str, Any]]:
+    def retrieve(
+        self, query: str, k: int = 5, score_cutoff: int = 80
+    ) -> List[Dict[str, Any]]:
         print(f"\n--- Performing Graph Retrieval for query: '{query}' ---")
         if process is None:
             return []
-        
+
         query_parts = query.split()
         entities = []
         for part in query_parts:
-            match = process.extractOne(part, self.graph.nodes(), score_cutoff=score_cutoff)
+            match = process.extractOne(
+                part, self.graph.nodes(), score_cutoff=score_cutoff
+            )
             if match and isinstance(match[0], str):
                 entities.append(match[0])
-        
+
         retrieved_docs = []
         for entity in set(entities):
             for neighbor in self.graph.neighbors(entity):
-                retrieved_docs.append({
-                    'chunk_id': f"graph_{entity}_{neighbor}",
-                    'text': f"Entity: {entity}, Neighbor: {neighbor}",
-                    'score': 1.0,
-                    'metadata': {'source': 'graph'}
-                })
-        
+                retrieved_docs.append(
+                    {
+                        "chunk_id": f"graph_{entity}_{neighbor}",
+                        "text": f"Entity: {entity}, Neighbor: {neighbor}",
+                        "score": 1.0,
+                        "metadata": {"source": "graph"},
+                    }
+                )
+
         print(f"Retrieved {len(retrieved_docs)} documents from the graph.")
         return retrieved_docs[:k]
+
 
 # region === MultiVectorRetriever ===
 class MultiVectorRetriever:
     """
     Performs hybrid (vector + FTS) or vector-only retrieval.
     """
-    def __init__(self, db_manager: LanceDBManager, text_embedder: QwenEmbedder, vision_model: LocalVisionModel = None, *, fusion_config: Dict[str, Any] | None = None):
+
+    def __init__(
+        self,
+        db_manager: LanceDBManager,
+        text_embedder: QwenEmbedder,
+        vision_model: LocalVisionModel = None,
+        *,
+        fusion_config: Dict[str, Any] | None = None,
+    ):
         self.db_manager = db_manager
         self.text_embedder = text_embedder
         self.vision_model = vision_model
-        self.fusion_config = fusion_config or {"method": "linear", "bm25_weight": 0.5, "vec_weight": 0.5}
+        self.fusion_config = fusion_config or {
+            "method": "linear",
+            "bm25_weight": 0.5,
+            "vec_weight": 0.5,
+        }
 
         # Lightweight in-memory LRU cache for single-query embeddings (256 entries)
         @lru_cache(maxsize=256)
@@ -77,10 +91,17 @@ class MultiVectorRetriever:
 
         self._embed_single = _embed_single
 
-    def retrieve(self, text_query: str, table_name: str, k: int, reranker=None,
-                 vector_only: bool = False, fts_only: bool = False,
-                 fusion_override: Dict[str, Any] | None = None,
-                 where: str | None = None) -> List[Dict[str, Any]]:
+    def retrieve(
+        self,
+        text_query: str,
+        table_name: str,
+        k: int,
+        reranker=None,
+        vector_only: bool = False,
+        fts_only: bool = False,
+        fusion_override: Dict[str, Any] | None = None,
+        where: str | None = None,
+    ) -> List[Dict[str, Any]]:
         """
         Performs a search on a single LanceDB table.
         If a reranker is provided, it performs a hybrid search.
@@ -88,8 +109,10 @@ class MultiVectorRetriever:
         no FTS index); fts_only=True skips the vector leg. fusion_override
         replaces the instance fusion weights for this call only.
         """
-        print(f"\n--- Performing Retrieval for query: '{text_query}' on table '{table_name}' ---")
-        
+        print(
+            f"\n--- Performing Retrieval for query: '{text_query}' on table '{table_name}' ---"
+        )
+
         try:
             if table_name is None:
                 table_name = "default_text_table"
@@ -106,7 +129,9 @@ class MultiVectorRetriever:
             )
 
             if reranker:
-                logger.debug("Hybrid + reranker path not yet implemented with manual fusion; proceeding without extra reranker.")
+                logger.debug(
+                    "Hybrid + reranker path not yet implemented with manual fusion; proceeding without extra reranker."
+                )
 
             # Manual two-leg hybrid: take half from each modality
             # (or everything from one leg for single-mode searches)
@@ -173,7 +198,9 @@ class MultiVectorRetriever:
                 for col in columns:
                     if col in row:
                         val = row.get(col)
-                        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                        if val is not None and not (
+                            isinstance(val, float) and math.isnan(val)
+                        ):
                             return float(val)
                 return None
 
@@ -183,28 +210,38 @@ class MultiVectorRetriever:
             merged: dict = {}
             order: list = []
             for _, row in combined.iterrows():
-                key = row.get('_rowid') if '_rowid' in combined.columns else row.get('chunk_id')
-                bm25 = _row_value(row, '_score', 'score')
-                distance = _row_value(row, '_distance')
+                key = (
+                    row.get("_rowid")
+                    if "_rowid" in combined.columns
+                    else row.get("chunk_id")
+                )
+                bm25 = _row_value(row, "_score", "score")
+                distance = _row_value(row, "_distance")
                 if key in merged:
                     entry = merged[key]
                     if bm25 is not None:
-                        entry['bm25'] = bm25 if entry['bm25'] is None else max(entry['bm25'], bm25)
+                        entry["bm25"] = (
+                            bm25 if entry["bm25"] is None else max(entry["bm25"], bm25)
+                        )
                     if distance is not None:
-                        entry['distance'] = distance if entry['distance'] is None else min(entry['distance'], distance)
+                        entry["distance"] = (
+                            distance
+                            if entry["distance"] is None
+                            else min(entry["distance"], distance)
+                        )
                     continue
-                metadata = json.loads(row.get('metadata', '{}'))
+                metadata = json.loads(row.get("metadata", "{}"))
                 # Add top-level fields back into metadata for consistency if they don't exist
-                metadata.setdefault('document_id', row.get('document_id'))
-                metadata.setdefault('chunk_index', row.get('chunk_index'))
+                metadata.setdefault("document_id", row.get("document_id"))
+                metadata.setdefault("chunk_index", row.get("chunk_index"))
                 merged[key] = {
-                    'chunk_id': row.get('chunk_id'),
-                    'text': metadata.get('original_text', row.get('text')),
-                    'bm25': bm25,
-                    'distance': distance,
-                    'document_id': row.get('document_id'),
-                    'chunk_index': row.get('chunk_index'),
-                    'metadata': metadata,
+                    "chunk_id": row.get("chunk_id"),
+                    "text": metadata.get("original_text", row.get("text")),
+                    "bm25": bm25,
+                    "distance": distance,
+                    "document_id": row.get("document_id"),
+                    "chunk_index": row.get("chunk_index"),
+                    "metadata": metadata,
                 }
                 order.append(key)
 
@@ -217,18 +254,27 @@ class MultiVectorRetriever:
 
             # BM25 scores are unbounded; normalize against the best hit so they
             # are comparable with the (0, 1] vector similarities before fusion.
-            max_bm25 = max((merged[key]['bm25'] for key in order if merged[key]['bm25'] is not None), default=0.0)
+            max_bm25 = max(
+                (
+                    merged[key]["bm25"]
+                    for key in order
+                    if merged[key]["bm25"] is not None
+                ),
+                default=0.0,
+            )
 
             fusion_cfg = fusion_override or self.fusion_config
-            w_bm25 = float(fusion_cfg.get('bm25_weight', 0.5))
-            w_vec = float(fusion_cfg.get('vec_weight', 0.5))
+            w_bm25 = float(fusion_cfg.get("bm25_weight", 0.5))
+            w_vec = float(fusion_cfg.get("vec_weight", 0.5))
 
             retrieved_docs = []
             for key in order:
                 entry = merged[key]
-                bm25, distance = entry['bm25'], entry['distance']
+                bm25, distance = entry["bm25"], entry["distance"]
                 vec_sim = 1.0 / (1.0 + distance) if distance is not None else None
-                bm25_norm = (bm25 / max_bm25) if (bm25 is not None and max_bm25 > 0) else None
+                bm25_norm = (
+                    (bm25 / max_bm25) if (bm25 is not None and max_bm25 > 0) else None
+                )
 
                 if bm25_norm is not None and vec_sim is not None:
                     combined_score = w_bm25 * bm25_norm + w_vec * vec_sim
@@ -239,30 +285,34 @@ class MultiVectorRetriever:
                 else:
                     combined_score = 0.0
 
-                retrieved_docs.append({
-                    'chunk_id': entry['chunk_id'],
-                    'text': entry['text'],
-                    'score': combined_score,
-                    'bm25': bm25,
-                    '_distance': distance,
-                    'document_id': entry['document_id'],
-                    'chunk_index': entry['chunk_index'],
-                    'metadata': entry['metadata'],
-                })
+                retrieved_docs.append(
+                    {
+                        "chunk_id": entry["chunk_id"],
+                        "text": entry["text"],
+                        "score": combined_score,
+                        "bm25": bm25,
+                        "_distance": distance,
+                        "document_id": entry["document_id"],
+                        "chunk_index": entry["chunk_index"],
+                        "metadata": entry["metadata"],
+                    }
+                )
 
             # Rank by fused score and only now trim to k
-            retrieved_docs.sort(key=lambda d: d['score'], reverse=True)
+            retrieved_docs.sort(key=lambda d: d["score"], reverse=True)
             retrieved_docs = retrieved_docs[:k]
 
             logger.debug("Hybrid search returned %s results", len(retrieved_docs))
             log_retrieval_results(retrieved_docs, k)
             print(f"Retrieved {len(retrieved_docs)} documents.")
             return retrieved_docs
-        
+
         except Exception as e:
             print(f"Could not search table '{table_name}': {e}")
             return []
+
+
 # endregion
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("retrievers.py updated for LanceDB FTS Hybrid Search.")

@@ -5,22 +5,23 @@ Provides JSON-formatted logging with structured data, correlation IDs,
 performance metrics, and comprehensive observability features.
 """
 
-import logging
 import json
+import logging
 import sys
 import threading
 import time
-from typing import Dict, Any, Optional, Union
-from datetime import datetime, timezone
-from pathlib import Path
 import uuid
+from datetime import datetime, timezone
+from typing import Optional, Union
 
 # Thread-local storage for correlation IDs
 _local = threading.local()
 
+
 def _utc_timestamp() -> str:
     """Return an ISO-8601 UTC timestamp with a Z suffix."""
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
 
 class StructuredLogger:
     """
@@ -47,12 +48,12 @@ class StructuredLogger:
         """Internal logging method with structured data"""
         # Add standard fields
         log_data = {
-            'timestamp': _utc_timestamp(),
-            'level': logging.getLevelName(level),
-            'logger': self.name,
-            'event': event,
-            'correlation_id': getattr(_local, 'correlation_id', None),
-            'thread_id': threading.get_ident(),
+            "timestamp": _utc_timestamp(),
+            "level": logging.getLevelName(level),
+            "logger": self.name,
+            "event": event,
+            "correlation_id": getattr(_local, "correlation_id", None),
+            "thread_id": threading.get_ident(),
         }
 
         # Add custom fields
@@ -85,63 +86,134 @@ class StructuredLogger:
 
     def performance(self, operation: str, duration_ms: float, **kwargs):
         """Log performance metric"""
-        self._log(logging.INFO, 'performance', operation=operation,
-                 duration_ms=round(duration_ms, 2), **kwargs)
+        self._log(
+            logging.INFO,
+            "performance",
+            operation=operation,
+            duration_ms=round(duration_ms, 2),
+            **kwargs,
+        )
 
     def request_start(self, method: str, path: str, **kwargs):
         """Log request start"""
-        self._log(logging.INFO, 'request_start', method=method, path=path, **kwargs)
+        self._log(logging.INFO, "request_start", method=method, path=path, **kwargs)
 
-    def request_end(self, method: str, path: str, status_code: int,
-                   duration_ms: float, **kwargs):
+    def request_end(
+        self, method: str, path: str, status_code: int, duration_ms: float, **kwargs
+    ):
         """Log request end"""
-        level = logging.INFO if status_code < 400 else logging.WARNING if status_code < 500 else logging.ERROR
-        self._log(level, 'request_end', method=method, path=path,
-                 status_code=status_code, duration_ms=round(duration_ms, 2), **kwargs)
+        level = (
+            logging.INFO
+            if status_code < 400
+            else logging.WARNING if status_code < 500 else logging.ERROR
+        )
+        self._log(
+            level,
+            "request_end",
+            method=method,
+            path=path,
+            status_code=status_code,
+            duration_ms=round(duration_ms, 2),
+            **kwargs,
+        )
 
     def indexing_start(self, index_id: str, file_count: int, **kwargs):
         """Log indexing operation start"""
-        self._log(logging.INFO, 'indexing_start', index_id=index_id,
-                 file_count=file_count, **kwargs)
+        self._log(
+            logging.INFO,
+            "indexing_start",
+            index_id=index_id,
+            file_count=file_count,
+            **kwargs,
+        )
 
-    def indexing_progress(self, index_id: str, processed: int, total: int,
-                         current_file: str = None, **kwargs):
+    def indexing_progress(
+        self,
+        index_id: str,
+        processed: int,
+        total: int,
+        current_file: str = None,
+        **kwargs,
+    ):
         """Log indexing progress"""
-        self._log(logging.INFO, 'indexing_progress', index_id=index_id,
-                 processed=processed, total=total, current_file=current_file, **kwargs)
+        self._log(
+            logging.INFO,
+            "indexing_progress",
+            index_id=index_id,
+            processed=processed,
+            total=total,
+            current_file=current_file,
+            **kwargs,
+        )
 
-    def indexing_complete(self, index_id: str, total_files: int, total_chunks: int,
-                         duration_ms: float, **kwargs):
+    def indexing_complete(
+        self,
+        index_id: str,
+        total_files: int,
+        total_chunks: int,
+        duration_ms: float,
+        **kwargs,
+    ):
         """Log indexing completion"""
-        self._log(logging.INFO, 'indexing_complete', index_id=index_id,
-                 total_files=total_files, total_chunks=total_chunks,
-                 duration_ms=round(duration_ms, 2), **kwargs)
+        self._log(
+            logging.INFO,
+            "indexing_complete",
+            index_id=index_id,
+            total_files=total_files,
+            total_chunks=total_chunks,
+            duration_ms=round(duration_ms, 2),
+            **kwargs,
+        )
 
-    def query_start(self, query_length: int, session_id: Optional[str] = None, **kwargs):
+    def query_start(
+        self, query_length: int, session_id: Optional[str] = None, **kwargs
+    ):
         """Log query start"""
-        self._log(logging.INFO, 'query_start', query_length=query_length,
-                 session_id=session_id, **kwargs)
+        self._log(
+            logging.INFO,
+            "query_start",
+            query_length=query_length,
+            session_id=session_id,
+            **kwargs,
+        )
 
-    def query_end(self, query_length: int, result_count: int, duration_ms: float,
-                  cache_hit: bool = False, **kwargs):
+    def query_end(
+        self,
+        query_length: int,
+        result_count: int,
+        duration_ms: float,
+        cache_hit: bool = False,
+        **kwargs,
+    ):
         """Log query end"""
-        self._log(logging.INFO, 'query_end', query_length=query_length,
-                 result_count=result_count, duration_ms=round(duration_ms, 2),
-                 cache_hit=cache_hit, **kwargs)
+        self._log(
+            logging.INFO,
+            "query_end",
+            query_length=query_length,
+            result_count=result_count,
+            duration_ms=round(duration_ms, 2),
+            cache_hit=cache_hit,
+            **kwargs,
+        )
 
     def cache_hit(self, cache_type: str, key: str, **kwargs):
         """Log cache hit"""
-        self._log(logging.DEBUG, 'cache_hit', cache_type=cache_type, key=key, **kwargs)
+        self._log(logging.DEBUG, "cache_hit", cache_type=cache_type, key=key, **kwargs)
 
     def cache_miss(self, cache_type: str, key: str, **kwargs):
         """Log cache miss"""
-        self._log(logging.DEBUG, 'cache_miss', cache_type=cache_type, key=key, **kwargs)
+        self._log(logging.DEBUG, "cache_miss", cache_type=cache_type, key=key, **kwargs)
 
     def error_with_context(self, error: Exception, operation: str, **kwargs):
         """Log error with full context"""
-        self._log(logging.ERROR, 'error', operation=operation,
-                 error_type=type(error).__name__, error_message=str(error),
-                 **kwargs)
+        self._log(
+            logging.ERROR,
+            "error",
+            operation=operation,
+            error_type=type(error).__name__,
+            error_message=str(error),
+            **kwargs,
+        )
 
 
 class JSONLogHandler(logging.Handler):
@@ -155,23 +227,32 @@ class JSONLogHandler(logging.Handler):
         """Emit a JSON-formatted log record"""
         try:
             # If the message is already JSON, use it directly
-            if record.getMessage().startswith('{') and record.getMessage().endswith('}'):
+            if record.getMessage().startswith("{") and record.getMessage().endswith(
+                "}"
+            ):
                 log_entry = record.getMessage()
             else:
                 # Create structured log entry
-                log_entry = json.dumps({
-                    'timestamp': datetime.fromtimestamp(record.created, timezone.utc).isoformat().replace("+00:00", "Z"),
-                    'level': record.levelname,
-                    'logger': record.name,
-                    'message': record.getMessage(),
-                    'module': record.module,
-                    'function': record.funcName,
-                    'line': record.lineno,
-                    'process_id': record.process,
-                    'thread_id': record.thread,
-                }, default=str)
+                log_entry = json.dumps(
+                    {
+                        "timestamp": datetime.fromtimestamp(
+                            record.created, timezone.utc
+                        )
+                        .isoformat()
+                        .replace("+00:00", "Z"),
+                        "level": record.levelname,
+                        "logger": record.name,
+                        "message": record.getMessage(),
+                        "module": record.module,
+                        "function": record.funcName,
+                        "line": record.lineno,
+                        "process_id": record.process,
+                        "thread_id": record.thread,
+                    },
+                    default=str,
+                )
 
-            self.stream.write(log_entry + '\n')
+            self.stream.write(log_entry + "\n")
             self.stream.flush()
 
         except Exception:
@@ -185,7 +266,7 @@ class LogContext:
 
     def __init__(self, correlation_id: Optional[str] = None):
         self.correlation_id = correlation_id or str(uuid.uuid4())
-        self.previous_id = getattr(_local, 'correlation_id', None)
+        self.previous_id = getattr(_local, "correlation_id", None)
 
     def __enter__(self):
         _local.correlation_id = self.correlation_id
@@ -221,6 +302,7 @@ query_logger = StructuredLogger("localgpt.query")
 api_logger = StructuredLogger("localgpt.api")
 _structured_loggers = [system_logger, indexing_logger, query_logger, api_logger]
 
+
 def set_log_level(level: Union[str, int]):
     """Set log level for all structured loggers"""
     if isinstance(level, str):
@@ -230,6 +312,7 @@ def set_log_level(level: Union[str, int]):
         logger.logger.setLevel(level)
         for handler in logger.logger.handlers:
             handler.setLevel(level)
+
 
 def configure_logging(log_level: str = "INFO", log_file: Optional[str] = None):
     """Configure global logging settings"""
@@ -247,7 +330,7 @@ def configure_logging(log_level: str = "INFO", log_file: Optional[str] = None):
 
     structured_handlers = [console_handler]
     if log_file:
-        file_handler = JSONLogHandler(open(log_file, 'a', encoding='utf-8'))
+        file_handler = JSONLogHandler(open(log_file, "a", encoding="utf-8"))
         file_handler.setLevel(level)
         root_logger.addHandler(file_handler)
         structured_handlers.append(file_handler)
@@ -260,13 +343,15 @@ def configure_logging(log_level: str = "INFO", log_file: Optional[str] = None):
 
     system_logger.info("logging_configured", log_level=log_level, log_file=log_file)
 
+
 # Legacy compatibility functions
 def log_query(query: str, sub_queries: list = None) -> None:
     """Legacy function for backward compatibility"""
-    context = {'query': query}
+    context = {"query": query}
     if sub_queries:
-        context['sub_queries'] = sub_queries
+        context["sub_queries"] = sub_queries
     query_logger.info("user_query", **context)
+
 
 def log_retrieval_results(results: list, k: int) -> None:
     """Legacy function for backward compatibility"""
@@ -274,5 +359,9 @@ def log_retrieval_results(results: list, k: int) -> None:
         query_logger.info("retrieval_empty")
         return
 
-    query_logger.info("retrieval_results", result_count=len(results), top_k=k,
-                     top_scores=[r.get('score', 0) for r in results[:k]]) 
+    query_logger.info(
+        "retrieval_results",
+        result_count=len(results),
+        top_k=k,
+        top_scores=[r.get("score", 0) for r in results[:k]],
+    )

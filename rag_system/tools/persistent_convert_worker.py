@@ -11,6 +11,7 @@ Protocol (newline-delimited JSON over stdin/stdout):
 
 The process exits cleanly when stdin reaches EOF (parent closed the pipe).
 """
+
 from __future__ import annotations
 
 import json

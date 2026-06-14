@@ -10,6 +10,7 @@ regression test trips if either reintroduces its own pick.
 
 This module must stay dependency-free so anything can import it cheaply.
 """
+
 from typing import Optional, Sequence
 
 

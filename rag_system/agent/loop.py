@@ -1,35 +1,49 @@
-from typing import Dict, Any, Optional
+import asyncio
+import concurrent.futures
 import hashlib
 import json
-import time, asyncio, os, threading
+import os
+import threading
+import time
+from typing import Any, Dict, Optional
+
 import numpy as np
-import concurrent.futures
 from cachetools import LRUCache
-from rag_system.utils.ollama_client import OllamaClient
-from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
-from rag_system.agent.verifier import Verifier
-from rag_system.retrieval.query_transformer import QueryDecomposer, GraphQueryTranslator
-from rag_system.retrieval.retrievers import GraphRetriever
-from rag_system.utils.persistent_cache import PersistentCache
+
 from rag_system.agent import agentic
+from rag_system.agent.verifier import Verifier
+from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
+from rag_system.retrieval.query_transformer import GraphQueryTranslator, QueryDecomposer
+from rag_system.retrieval.retrievers import GraphRetriever
+from rag_system.utils.ollama_client import OllamaClient
+from rag_system.utils.persistent_cache import PersistentCache
+
 
 class Agent:
     """
     The main agent, now fully wired to use a live Ollama client.
     """
-    def __init__(self, pipeline_configs: Dict[str, Dict], llm_client: OllamaClient, ollama_config: Dict[str, str]):
+
+    def __init__(
+        self,
+        pipeline_configs: Dict[str, Dict],
+        llm_client: OllamaClient,
+        ollama_config: Dict[str, str],
+    ):
         self.pipeline_configs = pipeline_configs
         self.llm_client = llm_client
         self.ollama_config = ollama_config
-        
+
         gen_model = self.ollama_config["generation_model"]
-        
+
         # Initialize the single, persistent retrieval pipeline for this agent
-        self.retrieval_pipeline = RetrievalPipeline(pipeline_configs, self.llm_client, self.ollama_config)
-        
+        self.retrieval_pipeline = RetrievalPipeline(
+            pipeline_configs, self.llm_client, self.ollama_config
+        )
+
         self.verifier = Verifier(llm_client, gen_model)
         self.query_decomposer = QueryDecomposer(llm_client, gen_model)
-        
+
         # 🚀 PERSISTENT CACHE: Redis/file-based persistent caching with semantic matching
         cache_dir = os.path.join("index_store", "cache")  # Store cache in index_store
         redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
@@ -37,12 +51,16 @@ class Agent:
             cache_dir=cache_dir,
             redis_url=redis_url,
             max_size=self.pipeline_configs.get("cache_max_size", 1000),
-            semantic_threshold=self.pipeline_configs.get("semantic_cache_threshold", 0.98),
-            cache_scope=self.pipeline_configs.get("cache_scope", "global")
+            semantic_threshold=self.pipeline_configs.get(
+                "semantic_cache_threshold", 0.98
+            ),
+            cache_scope=self.pipeline_configs.get("cache_scope", "global"),
         )
-        
+
         # 🚀 NEW: In-memory store for conversational history per session
-        self.chat_histories: LRUCache = LRUCache(maxsize=100) # Stores history for 100 recent sessions
+        self.chat_histories: LRUCache = LRUCache(
+            maxsize=100
+        )  # Stores history for 100 recent sessions
         # Routing memo: keyed by "session_id:query_hash" to avoid re-triaging identical queries
         self._route_cache: LRUCache = LRUCache(maxsize=2000)
         self._state_lock = threading.RLock()
@@ -56,14 +74,20 @@ class Agent:
             print("Agent initialized (GraphRAG disabled).")
 
         # ---- Load document overviews for fast routing ----
-        self._global_overview_path = os.path.join("index_store", "overviews", "overviews.jsonl")
+        self._global_overview_path = os.path.join(
+            "index_store", "overviews", "overviews.jsonl"
+        )
         self.doc_overviews: list[str] = []
-        self._current_overview_session: str | None = None  # cache key to avoid rereading on every query
+        self._current_overview_session: str | None = (
+            None  # cache key to avoid rereading on every query
+        )
         self._load_overviews(self._global_overview_path)
 
     def _load_overviews(self, path: str):
         """Helper to load overviews from a .jsonl file into self.doc_overviews."""
-        import json, os
+        import json
+        import os
+
         self.doc_overviews.clear()
         if not os.path.exists(path):
             return
@@ -82,7 +106,9 @@ class Agent:
 
     def get_overviews_for_indexes(self, idx_ids: list[str]) -> list[str]:
         """Return index overviews without changing shared agent state."""
-        import os, json
+        import json
+        import os
+
         aggregated: list[str] = []
         for idx in idx_ids:
             path = os.path.join("index_store", "overviews", f"{idx}.jsonl")
@@ -102,10 +128,14 @@ class Agent:
                 except Exception as e:
                     print(f"⚠️  Error reading {path}: {e}")
         if aggregated:
-            print(f"📖 Loaded {len(aggregated)} overviews for indexes {[i[:8] for i in idx_ids]}")
+            print(
+                f"📖 Loaded {len(aggregated)} overviews for indexes {[i[:8] for i in idx_ids]}"
+            )
             return aggregated
 
-        print(f"⚠️  No per-index overviews found for {idx_ids}. Using global overview file.")
+        print(
+            f"⚠️  No per-index overviews found for {idx_ids}. Using global overview file."
+        )
         fallback: list[str] = []
         if os.path.exists(self._global_overview_path):
             try:
@@ -130,9 +160,11 @@ class Agent:
         """Formats the user query with conversation history for context."""
         if not history:
             return query
-        
-        formatted_history = "\n".join([f"User: {turn['query']}\nAssistant: {turn['answer']}" for turn in history])
-        
+
+        formatted_history = "\n".join(
+            [f"User: {turn['query']}\nAssistant: {turn['answer']}" for turn in history]
+        )
+
         prompt = f"""
 Given the following conversation history, answer the user's latest query. The history provides context for resolving pronouns or follow-up questions.
 
@@ -154,11 +186,11 @@ Latest User Query: "{query}"
         document_overviews: list[str],
         embedding_model: Optional[str],
     ) -> str:
-        
+
         print(f"🔍 ROUTING DEBUG: Starting triage for query: '{query[:100]}...'")
-        
+
         # 1️⃣ Fast routing using precomputed overviews (if available)
-        print(f"📖 ROUTING DEBUG: Attempting overview-based routing...")
+        print("📖 ROUTING DEBUG: Attempting overview-based routing...")
         routed = self._route_via_overviews(
             query,
             document_overviews=document_overviews,
@@ -168,16 +200,18 @@ Latest User Query: "{query}"
             print(f"✅ ROUTING DEBUG: Overview routing decided: '{routed}'")
             return routed
         else:
-            print(f"❌ ROUTING DEBUG: Overview routing returned None, falling back to LLM triage")
+            print(
+                "❌ ROUTING DEBUG: Overview routing returned None, falling back to LLM triage"
+            )
 
         if history:
             # If there's history, the query is likely a follow-up, so we default to RAG.
             # A more advanced implementation could use an LLM to see if the new query
             # changes the topic entirely.
-            print(f"📜 ROUTING DEBUG: History exists, defaulting to 'rag_query'")
+            print("📜 ROUTING DEBUG: History exists, defaulting to 'rag_query'")
             return "rag_query"
 
-        print(f"🤖 ROUTING DEBUG: No history, using LLM fallback triage...")
+        print("🤖 ROUTING DEBUG: No history, using LLM fallback triage...")
         prompt = f"""
 You are a query routing expert. Analyze the user's question and decide which backend should handle it.
 
@@ -204,7 +238,9 @@ Respond with JSON: {{"category": "<your_choice>"}}
             print(f"🤖 ROUTING DEBUG: LLM fallback triage decided: '{decision}'")
             return decision
         except json.JSONDecodeError:
-            print(f"❌ ROUTING DEBUG: LLM fallback triage JSON parsing failed, defaulting to 'rag_query'")
+            print(
+                "❌ ROUTING DEBUG: LLM fallback triage JSON parsing failed, defaulting to 'rag_query'"
+            )
             return "rag_query"
 
     def _run_graph_query(
@@ -227,17 +263,32 @@ Respond with JSON: {{"category": "<your_choice>"}}
             return self.retrieval_pipeline.run(
                 contextual_query, window_size_override=0, overrides=overrides
             )
-        answer = ", ".join([res['details']['node_id'] for res in results])
-        return {"answer": f"From the knowledge graph: {answer}", "source_documents": results}
+        answer = ", ".join([res["details"]["node_id"] for res in results])
+        return {
+            "answer": f"From the knowledge graph: {answer}",
+            "source_documents": results,
+        }
 
-    def chat(self, query: str, session_id: Optional[str] = None, stream: bool = False) -> Dict[str, Any]:
+    def chat(
+        self, query: str, session_id: Optional[str] = None, stream: bool = False
+    ) -> Dict[str, Any]:
         """Simple synchronous chat method"""
         return asyncio.run(self._run_async(query, session_id=session_id))
 
     # ---------------- Public sync API (kept for backwards compatibility) --------------
-    async def _run_agentic(self, contextual_query, raw_query, history, table_name,
-                           collections, filters, context_expand, event_callback,
-                           overrides=None, generation_model=None) -> Dict[str, Any]:
+    async def _run_agentic(
+        self,
+        contextual_query,
+        raw_query,
+        history,
+        table_name,
+        collections,
+        filters,
+        context_expand,
+        event_callback,
+        overrides=None,
+        generation_model=None,
+    ) -> Dict[str, Any]:
         """Plan-and-execute path (opt-in).
 
         1. complexity gate → simple questions run as a single retrieval.
@@ -251,7 +302,11 @@ Respond with JSON: {{"category": "<your_choice>"}}
 
         def _retrieve(q):
             return self.retrieval_pipeline.run(
-                q, table_name, window, collections=collections, filters=filters,
+                q,
+                table_name,
+                window,
+                collections=collections,
+                filters=filters,
                 overrides=overrides,
             )
 
@@ -286,7 +341,9 @@ Respond with JSON: {{"category": "<your_choice>"}}
         # 3. Retrieve all tasks in parallel
         def _run_all(task_list):
             out = [None] * len(task_list)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(task_list))) as ex:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(3, len(task_list))
+            ) as ex:
                 fut = {ex.submit(_retrieve, t): i for i, t in enumerate(task_list)}
                 for f in concurrent.futures.as_completed(fut):
                     i = fut[f]
@@ -304,12 +361,14 @@ Respond with JSON: {{"category": "<your_choice>"}}
             print(f"🧠 AGENTIC: {len(thin)} thin task(s) → reformulate + retry")
             reform = {}
             for i in thin:
-                nq = await asyncio.to_thread(agentic.reformulate_task, self.llm_client, gen_model, tasks[i])
+                nq = await asyncio.to_thread(
+                    agentic.reformulate_task, self.llm_client, gen_model, tasks[i]
+                )
                 if nq:
                     reform[i] = nq
             if reform:
                 retried = await asyncio.to_thread(_run_all, list(reform.values()))
-                for (i, _), r in zip(reform.items(), retried):
+                for (i, _), r in zip(reform.items(), retried, strict=False):
                     # Keep the retry only if it actually found evidence
                     if r and not agentic.is_evidence_thin(r):
                         results[i] = r
@@ -320,11 +379,15 @@ Respond with JSON: {{"category": "<your_choice>"}}
             if not r:
                 continue
             if event_callback:
-                event_callback("sub_query_result", {
-                    "index": i, "query": tasks[i],
-                    "answer": r.get("answer", ""),
-                    "source_documents": r.get("source_documents", []),
-                })
+                event_callback(
+                    "sub_query_result",
+                    {
+                        "index": i,
+                        "query": tasks[i],
+                        "answer": r.get("answer", ""),
+                        "source_documents": r.get("source_documents", []),
+                    },
+                )
             for doc in r.get("source_documents", []):
                 ident = (doc.get("index_id"), doc.get("chunk_id"))
                 if ident not in seen:
@@ -334,8 +397,10 @@ Respond with JSON: {{"category": "<your_choice>"}}
             event_callback("retrieval_done", {"count": len(tasks)})
 
         if not all_docs:
-            result = {"answer": "I could not find relevant information to answer your question.",
-                      "source_documents": []}
+            result = {
+                "answer": "I could not find relevant information to answer your question.",
+                "source_documents": [],
+            }
             if event_callback:
                 event_callback("final_answer", result)
             return result
@@ -354,33 +419,113 @@ Respond with JSON: {{"category": "<your_choice>"}}
             event_callback("final_answer", result)
         return result
 
-    def run(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, agentic: Optional[bool] = None, generation_model: Optional[str] = None, document_overviews: Optional[list[str]] = None, provence_prune: Optional[bool] = None, provence_threshold: Optional[float] = None, latechunk_enabled: Optional[bool] = None, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    def run(
+        self,
+        query: str,
+        table_name: str = None,
+        collections: list | None = None,
+        filters: dict | None = None,
+        session_id: str = None,
+        compose_sub_answers: Optional[bool] = None,
+        query_decompose: Optional[bool] = None,
+        ai_rerank: Optional[bool] = None,
+        context_expand: Optional[bool] = None,
+        verify: Optional[bool] = None,
+        retrieval_k: Optional[int] = None,
+        context_window_size: Optional[int] = None,
+        reranker_top_k: Optional[int] = None,
+        search_type: Optional[str] = None,
+        dense_weight: Optional[float] = None,
+        max_retries: int = 1,
+        agentic: Optional[bool] = None,
+        generation_model: Optional[str] = None,
+        document_overviews: Optional[list[str]] = None,
+        provence_prune: Optional[bool] = None,
+        provence_threshold: Optional[float] = None,
+        latechunk_enabled: Optional[bool] = None,
+        event_callback: Optional[callable] = None,
+    ) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
 
             event_callback(phase:str, payload:Any)
         """
-        return asyncio.run(self._run_async(query, table_name, collections, filters, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, agentic, generation_model, document_overviews, provence_prune, provence_threshold, latechunk_enabled, event_callback))
+        return asyncio.run(
+            self._run_async(
+                query,
+                table_name,
+                collections,
+                filters,
+                session_id,
+                compose_sub_answers,
+                query_decompose,
+                ai_rerank,
+                context_expand,
+                verify,
+                retrieval_k,
+                context_window_size,
+                reranker_top_k,
+                search_type,
+                dense_weight,
+                max_retries,
+                agentic,
+                generation_model,
+                document_overviews,
+                provence_prune,
+                provence_threshold,
+                latechunk_enabled,
+                event_callback,
+            )
+        )
 
     # ---------------- Main async implementation --------------------------------------
-    async def _run_async(self, query: str, table_name: str = None, collections: list | None = None, filters: dict | None = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, agentic: Optional[bool] = None, generation_model: Optional[str] = None, document_overviews: Optional[list[str]] = None, provence_prune: Optional[bool] = None, provence_threshold: Optional[float] = None, latechunk_enabled: Optional[bool] = None, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_async(
+        self,
+        query: str,
+        table_name: str = None,
+        collections: list | None = None,
+        filters: dict | None = None,
+        session_id: str = None,
+        compose_sub_answers: Optional[bool] = None,
+        query_decompose: Optional[bool] = None,
+        ai_rerank: Optional[bool] = None,
+        context_expand: Optional[bool] = None,
+        verify: Optional[bool] = None,
+        retrieval_k: Optional[int] = None,
+        context_window_size: Optional[int] = None,
+        reranker_top_k: Optional[int] = None,
+        search_type: Optional[str] = None,
+        dense_weight: Optional[float] = None,
+        max_retries: int = 1,
+        agentic: Optional[bool] = None,
+        generation_model: Optional[str] = None,
+        document_overviews: Optional[list[str]] = None,
+        provence_prune: Optional[bool] = None,
+        provence_threshold: Optional[float] = None,
+        latechunk_enabled: Optional[bool] = None,
+        event_callback: Optional[callable] = None,
+    ) -> Dict[str, Any]:
         start_time = time.time()
         gen_model = generation_model or self.ollama_config["generation_model"]
-        request_overviews = self.doc_overviews if document_overviews is None else document_overviews
+        request_overviews = (
+            self.doc_overviews if document_overviews is None else document_overviews
+        )
         request_embedding_model = (
             collections[-1].get("embedding_model")
             if collections
             else self.retrieval_pipeline.config.get("embedding_model_name")
         )
-        
+
         # Emit analyze event at the start
         if event_callback:
             event_callback("analyze", {"query": query})
-        
+
         # 🚀 NEW: Get conversation history
         with self._state_lock:
-            history = list(self.chat_histories.get(session_id, [])) if session_id else []
-        
+            history = (
+                list(self.chat_histories.get(session_id, [])) if session_id else []
+            )
+
         # 🔄 Refresh overviews for this session if available
         # if session_id and session_id != getattr(self, "_current_overview_session", None):
         #     candidate_path = os.path.join("index_store", "overviews", f"{session_id}.jsonl")
@@ -392,9 +537,11 @@ Respond with JSON: {{"category": "<your_choice>"}}
         #         if self._current_overview_session != "GLOBAL":
         #             self._load_overviews(self._global_overview_path)
         #             self._current_overview_session = "GLOBAL"
-        
+
         # Check routing memo before calling the (potentially LLM-backed) triage
-        _q_hash = hashlib.md5(query[:200].encode("utf-8", errors="replace")).hexdigest()[:8]
+        _q_hash = hashlib.md5(
+            query[:200].encode("utf-8", errors="replace")
+        ).hexdigest()[:8]
         overview_fingerprint = hash(tuple(request_overviews or ()))
         _route_key = (
             f"{session_id or ''}:{_q_hash}:{gen_model}:"
@@ -403,7 +550,9 @@ Respond with JSON: {{"category": "<your_choice>"}}
         with self._state_lock:
             _cached_route = self._route_cache.get(_route_key)
         if _cached_route:
-            print(f"🗂️ ROUTING DEBUG: routing_memo_hit for key {_route_key!r} → '{_cached_route}'")
+            print(
+                f"🗂️ ROUTING DEBUG: routing_memo_hit for key {_route_key!r} → '{_cached_route}'"
+            )
             query_type = _cached_route
         else:
             query_type = await self._triage_query_async(
@@ -417,11 +566,11 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 self._route_cache[_route_key] = query_type
         print(f"🎯 ROUTING DEBUG: Final triage decision: '{query_type}'")
         print(f"Agent Triage Decision: '{query_type}'")
-        
+
         # Create a contextual query that includes history for most operations
         contextual_query = self._format_query_with_history(query, history)
         raw_query = query.strip()
-        
+
         # --- Per-request retrieval overrides ---
         # Passed into RetrievalPipeline.run for THIS call only, instead of
         # mutating the shared pipeline config. None means "use config / the
@@ -446,8 +595,11 @@ Respond with JSON: {{"category": "<your_choice>"}}
         # so one index's answers are never served for another.
         _scope_tables = (
             ",".join(sorted(c.get("table_name") or "" for c in collections))
-            if collections else
-            (table_name or self.retrieval_pipeline.storage_config.get("text_table_name", ""))
+            if collections
+            else (
+                table_name
+                or self.retrieval_pipeline.storage_config.get("text_table_name", "")
+            )
         )
         cache_scope = "{}|{}|{}|{}".format(
             _scope_tables,
@@ -471,7 +623,9 @@ Respond with JSON: {{"category": "<your_choice>"}}
             request_retriever = self.retrieval_pipeline._get_retriever_for_model(
                 request_embedding_model
             )
-            text_embedder = request_retriever.text_embedder if request_retriever else None
+            text_embedder = (
+                request_retriever.text_embedder if request_retriever else None
+            )
             if text_embedder:
                 # The embedder expects a list, so we wrap the *raw* query only.
                 query_embedding_list = text_embedder.create_embeddings([raw_query])
@@ -482,18 +636,31 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     query_embedding = np.array(query_embedding_list[0])
 
                 # Check persistent cache for exact or semantic match
-                cached_result = self._query_cache.retrieve(raw_query, query_type, query_embedding, session_id, scope=cache_scope)
+                cached_result = self._query_cache.retrieve(
+                    raw_query,
+                    query_type,
+                    query_embedding,
+                    session_id,
+                    scope=cache_scope,
+                )
 
                 if cached_result:
                     # Update history even on cache hit
                     if session_id:
-                        history.append({"query": query, "answer": cached_result.get('answer', 'Cached answer not found.')})
+                        history.append(
+                            {
+                                "query": query,
+                                "answer": cached_result.get(
+                                    "answer", "Cached answer not found."
+                                ),
+                            }
+                        )
                         with self._state_lock:
                             self.chat_histories[session_id] = history
                     return cached_result
 
         if query_type == "direct_answer":
-            print(f"✅ ROUTING DEBUG: Executing DIRECT_ANSWER path")
+            print("✅ ROUTING DEBUG: Executing DIRECT_ANSWER path")
             if event_callback:
                 event_callback("direct_answer", {})
 
@@ -521,22 +688,26 @@ Respond with JSON: {{"category": "<your_choice>"}}
 
             final_answer = await _run_stream()
             result = {"answer": final_answer, "source_documents": []}
-        
-        elif query_type == "graph_query" and hasattr(self, 'graph_retriever'):
-            print(f"✅ ROUTING DEBUG: Executing GRAPH_QUERY path")
+
+        elif query_type == "graph_query" and hasattr(self, "graph_retriever"):
+            print("✅ ROUTING DEBUG: Executing GRAPH_QUERY path")
             result = self._run_graph_query(
                 query, history, gen_model, retrieval_overrides
             )
 
         # --- RAG Query Processing with Optional Query Decomposition ---
-        else: # Default to rag_query
-            print(f"✅ ROUTING DEBUG: Executing RAG_QUERY path (query_type='{query_type}')")
+        else:  # Default to rag_query
+            print(
+                f"✅ ROUTING DEBUG: Executing RAG_QUERY path (query_type='{query_type}')"
+            )
             query_decomp_config = self.pipeline_configs.get("query_decomposition", {})
             decomp_enabled = query_decomp_config.get("enabled", False)
             if query_decompose is not None:
                 decomp_enabled = query_decompose
 
-            agentic_enabled = bool(self.pipeline_configs.get("agentic", {}).get("enabled", False))
+            agentic_enabled = bool(
+                self.pipeline_configs.get("agentic", {}).get("enabled", False)
+            )
             if agentic is not None:
                 agentic_enabled = agentic
 
@@ -545,12 +716,19 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 # evidence-driven retry → single synthesis. Sets `result`,
                 # then the shared verify/cache/history flow below applies.
                 result = await self._run_agentic(
-                    contextual_query, raw_query, history, table_name,
-                    collections, filters, context_expand, event_callback,
-                    retrieval_overrides, gen_model,
+                    contextual_query,
+                    raw_query,
+                    history,
+                    table_name,
+                    collections,
+                    filters,
+                    context_expand,
+                    event_callback,
+                    retrieval_overrides,
+                    gen_model,
                 )
             elif decomp_enabled:
-                print(f"\n--- Query Decomposition Enabled ---")
+                print("\n--- Query Decomposition Enabled ---")
                 # Use the raw user query (without conversation history) for decomposition to avoid leakage of prior context
                 # Pass the last 5 conversation turns for context resolution within the decomposer
                 recent_history = history[-5:] if history else []
@@ -565,15 +743,17 @@ Respond with JSON: {{"category": "<your_choice>"}}
 
                 print(f"Original query: '{query}' (Contextual: '{contextual_query}')")
                 print(f"Decomposed into {len(sub_queries)} sub-queries: {sub_queries}")
-                
+
                 # Emit retrieval_started event before any retrievals
                 if event_callback:
                     event_callback("retrieval_started", {"count": len(sub_queries)})
-                
+
                 # If decomposition produced only a single sub-query, skip the
                 # parallel/composition machinery for efficiency.
                 if len(sub_queries) == 1:
-                    print("--- Only one sub-query after decomposition; using direct retrieval path ---")
+                    print(
+                        "--- Only one sub-query after decomposition; using direct retrieval path ---"
+                    )
                     result = self.retrieval_pipeline.run(
                         sub_queries[0],
                         table_name,
@@ -591,11 +771,15 @@ Respond with JSON: {{"category": "<your_choice>"}}
                         event_callback("rerank_started", {"count": 1})
                         event_callback("rerank_done", {"count": 1})
                 else:
-                    compose_from_sub_answers = query_decomp_config.get("compose_from_sub_answers", True)
+                    compose_from_sub_answers = query_decomp_config.get(
+                        "compose_from_sub_answers", True
+                    )
                     if compose_sub_answers is not None:
                         compose_from_sub_answers = compose_sub_answers
 
-                    print(f"\n--- Processing {len(sub_queries)} sub-queries in parallel ---")
+                    print(
+                        f"\n--- Processing {len(sub_queries)} sub-queries in parallel ---"
+                    )
                     start_time_inner = time.time()
 
                     # Shared containers
@@ -616,12 +800,22 @@ Respond with JSON: {{"category": "<your_choice>"}}
                             if event_callback is None:
                                 return
                             if ev_type == "token":
-                                event_callback("sub_query_token", {"index": idx, "text": payload.get("text", ""), "question": sub_queries[idx]})
+                                event_callback(
+                                    "sub_query_token",
+                                    {
+                                        "index": idx,
+                                        "text": payload.get("text", ""),
+                                        "question": sub_queries[idx],
+                                    },
+                                )
                             else:
                                 event_callback(ev_type, payload)
+
                         return _cb
 
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(sub_queries))) as executor:
+                    with concurrent.futures.ThreadPoolExecutor(
+                        max_workers=min(3, len(sub_queries))
+                    ) as executor:
                         future_to_query = {
                             executor.submit(
                                 self.retrieval_pipeline.run,
@@ -643,28 +837,43 @@ Respond with JSON: {{"category": "<your_choice>"}}
                                 print(f"✅ Sub-Query {i+1} completed: '{sub_query}'")
 
                                 if event_callback:
-                                    event_callback("sub_query_result", {
-                                        "index": i,
-                                        "query": sub_query,
-                                        "answer": sub_result.get("answer", ""),
-                                        "source_documents": sub_result.get("source_documents", []),
-                                    })
+                                    event_callback(
+                                        "sub_query_result",
+                                        {
+                                            "index": i,
+                                            "query": sub_query,
+                                            "answer": sub_result.get("answer", ""),
+                                            "source_documents": sub_result.get(
+                                                "source_documents", []
+                                            ),
+                                        },
+                                    )
 
                                 if compose_from_sub_answers:
-                                    sub_answers.append({
-                                        "question": sub_query,
-                                        "answer": sub_result.get("answer", "")
-                                    })
+                                    sub_answers.append(
+                                        {
+                                            "question": sub_query,
+                                            "answer": sub_result.get("answer", ""),
+                                        }
+                                    )
                                     # Keep up to 5 citations per sub-query for traceability
-                                    for doc in sub_result.get("source_documents", [])[:5]:
-                                        identity = (doc.get("index_id"), doc["chunk_id"])
+                                    for doc in sub_result.get("source_documents", [])[
+                                        :5
+                                    ]:
+                                        identity = (
+                                            doc.get("index_id"),
+                                            doc["chunk_id"],
+                                        )
                                         if identity not in citations_seen:
                                             all_source_docs.append(doc)
                                             citations_seen.add(identity)
                                 else:
                                     # Aggregate unique docs (single-stage path)
-                                    for doc in sub_result.get('source_documents', []):
-                                        identity = (doc.get("index_id"), doc["chunk_id"])
+                                    for doc in sub_result.get("source_documents", []):
+                                        identity = (
+                                            doc.get("index_id"),
+                                            doc["chunk_id"],
+                                        )
                                         if identity not in citations_seen:
                                             all_source_docs.append(doc)
                                             citations_seen.add(identity)
@@ -718,93 +927,126 @@ FINAL ANSWER:
                             if event_callback:
                                 event_callback("token", {"text": tok})
 
-                        final_answer = "".join(answer_parts) or "Unable to generate an answer."
+                        final_answer = (
+                            "".join(answer_parts) or "Unable to generate an answer."
+                        )
 
                         result = {
                             "answer": final_answer,
-                            "source_documents": all_source_docs
+                            "source_documents": all_source_docs,
                         }
                         if event_callback:
                             event_callback("final_answer", result)
                     else:
-                        print(f"\n--- Aggregated {len(all_source_docs)} unique documents from all sub-queries ---")
+                        print(
+                            f"\n--- Aggregated {len(all_source_docs)} unique documents from all sub-queries ---"
+                        )
 
                         if all_source_docs:
-                            aggregated_context = "\n\n".join([doc['text'] for doc in all_source_docs])
-                            final_answer = self.retrieval_pipeline._synthesize_final_answer(
-                                contextual_query,
-                                aggregated_context,
-                                generation_model=gen_model,
+                            aggregated_context = "\n\n".join(
+                                [doc["text"] for doc in all_source_docs]
+                            )
+                            final_answer = (
+                                self.retrieval_pipeline._synthesize_final_answer(
+                                    contextual_query,
+                                    aggregated_context,
+                                    generation_model=gen_model,
+                                )
                             )
                             result = {
                                 "answer": final_answer,
-                                "source_documents": all_source_docs
+                                "source_documents": all_source_docs,
                             }
                             if event_callback:
                                 event_callback("final_answer", result)
                         else:
                             result = {
                                 "answer": "I could not find relevant information to answer your question.",
-                                "source_documents": []
+                                "source_documents": [],
                             }
                             if event_callback:
                                 event_callback("final_answer", result)
             else:
                 # Standard retrieval (single-query)
-                result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback, collections=collections, filters=filters, overrides=retrieval_overrides)
+                result = self.retrieval_pipeline.run(
+                    contextual_query,
+                    table_name,
+                    0 if context_expand is False else None,
+                    event_callback=event_callback,
+                    collections=collections,
+                    filters=filters,
+                    overrides=retrieval_overrides,
+                )
 
                 # After run, result['source_documents'] is reranked list
-                reranked_docs = result.get('source_documents', [])
+                reranked_docs = result.get("source_documents", [])
                 print("\n=== DEBUG: Reranked docs order ===")
                 for i, d in enumerate(reranked_docs[:10]):
-                    snippet = (d.get('text','') or '')[:200].replace('\n',' ')
-                    print(f"ReRank[{i}] id={d.get('chunk_id')} score={d.get('rerank_score','')} {snippet}")
-        
+                    snippet = (d.get("text", "") or "")[:200].replace("\n", " ")
+                    print(
+                        f"ReRank[{i}] id={d.get('chunk_id')} score={d.get('rerank_score','')} {snippet}"
+                    )
+
         # Verification step (simplified for now) - Skip in fast mode
-        verification_enabled = self.pipeline_configs.get("verification", {}).get("enabled", True)
+        verification_enabled = self.pipeline_configs.get("verification", {}).get(
+            "enabled", True
+        )
         if verify is not None:
             verification_enabled = verify
-            
+
         if verification_enabled and result.get("source_documents"):
-            context_str = "\n".join([doc['text'] for doc in result['source_documents']])
+            context_str = "\n".join([doc["text"] for doc in result["source_documents"]])
             try:
                 verification = await asyncio.wait_for(
                     self.verifier.verify_async(
                         contextual_query,
                         context_str,
-                        result['answer'],
+                        result["answer"],
                         gen_model,
                     ),
                     timeout=30.0,
                 )
             except asyncio.TimeoutError:
-                print("⚠️  Verifier timed out after 30 s; skipping confidence annotation.")
+                print(
+                    "⚠️  Verifier timed out after 30 s; skipping confidence annotation."
+                )
                 verification = None
 
             if verification is not None:
                 score = verification.confidence_score
                 if score > 0:
-                    result['answer'] += f" [Confidence: {score}%]"
+                    result["answer"] += f" [Confidence: {score}%]"
                     if (not verification.is_grounded) or score < 50:
-                        result['answer'] += f" [Warning: Low confidence. Groundedness: {verification.is_grounded}]"
+                        result[
+                            "answer"
+                        ] += f" [Warning: Low confidence. Groundedness: {verification.is_grounded}]"
                 else:
-                    print("⚠️  Verifier returned 0 confidence – likely JSON parse error; omitting tags.")
+                    print(
+                        "⚠️  Verifier returned 0 confidence – likely JSON parse error; omitting tags."
+                    )
         else:
             print("🚀 Skipping verification for speed or lack of sources")
-        
+
         # 🚀 NEW: Update history
         if session_id:
-            history.append({"query": query, "answer": result['answer']})
+            history.append({"query": query, "answer": result["answer"]})
             with self._state_lock:
                 self.chat_histories[session_id] = history
-            
+
         # 🚀 PERSISTENT CACHE: Store result for future queries
         if query_type != "direct_answer" and query_embedding is not None:
-            self._query_cache.store(raw_query, query_type, result, query_embedding, session_id, scope=cache_scope)
-        
+            self._query_cache.store(
+                raw_query,
+                query_type,
+                result,
+                query_embedding,
+                session_id,
+                scope=cache_scope,
+            )
+
         total_time = time.time() - start_time
         print(f"🚀 Total query processing time: {total_time:.2f}s")
-        
+
         return result
 
     # ------------------------------------------------------------------
@@ -821,6 +1063,7 @@ FINAL ANSWER:
         try:
             import networkx as nx
             from rapidfuzz import process  # same dep used in GraphRetriever
+
             G = nx.read_gml(graph_path)
             node_list = list(G.nodes())
         except Exception:
@@ -864,15 +1107,21 @@ FINAL ANSWER:
         Returns 'rag_query' when max similarity > 0.3, 'direct_answer' when < 0.1,
         or None (fall through to LLM triage) when in the ambiguous band.
         """
-        overviews = self.doc_overviews if document_overviews is None else document_overviews
+        overviews = (
+            self.doc_overviews if document_overviews is None else document_overviews
+        )
         if not overviews:
             print("📖 ROUTING DEBUG: No document overviews available, returning None")
             return None
 
-        print(f"📖 ROUTING DEBUG: Found {len(overviews)} overviews; using cosine similarity routing")
+        print(
+            f"📖 ROUTING DEBUG: Found {len(overviews)} overviews; using cosine similarity routing"
+        )
 
         try:
-            retriever = self.retrieval_pipeline._get_retriever_for_model(embedding_model)
+            retriever = self.retrieval_pipeline._get_retriever_for_model(
+                embedding_model
+            )
             embedder = retriever.text_embedder if retriever else None
             if embedder is None:
                 return None
@@ -883,7 +1132,9 @@ FINAL ANSWER:
         # Cache overview embeddings keyed by overview set + embedding model:
         # the model is switched per index, and vectors from different models
         # are not comparable (same-dimension ones silently produce garbage).
-        embedding_model = embedding_model or self.retrieval_pipeline.config.get("embedding_model_name", "")
+        embedding_model = embedding_model or self.retrieval_pipeline.config.get(
+            "embedding_model_name", ""
+        )
         cache_key = (embedding_model, len(overviews), hash(tuple(overviews)))
         with Agent._overview_embedding_cache_lock:
             if cache_key not in Agent._overview_embedding_cache:
@@ -891,9 +1142,15 @@ FINAL ANSWER:
                     overview_embs = embedder.create_embeddings(overviews)
                     norms = np.linalg.norm(overview_embs, axis=1, keepdims=True)
                     while len(Agent._overview_embedding_cache) >= 16:
-                        Agent._overview_embedding_cache.pop(next(iter(Agent._overview_embedding_cache)))
-                    Agent._overview_embedding_cache[cache_key] = overview_embs / np.maximum(norms, 1e-9)
-                    print(f"📖 ROUTING DEBUG: Cached {len(overviews)} overview embeddings")
+                        Agent._overview_embedding_cache.pop(
+                            next(iter(Agent._overview_embedding_cache))
+                        )
+                    Agent._overview_embedding_cache[cache_key] = (
+                        overview_embs / np.maximum(norms, 1e-9)
+                    )
+                    print(
+                        f"📖 ROUTING DEBUG: Cached {len(overviews)} overview embeddings"
+                    )
                 except Exception as e:
                     print(f"⚠️ ROUTING DEBUG: Failed to embed overviews: {e}")
                     return None
@@ -918,5 +1175,7 @@ FINAL ANSWER:
             print("📖 ROUTING DEBUG: similarity < 0.1 → direct_answer")
             return "direct_answer"
         # Ambiguous band — fall through to LLM triage
-        print("📖 ROUTING DEBUG: similarity in ambiguous band; returning None for LLM triage")
+        print(
+            "📖 ROUTING DEBUG: similarity in ambiguous band; returning None for LLM triage"
+        )
         return None

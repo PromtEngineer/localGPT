@@ -1,24 +1,26 @@
 import asyncio
 import json
 import os
-import uuid
-from datetime import datetime, timedelta
 import re
 import threading
 import time
-from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
-from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import requests
-from dotenv import load_dotenv
+import uuid
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
-load_dotenv()                        # .env  — main config
+import requests
+import uvicorn
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
+
+load_dotenv()  # .env  — main config
 load_dotenv(".env.keys", override=False)  # .env.keys — API keys (never committed)
 
 # Add parent directory to path so we can import rag_system modules
 import sys
+
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
 for path in (BACKEND_DIR, PROJECT_ROOT):
@@ -28,6 +30,7 @@ for path in (BACKEND_DIR, PROJECT_ROOT):
 # Import RAG system modules for complete metadata
 try:
     from rag_system.main import EXTERNAL_MODELS, OLLAMA_CONFIG, PIPELINE_CONFIGS
+
     RAG_SYSTEM_AVAILABLE = True
     print("✅ RAG system modules accessible from backend")
 except Exception as e:
@@ -41,6 +44,7 @@ except Exception as e:
 # isolation_level=None (autocommit) is required because PRAGMA journal_mode
 # is silently ignored when issued inside an open transaction.
 import sqlite3 as _sqlite3
+
 _DB_PATH = os.path.join(BACKEND_DIR, "chat_data.db")
 try:
     _wal_conn = _sqlite3.connect(_DB_PATH, timeout=30, isolation_level=None)
@@ -50,20 +54,9 @@ try:
 except Exception as _wal_err:
     print(f"⚠️ Could not enable WAL mode: {_wal_err}")
 
-from ollama_client import OllamaClient, OllamaError
+import simple_pdf_processor as pdf_module
 from database import db, generate_session_title
-from rag_system.index_selection import select_active_index_id
-from rag_system.chat_runtime import execute_chat as execute_rag_chat
-from rag_system.factory import get_agent as create_rag_agent
-from rag_system.indexing_runtime import (
-    build_config as build_indexing_config,
-    execute_index_build,
-)
-from rag_system.metadata_filters import (
-    FilterError,
-    validate_document_metadata,
-    validate_schema,
-)
+from ollama_client import OllamaClient, OllamaError
 from pydantic import ValidationError
 from validators import (
     IndexBuildRequest,
@@ -72,12 +65,26 @@ from validators import (
     SessionRequest,
     validate_file_upload,
 )
-import simple_pdf_processor as pdf_module
-from simple_pdf_processor import initialize_simple_pdf_processor
+
+from rag_system.chat_runtime import execute_chat as execute_rag_chat
+from rag_system.factory import get_agent as create_rag_agent
+from rag_system.index_selection import select_active_index_id
+from rag_system.indexing_runtime import (
+    build_config as build_indexing_config,
+)
+from rag_system.indexing_runtime import (
+    execute_index_build,
+)
+from rag_system.metadata_filters import (
+    FilterError,
+    validate_document_metadata,
+    validate_schema,
+)
 
 # Import maintenance tools
 try:
     from rag_system.maintenance import MaintenanceTools
+
     MAINTENANCE_TOOLS_AVAILABLE = True
 except ImportError:
     MAINTENANCE_TOOLS_AVAILABLE = False
@@ -85,12 +92,14 @@ except ImportError:
 # Import job persistence
 try:
     from rag_system.job_persistence import JobProgressTracker
+
     JOB_PERSISTENCE_AVAILABLE = True
 except ImportError:
     JOB_PERSISTENCE_AVAILABLE = False
 
 # Initialize FastAPI app
 app = FastAPI(title="LocalGPT Backend", version="1.0.0")
+
 
 def _cors_origins_from_env() -> list[str]:
     origins = os.getenv(
@@ -118,6 +127,7 @@ try:
 except ImportError:
     _metrics = None
 
+
 @app.middleware("http")
 async def _restrict_maintenance(request: Request, call_next):
     if request.url.path.startswith("/maintenance"):
@@ -126,8 +136,15 @@ async def _restrict_maintenance(request: Request, call_next):
         host = request.client.host if request.client else ""
         if host not in ("127.0.0.1", "::1", "testclient"):
             from fastapi.responses import JSONResponse
-            return JSONResponse(status_code=403, content={"detail": "Maintenance endpoints are only accessible from localhost"})
+
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "detail": "Maintenance endpoints are only accessible from localhost"
+                },
+            )
     return await call_next(request)
+
 
 @app.middleware("http")
 async def _record_metrics(request: Request, call_next):
@@ -143,8 +160,11 @@ async def _record_metrics(request: Request, call_next):
         # Record the route template (/sessions/{session_id}/messages), not the
         # concrete URL — per-UUID paths grow the metrics dict without bound.
         route = request.scope.get("route")
-        _metrics.record_request(getattr(route, "path", None) or request.url.path, latency_ms)
+        _metrics.record_request(
+            getattr(route, "path", None) or request.url.path, latency_ms
+        )
     return response
+
 
 # Global variables
 ollama_client = OllamaClient()
@@ -159,9 +179,24 @@ BACKEND_BASE_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 # Upload safety limits
 _MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB per file
 _ALLOWED_UPLOAD_EXTENSIONS = {
-    ".pdf", ".txt", ".md", ".rst", ".tex",
-    ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
-    ".html", ".htm", ".csv", ".json", ".xml", ".yaml", ".yml",
+    ".pdf",
+    ".txt",
+    ".md",
+    ".rst",
+    ".tex",
+    ".docx",
+    ".doc",
+    ".pptx",
+    ".ppt",
+    ".xlsx",
+    ".xls",
+    ".html",
+    ".htm",
+    ".csv",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
 }
 _UPLOAD_CHUNK_BYTES = 1024 * 1024  # stream uploads to disk 1 MB at a time
 # Anchor to the repo root: a CWD-relative path creates a second uploads
@@ -186,7 +221,9 @@ def _validation_error_detail(e: ValidationError) -> str:
     return f"{loc}: {msg}" if loc else msg
 
 
-async def _save_uploads(files: List[UploadFile], upload_dir: str = _UPLOAD_DIR) -> List[Dict[str, str]]:
+async def _save_uploads(
+    files: List[UploadFile], upload_dir: str = _UPLOAD_DIR
+) -> List[Dict[str, str]]:
     """Validate every file, then stream them all to disk.
 
     Validation happens for the whole batch before anything is written, and a
@@ -204,12 +241,24 @@ async def _save_uploads(files: List[UploadFile], upload_dir: str = _UPLOAD_DIR) 
     for file in candidates:
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
-            raise HTTPException(status_code=415, detail=f"'{file.filename}': unsupported file type '{ext}'")
+            raise HTTPException(
+                status_code=415,
+                detail=f"'{file.filename}': unsupported file type '{ext}'",
+            )
         result = validate_file_upload(file, max_size_bytes=_MAX_UPLOAD_BYTES)
-        if not result.valid and "not allowed" in (result.error or "") and "MIME" in (result.error or ""):
-            raise HTTPException(status_code=415, detail=f"'{file.filename}': {result.error}")
+        if (
+            not result.valid
+            and "not allowed" in (result.error or "")
+            and "MIME" in (result.error or "")
+        ):
+            raise HTTPException(
+                status_code=415, detail=f"'{file.filename}': {result.error}"
+            )
         if file.size and file.size > _MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=413, detail=f"'{file.filename}' exceeds the 500 MB upload limit")
+            raise HTTPException(
+                status_code=413,
+                detail=f"'{file.filename}' exceeds the 500 MB upload limit",
+            )
 
     # Pass 2: stream to disk in chunks (never the whole file in memory)
     saved: List[Dict[str, str]] = []
@@ -219,7 +268,7 @@ async def _save_uploads(files: List[UploadFile], upload_dir: str = _UPLOAD_DIR) 
             unique_filename = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
             file_path = os.path.join(upload_dir, unique_filename)
             written = 0
-            with open(file_path, 'wb') as out:
+            with open(file_path, "wb") as out:
                 while chunk := await file.read(_UPLOAD_CHUNK_BYTES):
                     written += len(chunk)
                     if written > _MAX_UPLOAD_BYTES:
@@ -228,7 +277,9 @@ async def _save_uploads(files: List[UploadFile], upload_dir: str = _UPLOAD_DIR) 
                             detail=f"'{file.filename}' exceeds the 500 MB upload limit",
                         )
                     out.write(chunk)
-            saved.append({"filename": file.filename, "stored_path": os.path.abspath(file_path)})
+            saved.append(
+                {"filename": file.filename, "stored_path": os.path.abspath(file_path)}
+            )
             file_path = None
     except Exception:
         # Roll back: remove completed files and the partially written one
@@ -244,6 +295,7 @@ async def _save_uploads(files: List[UploadFile], upload_dir: str = _UPLOAD_DIR) 
 
     return saved
 
+
 # Initialize maintenance tools
 maintenance_tools = None
 if MAINTENANCE_TOOLS_AVAILABLE:
@@ -253,7 +305,7 @@ if MAINTENANCE_TOOLS_AVAILABLE:
             project_root=PROJECT_ROOT,
             lancedb_path="lancedb",
             uploads_path="shared_uploads",
-            index_store_path="index_store"
+            index_store_path="index_store",
         )
     except Exception as e:
         print(f"⚠️ Failed to initialize maintenance tools: {e}")
@@ -283,10 +335,14 @@ def _large_indexing_model(model: str | None) -> bool:
     if not model:
         return False
     lowered = model.lower()
-    return any(token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud"))
+    return any(
+        token in lowered for token in ("gpt-oss", "120b", "70b", "large", "cloud")
+    )
 
 
-def _index_build_preflight(index_id: str, data: Dict[str, Any] | None = None, *, check_services: bool = True) -> Dict[str, Any]:
+def _index_build_preflight(
+    index_id: str, data: Dict[str, Any] | None = None, *, check_services: bool = True
+) -> Dict[str, Any]:
     data = data or {}
     index = db.get_index(index_id)
     if not index:
@@ -320,24 +376,38 @@ def _index_build_preflight(index_id: str, data: Dict[str, Any] | None = None, *,
 
     if missing_files:
         sample = ", ".join(item["filename"] for item in missing_files[:5])
-        errors.append(f"{len(missing_files)} uploaded file(s) are missing from disk: {sample}")
+        errors.append(
+            f"{len(missing_files)} uploaded file(s) are missing from disk: {sample}"
+        )
     if unreadable_files:
         sample = ", ".join(item["filename"] for item in unreadable_files[:5])
-        errors.append(f"{len(unreadable_files)} uploaded file(s) are not readable: {sample}")
+        errors.append(
+            f"{len(unreadable_files)} uploaded file(s) are not readable: {sample}"
+        )
 
     if document_count > 100:
-        warnings.append(f"This build has {document_count} files. Prefer Fast mode or smaller batches for best stability.")
+        warnings.append(
+            f"This build has {document_count} files. Prefer Fast mode or smaller batches for best stability."
+        )
     if total_bytes > 500 * 1024 * 1024:
-        warnings.append(f"This build is {_format_bytes(total_bytes)}. Large builds can take a long time on local hardware.")
+        warnings.append(
+            f"This build is {_format_bytes(total_bytes)}. Large builds can take a long time on local hardware."
+        )
     if bool(data.get("forceReindex")):
-        warnings.append("Force reindex will rebuild all files, including unchanged documents.")
+        warnings.append(
+            "Force reindex will rebuild all files, including unchanged documents."
+        )
     if bool(data.get("enableEnrich", False)) and document_count > 50:
-        warnings.append("Context enrichment on large file sets can be slow. Fast mode is safer for the first pass.")
+        warnings.append(
+            "Context enrichment on large file sets can be slow. Fast mode is safer for the first pass."
+        )
 
     for key, label in (("enrichModel", "enrichment"), ("overviewModel", "overview")):
         model = data.get(key)
         if _large_indexing_model(model):
-            warnings.append(f"The {label} model '{model}' will be replaced with qwen3:8b for indexing safety.")
+            warnings.append(
+                f"The {label} model '{model}' will be replaced with qwen3:8b for indexing safety."
+            )
 
     rag_api_available = None
     if check_services:
@@ -417,20 +487,24 @@ def _inspect_vector_table(table_name: str | None) -> Dict[str, Any]:
             row_count = None
             if hasattr(table, "count_rows"):
                 row_count = int(table.count_rows())
-            result.update({
-                "exists": True,
-                "path": db_path,
-                "row_count": row_count,
-                "latechunk_exists": f"{table_name}_lc" in table_names,
-                "error": None,
-            })
+            result.update(
+                {
+                    "exists": True,
+                    "path": db_path,
+                    "row_count": row_count,
+                    "latechunk_exists": f"{table_name}_lc" in table_names,
+                    "error": None,
+                }
+            )
             return result
         except Exception as e:
             result["error"] = f"Could not inspect LanceDB at {db_path}: {e}"
 
     if not result["error"]:
         searched = ", ".join(_lancedb_path_candidates())
-        result["error"] = f"Vector table was not found in searched LanceDB paths: {searched}"
+        result["error"] = (
+            f"Vector table was not found in searched LanceDB paths: {searched}"
+        )
     return result
 
 
@@ -450,7 +524,9 @@ def _overview_diagnostics(index_id: str) -> Dict[str, Any]:
 def _overview_path_candidates(index_id: str) -> List[str]:
     return [
         os.path.join(PROJECT_ROOT, "index_store", "overviews", f"{index_id}.jsonl"),
-        os.path.join(PROJECT_ROOT, "rag_system", "index_store", "overviews", f"{index_id}.jsonl"),
+        os.path.join(
+            PROJECT_ROOT, "rag_system", "index_store", "overviews", f"{index_id}.jsonl"
+        ),
     ]
 
 
@@ -583,15 +659,21 @@ def _index_diagnostics(index_id: str) -> Dict[str, Any]:
 
     vector_table = _inspect_vector_table(index.get("vector_table_name"))
     if not vector_table["exists"]:
-        errors.append("Vector table is missing. Rebuild this index before trusting retrieval.")
+        errors.append(
+            "Vector table is missing. Rebuild this index before trusting retrieval."
+        )
     elif vector_table["row_count"] == 0:
         errors.append("Vector table exists but has no rows. Force rebuild this index.")
 
     overview = _overview_diagnostics(index_id)
     if metadata.get("enable_enrich", True) and not overview["exists"]:
-        warnings.append("Document overview file is missing. Routing quality may be weaker until the index is rebuilt.")
+        warnings.append(
+            "Document overview file is missing. Routing quality may be weaker until the index is rebuilt."
+        )
 
-    latest_job = db.get_latest_index_job(index_id, include_options=False, include_files=True)
+    latest_job = db.get_latest_index_job(
+        index_id, include_options=False, include_files=True
+    )
     file_status_counts: Dict[str, int] = {}
     if latest_job and latest_job.get("files"):
         for item in latest_job["files"]:
@@ -601,8 +683,14 @@ def _index_diagnostics(index_id: str) -> Dict[str, Any]:
         pending_count = file_status_counts.get("pending", 0)
         if failed_count:
             errors.append(f"{failed_count} file(s) failed in the latest build job.")
-        if pending_count and latest_job.get("status") in {"completed", "failed", "cancelled"}:
-            warnings.append(f"{pending_count} file(s) were left pending in the latest build job.")
+        if pending_count and latest_job.get("status") in {
+            "completed",
+            "failed",
+            "cancelled",
+        }:
+            warnings.append(
+                f"{pending_count} file(s) were left pending in the latest build job."
+            )
 
     metadata_status = metadata.get("status")
     if metadata_status in {"failed", "incomplete", "empty"}:
@@ -610,7 +698,11 @@ def _index_diagnostics(index_id: str) -> Dict[str, Any]:
     elif metadata_status in {"building", "cancelled"}:
         warnings.append(f"Index metadata status is '{metadata_status}'.")
 
-    source_blockers = bool(preflight["missing_files"] or preflight["unreadable_files"] or preflight["document_count"] == 0)
+    source_blockers = bool(
+        preflight["missing_files"]
+        or preflight["unreadable_files"]
+        or preflight["document_count"] == 0
+    )
     if source_blockers:
         recommended_action = "fix_sources"
     elif errors:
@@ -621,9 +713,13 @@ def _index_diagnostics(index_id: str) -> Dict[str, Any]:
         recommended_action = "none"
 
     if source_blockers:
-        recommendations.append("Re-upload missing or unreadable files before rebuilding.")
+        recommendations.append(
+            "Re-upload missing or unreadable files before rebuilding."
+        )
     elif errors:
-        recommendations.append("Run Force rebuild after confirming the source files still exist.")
+        recommendations.append(
+            "Run Force rebuild after confirming the source files still exist."
+        )
     elif warnings:
         recommendations.append("A normal rebuild is recommended when convenient.")
     else:
@@ -681,7 +777,9 @@ def _raise_for_unhealthy_session_indexes(session_id: str) -> List[str]:
         if diagnostics.get("health") == "unhealthy":
             unhealthy.append(diagnostics)
     if unhealthy:
-        names = ", ".join(str(item.get("name") or item.get("index_id")) for item in unhealthy)
+        names = ", ".join(
+            str(item.get("name") or item.get("index_id")) for item in unhealthy
+        )
         raise HTTPException(
             status_code=409,
             detail={
@@ -734,21 +832,30 @@ def _recover_stale_index_builds() -> int:
 
         started_raw = meta.get("build_started_at")
         try:
-            started_at = datetime.fromisoformat(str(started_raw)) if started_raw else None
+            started_at = (
+                datetime.fromisoformat(str(started_raw)) if started_raw else None
+            )
         except ValueError:
             started_at = None
 
-        if not job_was_recovered and started_at and now - started_at < STALE_BUILD_AFTER:
+        if (
+            not job_was_recovered
+            and started_at
+            and now - started_at < STALE_BUILD_AFTER
+        ):
             continue
 
-        db.update_index_metadata(idx["id"], {
-            "status": "paused",
-            "build_paused_at": now.isoformat(),
-            "build_error": (
-                "Previous build was interrupted or the backend restarted before the "
-                "background job could finish. Resume the build to continue."
-            ),
-        })
+        db.update_index_metadata(
+            idx["id"],
+            {
+                "status": "paused",
+                "build_paused_at": now.isoformat(),
+                "build_error": (
+                    "Previous build was interrupted or the backend restarted before the "
+                    "background job could finish. Resume the build to continue."
+                ),
+            },
+        )
         recovered += 1
     for job in db.list_unfinished_index_jobs():
         with index_jobs_lock:
@@ -756,17 +863,22 @@ def _recover_stale_index_builds() -> int:
                 continue
         started_raw = job.get("updated_at") or job.get("created_at")
         try:
-            started_at = datetime.fromisoformat(str(started_raw)) if started_raw else None
+            started_at = (
+                datetime.fromisoformat(str(started_raw)) if started_raw else None
+            )
         except ValueError:
             started_at = None
         if started_at and now - started_at < STALE_BUILD_AFTER:
             continue
-        db.update_index_job(job["id"], {
-            "status": "paused",
-            "stage": "paused",
-            "message": "Build interrupted by backend restart; resume to continue.",
-            "error": "Previous build was interrupted or the backend restarted before the background job could finish.",
-        })
+        db.update_index_job(
+            job["id"],
+            {
+                "status": "paused",
+                "stage": "paused",
+                "message": "Build interrupted by backend restart; resume to continue.",
+                "error": "Previous build was interrupted or the backend restarted before the background job could finish.",
+            },
+        )
     return recovered
 
 
@@ -777,9 +889,7 @@ async def update_index_job_progress(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Index job not found")
     data = await request.json()
     updates = {
-        key: data[key]
-        for key in ("stage", "progress", "message")
-        if key in data
+        key: data[key] for key in ("stage", "progress", "message") if key in data
     }
     if data.get("stage") == "completed":
         # The RAG API emits a final progress callback before _run_index_build()
@@ -804,10 +914,14 @@ async def update_index_job_progress(job_id: str, request: Request):
         }
         if data.get("chunks_generated") is not None:
             file_updates["chunks_generated"] = int(data.get("chunks_generated") or 0)
-        db.update_index_job_file(job_id, stored_path=file_path, filename=filename, updates=file_updates)
+        db.update_index_job_file(
+            job_id, stored_path=file_path, filename=filename, updates=file_updates
+        )
     return _public_index_job(job_id)
 
+
 # Routes
+
 
 @app.get("/health")
 async def health():
@@ -820,7 +934,7 @@ async def health():
         "virtual_env": os.environ.get("VIRTUAL_ENV"),
         "ollama_running": await asyncio.to_thread(ollama_client.is_ollama_running),
         "available_models": await asyncio.to_thread(ollama_client.list_models),
-        "database_stats": db.get_stats()
+        "database_stats": db.get_stats(),
     }
 
 
@@ -834,7 +948,10 @@ async def get_metrics(format: str = "json"):
         raise HTTPException(status_code=503, detail="Metrics not available")
     if format == "prometheus":
         from fastapi.responses import PlainTextResponse
-        return PlainTextResponse(_metrics.prometheus_text(), media_type="text/plain; version=0.0.4")
+
+        return PlainTextResponse(
+            _metrics.prometheus_text(), media_type="text/plain; version=0.0.4"
+        )
     return _metrics.snapshot()
 
 
@@ -847,6 +964,7 @@ async def health_deep():
     # 1. SQLite
     try:
         import sqlite3 as _sqlite3
+
         _conn = _sqlite3.connect(db.db_path, timeout=3)
         _conn.execute("SELECT 1").fetchone()
         _conn.close()
@@ -858,6 +976,7 @@ async def health_deep():
     # 2. LanceDB
     try:
         import lancedb as _lancedb
+
         for candidate in _lancedb_path_candidates():
             if os.path.exists(candidate):
                 _lancedb.connect(candidate)
@@ -881,9 +1000,13 @@ async def health_deep():
 
     # 4. Ollama
     try:
-        ollama_base = getattr(ollama_client, "host", None) or getattr(ollama_client, "base_url", "http://localhost:11434")
+        ollama_base = getattr(ollama_client, "host", None) or getattr(
+            ollama_client, "base_url", "http://localhost:11434"
+        )
         resp = requests.get(f"{ollama_base}/api/tags", timeout=3)
-        checks["ollama"] = "ok" if resp.status_code == 200 else f"http_{resp.status_code}"
+        checks["ollama"] = (
+            "ok" if resp.status_code == 200 else f"http_{resp.status_code}"
+        )
         if resp.status_code != 200:
             overall = "degraded"
     except Exception as e:
@@ -902,14 +1025,21 @@ async def get_sessions():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get sessions: {str(e)}")
 
+
 @app.get("/sessions/cleanup")
 async def cleanup_sessions():
     """Clean up empty sessions"""
     try:
         cleanup_count = db.cleanup_empty_sessions()
-        return {"message": f"Cleaned up {cleanup_count} empty sessions", "cleanup_count": cleanup_count}
+        return {
+            "message": f"Cleaned up {cleanup_count} empty sessions",
+            "cleanup_count": cleanup_count,
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to cleanup sessions: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to cleanup sessions: {str(e)}"
+        )
+
 
 @app.post("/sessions")
 async def create_session(request: Request):
@@ -918,8 +1048,8 @@ async def create_session(request: Request):
         data = await request.json()
         try:
             req = SessionRequest(
-                title=data.get('title') or 'New Chat',
-                model=data.get('model') or 'llama3.2:latest',
+                title=data.get("title") or "New Chat",
+                model=data.get("model") or "llama3.2:latest",
             )
         except ValidationError as e:
             raise HTTPException(status_code=400, detail=_validation_error_detail(e))
@@ -931,7 +1061,10 @@ async def create_session(request: Request):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create session: {str(e)}"
+        )
+
 
 @app.get("/sessions/{session_id}")
 async def get_session(session_id: str):
@@ -949,6 +1082,7 @@ async def get_session(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get session: {str(e)}")
 
+
 @app.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
     """Delete a session and its messages"""
@@ -965,6 +1099,7 @@ async def delete_session(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/sessions/{session_id}/documents")
 async def get_session_documents(session_id: str):
     """Return documents and basic info for a session."""
@@ -976,13 +1111,23 @@ async def get_session_documents(session_id: str):
         docs = db.get_documents_for_session(session_id)
 
         # Extract original filenames from stored paths
-        filenames = [os.path.basename(p).split('_', 1)[-1] if '_' in os.path.basename(p) else os.path.basename(p) for p in docs]
+        filenames = [
+            (
+                os.path.basename(p).split("_", 1)[-1]
+                if "_" in os.path.basename(p)
+                else os.path.basename(p)
+            )
+            for p in docs
+        ]
 
         return {"session": session, "files": filenames, "file_count": len(docs)}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get documents: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get documents: {str(e)}"
+        )
+
 
 @app.get("/sessions/{session_id}/indexes")
 async def get_session_indexes(session_id: str):
@@ -994,7 +1139,7 @@ async def get_session_indexes(session_id: str):
             idx = db.get_index(idx_id)
             if idx:
                 # Try to populate metadata for older indexes that have empty metadata
-                if not idx.get('metadata') or len(idx['metadata']) == 0:
+                if not idx.get("metadata") or len(idx["metadata"]) == 0:
                     print(f"🔍 Attempting to infer metadata for index {idx_id[:8]}...")
                     inferred_metadata = db.inspect_and_populate_index_metadata(idx_id)
                     if inferred_metadata:
@@ -1004,6 +1149,7 @@ async def get_session_indexes(session_id: str):
         return {"indexes": indexes, "total": len(indexes)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/sessions/{session_id}/indexes/{index_id}")
 async def link_index_to_session(session_id: str, index_id: str):
@@ -1025,6 +1171,7 @@ async def link_index_to_session(session_id: str, index_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/sessions/{session_id}/messages")
 async def session_chat(session_id: str, request: Request):
     """
@@ -1038,13 +1185,13 @@ async def session_chat(session_id: str, request: Request):
 
         data = await request.json()
         try:
-            message = MessageRequest(message=data.get('message', '')).message
+            message = MessageRequest(message=data.get("message", "")).message
         except ValidationError as e:
             raise HTTPException(status_code=400, detail=_validation_error_detail(e))
 
         idx_ids = _raise_for_unhealthy_session_indexes(session_id)
 
-        if session['message_count'] == 0:
+        if session["message_count"] == 0:
             title = generate_session_title(message)
             db.update_session_title(session_id, title)
 
@@ -1106,46 +1253,54 @@ async def session_chat(session_id: str, request: Request):
 
         # Limit for performance
         if aggregated:
-            print(f"✅ Loaded {len(aggregated)} document overviews from {len(idx_ids)} index(es)")
+            print(
+                f"✅ Loaded {len(aggregated)} document overviews from {len(idx_ids)} index(es)"
+            )
         else:
             print(f"⚠️ No overviews found for indices {idx_ids}")
         aggregated = aggregated[:40]
 
         # Decide routing (force_rag / force_direct bypass heuristics entirely)
-        force_rag = bool(data.get('force_rag', False))
-        force_direct = bool(data.get('force_direct', False)) and not force_rag
+        force_rag = bool(data.get("force_rag", False))
+        force_direct = bool(data.get("force_direct", False)) and not force_rag
         if force_direct:
             use_rag = False
         else:
             # _route_using_overviews makes a blocking LLM call — keep it off the event loop
             use_rag = force_rag or (
                 await asyncio.to_thread(_route_using_overviews, message, aggregated)
-                if aggregated else _simple_pattern_routing(message, idx_ids)
+                if aggregated
+                else _simple_pattern_routing(message, idx_ids)
             )
 
         if use_rag:
-            response_text, source_docs = await _handle_rag_query(session_id, message, data, idx_ids)
+            response_text, source_docs = await _handle_rag_query(
+                session_id, message, data, idx_ids
+            )
         else:
             response_text, source_docs = await _handle_direct_llm_query(
-                session_id, message, session, requested_model=data.get('model')
+                session_id, message, session, requested_model=data.get("model")
             )
 
         # Store both turns only after a successful response — prevents orphaned user messages
         # if the RAG/LLM call raises an HTTPException
         db.add_message(session_id, message, "user")
-        assistant_message_id = db.add_message(session_id, response_text, "assistant", metadata={"sources": source_docs})
+        assistant_message_id = db.add_message(
+            session_id, response_text, "assistant", metadata={"sources": source_docs}
+        )
 
         return {
             "response": response_text,
             "sources": source_docs,
             "session_id": session_id,
-            "message_id": assistant_message_id
+            "message_id": assistant_message_id,
         }
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
 
 @app.post("/sessions/{session_id}/upload")
 async def upload_files(session_id: str, files: List[UploadFile] = File(...)):
@@ -1159,8 +1314,9 @@ async def upload_files(session_id: str, files: List[UploadFile] = File(...)):
 
     return {
         "message": f"Successfully uploaded {len(uploaded_files)} files.",
-        "uploaded_files": uploaded_files
+        "uploaded_files": uploaded_files,
     }
+
 
 @app.post("/sessions/{session_id}/index")
 async def index_documents(session_id: str):
@@ -1202,7 +1358,10 @@ async def index_documents(session_id: str):
         raise
     except Exception as e:
         print(f"❌ Exception during indexing: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+
 
 @app.post("/sessions/{session_id}/rename")
 @app.put("/sessions/{session_id}/rename")
@@ -1215,29 +1374,31 @@ async def rename_session(session_id: str, request: Request):
 
         data = await request.json()
         try:
-            new_title = RenameSessionRequest(title=data.get('title', '')).title
+            new_title = RenameSessionRequest(title=data.get("title", "")).title
         except ValidationError as e:
             raise HTTPException(status_code=400, detail=_validation_error_detail(e))
 
         db.update_session_title(session_id, new_title)
         updated_session = db.get_session(session_id)
 
-        return {
-            "message": "Session renamed successfully",
-            "session": updated_session
-        }
+        return {"message": "Session renamed successfully", "session": updated_session}
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to rename session: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to rename session: {str(e)}"
+        )
+
 
 @app.post("/rag/chat")
 async def rag_chat(request: Request):
     """Run the transport-neutral RAG pipeline through FastAPI."""
     try:
         data = await request.json()
-        return await asyncio.to_thread(execute_rag_chat, _get_local_rag_agent(), db, data)
+        return await asyncio.to_thread(
+            execute_rag_chat, _get_local_rag_agent(), db, data
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except FilterError as e:
@@ -1308,23 +1469,28 @@ async def legacy_chat(request: Request):
     try:
         data = await request.json()
         try:
-            message = MessageRequest(message=data.get('message', '')).message
+            message = MessageRequest(message=data.get("message", "")).message
         except ValidationError as e:
             raise HTTPException(status_code=400, detail=_validation_error_detail(e))
-        model = data.get('model', 'llama3.2:latest')
-        conversation_history = data.get('conversation_history', [])
+        model = data.get("model", "llama3.2:latest")
+        conversation_history = data.get("conversation_history", [])
 
         # Check if Ollama is running
         if not await asyncio.to_thread(ollama_client.is_ollama_running):
-            raise HTTPException(status_code=503, detail="Ollama is not running. Please start Ollama first.")
+            raise HTTPException(
+                status_code=503,
+                detail="Ollama is not running. Please start Ollama first.",
+            )
 
         # Get response from Ollama (worker thread: the call blocks up to 60s)
-        response = await asyncio.to_thread(ollama_client.chat, message, model, conversation_history)
+        response = await asyncio.to_thread(
+            ollama_client.chat, message, model, conversation_history
+        )
 
         return {
             "response": response,
             "model": model,
-            "message_count": len(conversation_history) + 1
+            "message_count": len(conversation_history) + 1,
         }
 
     except HTTPException:
@@ -1333,6 +1499,7 @@ async def legacy_chat(request: Request):
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
 
 @app.get("/models")
 async def get_models():
@@ -1346,8 +1513,14 @@ async def get_models():
             all_ollama_models = ollama_client.list_models()
 
             # Very naive classification - same logic as RAG API server
-            ollama_embedding_models = [m for m in all_ollama_models if any(k in m for k in ['embed','bge','embedding','text'])]
-            ollama_generation_models = [m for m in all_ollama_models if m not in ollama_embedding_models]
+            ollama_embedding_models = [
+                m
+                for m in all_ollama_models
+                if any(k in m for k in ["embed", "bge", "embedding", "text"])
+            ]
+            ollama_generation_models = [
+                m for m in all_ollama_models if m not in ollama_embedding_models
+            ]
 
             generation_models.extend(ollama_generation_models)
             embedding_models.extend(ollama_embedding_models)
@@ -1355,6 +1528,7 @@ async def get_models():
         # Add supported HuggingFace embedding models from registry
         try:
             from rag_system.model_registry import huggingface_models
+
             embedding_models.extend(huggingface_models())
         except ImportError:
             embedding_models.extend(["Qwen/Qwen3-Embedding-0.6B"])
@@ -1365,10 +1539,11 @@ async def get_models():
 
         return {
             "generation_models": generation_models,
-            "embedding_models": embedding_models
+            "embedding_models": embedding_models,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not list models: {str(e)}")
+
 
 @app.get("/indexes")
 async def get_indexes():
@@ -1392,22 +1567,24 @@ async def get_indexes_diagnostics():
             try:
                 summaries.append(_index_diagnostics_summary(str(idx_id)))
             except Exception as e:
-                summaries.append({
-                    "index_id": idx_id,
-                    "name": item.get("name"),
-                    "health": "unhealthy",
-                    "ok": False,
-                    "recommended_action": "force_rebuild",
-                    "can_repair": bool(item.get("documents")),
-                    "error_count": 1,
-                    "warning_count": 0,
-                    "document_count": len(item.get("documents") or []),
-                    "total_size": "unknown",
-                    "vector_exists": False,
-                    "vector_rows": None,
-                    "metadata_status": (item.get("metadata") or {}).get("status"),
-                    "error": str(e),
-                })
+                summaries.append(
+                    {
+                        "index_id": idx_id,
+                        "name": item.get("name"),
+                        "health": "unhealthy",
+                        "ok": False,
+                        "recommended_action": "force_rebuild",
+                        "can_repair": bool(item.get("documents")),
+                        "error_count": 1,
+                        "warning_count": 0,
+                        "document_count": len(item.get("documents") or []),
+                        "total_size": "unknown",
+                        "vector_exists": False,
+                        "vector_rows": None,
+                        "metadata_status": (item.get("metadata") or {}).get("status"),
+                        "error": str(e),
+                    }
+                )
         return {"diagnostics": summaries, "total": len(summaries)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1418,9 +1595,9 @@ async def create_index(request: Request):
     """Create a new index"""
     try:
         data = await request.json()
-        name = data.get('name')
-        description = data.get('description')
-        metadata = data.get('metadata', {})
+        name = data.get("name")
+        description = data.get("description")
+        metadata = data.get("metadata", {})
 
         if not name:
             raise HTTPException(status_code=400, detail="Name required")
@@ -1432,26 +1609,26 @@ async def create_index(request: Request):
                 raise HTTPException(status_code=400, detail="; ".join(errors))
 
         # Add complete metadata from RAG system configuration if available
-        if RAG_SYSTEM_AVAILABLE and PIPELINE_CONFIGS.get('default'):
-            default_config = PIPELINE_CONFIGS['default']
+        if RAG_SYSTEM_AVAILABLE and PIPELINE_CONFIGS.get("default"):
+            default_config = PIPELINE_CONFIGS["default"]
             complete_metadata = {
-                'status': 'created',
-                'metadata_source': 'rag_system_config',
-                'created_at': json.loads(json.dumps(datetime.now().isoformat())),
-                'chunk_size': 512,  # From default config
-                'chunk_overlap': 64,  # From default config
-                'retrieval_mode': 'hybrid',  # From default config
-                'window_size': 5,  # From default config
-                'embedding_model': default_config.get(
-                    'embedding_model_name',
-                    EXTERNAL_MODELS.get('embedding_model', 'Qwen/Qwen3-Embedding-0.6B'),
+                "status": "created",
+                "metadata_source": "rag_system_config",
+                "created_at": json.loads(json.dumps(datetime.now().isoformat())),
+                "chunk_size": 512,  # From default config
+                "chunk_overlap": 64,  # From default config
+                "retrieval_mode": "hybrid",  # From default config
+                "window_size": 5,  # From default config
+                "embedding_model": default_config.get(
+                    "embedding_model_name",
+                    EXTERNAL_MODELS.get("embedding_model", "Qwen/Qwen3-Embedding-0.6B"),
                 ),
-                'enrich_model': OLLAMA_CONFIG.get('enrichment_model', 'qwen3:8b'),
-                'overview_model': OLLAMA_CONFIG.get('enrichment_model', 'qwen3:8b'),
-                'enable_enrich': False,  # From default config
-                'latechunk': True,  # From default config
-                'docling_chunk': True,  # From default config
-                'note': 'Default configuration from RAG system'
+                "enrich_model": OLLAMA_CONFIG.get("enrichment_model", "qwen3:8b"),
+                "overview_model": OLLAMA_CONFIG.get("enrichment_model", "qwen3:8b"),
+                "enable_enrich": False,  # From default config
+                "latechunk": True,  # From default config
+                "docling_chunk": True,  # From default config
+                "note": "Default configuration from RAG system",
             }
             # Merge with any provided metadata
             complete_metadata.update(metadata)
@@ -1463,6 +1640,7 @@ async def create_index(request: Request):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/indexes/{index_id}")
 async def get_index(index_id: str):
@@ -1489,12 +1667,18 @@ async def update_fusion_weights(index_id: str, request: Request):
         bm25_weight = float(body.get("bm25_weight", 0.5))
         vec_weight = float(body.get("vec_weight", 0.5))
         if abs(bm25_weight + vec_weight - 1.0) > 0.01:
-            raise HTTPException(status_code=400, detail="bm25_weight + vec_weight must sum to 1.0")
+            raise HTTPException(
+                status_code=400, detail="bm25_weight + vec_weight must sum to 1.0"
+            )
         index = db.get_index(index_id)
         if not index:
             raise HTTPException(status_code=404, detail="Index not found")
         meta = index.get("metadata") or {}
-        meta["fusion_config"] = {"method": "linear", "bm25_weight": bm25_weight, "vec_weight": vec_weight}
+        meta["fusion_config"] = {
+            "method": "linear",
+            "bm25_weight": bm25_weight,
+            "vec_weight": vec_weight,
+        }
         db.update_index_metadata(index_id, meta)
         return {"index_id": index_id, "fusion_config": meta["fusion_config"]}
     except HTTPException:
@@ -1524,7 +1708,10 @@ async def delete_index(index_id: str):
         removed = _delete_index_artifacts(index)
         deleted = db.delete_index(index_id)
         if not deleted:
-            raise HTTPException(status_code=409, detail="Index artifacts were removed, but the database record could not be deleted")
+            raise HTTPException(
+                status_code=409,
+                detail="Index artifacts were removed, but the database record could not be deleted",
+            )
         return {
             "message": "Index deleted successfully",
             "index_id": index_id,
@@ -1535,9 +1722,13 @@ async def delete_index(index_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/indexes/{index_id}/upload")
-async def index_file_upload(index_id: str, files: List[UploadFile] = File(...),
-                            metadata: Optional[str] = Form(None)):
+async def index_file_upload(
+    index_id: str,
+    files: List[UploadFile] = File(...),
+    metadata: Optional[str] = Form(None),
+):
     """Upload files to an index.
 
     `metadata` (optional, JSON): either one object applied to every file in
@@ -1557,10 +1748,19 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...),
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="metadata must be valid JSON")
         if not isinstance(parsed, dict):
-            raise HTTPException(status_code=400, detail="metadata must be a JSON object")
+            raise HTTPException(
+                status_code=400, detail="metadata must be a JSON object"
+            )
         if not schema:
-            raise HTTPException(status_code=400, detail="This index has no metadata schema — set one via PUT /indexes/{id}/metadata-schema first")
-        per_file = bool(parsed) and all(isinstance(v, dict) for v in parsed.values()) and set(parsed) <= filenames
+            raise HTTPException(
+                status_code=400,
+                detail="This index has no metadata schema — set one via PUT /indexes/{id}/metadata-schema first",
+            )
+        per_file = (
+            bool(parsed)
+            and all(isinstance(v, dict) for v in parsed.values())
+            and set(parsed) <= filenames
+        )
         try:
             if per_file:
                 meta_map = {
@@ -1569,13 +1769,13 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...),
                 }
             else:
                 shared = validate_document_metadata(schema, parsed)
-                meta_map = {fn: shared for fn in filenames}
+                meta_map = dict.fromkeys(filenames, shared)
         except FilterError as e:
             raise HTTPException(status_code=400, detail=str(e))
     elif schema:
         try:
             empty = validate_document_metadata(schema, {})
-            meta_map = {fn: empty for fn in filenames}
+            meta_map = dict.fromkeys(filenames, empty)
         except FilterError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -1584,11 +1784,16 @@ async def index_file_upload(index_id: str, files: List[UploadFile] = File(...),
     # Register in the DB only after every file is safely on disk
     for item in uploaded_files:
         db.add_document_to_index(
-            index_id, item["filename"], item["stored_path"],
+            index_id,
+            item["filename"],
+            item["stored_path"],
             custom_metadata=meta_map.get(item["filename"]),
         )
 
-    return {"message": f"Uploaded {len(uploaded_files)} files", "uploaded_files": uploaded_files}
+    return {
+        "message": f"Uploaded {len(uploaded_files)} files",
+        "uploaded_files": uploaded_files,
+    }
 
 
 @app.put("/indexes/{index_id}/metadata-schema")
@@ -1627,40 +1832,49 @@ async def index_build_preflight(index_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = None) -> Dict[str, Any]:
-    data = dict(data)  # shallow copy — prevents pop() from mutating the caller's job['options'] dict
+def _run_index_build(
+    index_id: str, data: Dict[str, Any], job_id: str | None = None
+) -> Dict[str, Any]:
+    data = dict(
+        data
+    )  # shallow copy — prevents pop() from mutating the caller's job['options'] dict
     index = db.get_index(index_id)
     if not index:
         raise HTTPException(status_code=404, detail="Index not found")
 
-    file_paths = [d['stored_path'] for d in index.get('documents', [])]
+    file_paths = [d["stored_path"] for d in index.get("documents", [])]
     if not file_paths:
         raise HTTPException(status_code=400, detail="No documents to index")
 
     preflight = _index_build_preflight(index_id, data, check_services=True)
     if not preflight["ok"]:
         detail = "; ".join(preflight["errors"])
-        raise HTTPException(status_code=503 if preflight.get("rag_api_available") is False else 400, detail=detail)
+        raise HTTPException(
+            status_code=503 if preflight.get("rag_api_available") is False else 400,
+            detail=detail,
+        )
 
-    latechunk = bool(data.get('latechunk', False))
-    docling_chunk = bool(data.get('doclingChunk', False))
-    chunk_size = int(data.get('chunkSize', 512))
-    chunk_overlap = int(data.get('chunkOverlap', 64))
-    retrieval_mode = str(data.get('retrievalMode', 'hybrid'))
-    window_size = int(data.get('windowSize', 2))
-    enable_enrich = bool(data.get('enableEnrich', False))
-    embedding_model = data.get('embeddingModel')
-    enrich_model = data.get('enrichModel')
-    enrich_provider = data.get('enrichProvider', 'ollama')
-    enrich_api_key = data.pop('enrichApiKey', None)  # extracted and removed so it is never written to the DB
-    batch_size_embed = int(data.get('batchSizeEmbed', 50))
-    batch_size_enrich = int(data.get('batchSizeEnrich', 25))
-    overview_model = data.get('overviewModel')
-    force_reindex = bool(data.get('forceReindex', False))
+    latechunk = bool(data.get("latechunk", False))
+    docling_chunk = bool(data.get("doclingChunk", False))
+    chunk_size = int(data.get("chunkSize", 512))
+    chunk_overlap = int(data.get("chunkOverlap", 64))
+    retrieval_mode = str(data.get("retrievalMode", "hybrid"))
+    window_size = int(data.get("windowSize", 2))
+    enable_enrich = bool(data.get("enableEnrich", False))
+    embedding_model = data.get("embeddingModel")
+    enrich_model = data.get("enrichModel")
+    enrich_provider = data.get("enrichProvider", "ollama")
+    enrich_api_key = data.pop(
+        "enrichApiKey", None
+    )  # extracted and removed so it is never written to the DB
+    batch_size_embed = int(data.get("batchSizeEmbed", 50))
+    batch_size_enrich = int(data.get("batchSizeEnrich", 25))
+    overview_model = data.get("overviewModel")
+    force_reindex = bool(data.get("forceReindex", False))
     indexing_model_warnings = []
 
     # Guard only applies to local Ollama models; cloud providers manage their own quotas
-    if enrich_provider == 'ollama' and _large_indexing_model(enrich_model):
+    if enrich_provider == "ollama" and _large_indexing_model(enrich_model):
         indexing_model_warnings.append(
             f"Replaced enrichment model '{enrich_model}' with qwen3:8b for indexing safety."
         )
@@ -1685,7 +1899,8 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         "metadata_schema": _index_meta.get("metadata_schema"),
         "file_metadata": {
             d["stored_path"]: d.get("custom_metadata")
-            for d in index.get("documents", []) if d.get("custom_metadata")
+            for d in index.get("documents", [])
+            if d.get("custom_metadata")
         },
         "chunk_size": chunk_size,
         "chunk_overlap": chunk_overlap,
@@ -1704,7 +1919,7 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         payload["embedding_model"] = embedding_model
     if enrich_model:
         payload["enrich_model"] = enrich_model
-    if enrich_provider and enrich_provider != 'ollama':
+    if enrich_provider and enrich_provider != "ollama":
         payload["enrich_provider"] = enrich_provider
         if enrich_api_key:
             payload["enrich_api_key"] = enrich_api_key
@@ -1741,7 +1956,12 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     db.update_index_metadata(index_id, meta_updates)
 
     if job_id:
-        _update_index_job(job_id, stage="indexing", progress=20, message="RAG pipeline is indexing documents")
+        _update_index_job(
+            job_id,
+            stage="indexing",
+            progress=20,
+            message="RAG pipeline is indexing documents",
+        )
 
     try:
         if force_reindex:
@@ -1771,23 +1991,32 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
         }
     except RuntimeError as e:
         if str(e) == "indexing_cancelled":
-            db.update_index_metadata(index_id, {
-                "status": "cancelled",
-                "build_cancelled_at": datetime.now().isoformat(),
-            })
+            db.update_index_metadata(
+                index_id,
+                {
+                    "status": "cancelled",
+                    "build_cancelled_at": datetime.now().isoformat(),
+                },
+            )
             raise
-        db.update_index_metadata(index_id, {
-            "status": "failed",
-            "build_failed_at": datetime.now().isoformat(),
-            "build_error": str(e),
-        })
+        db.update_index_metadata(
+            index_id,
+            {
+                "status": "failed",
+                "build_failed_at": datetime.now().isoformat(),
+                "build_error": str(e),
+            },
+        )
         raise
     except Exception as e:
-        db.update_index_metadata(index_id, {
-            "status": "failed",
-            "build_failed_at": datetime.now().isoformat(),
-            "build_error": str(e),
-        })
+        db.update_index_metadata(
+            index_id,
+            {
+                "status": "failed",
+                "build_failed_at": datetime.now().isoformat(),
+                "build_error": str(e),
+            },
+        )
         raise HTTPException(status_code=500, detail=f"RAG indexing failed: {e}") from e
 
 
@@ -1804,33 +2033,90 @@ def _run_index_build_job(job_id: str, options_override: Dict[str, Any] | None = 
     if options_override is not None:
         job["options"] = options_override
     if job.get("cancel_requested"):
-        _update_index_job(job_id, status="cancelled", stage="cancelled", progress=100, message="Build cancelled before it started")
-        db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
+        _update_index_job(
+            job_id,
+            status="cancelled",
+            stage="cancelled",
+            progress=100,
+            message="Build cancelled before it started",
+        )
+        db.update_index_metadata(
+            job["index_id"],
+            {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()},
+        )
         return
 
-    _update_index_job(job_id, status="running", stage="validating", progress=5, message="Preparing index build")
+    _update_index_job(
+        job_id,
+        status="running",
+        stage="validating",
+        progress=5,
+        message="Preparing index build",
+    )
     try:
         result = _run_index_build(job["index_id"], job["options"], job_id=job_id)
         latest = _get_index_job(job_id) or {}
         status = "cancelled" if latest.get("cancel_requested") else "completed"
-        message = "Build completed after cancellation request" if status == "cancelled" else "Build completed"
+        message = (
+            "Build completed after cancellation request"
+            if status == "cancelled"
+            else "Build completed"
+        )
         if status == "cancelled":
-            db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
-        _update_index_job(job_id, status=status, stage=status, progress=100, message=message, result=result, finished_at=datetime.now().isoformat())
+            db.update_index_metadata(
+                job["index_id"],
+                {
+                    "status": "cancelled",
+                    "build_cancelled_at": datetime.now().isoformat(),
+                },
+            )
+        _update_index_job(
+            job_id,
+            status=status,
+            stage=status,
+            progress=100,
+            message=message,
+            result=result,
+            finished_at=datetime.now().isoformat(),
+        )
     except Exception as e:
         if isinstance(e, RuntimeError) and str(e) == "indexing_cancelled":
-            db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
-            _update_index_job(job_id, status="cancelled", stage="cancelled", progress=100, message="Indexing cancelled", finished_at=datetime.now().isoformat())
+            db.update_index_metadata(
+                job["index_id"],
+                {
+                    "status": "cancelled",
+                    "build_cancelled_at": datetime.now().isoformat(),
+                },
+            )
+            _update_index_job(
+                job_id,
+                status="cancelled",
+                stage="cancelled",
+                progress=100,
+                message="Indexing cancelled",
+                finished_at=datetime.now().isoformat(),
+            )
             return
         # Everything else marks the job failed. Re-raising here would vanish
         # into the daemon thread and leave the job "running" forever — e.g.
         # the RuntimeError raised when the build child process crashes.
-        db.update_index_metadata(job["index_id"], {
-            "status": "failed",
-            "build_failed_at": datetime.now().isoformat(),
-            "build_error": str(e),
-        })
-        _update_index_job(job_id, status="failed", stage="failed", progress=100, message=str(e), error=str(e), finished_at=datetime.now().isoformat())
+        db.update_index_metadata(
+            job["index_id"],
+            {
+                "status": "failed",
+                "build_failed_at": datetime.now().isoformat(),
+                "build_error": str(e),
+            },
+        )
+        _update_index_job(
+            job_id,
+            status="failed",
+            stage="failed",
+            progress=100,
+            message=str(e),
+            error=str(e),
+            finished_at=datetime.now().isoformat(),
+        )
 
 
 @app.post("/indexes/{index_id}/build")
@@ -1843,9 +2129,14 @@ async def build_index(index_id: str, request: Request):
         # Validate option types/ranges up front: a bad chunkSize should be a
         # 400, not an unhandled ValueError deep inside the build
         try:
-            IndexBuildRequest(**{k: v for k, v in data.items() if k in IndexBuildRequest.model_fields})
+            IndexBuildRequest(
+                **{k: v for k, v in data.items() if k in IndexBuildRequest.model_fields}
+            )
         except ValidationError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid build options — {_validation_error_detail(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid build options — {_validation_error_detail(e)}",
+            )
 
         # Reject concurrent builds: two builds of the same index write to the
         # same LanceDB table and clobber each other's metadata updates
@@ -1855,7 +2146,10 @@ async def build_index(index_id: str, request: Request):
                 continue
             updated = job.get("updated_at") or job.get("created_at")
             try:
-                is_stale = bool(updated) and (now_dt - datetime.fromisoformat(updated)) > STALE_BUILD_AFTER
+                is_stale = (
+                    bool(updated)
+                    and (now_dt - datetime.fromisoformat(updated)) > STALE_BUILD_AFTER
+                )
             except ValueError:
                 is_stale = False
             if not is_stale:
@@ -1871,7 +2165,12 @@ async def build_index(index_id: str, request: Request):
             preflight = _index_build_preflight(index_id, data, check_services=True)
             if not preflight["ok"]:
                 detail = "; ".join(preflight["errors"])
-                raise HTTPException(status_code=503 if preflight.get("rag_api_available") is False else 400, detail=detail)
+                raise HTTPException(
+                    status_code=(
+                        503 if preflight.get("rag_api_available") is False else 400
+                    ),
+                    detail=detail,
+                )
             job_id = str(uuid.uuid4())
             now = datetime.now().isoformat()
             # The cloud-enrichment API key is needed at runtime but must never
@@ -1879,7 +2178,9 @@ async def build_index(index_id: str, request: Request):
             # while the DB and the job map only ever see a scrubbed copy.
             runtime_options = dict(data)
             persisted_options = {k: v for k, v in data.items() if k != "enrichApiKey"}
-            db_job = db.create_index_job(job_id, index_id, persisted_options, index.get("documents", []))
+            db_job = db.create_index_job(
+                job_id, index_id, persisted_options, index.get("documents", [])
+            )
             with index_jobs_lock:
                 index_jobs[job_id] = {
                     "id": job_id,
@@ -1894,17 +2195,26 @@ async def build_index(index_id: str, request: Request):
                     "updated_at": now,
                     "files": db_job.get("files", []) if db_job else [],
                 }
-            db.update_index_metadata(index_id, {
-                "status": "building",
-                "build_job_id": job_id,
-                "build_started_at": now,
-            })
+            db.update_index_metadata(
+                index_id,
+                {
+                    "status": "building",
+                    "build_job_id": job_id,
+                    "build_started_at": now,
+                },
+            )
             thread = threading.Thread(
-                target=_run_index_build_job, args=(job_id,),
-                kwargs={"options_override": runtime_options}, daemon=True,
+                target=_run_index_build_job,
+                args=(job_id,),
+                kwargs={"options_override": runtime_options},
+                daemon=True,
             )
             thread.start()
-            return {"message": "Index build started", "job_id": job_id, "status": "queued"}
+            return {
+                "message": "Index build started",
+                "job_id": job_id,
+                "status": "queued",
+            }
 
         # Foreground builds block for the whole build; run in a worker thread
         # so the event loop keeps serving other requests meanwhile.
@@ -1977,11 +2287,22 @@ async def cancel_index_job(job_id: str):
         return {**public_job, "message": "Job is already finished"}
     _update_index_job(job_id, cancel_requested=True, message="Cancellation requested")
     if job["status"] == "queued":
-        _update_index_job(job_id, status="cancelled", stage="cancelled", progress=100, finished_at=datetime.now().isoformat())
-        db.update_index_metadata(job["index_id"], {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()})
+        _update_index_job(
+            job_id,
+            status="cancelled",
+            stage="cancelled",
+            progress=100,
+            finished_at=datetime.now().isoformat(),
+        )
+        db.update_index_metadata(
+            job["index_id"],
+            {"status": "cancelled", "build_cancelled_at": datetime.now().isoformat()},
+        )
     return _public_index_job(job_id)
 
+
 # Helper functions (moved from ChatHandler)
+
 
 def _route_using_overviews(query: str, overviews: List[str]) -> bool:
     """
@@ -2028,7 +2349,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
         response = ollama_client.chat(
             message=router_prompt,
             model="qwen3:8b",  # Quality local model for routing
-            enable_thinking=False  # Fast routing
+            enable_thinking=False,  # Fast routing
         )
 
         # The response is directly the text, not a dict
@@ -2049,6 +2370,7 @@ Respond with exactly one word: USE_RAG or DIRECT_LLM"""
         print(f"❌ LLM routing failed: {e}, falling back to pattern matching")
         return _simple_pattern_routing(query, [])
 
+
 def _simple_pattern_routing(message: str, idx_ids: List[str]) -> bool:
     """
     📝 FALLBACK: Simple pattern-based routing (original logic).
@@ -2057,11 +2379,34 @@ def _simple_pattern_routing(message: str, idx_ids: List[str]) -> bool:
 
     # Always use Direct LLM for greetings and casual conversation
     greeting_patterns = [
-        'hello', 'hi', 'hey', 'greetings', 'good morning', 'good afternoon', 'good evening',
-        'how are you', 'how do you do', 'pleasure to meet',
-        'thanks', 'thank you', 'bye', 'goodbye', 'see you', 'talk to you later',
-        'test', 'testing', 'check', 'ping', 'just saying', 'nevermind',
-        'ok', 'okay', 'alright', 'got it', 'understood', 'i see'
+        "hello",
+        "hi",
+        "hey",
+        "greetings",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "how are you",
+        "how do you do",
+        "pleasure to meet",
+        "thanks",
+        "thank you",
+        "bye",
+        "goodbye",
+        "see you",
+        "talk to you later",
+        "test",
+        "testing",
+        "check",
+        "ping",
+        "just saying",
+        "nevermind",
+        "ok",
+        "okay",
+        "alright",
+        "got it",
+        "understood",
+        "i see",
     ]
 
     # Check for greeting patterns
@@ -2071,11 +2416,32 @@ def _simple_pattern_routing(message: str, idx_ids: List[str]) -> bool:
 
     # Keywords that strongly suggest document-related queries
     rag_indicators = [
-        'document', 'doc', 'file', 'pdf', 'text', 'content', 'page',
-        'according to', 'based on', 'mentioned', 'states', 'says',
-        'what does', 'summarize', 'summary', 'analyze', 'analysis',
-        'quote', 'citation', 'reference', 'source', 'evidence',
-        'explain from', 'extract', 'find in', 'search for'
+        "document",
+        "doc",
+        "file",
+        "pdf",
+        "text",
+        "content",
+        "page",
+        "according to",
+        "based on",
+        "mentioned",
+        "states",
+        "says",
+        "what does",
+        "summarize",
+        "summary",
+        "analyze",
+        "analysis",
+        "quote",
+        "citation",
+        "reference",
+        "source",
+        "evidence",
+        "explain from",
+        "extract",
+        "find in",
+        "search for",
     ]
 
     # Check for strong RAG indicators
@@ -2084,8 +2450,10 @@ def _simple_pattern_routing(message: str, idx_ids: List[str]) -> bool:
             return True
 
     # Question words + substantial length might benefit from RAG
-    question_words = ['what', 'how', 'when', 'where', 'why', 'who', 'which']
-    starts_with_question = any(message_lower.startswith(word) for word in question_words)
+    question_words = ["what", "how", "when", "where", "why", "who", "which"]
+    starts_with_question = any(
+        message_lower.startswith(word) for word in question_words
+    )
 
     if starts_with_question and len(message) > 40:
         return True
@@ -2097,8 +2465,10 @@ def _simple_pattern_routing(message: str, idx_ids: List[str]) -> bool:
     # Default to Direct LLM unless there's clear indication of document query
     return False
 
-async def _handle_direct_llm_query(session_id: str, message: str, session: dict,
-                                   requested_model: str | None = None):
+
+async def _handle_direct_llm_query(
+    session_id: str, message: str, session: dict, requested_model: str | None = None
+):
     """
     Handle query using direct Ollama client with thinking disabled for speed.
 
@@ -2112,7 +2482,7 @@ async def _handle_direct_llm_query(session_id: str, message: str, session: dict,
         # The model selected in the UI for this message wins; the session's
         # stored model is the fallback. RAG answers already work this way —
         # direct answers ignoring the dropdown was an inconsistency.
-        model = requested_model or session.get('model') or 'qwen3:8b'
+        model = requested_model or session.get("model") or "qwen3:8b"
 
         # Direct Ollama call with thinking disabled for speed.
         # Runs in a worker thread so the blocking HTTP call (up to 60s)
@@ -2122,7 +2492,7 @@ async def _handle_direct_llm_query(session_id: str, message: str, session: dict,
             message=message,
             model=model,
             conversation_history=conversation_history,
-            enable_thinking=False  # ⚡ DISABLE THINKING FOR SPEED
+            enable_thinking=False,  # ⚡ DISABLE THINKING FOR SPEED
         )
 
         return response_text, []  # No source docs for direct LLM
@@ -2131,7 +2501,10 @@ async def _handle_direct_llm_query(session_id: str, message: str, session: dict,
         print(f"❌ Direct LLM error: {e}")
         raise HTTPException(status_code=503, detail=f"Error processing query: {str(e)}")
 
-async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: List[str]):
+
+async def _handle_rag_query(
+    session_id: str, message: str, data: dict, idx_ids: List[str]
+):
     """
     Handle query using the in-process transport-neutral RAG runtime.
 
@@ -2140,10 +2513,12 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
     """
     try:
         payload = dict(data)
-        payload.update({
-            "query": message,
-            "session_id": session_id,
-        })
+        payload.update(
+            {
+                "query": message,
+                "session_id": session_id,
+            }
+        )
         rag_data = await asyncio.to_thread(
             execute_rag_chat,
             _get_local_rag_agent(),
@@ -2156,12 +2531,20 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
         raise
     except Exception as e:
         print(f"❌ RAG processing error: {e}")
-        raise HTTPException(status_code=500, detail=f"Error processing RAG query: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error processing RAG query: {str(e)}"
+        )
 
     # Strip any <think>/<thinking> tags that might slip through
-    response_text = re.sub(r'<(think|thinking)>.*?</\1>', '', response_text, flags=re.DOTALL | re.IGNORECASE).strip()
+    response_text = re.sub(
+        r"<(think|thinking)>.*?</\1>",
+        "",
+        response_text,
+        flags=re.DOTALL | re.IGNORECASE,
+    ).strip()
 
     return response_text, source_docs
+
 
 def main():
     """Main function to initialize and start the server"""
@@ -2189,7 +2572,9 @@ def main():
                 print("⚠️ PDF processing could not be initialized.")
         except Exception as e:
             print(f"❌ Error initializing PDF processor: {e}")
-            print("⚠️ PDF processing disabled - server will run without RAG functionality")
+            print(
+                "⚠️ PDF processing disabled - server will run without RAG functionality"
+            )
 
         # Set a global reference to the initialized processor if needed elsewhere
         global pdf_processor
@@ -2197,7 +2582,9 @@ def main():
         if pdf_processor:
             print("✅ Global PDF processor initialized")
         else:
-            print("⚠️ PDF processing disabled - server will run without RAG functionality")
+            print(
+                "⚠️ PDF processing disabled - server will run without RAG functionality"
+            )
 
         # Cleanup empty sessions on startup
         print("🧹 Cleaning up empty sessions...")
@@ -2216,7 +2603,9 @@ def main():
         if ollama_client.is_ollama_running():
             models = ollama_client.list_models()
             print(f"✅ Ollama is running with {len(models)} models")
-            print(f"📋 Available models: {', '.join(models[:3])}{'...' if len(models) > 3 else ''}")
+            print(
+                f"📋 Available models: {', '.join(models[:3])}{'...' if len(models) > 3 else ''}"
+            )
         else:
             print("⚠️  Ollama is not running. Please start Ollama:")
             print("   Install: https://ollama.ai")
@@ -2237,17 +2626,20 @@ def main():
 # MAINTENANCE ENDPOINTS
 # ============================================================================
 
+
 @app.post("/maintenance/repair-stuck-builds")
 async def repair_stuck_builds(older_than_minutes: int = 30):
     """Repair stuck/stale build jobs"""
     if not maintenance_tools:
         raise HTTPException(status_code=503, detail="Maintenance tools not available")
-    
+
     try:
         result = maintenance_tools.repair_stuck_builds(older_than_minutes)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error repairing stuck builds: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error repairing stuck builds: {str(e)}"
+        )
 
 
 @app.post("/maintenance/remove-orphan-files")
@@ -2255,12 +2647,14 @@ async def remove_orphan_files(dry_run: bool = True):
     """Find and remove uploaded files not associated with any index"""
     if not maintenance_tools:
         raise HTTPException(status_code=503, detail="Maintenance tools not available")
-    
+
     try:
         result = maintenance_tools.remove_orphan_files(dry_run)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error removing orphan files: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error removing orphan files: {str(e)}"
+        )
 
 
 @app.post("/maintenance/delete-broken-indexes")
@@ -2268,12 +2662,14 @@ async def delete_broken_indexes(dry_run: bool = True, health_status: str = "unhe
     """Find and delete broken/unhealthy indexes"""
     if not maintenance_tools:
         raise HTTPException(status_code=503, detail="Maintenance tools not available")
-    
+
     try:
         result = maintenance_tools.delete_broken_indexes(dry_run, health_status)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error deleting broken indexes: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error deleting broken indexes: {str(e)}"
+        )
 
 
 @app.get("/maintenance/failed-files/{index_id}")
@@ -2281,7 +2677,7 @@ async def get_failed_files(index_id: str):
     """Get list of files that failed in the latest build job"""
     if not maintenance_tools:
         raise HTTPException(status_code=503, detail="Maintenance tools not available")
-    
+
     try:
         result = maintenance_tools.get_failed_files_for_index(index_id)
         if result.get("error"):
@@ -2290,7 +2686,9 @@ async def get_failed_files(index_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting failed files: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting failed files: {str(e)}"
+        )
 
 
 @app.post("/maintenance/rebuild-failed-files/{index_id}")
@@ -2298,7 +2696,7 @@ async def rebuild_failed_files(index_id: str, force: bool = False):
     """Mark failed files to be rebuilt on next indexing job"""
     if not maintenance_tools:
         raise HTTPException(status_code=503, detail="Maintenance tools not available")
-    
+
     try:
         result = maintenance_tools.rebuild_failed_files_only(index_id, force)
         if result.get("error"):
@@ -2307,7 +2705,9 @@ async def rebuild_failed_files(index_id: str, force: bool = False):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error rebuilding failed files: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error rebuilding failed files: {str(e)}"
+        )
 
 
 @app.get("/maintenance/index-health")
@@ -2315,31 +2715,37 @@ async def get_index_health(index_id: Optional[str] = None):
     """Get detailed health report for one or all indexes"""
     if not maintenance_tools:
         raise HTTPException(status_code=503, detail="Maintenance tools not available")
-    
+
     try:
         result = maintenance_tools.get_index_health_report(index_id)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting index health: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting index health: {str(e)}"
+        )
 
 
 @app.post("/maintenance/export-diagnostics")
 async def export_diagnostics(
     output_path: Optional[str] = None,
     include_logs: bool = True,
-    include_config: bool = True
+    include_config: bool = True,
 ):
     """Export complete diagnostics bundle (logs, configs, state)"""
     if not maintenance_tools:
         raise HTTPException(status_code=503, detail="Maintenance tools not available")
-    
+
     try:
-        result = maintenance_tools.export_diagnostics_bundle(output_path, include_logs, include_config)
+        result = maintenance_tools.export_diagnostics_bundle(
+            output_path, include_logs, include_config
+        )
         if result.get("errors"):
             return {"warning": "Bundle created with errors", **result}
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error exporting diagnostics: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error exporting diagnostics: {str(e)}"
+        )
 
 
 @app.post("/maintenance/vacuum-database")
@@ -2378,12 +2784,13 @@ async def remove_orphan_tables(dry_run: bool = True):
 # JOB PERSISTENCE & RESUMABLE INDEXING ENDPOINTS
 # ============================================================================
 
+
 @app.post("/index-jobs/{job_id}/resume")
 async def resume_index_job(job_id: str):
     """Resume an indexing job that was paused or crashed"""
     if not job_progress_tracker:
         raise HTTPException(status_code=503, detail="Job persistence not available")
-    
+
     try:
         job = _get_index_job(job_id)
         if not job:
@@ -2407,7 +2814,9 @@ async def resume_index_job(job_id: str):
                 "message": "Resume queued",
                 "cancel_requested": False,
             }
-        thread = threading.Thread(target=_run_index_build_job, args=(job_id,), daemon=True)
+        thread = threading.Thread(
+            target=_run_index_build_job, args=(job_id,), daemon=True
+        )
         thread.start()
         return result
     except HTTPException:
@@ -2421,7 +2830,7 @@ async def get_job_timeline(job_id: str):
     """Get complete timeline of events for a job"""
     if not job_progress_tracker:
         raise HTTPException(status_code=503, detail="Job persistence not available")
-    
+
     try:
         result = job_progress_tracker.get_job_timeline(job_id)
         if result.get("error"):
@@ -2436,12 +2845,12 @@ async def get_job_file_status(job_id: str):
     """Get detailed per-file status for a job"""
     if not job_progress_tracker:
         raise HTTPException(status_code=503, detail="Job persistence not available")
-    
+
     try:
         result = job_progress_tracker.get_job_timeline(job_id)
         if result.get("error"):
             raise HTTPException(status_code=404, detail=result["error"])
-        
+
         # Return file status with per-stage breakdown
         return {
             "job_id": job_id,
@@ -2451,10 +2860,12 @@ async def get_job_file_status(job_id: str):
                 "completed_files": result.get("completed_files", 0),
                 "failed_files": result.get("failed_files", 0),
                 "pending_files": result.get("pending_files", 0),
-            }
+            },
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting file status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting file status: {str(e)}"
+        )
 
 
 @app.get("/index-jobs/{job_id}/statistics")
@@ -2462,14 +2873,16 @@ async def get_job_statistics(job_id: str):
     """Get performance statistics for a job"""
     if not job_progress_tracker:
         raise HTTPException(status_code=503, detail="Job persistence not available")
-    
+
     try:
         result = job_progress_tracker.get_job_statistics(job_id)
         if result.get("error"):
             raise HTTPException(status_code=404, detail=result["error"])
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting statistics: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting statistics: {str(e)}"
+        )
 
 
 @app.get("/index-jobs/{job_id}/audit-trail")
@@ -2477,16 +2890,14 @@ async def get_job_audit_trail(job_id: str):
     """Get complete audit trail (all stage events) for a job"""
     if not job_progress_tracker:
         raise HTTPException(status_code=503, detail="Job persistence not available")
-    
+
     try:
         result = job_progress_tracker.export_audit_trail(job_id)
-        return {
-            "job_id": job_id,
-            "events": result,
-            "total_events": len(result)
-        }
+        return {"job_id": job_id, "events": result, "total_events": len(result)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting audit trail: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error getting audit trail: {str(e)}"
+        )
 
 
 @app.post("/index-jobs/recover-stale")
@@ -2494,7 +2905,7 @@ async def recover_stale_jobs(older_than_minutes: int = 5):
     """Recover jobs that crashed (auto-run on backend startup)"""
     if not job_progress_tracker:
         raise HTTPException(status_code=503, detail="Job persistence not available")
-    
+
     try:
         result = job_progress_tracker.recover_stale_jobs(older_than_minutes)
         return result

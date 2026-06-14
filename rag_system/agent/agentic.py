@@ -15,12 +15,13 @@ and a pure evidence heuristic. Orchestration (parallel retrieval, synthesis,
 verification, caching) stays in the agent so this module has no dependency on
 the pipeline and is unit-testable with a stub LLM client.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +76,11 @@ def assess_complexity(llm_client, model: str, query: str, *, timeout: int = 30) 
         return False
     try:
         resp = llm_client.generate_completion(
-            model, COMPLEXITY_PROMPT.format(query=query),
-            format="json", enable_thinking=False, timeout=timeout,
+            model,
+            COMPLEXITY_PROMPT.format(query=query),
+            format="json",
+            enable_thinking=False,
+            timeout=timeout,
         )
         return bool(_parse_json_field(resp.get("response", ""), "complex", False))
     except Exception as e:  # pragma: no cover - defensive
@@ -98,12 +102,17 @@ def is_evidence_thin(sub_result: Optional[Dict[str, Any]]) -> bool:
     return any(marker in answer for marker in _NOT_FOUND_MARKERS)
 
 
-def reformulate_task(llm_client, model: str, task: str, *, timeout: int = 30) -> Optional[str]:
+def reformulate_task(
+    llm_client, model: str, task: str, *, timeout: int = 30
+) -> Optional[str]:
     """Broaden a thin sub-task into a new search query, or None if unchanged."""
     try:
         resp = llm_client.generate_completion(
-            model, REFORMULATE_PROMPT.format(task=task),
-            format="json", enable_thinking=False, timeout=timeout,
+            model,
+            REFORMULATE_PROMPT.format(task=task),
+            format="json",
+            enable_thinking=False,
+            timeout=timeout,
         )
         new_q = _parse_json_field(resp.get("response", ""), "query", "")
         new_q = (new_q or "").strip()

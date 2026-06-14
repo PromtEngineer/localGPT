@@ -39,14 +39,18 @@ def _hf_auto_login() -> None:
     )
 
     if not token:
-        logging.getLogger(__name__).debug("No Hugging Face token found in env; proceeding anonymously.")
+        logging.getLogger(__name__).debug(
+            "No Hugging Face token found in env; proceeding anonymously."
+        )
         return
 
     try:
         from huggingface_hub import login as hf_login
 
         hf_login(token=token, add_to_git_credential=False)  # type: ignore
-        logging.getLogger(__name__).info("Authenticated to Hugging Face Hub via env token.")
+        logging.getLogger(__name__).info(
+            "Authenticated to Hugging Face Hub via env token."
+        )
     except Exception as exc:  # pragma: no cover – best-effort login
         logging.getLogger(__name__).warning(
             "Failed to login to Hugging Face Hub automatically: %s", exc
@@ -54,4 +58,4 @@ def _hf_auto_login() -> None:
 
 
 # Run on module import
-_hf_auto_login() 
+_hf_auto_login()

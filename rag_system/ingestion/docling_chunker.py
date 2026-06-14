@@ -9,15 +9,22 @@ For now we proxy the old MarkdownRecursiveChunker but add:
 In a follow-up we can replace the internals with true Docling element-tree
 walking once the PDFConverter returns structured nodes.
 """
-from typing import List, Dict, Any, Tuple
-import math
 import re
-from itertools import islice
-from rag_system.ingestion.chunking import MarkdownRecursiveChunker
+from typing import Any, Dict, List
+
 from transformers import AutoTokenizer
 
+from rag_system.ingestion.chunking import MarkdownRecursiveChunker
+
+
 class DoclingChunker:
-    def __init__(self, *, max_tokens: int = 512, overlap: int = 1, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
+    def __init__(
+        self,
+        *,
+        max_tokens: int = 512,
+        overlap: int = 1,
+        tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B",
+    ):
         self.max_tokens = max_tokens
         self.overlap = overlap  # sentences of overlap
         repo_id = tokenizer_model
@@ -25,19 +32,25 @@ class DoclingChunker:
             repo_id = {
                 "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
             }.get(tokenizer_model.lower(), tokenizer_model)
-        
+
         if tokenizer_model == "fixture-hash-embedder":
             self.tokenizer = None
         else:
             try:
-                self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    repo_id, trust_remote_code=True
+                )
             except Exception as e:
                 print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
-                print("Falling back to character-based approximation (4 chars ~= 1 token)")
+                print(
+                    "Falling back to character-based approximation (4 chars ~= 1 token)"
+                )
                 self.tokenizer = None
         # Fallback simple sentence splitter (period, question, exclamation, newline)
         self._sent_re = re.compile(r"(?<=[\.\!\?])\s+|\n+")
-        self.legacy = MarkdownRecursiveChunker(max_chunk_size=10_000, min_chunk_size=100)
+        self.legacy = MarkdownRecursiveChunker(
+            max_chunk_size=10_000, min_chunk_size=100
+        )
 
     # ------------------------------------------------------------------
     def _token_len(self, text: str) -> int:
@@ -47,13 +60,17 @@ class DoclingChunker:
             # Fallback: approximate 4 characters per token
             return max(1, len(text) // 4)
 
-    def split_markdown(self, markdown: str, *, document_id: str, metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def split_markdown(
+        self, markdown: str, *, document_id: str, metadata: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Split one Markdown doc into chunks with max_tokens limit."""
         base_chunks = self.legacy.chunk(markdown, document_id, metadata)
         new_chunks: List[Dict[str, Any]] = []
         global_idx = 0
         for ch in base_chunks:
-            sentences = [s.strip() for s in self._sent_re.split(ch["text"]) if s.strip()]
+            sentences = [
+                s.strip() for s in self._sent_re.split(ch["text"]) if s.strip()
+            ]
             if not sentences:
                 continue
             # Walk with an absolute cursor that always advances; re-queueing
@@ -64,7 +81,11 @@ class DoclingChunker:
             while i < n:
                 window: List[str] = []
                 j = i
-                while j < n and self._token_len(" ".join(window + [sentences[j]])) <= self.max_tokens:
+                while (
+                    j < n
+                    and self._token_len(" ".join(window + [sentences[j]]))
+                    <= self.max_tokens
+                ):
                     window.append(sentences[j])
                     j += 1
                 if not window:  # single sentence > limit → hard cut
@@ -95,7 +116,9 @@ class DoclingChunker:
     # ------------------------------------------------------------------
     # Element-tree based chunking (true Docling path)
     # ------------------------------------------------------------------
-    def chunk_document(self, doc, *, document_id: str, metadata: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+    def chunk_document(
+        self, doc, *, document_id: str, metadata: Dict[str, Any] | None = None
+    ) -> List[Dict[str, Any]]:
         """Walk a DoclingDocument and emit chunks.
 
         Tables / Code / Figures are emitted as atomic chunks.
@@ -114,7 +137,12 @@ class DoclingChunker:
         global_idx = 0
 
         # Helper to create a chunk and append to list
-        def _add_chunk(text: str, block_type: str, heading_path: List[str], page_no: int | None = None):
+        def _add_chunk(
+            text: str,
+            block_type: str,
+            heading_path: List[str],
+            page_no: int | None = None,
+        ):
             nonlocal global_idx
             if not text.strip():
                 return
@@ -128,11 +156,13 @@ class DoclingChunker:
             }
             if page_no is not None:
                 chunk_meta["page"] = page_no
-            chunks.append({
-                "chunk_id": f"{document_id}_{global_idx}",
-                "text": text,
-                "metadata": chunk_meta,
-            })
+            chunks.append(
+                {
+                    "chunk_id": f"{document_id}_{global_idx}",
+                    "text": text,
+                    "metadata": chunk_meta,
+                }
+            )
             global_idx += 1
 
         # The Docling API exposes .body which is a tree of nodes; we fall back to .texts/.tables lists if available
@@ -146,7 +176,12 @@ class DoclingChunker:
             def flush_buffer():
                 nonlocal buffer, buffer_tokens, buffer_page
                 if buffer:
-                    _add_chunk(" ".join(buffer), "paragraph", heading_path=current_heading_path[:], page_no=buffer_page)
+                    _add_chunk(
+                        " ".join(buffer),
+                        "paragraph",
+                        heading_path=current_heading_path[:],
+                        page_no=buffer_page,
+                    )
                 buffer, buffer_tokens, buffer_page = [], 0, None
 
             # Create quick lookup for table items by id to preserve later insertion order if needed
@@ -163,10 +198,21 @@ class DoclingChunker:
                     flush_buffer()
                     tbl = tables_by_anchor[anchor_id]
                     try:
-                        tbl_md = tbl.export_to_markdown(doc)  # pass doc for deprecation compliance
+                        tbl_md = tbl.export_to_markdown(
+                            doc
+                        )  # pass doc for deprecation compliance
                     except Exception:
-                        tbl_md = tbl.export_to_markdown() if hasattr(tbl, "export_to_markdown") else str(tbl)
-                    _add_chunk(tbl_md, "table", heading_path=current_heading_path[:], page_no=getattr(tbl, "page_no", None))
+                        tbl_md = (
+                            tbl.export_to_markdown()
+                            if hasattr(tbl, "export_to_markdown")
+                            else str(tbl)
+                        )
+                    _add_chunk(
+                        tbl_md,
+                        "table",
+                        heading_path=current_heading_path[:],
+                        page_no=getattr(tbl, "page_no", None),
+                    )
 
                 role = getattr(txt_item, "role", None)
                 if role == "heading":
@@ -176,11 +222,18 @@ class DoclingChunker:
                     current_heading_path.append(txt_item.text.strip())
                     continue  # skip heading as content
 
-                text_piece = txt_item.text if hasattr(txt_item, "text") else str(txt_item)
+                text_piece = (
+                    txt_item.text if hasattr(txt_item, "text") else str(txt_item)
+                )
                 piece_tokens = _token_len(text_piece)
                 if piece_tokens > self.max_tokens:  # very long paragraph
                     flush_buffer()
-                    _add_chunk(text_piece, "paragraph", heading_path=current_heading_path[:], page_no=getattr(txt_item, "page_no", None))
+                    _add_chunk(
+                        text_piece,
+                        "paragraph",
+                        heading_path=current_heading_path[:],
+                        page_no=getattr(txt_item, "page_no", None),
+                    )
                     continue
 
                 if buffer_tokens + piece_tokens > self.max_tokens:
@@ -200,11 +253,24 @@ class DoclingChunker:
                 try:
                     tbl_md = tbl.export_to_markdown(doc)
                 except Exception:
-                    tbl_md = tbl.export_to_markdown() if hasattr(tbl, "export_to_markdown") else str(tbl)
-                _add_chunk(tbl_md, "table", heading_path=current_heading_path[:], page_no=getattr(tbl, "page_no", None))
+                    tbl_md = (
+                        tbl.export_to_markdown()
+                        if hasattr(tbl, "export_to_markdown")
+                        else str(tbl)
+                    )
+                _add_chunk(
+                    tbl_md,
+                    "table",
+                    heading_path=current_heading_path[:],
+                    page_no=getattr(tbl, "page_no", None),
+                )
         except Exception as e:
-            print(f"⚠️  Docling tree walk failed: {e}. Falling back to markdown splitter.")
-            return self.split_markdown(doc.export_to_markdown(), document_id=document_id, metadata=metadata)
+            print(
+                f"⚠️  Docling tree walk failed: {e}. Falling back to markdown splitter."
+            )
+            return self.split_markdown(
+                doc.export_to_markdown(), document_id=document_id, metadata=metadata
+            )
 
         # --------------------------------------------------------------
         # Second-pass consolidation: merge small consecutive paragraph
@@ -241,7 +307,9 @@ class DoclingChunker:
                 continue
 
             same_page = ch["metadata"].get("page") == buf_meta["metadata"].get("page")
-            same_heading = ch["metadata"].get("heading_path") == buf_meta["metadata"].get("heading_path")
+            same_heading = ch["metadata"].get("heading_path") == buf_meta[
+                "metadata"
+            ].get("heading_path")
 
             prospective_len = self._token_len(" ".join(buf_txt + [ch["text"]]))
             if same_page and same_heading and prospective_len <= self.max_tokens:
@@ -256,5 +324,12 @@ class DoclingChunker:
         return consolidated
 
     # Public API expected by IndexingPipeline --------------------------------
-    def chunk(self, text: str, document_id: str, document_metadata: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
-        return self.split_markdown(text, document_id=document_id, metadata=document_metadata or {})
+    def chunk(
+        self,
+        text: str,
+        document_id: str,
+        document_metadata: Dict[str, Any] | None = None,
+    ) -> List[Dict[str, Any]]:
+        return self.split_markdown(
+            text, document_id=document_id, metadata=document_metadata or {}
+        )

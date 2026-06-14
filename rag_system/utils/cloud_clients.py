@@ -6,9 +6,11 @@ Each client implements the same duck-type interface as OllamaClient:
 
 API keys are resolved: explicit arg > environment variable. They are never logged or stored.
 """
+
 import os
-import requests
 from typing import Any, Dict
+
+import requests
 
 
 class AnthropicEnricher:

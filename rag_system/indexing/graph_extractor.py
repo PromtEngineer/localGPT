@@ -1,14 +1,17 @@
-import logging
-from typing import List, Dict, Any
 import json
+import logging
+from typing import Any, Dict, List
+
 from rag_system.utils.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
+
 
 class GraphExtractor:
     """
     Extracts entities and relationships from text chunks using a live Ollama model.
     """
+
     def __init__(self, llm_client: OllamaClient, llm_model: str):
         self.llm_client = llm_client
         self.llm_model = llm_model
@@ -28,19 +31,17 @@ class GraphExtractor:
 
             Text: "{chunk['text']}"
             """
-            
+
             entity_response = self.llm_client.generate_completion(
-                self.llm_model, 
-                entity_prompt,
-                format="json" 
+                self.llm_model, entity_prompt, format="json"
             )
-            
-            entity_response_text = entity_response.get('response', '{}')
+
+            entity_response_text = entity_response.get("response", "{}")
 
             try:
                 entity_data = json.loads(entity_response_text)
-                entities = entity_data.get('entities', [])
-                
+                entities = entity_data.get("entities", [])
+
                 if not entities:
                     continue
 
@@ -62,28 +63,34 @@ class GraphExtractor:
                 """
 
                 relationship_response = self.llm_client.generate_completion(
-                    self.llm_model,
-                    relationship_prompt,
-                    format="json"
+                    self.llm_model, relationship_prompt, format="json"
                 )
 
-                relationship_response_text = relationship_response.get('response', '{}')
+                relationship_response_text = relationship_response.get("response", "{}")
                 relationship_data = json.loads(relationship_response_text)
 
                 for entity_name in cleaned_entities:
-                    all_entities[entity_name] = {"id": entity_name, "type": "Unknown"} # Placeholder type
+                    all_entities[entity_name] = {
+                        "id": entity_name,
+                        "type": "Unknown",
+                    }  # Placeholder type
 
                 for rel in relationship_data.get("relationships", []):
-                    if 'source' in rel and 'target' in rel and 'label' in rel:
+                    if "source" in rel and "target" in rel and "label" in rel:
                         all_relationships.add(
-                            (rel['source'], rel['target'], rel['label'])
+                            (rel["source"], rel["target"], rel["label"])
                         )
 
             except json.JSONDecodeError:
-                logger.warning("graph_extraction_json_decode_failed chunk_index=%s", i + 1)
+                logger.warning(
+                    "graph_extraction_json_decode_failed chunk_index=%s", i + 1
+                )
                 continue
-        
+
         return {
             "entities": list(all_entities.values()),
-            "relationships": [{"source": s, "target": t, "label": l} for s, t, l in all_relationships]
+            "relationships": [
+                {"source": s, "target": t, "label": lbl}
+                for s, t, lbl in all_relationships
+            ],
         }

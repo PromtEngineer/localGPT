@@ -11,6 +11,7 @@ Pattern adapted from the NVIDIA RAG Blueprint custom-metadata design:
 This module is dependency-free so the backend, the RAG server, and the
 indexing worker can all import it cheaply.
 """
+
 from __future__ import annotations
 
 import re
@@ -19,7 +20,14 @@ from typing import Any, Dict, List, Optional
 FIELD_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 ALLOWED_TYPES = {"string", "integer", "float", "boolean"}
 # Existing top-level LanceDB columns; schema fields must not collide
-RESERVED_NAMES = {"vector", "text", "chunk_id", "document_id", "chunk_index", "metadata"}
+RESERVED_NAMES = {
+    "vector",
+    "text",
+    "chunk_id",
+    "document_id",
+    "chunk_index",
+    "metadata",
+}
 COLUMN_PREFIX = "meta_"
 
 _OPS_BY_TYPE = {
@@ -59,7 +67,9 @@ def validate_schema(schema: Any) -> List[str]:
             errors.append(f"field '{name}': duplicate")
         seen.add(name)
         if ftype not in ALLOWED_TYPES:
-            errors.append(f"field '{name}': type must be one of {sorted(ALLOWED_TYPES)}")
+            errors.append(
+                f"field '{name}': type must be one of {sorted(ALLOWED_TYPES)}"
+            )
         if "required" in field and not isinstance(field["required"], bool):
             errors.append(f"field '{name}': required must be true or false")
         if "description" in field and not isinstance(field["description"], str):
@@ -93,7 +103,9 @@ def coerce_value(ftype: str, value: Any, field: str) -> Any:
     raise FilterError(f"'{field}': unknown type {ftype}")
 
 
-def validate_document_metadata(schema: List[Dict[str, Any]], metadata: Any) -> Dict[str, Any]:
+def validate_document_metadata(
+    schema: List[Dict[str, Any]], metadata: Any
+) -> Dict[str, Any]:
     """Validate one document's metadata against the schema.
 
     Strict, NVIDIA-style: unknown fields are rejected (catches typos that
@@ -107,7 +119,9 @@ def validate_document_metadata(schema: List[Dict[str, Any]], metadata: Any) -> D
     by_name = {f["name"]: f for f in schema}
     unknown = set(metadata) - set(by_name)
     if unknown:
-        raise FilterError(f"unknown metadata field(s): {sorted(unknown)} — schema defines {sorted(by_name)}")
+        raise FilterError(
+            f"unknown metadata field(s): {sorted(unknown)} — schema defines {sorted(by_name)}"
+        )
     cleaned: Dict[str, Any] = {}
     for name, field in by_name.items():
         if name in metadata and metadata[name] is not None:
@@ -119,7 +133,9 @@ def validate_document_metadata(schema: List[Dict[str, Any]], metadata: Any) -> D
     return cleaned
 
 
-def flatten_columns(schema: Optional[List[Dict[str, Any]]], metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def flatten_columns(
+    schema: Optional[List[Dict[str, Any]]], metadata: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
     """Map cleaned metadata to LanceDB column values (every field present,
     None when untagged — Arrow tables need a stable per-row column set)."""
     if not schema:
@@ -136,7 +152,9 @@ def _sql_literal(ftype: str, value: Any) -> str:
     return str(value)
 
 
-def compile_filters(schema: Optional[List[Dict[str, Any]]], filters: Any) -> Optional[str]:
+def compile_filters(
+    schema: Optional[List[Dict[str, Any]]], filters: Any
+) -> Optional[str]:
     """Compile a filters object to a SQL where clause, or None for no filter.
 
     Accepted per-field forms:
@@ -152,14 +170,18 @@ def compile_filters(schema: Optional[List[Dict[str, Any]]], filters: Any) -> Opt
     if not isinstance(filters, dict):
         raise FilterError("filters must be an object of field → condition")
     if not schema:
-        raise FilterError("this index has no metadata schema — define one before filtering")
+        raise FilterError(
+            "this index has no metadata schema — define one before filtering"
+        )
 
     by_name = {f["name"]: f for f in schema}
     clauses: List[str] = []
     for name, condition in filters.items():
         field = by_name.get(name)
         if not field:
-            raise FilterError(f"unknown filter field '{name}' — schema defines {sorted(by_name)}")
+            raise FilterError(
+                f"unknown filter field '{name}' — schema defines {sorted(by_name)}"
+            )
         ftype = field["type"]
         col = f"{COLUMN_PREFIX}{name}"
         allowed_ops = _OPS_BY_TYPE[ftype]
@@ -170,13 +192,17 @@ def compile_filters(schema: Optional[List[Dict[str, Any]]], filters: Any) -> Opt
             values = [coerce_value(ftype, v, name) for v in condition]
             if not values:
                 raise FilterError(f"'{name}': empty list filter")
-            clauses.append(f"{col} IN ({', '.join(_sql_literal(ftype, v) for v in values)})")
+            clauses.append(
+                f"{col} IN ({', '.join(_sql_literal(ftype, v) for v in values)})"
+            )
         elif isinstance(condition, dict):
             if not condition:
                 raise FilterError(f"'{name}': empty condition")
             for op, raw in condition.items():
                 if op not in allowed_ops or op == "in":
-                    raise FilterError(f"'{name}' ({ftype}) does not support operator '{op}'")
+                    raise FilterError(
+                        f"'{name}' ({ftype}) does not support operator '{op}'"
+                    )
                 value = coerce_value(ftype, raw, name)
                 sql_op = "=" if op == "==" else op
                 clauses.append(f"{col} {sql_op} {_sql_literal(ftype, value)}")

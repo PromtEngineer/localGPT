@@ -2,54 +2,56 @@
 Input validation and Pydantic models for localGPT backend.
 Provides consistent validation across all endpoints.
 """
-from pydantic import BaseModel, Field, field_validator
-from fastapi import UploadFile
-import os
-from typing import Optional, Dict, Any
 
+import os
+from typing import Any, Dict, Optional
+
+from fastapi import UploadFile
+from pydantic import BaseModel, Field, field_validator
 
 # ============================================================================
 # PYDANTIC REQUEST MODELS
 # ============================================================================
 
+
 class SessionRequest(BaseModel):
     """Request model for creating a new session."""
+
     title: str = Field(..., min_length=1, max_length=100, description="Session title")
     model: str = Field(default="llama3.2:latest", description="LLM model to use")
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "title": "Project Analysis",
-                "model": "qwen3:8b"
-            }
+            "example": {"title": "Project Analysis", "model": "qwen3:8b"}
         }
 
 
 class MessageRequest(BaseModel):
     """Request model for chat messages."""
-    message: str = Field(..., min_length=1, max_length=10000, description="Chat message")
+
+    message: str = Field(
+        ..., min_length=1, max_length=10000, description="Chat message"
+    )
 
     # mode="before" so the strip happens BEFORE min_length runs — otherwise
     # a whitespace-only message passes the length check and reaches the LLM
-    @field_validator('message', mode='before')
+    @field_validator("message", mode="before")
     @classmethod
     def sanitize_message(cls, v):
         return v.strip() if isinstance(v, str) else v
 
     class Config:
-        json_schema_extra = {
-            "example": {
-                "message": "What is in this document?"
-            }
-        }
+        json_schema_extra = {"example": {"message": "What is in this document?"}}
 
 
 class RenameSessionRequest(BaseModel):
     """Request model for renaming a session."""
-    title: str = Field(..., min_length=1, max_length=100, description="New session title")
 
-    @field_validator('title', mode='before')
+    title: str = Field(
+        ..., min_length=1, max_length=100, description="New session title"
+    )
+
+    @field_validator("title", mode="before")
     @classmethod
     def sanitize_title(cls, v):
         return v.strip() if isinstance(v, str) else v
@@ -57,45 +59,68 @@ class RenameSessionRequest(BaseModel):
 
 class IndexRequest(BaseModel):
     """Request model for creating an index."""
+
     name: str = Field(..., min_length=1, max_length=100, description="Index name")
-    description: Optional[str] = Field(None, max_length=500, description="Index description")
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Index metadata")
+    description: Optional[str] = Field(
+        None, max_length=500, description="Index description"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default_factory=dict, description="Index metadata"
+    )
 
     class Config:
         json_schema_extra = {
             "example": {
                 "name": "My Documents",
                 "description": "Research papers and reports",
-                "metadata": {}
+                "metadata": {},
             }
         }
 
 
 class IndexBuildRequest(BaseModel):
     """Request model for building an index."""
+
     background: Optional[bool] = Field(False, description="Run build in background")
     forceReindex: Optional[bool] = Field(False, description="Force rebuild all files")
-    enableEnrich: Optional[bool] = Field(False, description="Enable context enrichment (one LLM call per chunk — slow on local hardware)")
-    chunkSize: Optional[int] = Field(512, ge=128, le=2048, description="Chunk size in tokens")
-    chunkOverlap: Optional[int] = Field(64, ge=0, le=256, description="Chunk overlap in tokens")
-    retrievalMode: Optional[str] = Field("hybrid", pattern="^(hybrid|vector_only|bm25)$")
+    enableEnrich: Optional[bool] = Field(
+        False,
+        description="Enable context enrichment (one LLM call per chunk — slow on local hardware)",
+    )
+    chunkSize: Optional[int] = Field(
+        512, ge=128, le=2048, description="Chunk size in tokens"
+    )
+    chunkOverlap: Optional[int] = Field(
+        64, ge=0, le=256, description="Chunk overlap in tokens"
+    )
+    retrievalMode: Optional[str] = Field(
+        "hybrid", pattern="^(hybrid|vector_only|bm25)$"
+    )
     windowSize: Optional[int] = Field(2, ge=0, le=10, description="Context window size")
     latechunk: Optional[bool] = Field(False, description="Enable late chunking")
     doclingChunk: Optional[bool] = Field(False, description="Enable Docling chunking")
-    batchSizeEmbed: Optional[int] = Field(50, ge=1, le=200, description="Embedding batch size")
-    batchSizeEnrich: Optional[int] = Field(25, ge=1, le=100, description="Enrichment batch size")
+    batchSizeEmbed: Optional[int] = Field(
+        50, ge=1, le=200, description="Embedding batch size"
+    )
+    batchSizeEnrich: Optional[int] = Field(
+        25, ge=1, le=100, description="Enrichment batch size"
+    )
     embeddingModel: Optional[str] = Field(None, description="Embedding model name")
     enrichModel: Optional[str] = Field(None, description="Enrichment model name")
     overviewModel: Optional[str] = Field(None, description="Overview model name")
-    checkServices: Optional[bool] = Field(True, description="Check service availability")
+    checkServices: Optional[bool] = Field(
+        True, description="Check service availability"
+    )
 
 
 # ============================================================================
 # FILE VALIDATION
 # ============================================================================
 
+
 class FileValidationResult(BaseModel):
     """Result of file validation."""
+
     valid: bool
     error: Optional[str] = None
     size: int = 0
@@ -121,7 +146,9 @@ ALLOWED_EXTENSIONS = {"pdf", "txt", "md", "doc", "docx", "xls", "xlsx", "ppt", "
 MAX_UPLOAD_SIZE_BYTES = 500 * 1024 * 1024  # 500MB
 
 
-def validate_file_upload(file: UploadFile, max_size_bytes: int = MAX_UPLOAD_SIZE_BYTES) -> FileValidationResult:
+def validate_file_upload(
+    file: UploadFile, max_size_bytes: int = MAX_UPLOAD_SIZE_BYTES
+) -> FileValidationResult:
     """
     Validate a file upload.
 
@@ -138,9 +165,7 @@ def validate_file_upload(file: UploadFile, max_size_bytes: int = MAX_UPLOAD_SIZE
     # Check filename
     if not filename:
         return FileValidationResult(
-            valid=False,
-            error="Filename is required",
-            filename=filename
+            valid=False, error="Filename is required", filename=filename
         )
 
     # Check file extension
@@ -149,19 +174,21 @@ def validate_file_upload(file: UploadFile, max_size_bytes: int = MAX_UPLOAD_SIZE
         return FileValidationResult(
             valid=False,
             error=f"File type '.{file_ext}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
-            filename=filename
+            filename=filename,
         )
 
     # Check MIME type (advisory, not definitive)
     if content_type and content_type not in ALLOWED_MIME_TYPES:
         # Only warn if it's clearly a disallowed type
-        if content_type.startswith("application/x-msdownload") or \
-           content_type.startswith("application/x-executable") or \
-           content_type.startswith("application/x-elf"):
+        if (
+            content_type.startswith("application/x-msdownload")
+            or content_type.startswith("application/x-executable")
+            or content_type.startswith("application/x-elf")
+        ):
             return FileValidationResult(
                 valid=False,
                 error=f"File MIME type '{content_type}' not allowed",
-                filename=filename
+                filename=filename,
             )
 
     # Check file size
@@ -174,19 +201,18 @@ def validate_file_upload(file: UploadFile, max_size_bytes: int = MAX_UPLOAD_SIZE
             error=f"File size {size_mb:.1f}MB exceeds maximum {max_mb:.0f}MB",
             size=file.size,
             filename=filename,
-            mime_type=content_type
+            mime_type=content_type,
         )
 
     # Validation passed
     return FileValidationResult(
-        valid=True,
-        filename=filename,
-        mime_type=content_type,
-        size=file.size or 0
+        valid=True, filename=filename, mime_type=content_type, size=file.size or 0
     )
 
 
-def validate_request_size(content_length: Optional[int], max_bytes: int = MAX_UPLOAD_SIZE_BYTES) -> Optional[str]:
+def validate_request_size(
+    content_length: Optional[int], max_bytes: int = MAX_UPLOAD_SIZE_BYTES
+) -> Optional[str]:
     """
     Validate request size from Content-Length header.
 

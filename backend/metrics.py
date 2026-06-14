@@ -1,5 +1,5 @@
 """In-memory request metrics with Prometheus text-format export."""
-import time
+
 import threading
 from collections import defaultdict
 from typing import Dict, List
@@ -79,14 +79,24 @@ class _Metrics:
         lines.append("# TYPE http_requests_total counter")
         for ep, stats in snap["endpoints"].items():
             safe = ep.replace('"', '\\"')
-            lines.append(f'http_requests_total{{endpoint="{safe}"}} {stats["request_count"]}')
+            lines.append(
+                f'http_requests_total{{endpoint="{safe}"}} {stats["request_count"]}'
+            )
 
-        for pct_label, pct_key in [("0.5", "latency_p50_ms"), ("0.95", "latency_p95_ms"), ("0.99", "latency_p99_ms")]:
-            lines.append(f"# HELP http_request_latency_ms Request latency quantiles (ms)")
-            lines.append(f"# TYPE http_request_latency_ms summary")
+        for pct_label, pct_key in [
+            ("0.5", "latency_p50_ms"),
+            ("0.95", "latency_p95_ms"),
+            ("0.99", "latency_p99_ms"),
+        ]:
+            lines.append(
+                "# HELP http_request_latency_ms Request latency quantiles (ms)"
+            )
+            lines.append("# TYPE http_request_latency_ms summary")
             for ep, stats in snap["endpoints"].items():
                 safe = ep.replace('"', '\\"')
-                lines.append(f'http_request_latency_ms{{endpoint="{safe}",quantile="{pct_label}"}} {stats[pct_key]}')
+                lines.append(
+                    f'http_request_latency_ms{{endpoint="{safe}",quantile="{pct_label}"}} {stats[pct_key]}'
+                )
 
         return "\n".join(lines) + "\n"
 

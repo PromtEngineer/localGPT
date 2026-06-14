@@ -1,6 +1,8 @@
-from typing import List, Any, Dict
 import json
+from typing import Any, Dict, List
+
 from rag_system.utils.ollama_client import OllamaClient
+
 
 class QueryDecomposer:
     def __init__(self, llm_client: OllamaClient, llm_model: str):
@@ -198,7 +200,6 @@ query: “What are the limitations of GPT-4o and what are the recommended mitiga
 }
 """
 
-
         full_prompt = (
             system_prompt
             + new_examples
@@ -210,7 +211,9 @@ Now process
 
 Input payload:
 
-""" + json.dumps({"query": query, "chat_history": chat_history_text}, indent=2) + """
+"""
+            + json.dumps({"query": query, "chat_history": chat_history_text}, indent=2)
+            + """
 """
         )
 
@@ -219,7 +222,7 @@ Input payload:
             model_override or self.llm_model, full_prompt, format="json"
         )
 
-        response_text = response.get('response', '{}')
+        response_text = response.get("response", "{}")
         try:
             # Handle potential markdown code blocks in the response
             if response_text.strip().startswith("```json"):
@@ -227,14 +230,14 @@ Input payload:
 
             data = json.loads(response_text)
 
-            sub_queries = data.get('sub_queries') or [query]
-            reasoning = data.get('reasoning', 'No reasoning provided.')
+            sub_queries = data.get("sub_queries") or [query]
+            reasoning = data.get("reasoning", "No reasoning provided.")
 
             print(f"Query Decomposition Reasoning: {reasoning}")
 
             # Fallback: ensure at least the resolved_query if sub_queries empty
             if not sub_queries:
-                sub_queries = [data.get('resolved_query', query)]
+                sub_queries = [data.get("resolved_query", query)]
 
             # Deduplicate while preserving order
             sub_queries = list(dict.fromkeys(sub_queries))
@@ -245,6 +248,7 @@ Input payload:
             print(f"Failed to decode JSON from query decomposer: {response_text}")
             return [query]
 
+
 class HyDEGenerator:
     def __init__(self, llm_client: OllamaClient, llm_model: str):
         self.llm_client = llm_client
@@ -253,7 +257,8 @@ class HyDEGenerator:
     def generate(self, query: str) -> str:
         prompt = f"Generate a short, hypothetical document that answers the following question. The document should be dense with keywords and concepts related to the query.\n\nQuery: {query}\n\nHypothetical Document:"
         response = self.llm_client.generate_completion(self.llm_model, prompt)
-        return response.get('response', '')
+        return response.get("response", "")
+
 
 class GraphQueryTranslator:
     def __init__(self, llm_client: OllamaClient, llm_model: str):
@@ -272,12 +277,14 @@ User Question: "{query}"
 JSON Output:
 """
 
-    def translate(self, query: str, model_override: str | None = None) -> Dict[str, Any]:
+    def translate(
+        self, query: str, model_override: str | None = None
+    ) -> Dict[str, Any]:
         prompt = self._generate_translation_prompt(query)
         response = self.llm_client.generate_completion(
             model_override or self.llm_model, prompt, format="json"
         )
         try:
-            return json.loads(response.get('response', '{}'))
+            return json.loads(response.get("response", "{}"))
         except json.JSONDecodeError:
             return {}

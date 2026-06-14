@@ -10,7 +10,6 @@ from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 from typing import Any, Dict, List
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -21,7 +20,9 @@ def _absolute_runtime_path(value: str) -> str:
     return str(path.resolve(strict=False))
 
 
-def build_config(base_config: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+def build_config(
+    base_config: Dict[str, Any], options: Dict[str, Any]
+) -> Dict[str, Any]:
     config = copy.deepcopy(base_config)
     config["db_path"] = _absolute_runtime_path(
         config.get("db_path", "backend/chat_data.db")
@@ -48,9 +49,7 @@ def build_config(base_config: Dict[str, Any], options: Dict[str, Any]) -> Dict[s
         config["chunker_mode"] = "docling"
 
     config.setdefault("contextual_enricher", {})
-    config["contextual_enricher"]["enabled"] = bool(
-        options.get("enable_enrich", False)
-    )
+    config["contextual_enricher"]["enabled"] = bool(options.get("enable_enrich", False))
     config["contextual_enricher"]["window_size"] = int(options.get("window_size", 2))
 
     config.setdefault("indexing", {})

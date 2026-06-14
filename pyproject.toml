@@ -23,9 +23,19 @@ line_length = 88
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-select = ["E", "F", "I", "W", "C", "B", "ANN"]
-ignore = ["E501"]
 exclude = ["**/.venv/**", "**/node_modules/**", "**/__pycache__/**", "build/**", "dist/**"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "C", "B", "ANN"]
+# Curated ignores for the enforced baseline:
+#   E501  line length — governed by black instead
+#   ANN   missing annotations — aspirational on this pre-typing codebase
+#   C901  cyclomatic complexity — a metric, not a correctness rule
+#   B008  function-call-in-default — required by FastAPI Depends()/File()/Form()
+#   B904  raise-without-from-inside-except — pervasive legacy pattern, ratchet later
+#   E402  import-not-at-top — many entrypoints do deliberate pre-import env setup
+# What stays enforced: F (real bugs), most of E/W, I (import order), most of B/C.
+ignore = ["E501", "ANN", "C901", "B008", "B904", "E402"]
 
 [tool.mypy]
 python_version = "3.11"

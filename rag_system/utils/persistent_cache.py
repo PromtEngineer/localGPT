@@ -5,24 +5,26 @@ Implements Redis/file-based persistent caching to replace the in-memory TTL cach
 Provides semantic similarity matching for query caching with persistence across restarts.
 """
 
+import hashlib
 import json
 import logging
-import os
-import time
-import hashlib
 import pickle
-from typing import Dict, Any, Optional, List
-import numpy as np
+import time
 from pathlib import Path
+from typing import Any, Dict, Optional
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 try:
     import redis
+
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
     redis = None
+
 
 class PersistentCache:
     """
@@ -30,9 +32,14 @@ class PersistentCache:
     Maintains semantic similarity for query caching with persistence across restarts.
     """
 
-    def __init__(self, cache_dir: str = "cache", redis_url: str = "redis://localhost:6379",
-                 max_size: int = 1000, semantic_threshold: float = 0.98,
-                 cache_scope: str = "global"):
+    def __init__(
+        self,
+        cache_dir: str = "cache",
+        redis_url: str = "redis://localhost:6379",
+        max_size: int = 1000,
+        semantic_threshold: float = 0.98,
+        cache_scope: str = "global",
+    ):
         """
         Initialize persistent cache.
 
@@ -59,7 +66,9 @@ class PersistentCache:
                 logger.info("redis_cache_initialized")
                 self.use_redis = True
             except (redis.ConnectionError, redis.ResponseError) as e:
-                logger.warning("redis_connection_failed redis_url=%s error=%s", redis_url, e)
+                logger.warning(
+                    "redis_connection_failed redis_url=%s error=%s", redis_url, e
+                )
                 self.use_redis = False
         else:
             logger.warning("redis_not_available")
@@ -72,8 +81,13 @@ class PersistentCache:
         # Load existing cache on startup
         self._load_cache_index()
 
-    def _get_cache_key(self, query: str, query_type: str, session_id: Optional[str] = None,
-                       scope: Optional[str] = None) -> str:
+    def _get_cache_key(
+        self,
+        query: str,
+        query_type: str,
+        session_id: Optional[str] = None,
+        scope: Optional[str] = None,
+    ) -> str:
         """Generate a unique cache key"""
         if self.cache_scope == "session" and session_id:
             key_base = f"{session_id}:{query_type}:{query.strip().lower()}"
@@ -97,11 +111,15 @@ class PersistentCache:
         """Save cache entry to file"""
         cache_file = self.cache_dir / f"{key}.json"
         try:
-            with open(cache_file, 'w', encoding='utf-8') as f:
+            with open(cache_file, "w", encoding="utf-8") as f:
                 # Convert numpy array to list for JSON serialization
                 serializable_data = data.copy()
-                if 'embedding' in serializable_data and isinstance(serializable_data['embedding'], np.ndarray):
-                    serializable_data['embedding'] = serializable_data['embedding'].tolist()
+                if "embedding" in serializable_data and isinstance(
+                    serializable_data["embedding"], np.ndarray
+                ):
+                    serializable_data["embedding"] = serializable_data[
+                        "embedding"
+                    ].tolist()
 
                 json.dump(serializable_data, f, ensure_ascii=False, indent=2)
         except Exception as e:
@@ -114,16 +132,16 @@ class PersistentCache:
             return None
 
         try:
-            with open(cache_file, 'r', encoding='utf-8') as f:
+            with open(cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # Convert embedding list back to numpy array
-            if 'embedding' in data and isinstance(data['embedding'], list):
-                data['embedding'] = np.array(data['embedding'])
+            if "embedding" in data and isinstance(data["embedding"], list):
+                data["embedding"] = np.array(data["embedding"])
 
             # Check TTL
-            if 'timestamp' in data:
-                age = time.time() - data['timestamp']
+            if "timestamp" in data:
+                age = time.time() - data["timestamp"]
                 if age > 300:  # 5 minutes TTL (same as original)
                     cache_file.unlink()  # Delete expired entry
                     return None
@@ -145,9 +163,9 @@ class PersistentCache:
             metadata = data.copy()
             embedding_bytes = None
 
-            if 'embedding' in metadata:
-                embedding_bytes = self._serialize_embedding(metadata['embedding'])
-                metadata['embedding'] = None  # Don't store in JSON
+            if "embedding" in metadata:
+                embedding_bytes = self._serialize_embedding(metadata["embedding"])
+                metadata["embedding"] = None  # Don't store in JSON
 
             # Set TTL to 5 minutes (300 seconds)
             self.redis_client.setex(f"{redis_key}:metadata", 300, json.dumps(metadata))
@@ -171,8 +189,8 @@ class PersistentCache:
 
             # Load embedding if present
             embedding_bytes = self.redis_client.get(f"{redis_key}:embedding")
-            if embedding_bytes and metadata.get('embedding') is None:
-                metadata['embedding'] = self._deserialize_embedding(embedding_bytes)
+            if embedding_bytes and metadata.get("embedding") is None:
+                metadata["embedding"] = self._deserialize_embedding(embedding_bytes)
 
             return metadata
 
@@ -193,12 +211,12 @@ class PersistentCache:
         count = 0
         for cache_file in self.cache_dir.glob("*.json"):
             try:
-                with open(cache_file, 'r', encoding='utf-8') as f:
+                with open(cache_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
                 # Check if expired
-                if 'timestamp' in data:
-                    age = time.time() - data['timestamp']
+                if "timestamp" in data:
+                    age = time.time() - data["timestamp"]
                     if age > 300:  # 5 minutes
                         cache_file.unlink()
                         continue
@@ -206,24 +224,32 @@ class PersistentCache:
                 key = cache_file.stem
 
                 # Load embedding into memory index
-                if 'embedding' in data and isinstance(data['embedding'], list):
-                    self._embedding_index[key] = np.array(data['embedding'])
+                if "embedding" in data and isinstance(data["embedding"], list):
+                    self._embedding_index[key] = np.array(data["embedding"])
                     self._metadata_index[key] = {
-                        'session_id': data.get('session_id'),
-                        'timestamp': data.get('timestamp', 0),
-                        'query_type': data.get('query_type', 'unknown'),
-                        'scope': data.get('scope')
+                        "session_id": data.get("session_id"),
+                        "timestamp": data.get("timestamp", 0),
+                        "query_type": data.get("query_type", "unknown"),
+                        "scope": data.get("scope"),
                     }
                     count += 1
 
             except Exception as e:
-                logger.error("cache_file_load_error cache_file=%s error=%s", cache_file, e)
+                logger.error(
+                    "cache_file_load_error cache_file=%s error=%s", cache_file, e
+                )
 
         logger.info("file_cache_index_loaded count=%s", count)
 
-    def store(self, query: str, query_type: str, result: Dict[str, Any],
-              embedding: Optional[np.ndarray] = None, session_id: Optional[str] = None,
-              scope: Optional[str] = None):
+    def store(
+        self,
+        query: str,
+        query_type: str,
+        result: Dict[str, Any],
+        embedding: Optional[np.ndarray] = None,
+        session_id: Optional[str] = None,
+        scope: Optional[str] = None,
+    ):
         """
         Store a result in the persistent cache.
 
@@ -240,16 +266,16 @@ class PersistentCache:
         cache_key = self._get_cache_key(query, query_type, session_id, scope)
 
         cache_data = {
-            'query': query,
-            'query_type': query_type,
-            'result': result,
-            'timestamp': time.time(),
-            'session_id': session_id,
-            'scope': scope
+            "query": query,
+            "query_type": query_type,
+            "result": result,
+            "timestamp": time.time(),
+            "session_id": session_id,
+            "scope": scope,
         }
 
         if embedding is not None:
-            cache_data['embedding'] = embedding
+            cache_data["embedding"] = embedding
 
         # Store in persistent storage
         if self.use_redis:
@@ -261,17 +287,23 @@ class PersistentCache:
         if embedding is not None:
             self._embedding_index[cache_key] = embedding.copy()
             self._metadata_index[cache_key] = {
-                'session_id': session_id,
-                'timestamp': cache_data['timestamp'],
-                'query_type': query_type,
-                'scope': scope
+                "session_id": session_id,
+                "timestamp": cache_data["timestamp"],
+                "query_type": query_type,
+                "scope": scope,
             }
 
         # Enforce size limit
         self._enforce_size_limit()
 
-    def retrieve(self, query: str, query_type: str, embedding: Optional[np.ndarray] = None,
-                session_id: Optional[str] = None, scope: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def retrieve(
+        self,
+        query: str,
+        query_type: str,
+        embedding: Optional[np.ndarray] = None,
+        session_id: Optional[str] = None,
+        scope: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         Retrieve a result from the cache using exact match or semantic similarity.
 
@@ -291,7 +323,7 @@ class PersistentCache:
         result = self._load_cache_entry(cache_key)
         if result:
             logger.info("exact_cache_hit query=%s", query[:50])
-            return result['result']
+            return result["result"]
 
         # If we have an embedding, try semantic matching
         if embedding is not None:
@@ -308,9 +340,12 @@ class PersistentCache:
         else:
             return self._load_from_file(key)
 
-    def _find_semantic_match(self, query_embedding: np.ndarray,
-                           session_id: Optional[str] = None,
-                           scope: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def _find_semantic_match(
+        self,
+        query_embedding: np.ndarray,
+        session_id: Optional[str] = None,
+        scope: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         Find semantically similar cached queries.
 
@@ -324,18 +359,23 @@ class PersistentCache:
         for cache_key, cached_embedding in self._embedding_index.items():
             # Never match across retrieval scopes (different index/table or
             # embedding model) — that would return another index's answer.
-            cached_scope = self._metadata_index.get(cache_key, {}).get('scope')
+            cached_scope = self._metadata_index.get(cache_key, {}).get("scope")
             if cached_scope != scope:
                 continue
             # Check session scope
             if self.cache_scope == "session" and session_id:
-                cached_session = self._metadata_index.get(cache_key, {}).get('session_id')
+                cached_session = self._metadata_index.get(cache_key, {}).get(
+                    "session_id"
+                )
                 if cached_session != session_id:
                     continue
 
             try:
                 similarity = self._cosine_similarity(query_embedding, cached_embedding)
-                if similarity >= self.semantic_threshold and similarity > best_similarity:
+                if (
+                    similarity >= self.semantic_threshold
+                    and similarity > best_similarity
+                ):
                     best_similarity = similarity
                     best_match = cache_key
             except (ValueError, TypeError):
@@ -345,8 +385,10 @@ class PersistentCache:
             # Load the full result from persistent storage
             cached_data = self._load_cache_entry(best_match)
             if cached_data:
-                logger.info("semantic_cache_hit similarity=%s", round(best_similarity, 3))
-                return cached_data['result']
+                logger.info(
+                    "semantic_cache_hit similarity=%s", round(best_similarity, 3)
+                )
+                return cached_data["result"]
 
         return None
 
@@ -370,7 +412,10 @@ class PersistentCache:
             return
 
         # Remove oldest entries
-        entries = [(k, self._metadata_index[k]['timestamp']) for k in self._embedding_index.keys()]
+        entries = [
+            (k, self._metadata_index[k]["timestamp"])
+            for k in self._embedding_index.keys()
+        ]
         entries.sort(key=lambda x: x[1])  # Sort by timestamp
 
         to_remove = len(entries) - self.max_size
@@ -390,7 +435,9 @@ class PersistentCache:
         if self.use_redis:
             try:
                 redis_key = self._redis_key(key)
-                self.redis_client.delete(f"{redis_key}:metadata", f"{redis_key}:embedding")
+                self.redis_client.delete(
+                    f"{redis_key}:metadata", f"{redis_key}:embedding"
+                )
             except Exception as e:
                 logger.error("redis_remove_failed key=%s error=%s", key, e)
         else:
@@ -421,12 +468,12 @@ class PersistentCache:
     def stats(self) -> Dict[str, Any]:
         """Get cache statistics"""
         return {
-            'backend': 'redis' if self.use_redis else 'file',
-            'total_entries': len(self._embedding_index),
-            'max_size': self.max_size,
-            'cache_dir': str(self.cache_dir) if not self.use_redis else None,
-            'semantic_threshold': self.semantic_threshold,
-            'cache_scope': self.cache_scope
+            "backend": "redis" if self.use_redis else "file",
+            "total_entries": len(self._embedding_index),
+            "max_size": self.max_size,
+            "cache_dir": str(self.cache_dir) if not self.use_redis else None,
+            "semantic_threshold": self.semantic_threshold,
+            "cache_scope": self.cache_scope,
         }
 
     def __len__(self) -> int:

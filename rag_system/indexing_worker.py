@@ -9,6 +9,7 @@ This module must stay import-light: it is imported by the spawned child, so
 anything at module level runs before every build. Heavy imports live inside
 run_indexing_job().
 """
+
 from typing import Any, Dict, List, Optional
 
 

@@ -10,7 +10,10 @@ from rag_system.pipelines.indexing_pipeline import convert_and_chunk_document
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("Usage: python -m rag_system.tools.convert_chunk_worker <input.json>", file=sys.stderr)
+        print(
+            "Usage: python -m rag_system.tools.convert_chunk_worker <input.json>",
+            file=sys.stderr,
+        )
         return 2
 
     input_path = Path(sys.argv[1])
@@ -28,7 +31,9 @@ def main() -> int:
         try:
             output_path = Path(payload["output_path"])  # type: ignore[name-defined]
             output_path.write_text(
-                json.dumps({"error": str(e), "traceback": traceback.format_exc()}, default=str),
+                json.dumps(
+                    {"error": str(e), "traceback": traceback.format_exc()}, default=str
+                ),
                 encoding="utf-8",
             )
         except Exception:

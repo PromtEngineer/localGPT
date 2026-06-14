@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-import os, json, logging, re
-from typing import List, Dict, Any
+import json
+import logging
+import os
+import re
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
+
 
 class OverviewBuilder:
     """Generates and stores a one-paragraph overview for each document.
@@ -19,8 +23,14 @@ class OverviewBuilder:
         "DOCUMENT_EXCERPTS:\n{text}\n\nOVERVIEW:"
     )
 
-    def __init__(self, llm_client, model: str = "qwen3:8b", first_n_chunks: int = 5,
-                 out_path: str | None = None, timeout: int = 60):
+    def __init__(
+        self,
+        llm_client,
+        model: str = "qwen3:8b",
+        first_n_chunks: int = 5,
+        out_path: str | None = None,
+        timeout: int = 60,
+    ):
         if out_path is None:
             out_path = "index_store/overviews/overviews.jsonl"
         self.llm_client = llm_client
@@ -84,7 +94,9 @@ class OverviewBuilder:
                 logger.warning(f"Could not compact overviews file: {e}")
         return duplicates
 
-    def _sample_document_text(self, chunks: List[Dict[str, Any]], cap: int = 5000) -> str:
+    def _sample_document_text(
+        self, chunks: List[Dict[str, Any]], cap: int = 5000
+    ) -> str:
         """Excerpts spread across the document, within the same total budget.
 
         Head-only sampling meant the overview of a 500-page report was based
@@ -97,16 +109,20 @@ class OverviewBuilder:
             return "\n".join(texts)[:cap]
         head = "\n".join(texts[: max(1, self.first_n - 2)])
         mid = len(texts) // 2
-        middle = "\n".join(texts[mid: mid + 2])
+        middle = "\n".join(texts[mid : mid + 2])
         tail = "\n".join(texts[-2:])
         return (
-            "BEGINNING:\n" + head[: cap // 2]
-            + "\n\nMIDDLE:\n" + middle[: cap // 4]
-            + "\n\nEND:\n" + tail[: cap // 4]
+            "BEGINNING:\n"
+            + head[: cap // 2]
+            + "\n\nMIDDLE:\n"
+            + middle[: cap // 4]
+            + "\n\nEND:\n"
+            + tail[: cap // 4]
         )
 
-    def build_and_store(self, doc_id: str, chunks: List[Dict[str, Any]],
-                        force: bool = False) -> None:
+    def build_and_store(
+        self, doc_id: str, chunks: List[Dict[str, Any]], force: bool = False
+    ) -> None:
         """Generate and persist an overview for ``doc_id``.
 
         Args:
@@ -131,7 +147,12 @@ class OverviewBuilder:
                 timeout=self.timeout,
             )
             summary_raw = resp.get("response", "")
-            summary = re.sub(r'<think[^>]*>.*?</think>', '', summary_raw, flags=re.IGNORECASE | re.DOTALL).strip()
+            summary = re.sub(
+                r"<think[^>]*>.*?</think>",
+                "",
+                summary_raw,
+                flags=re.IGNORECASE | re.DOTALL,
+            ).strip()
         except Exception as e:
             logger.warning(f"Overview generation failed for {doc_id}: {e}")
             summary = ""
