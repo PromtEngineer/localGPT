@@ -31,10 +31,29 @@ export interface SessionChatRef {
 // Helper to shorten long titles
 const truncate = (str: string, n: number = 18) => str.length > n ? str.slice(0, n) + '…' : str;
 
+// Timing breakdown (ms) the RAG server returns when LOCALGPT_TIMINGS is on.
+type TimingsMs = {
+  retrieval?: number;
+  rerank?: number;
+  context_expand?: number;
+  prune?: number;
+  generation?: number;
+  total?: number;
+}
+
+// Self-reflection summary, present only when the reflect flag was set.
+type ReflectionInfo = {
+  rounds: number;
+  relevance: number | null;
+  groundedness: number | null;
+}
+
 type SubQueryDetail = {
   question: string;
   answer: string;
   source_documents?: SourceDocument[];
+  timings_ms?: TimingsMs;
+  reflection?: ReflectionInfo;
 }
 
 const getIndexId = (index: IndexSummary) => index.index_id || index.id || null;
@@ -64,6 +83,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   // Agentic mode: plan-and-execute with evidence-driven retry. Opt-in,
   // default off (adds latency). See rag_system/agent/agentic.py.
   const [agenticMode, setAgenticMode] = useState<boolean>(false)
+  // Self-reflection loop: trades latency for answer quality. Default off.
+  const [enableReflect, setEnableReflect] = useState<boolean>(false)
+  // Standalone multi-turn query rewrite. Default off.
+  const [enableRewrite, setEnableRewrite] = useState<boolean>(false)
   // Typed metadata filters, e.g. "project=Antapaccay, year>=2020" — parsed
   // client-side into a filters object; types are validated server-side
   // against the index's metadata schema
@@ -311,6 +334,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             provencePrune,
             filters: parseMetadataFilters(metadataFilters),
             agentic: agenticMode,
+            reflect: enableReflect,
+            rewriteQuery: enableRewrite,
           },
           (evt) => {
             console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
@@ -493,7 +518,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 } else {
                   steps[finalIdx].details = {
                     answer: evt.data.answer,
-                    source_documents: evt.data.source_documents || []
+                    source_documents: evt.data.source_documents || [],
+                    timings_ms: evt.data.timings_ms,
+                    reflection: evt.data.reflection,
                   };
                 }
 
@@ -540,6 +567,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           provencePrune,
           filters: parseMetadataFilters(metadataFilters),
           agentic: agenticMode,
+          reflect: enableReflect,
+          rewriteQuery: enableRewrite,
         })
       
       const aiMessage: ChatMessage = {
@@ -741,6 +770,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'toggle', label:'Query decomposition', checked: enableDecompose, setter: setEnableDecompose},
             {type: 'toggle', label:'Compose sub-answers', checked: composeSubAnswers, setter: setComposeSubAnswers},
             {type: 'toggle', label:'Verify answer', checked: enableVerify, setter: setEnableVerify},
+            {type: 'toggle', label:'Self-reflection (slower, higher quality)', checked: enableReflect, setter: setEnableReflect},
+            {type: 'toggle', label:'Multi-turn query rewrite', checked: enableRewrite, setter: setEnableRewrite},
             {type: 'toggle', label:'Stream phases', checked: enableStream, setter: setEnableStream},
             
             // Retrieval Settings

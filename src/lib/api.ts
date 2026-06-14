@@ -425,6 +425,8 @@ class ChatAPI {
       provencePrune?: boolean;
       filters?: Record<string, unknown>;
       agentic?: boolean;
+      reflect?: boolean;
+      rewriteQuery?: boolean;
     } = {}
   ): Promise<SessionChatResponse & { source_documents: SourceDocument[] }> {
     try {
@@ -452,6 +454,8 @@ class ChatAPI {
           ...(typeof opts.provencePrune === 'boolean' && { provence_prune: opts.provencePrune }),
           ...(opts.filters && { filters: opts.filters }),
           ...(typeof opts.agentic === 'boolean' && { agentic: opts.agentic }),
+          ...(typeof opts.reflect === 'boolean' && { reflect: opts.reflect }),
+          ...(typeof opts.rewriteQuery === 'boolean' && { rewrite_query: opts.rewriteQuery }),
         }),
       });
 
@@ -892,11 +896,13 @@ class ChatAPI {
       provencePrune?: boolean;
       filters?: Record<string, unknown>;
       agentic?: boolean;
+      reflect?: boolean;
+      rewriteQuery?: boolean;
     },
     onEvent: (event: { type: string; data: ApiRecord }) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune } = params;
+    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune, reflect, rewriteQuery } = params;
 
     const payload: Record<string, unknown> = { query };
     if (model) payload.model = model;
@@ -917,6 +923,8 @@ class ChatAPI {
     if (typeof provencePrune === 'boolean') payload.provence_prune = provencePrune;
     if (params.filters) payload.filters = params.filters;
     if (typeof params.agentic === 'boolean') payload.agentic = params.agentic;
+    if (typeof reflect === 'boolean') payload.reflect = reflect;
+    if (typeof rewriteQuery === 'boolean') payload.rewrite_query = rewriteQuery;
 
     const resp = await fetch(`${API_BASE_URL}/rag/chat/stream`, {
       method: 'POST',

@@ -77,6 +77,50 @@ function CitationsBlock({docs, query}:{docs: SourceDocument[], query?: string}){
   );
 }
 
+// Compact, muted footer surfacing per-answer timing + self-reflection data.
+// Both inputs are optional: timings_ms only exists when LOCALGPT_TIMINGS is on,
+// reflection only when the reflect flag was set for the request.
+type TimingsMs = {
+  retrieval?: number; rerank?: number; context_expand?: number;
+  prune?: number; generation?: number; total?: number;
+}
+type ReflectionInfo = { rounds: number; relevance: number | null; groundedness: number | null }
+
+function fmtMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`
+}
+
+function MetricsFooter({ timings, reflection }: { timings?: TimingsMs; reflection?: ReflectionInfo }) {
+  if (!timings && !reflection) return null
+
+  const stages: Array<[string, number | undefined]> = timings ? [
+    ['retrieval', timings.retrieval],
+    ['rerank', timings.rerank],
+    ['context expand', timings.context_expand],
+    ['prune', timings.prune],
+    ['generation', timings.generation],
+  ] : []
+  const breakdown = stages
+    .filter(([, v]) => typeof v === 'number')
+    .map(([label, v]) => `${label} ${fmtMs(v as number)}`)
+    .join(' · ')
+
+  return (
+    <div className="text-xs text-gray-500 space-y-0.5 pt-1">
+      {reflection && (
+        <div>
+          ↻ {reflection.rounds} reflection round{reflection.rounds === 1 ? '' : 's'}
+          {reflection.relevance !== null && ` · relevance ${reflection.relevance}/2`}
+          {reflection.groundedness !== null && ` · groundedness ${reflection.groundedness}/2`}
+        </div>
+      )}
+      {timings && typeof timings.total === 'number' && (
+        <div>⏱ {fmtMs(timings.total)} total{breakdown ? ` · ${breakdown}` : ''}</div>
+      )}
+    </div>
+  )
+}
+
 function StepIcon({ status }: { status: 'pending' | 'active' | 'done' | 'error' }) {
   switch (status) {
     case 'pending':
@@ -180,6 +224,10 @@ function StructuredMessageBlock({
                   {!hasSubAnswers && step.status === 'done' && asSourceDocuments((step.details as ApiRecord).source_documents).length === 0 && (
                     <p className="text-xs text-yellow-600/70 italic">No matching documents found in the index for this query. Try rephrasing or rebuilding the index.</p>
                   )}
+                  <MetricsFooter
+                    timings={(step.details as ApiRecord).timings_ms as TimingsMs | undefined}
+                    reflection={(step.details as ApiRecord).reflection as ReflectionInfo | undefined}
+                  />
                 </div>
               ) : step.key === 'final' && step.details && typeof step.details === 'string' ? (
                 <div className="whitespace-pre-wrap text-gray-100">
