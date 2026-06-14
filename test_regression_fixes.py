@@ -1005,6 +1005,7 @@ class ReflectionLoopTests(unittest.TestCase):
     def _cfg(**override):
         base = {
             "model": "m",
+            "generation_model": "m",
             "max_loops": 2,
             "relevance_threshold": 1,
             "groundedness_threshold": 1,
@@ -1116,6 +1117,7 @@ class ReflectionConfigTests(unittest.TestCase):
         self.assertEqual(default["max_loops"], 2)
         self.assertEqual(default["relevance_threshold"], 1)
         self.assertEqual(default["model"], "gen-model")
+        self.assertEqual(default["generation_model"], "gen-model")
 
         custom = reflection.parse_config(
             {
@@ -1131,7 +1133,8 @@ class ReflectionConfigTests(unittest.TestCase):
         self.assertEqual(custom["max_loops"], 3)
         self.assertEqual(custom["relevance_threshold"], 2)
         self.assertEqual(custom["groundedness_threshold"], 0)
-        self.assertEqual(custom["model"], "r")
+        self.assertEqual(custom["model"], "r")  # judge model
+        self.assertEqual(custom["generation_model"], "gen")  # answer model unchanged
 
     def test_bad_types_fall_back(self):
         from rag_system.agent import reflection

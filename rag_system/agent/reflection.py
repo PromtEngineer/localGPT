@@ -34,13 +34,17 @@ def parse_config(data: Dict[str, Any], generation_model: Any) -> Dict[str, Any]:
             return default
         return value
 
-    model = data.get("reflection_model")
+    judge = data.get("reflection_model")
     return {
         "enabled": bool(data.get("reflect", False)),
         "max_loops": max(1, _int("reflection_max_loops", 2)),
         "relevance_threshold": _int("relevance_threshold", 1),
         "groundedness_threshold": _int("groundedness_threshold", 1),
-        "model": model if isinstance(model, str) and model else generation_model,
+        # "model" judges (scores + rewrites) — point reflection_model at a small
+        # fast model to cut latency; "generation_model" always regenerates the
+        # answer, so a fast judge never degrades answer quality.
+        "model": judge if isinstance(judge, str) and judge else generation_model,
+        "generation_model": generation_model,
     }
 
 
@@ -148,7 +152,8 @@ def reflective_run(
     Returns the usual ``{"answer", "source_documents"}`` dict plus a
     ``"reflection"`` block recording rounds and the last scores.
     """
-    model = cfg["model"]
+    model = cfg["model"]  # judge: scoring + query rewrite
+    gen_model = cfg.get("generation_model") or model  # regeneration (quality)
     rel_threshold = cfg["relevance_threshold"]
     ground_threshold = cfg["groundedness_threshold"]
     max_loops = cfg["max_loops"]
@@ -191,7 +196,7 @@ def reflective_run(
                 _adherence_wrap(query),
                 _budget_context(sources),
                 event_callback=None,
-                generation_model=model,
+                generation_model=gen_model,
             )
             result = {"answer": answer, "source_documents": sources}
         if _has_answer(result):
