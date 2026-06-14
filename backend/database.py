@@ -1,7 +1,7 @@
 import sqlite3
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 import logging
 
@@ -921,7 +921,7 @@ class ChatDatabase:
                             inferred_metadata['retrieval_mode_inferred'] = 'hybrid (FTS + vector)'
                         else:
                             inferred_metadata['retrieval_mode_inferred'] = 'vector-only'
-                    except:
+                    except Exception:
                         pass
                     
                     # Add inspection timestamp
@@ -944,11 +944,10 @@ class ChatDatabase:
                     is_recent = False
                     if created_at:
                         try:
-                            from datetime import datetime, timedelta
                             created_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                             # Consider indexes created in the last 30 days as "recent"
                             is_recent = created_date > datetime.now().replace(tzinfo=created_date.tzinfo) - timedelta(days=30)
-                        except:
+                        except Exception:
                             pass
                     
                     # Provide basic fallback metadata with better status detection

@@ -1651,9 +1651,6 @@ def _run_index_build(index_id: str, data: Dict[str, Any], job_id: str | None = N
     window_size = max(0, min(window_size, 2))
     batch_size_enrich = max(1, min(batch_size_enrich, 8))
 
-    # Set per-index overview file path
-    overview_path = f"index_store/overviews/{index_id}.jsonl"
-
     # Use the index's dedicated LanceDB table so retrieval matches.
     table_name = index.get("vector_table_name")
     _index_meta = index.get("metadata") or {}

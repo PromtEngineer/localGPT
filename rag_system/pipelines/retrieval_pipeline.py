@@ -20,7 +20,6 @@ from rag_system.rerankers.sentence_pruner import SentencePruner
 # from rag_system.indexing.chunk_store import ChunkStore
 
 import os
-from PIL import Image
 
 logger = logging.getLogger(__name__)
 

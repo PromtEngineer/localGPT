@@ -198,63 +198,10 @@ query: “What are the limitations of GPT-4o and what are the recommended mitiga
 }
 """
 
-        # ---- Append legacy examples that already existed in the old prompt ----
-        legacy_examples_header = """
-⸻
-
-Additional legacy examples
-"""
-
-        legacy_examples_body = """
-**Example 1: Multi-Part Query**
-Query: "What were the main findings of the aiconfig report and how do they compare to the results from the RAG paper?"
-JSON Output:
-{
-  "reasoning": "The query asks for two distinct pieces of information: the findings from one report and a comparison to another. This requires two separate retrieval steps.",
-  "sub_queries": [
-    "What were the main findings of the aiconfig report?",
-    "How do the findings of the aiconfig report compare to the results from the RAG paper?"
-  ]
-}
-
-**Example 2: Simple Query**
-Query: "Summarize the contributions of the DeepSeek-V3 paper."
-JSON Output:
-{
-  "reasoning": "This is a direct request for a summary of a single document and does not contain multiple parts.",
-  "sub_queries": [
-    "Summarize the contributions of the DeepSeek-V3 paper."
-  ]
-}
-
-**Example 3: Comparative Query**
-Query: "Did Microsoft or Google make more money last year?"
-JSON Output:
-{
-  "reasoning": "This is a comparative query that requires fetching the profit for each company before a comparison can be made.",
-  "sub_queries": [
-    "How much profit did Microsoft make last year?",
-    "How much profit did Google make last year?"
-  ]
-}
-
-**Example 4: Comparative Query with different phrasing**
-Query: "Who has more siblings, Jamie or Sansa?"
-JSON Output:
-{
-  "reasoning": "This comparative query needs the sibling count for both individuals to be answered.",
-  "sub_queries": [
-    "How many siblings does Jamie have?",
-    "How many siblings does Sansa have?"
-  ]
-}
-"""
 
         full_prompt = (
             system_prompt
             + new_examples
-            # + legacy_examples_header
-            # + legacy_examples_body
             + """
 
 ⸻
