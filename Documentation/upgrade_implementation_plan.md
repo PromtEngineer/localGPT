@@ -30,7 +30,7 @@ Verified implementation status as of 2026-06-13:
 | Index deletion cleanup | Done | Main/late-chunk tables, owned uploads, and per-index overviews are removed before database records |
 | Retrieval evaluation gate | Done | Offline deterministic fixture embedder, isolated temp DB/cache, wired into CI |
 | Request-scoped pipeline state | Done | Generation, embedding/fusion, Provence, table, overview, and late-chunk choices are per request; chat no longer uses a global serialization lock |
-| API server consolidation | Partial | FastAPI now owns chat, SSE, and index execution and standard startup no longer uses port 8001; the legacy compatibility server still awaits deletion |
+| API server consolidation | Done | FastAPI owns chat, SSE, and index execution in-process; the standalone port-8001 RAG API has been deleted |
 | Full observability/guardrails | Pending | Structured logs exist; tracing and policy layers remain roadmap work |
 
 ## Request Isolation and Transport Completion
@@ -132,18 +132,18 @@ Exit criteria:
 
 ## P2: Consolidate the API Servers
 
-Target: Next.js communicates with one FastAPI service; port 8001 is removed.
+Target (achieved): Next.js communicates with one FastAPI service; port 8001 is removed.
 
-1. Inventory each route and callback in `rag_system/api_server.py`.
-2. Extract pure indexing, retrieval, routing, and progress services without HTTP
-   dependencies.
-3. Add FastAPI routes that call those services directly while preserving current
-   response and SSE contracts.
-4. Switch the frontend and backend callers route by route, beginning with health,
-   then index build/progress, then chat/streaming.
-5. Run compatibility tests during a temporary dual-path period.
-6. Remove `rag_system/api_server.py`, `api_server_with_progress.py`, port 8001
-   configuration, and obsolete startup logic after parity is proven.
+Completed:
+1. ✅ Routes and callbacks from the old `rag_system/api_server.py` were inventoried.
+2. ✅ Pure indexing, retrieval, routing, and progress logic was extracted into the
+   transport-neutral `rag_system/chat_runtime.py` and `rag_system/indexing_runtime.py`.
+3. ✅ The FastAPI backend (port 8000) calls those runtimes directly in-process,
+   preserving the chat/SSE response contracts.
+4. ✅ The frontend, eval harness, and MCP server were switched onto port 8000.
+5. ✅ Request scoping removed the global RAG-agent lock, enabling concurrent chats.
+6. ✅ `rag_system/api_server.py`, `api_server_with_progress.py`, `Dockerfile.rag-api`,
+   the Docker `rag-api` service, and the `main.py api` command have been removed.
 
 Exit criteria:
 

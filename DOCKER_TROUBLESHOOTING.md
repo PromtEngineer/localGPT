@@ -22,7 +22,7 @@ curl http://localhost:11434/api/tags
 # Test all endpoints
 curl -f http://localhost:3000 && echo "✅ Frontend OK"
 curl -f http://localhost:8000/health && echo "✅ Backend OK"
-curl -f http://localhost:8001/models && echo "✅ RAG API OK"
+curl -f http://localhost:8000/models && echo "✅ Models OK"
 curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 ```
 
@@ -30,7 +30,7 @@ curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 ```
 ✅ Frontend OK
 ✅ Backend OK
-✅ RAG API OK
+✅ Models OK
 ✅ Ollama OK
 ```
 
@@ -92,7 +92,7 @@ open -a Docker  # macOS
 
 ### 2. Ollama Connection Issues
 
-#### Problem: RAG API can't connect to Ollama
+#### Problem: Backend can't connect to Ollama
 ```
 ConnectionError: Failed to connect to Ollama at http://host.docker.internal:11434
 ```
@@ -111,11 +111,11 @@ ollama pull qwen3:8b
 
 #### Solution B: Test from Container
 ```bash
-# Test Ollama connection from RAG API container
+# Test Ollama connection from the backend container
 # macOS / Windows:
-docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+docker compose exec backend curl http://host.docker.internal:11434/api/tags
 # Linux (host.docker.internal not available — use bridge gateway IP):
-docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
+docker compose exec backend curl http://172.18.0.1:11434/api/tags
 
 # If this fails, check Docker network settings
 docker network ls
@@ -180,7 +180,7 @@ ls -la requirements-docker.txt
 pip install -r requirements-docker.txt --dry-run
 
 # Rebuild with updated base image
-docker compose build --no-cache --pull rag-api
+docker compose build --no-cache --pull backend
 ```
 
 ### 4. Port Conflicts
@@ -193,17 +193,15 @@ Error starting userland proxy: listen tcp4 0.0.0.0:3000: bind: address already i
 #### Solution: Find and Kill Conflicting Processes
 ```bash
 # Check what's using the ports
-lsof -i :3000 -i :8000 -i :8001
+lsof -i :3000 -i :8000
 
 # Kill specific processes
 pkill -f "npm run dev"      # Frontend
 pkill -f "server.py"        # Backend
-pkill -f "api_server"       # RAG API
 
 # Or kill by port
 sudo kill -9 $(lsof -t -i:3000)
 sudo kill -9 $(lsof -t -i:8000)
-sudo kill -9 $(lsof -t -i:8001)
 
 # Restart containers
 ./start-docker.sh
@@ -296,23 +294,22 @@ print('Database initialized')
 
 #### Access Container Shells
 ```bash
-# RAG API container (most issues happen here)
-docker compose exec rag-api bash
+# Backend container (most issues happen here — runs the RAG runtime in-process)
+docker compose exec backend bash
 
 # Check environment variables
-docker compose exec rag-api env | grep -E "(OLLAMA|RAG|NODE)"
+docker compose exec backend env | grep -E "(OLLAMA|RAG|NODE)"
 
 # Test Python imports
-docker compose exec rag-api python -c "
+docker compose exec backend python -c "
 import sys
 print('Python version:', sys.version)
 from rag_system.main import get_agent
 print('✅ RAG system imports work')
 "
 
-# Backend container
-docker compose exec backend bash
-python -c "
+# Test database imports
+docker compose exec backend python -c "
 from backend.database import ChatDatabase
 print('✅ Database imports work')
 "
@@ -330,7 +327,7 @@ docker stats
 
 # Check individual container health
 docker compose ps
-docker inspect rag-api --format='{{.State.Health.Status}}'
+docker inspect rag-backend --format='{{.State.Health.Status}}'
 
 # View container configurations
 docker compose config
@@ -338,15 +335,15 @@ docker compose config
 
 #### Network Debugging
 ```bash
-# Check inter-container HTTP connectivity (curl is available; ping may not be)
-docker compose exec rag-api curl -sf http://backend:8000/health && echo "backend reachable"
-docker compose exec backend curl -sf http://rag-api:8001/models && echo "rag-api reachable"
+# Check backend HTTP connectivity (curl is available; ping may not be)
+docker compose exec frontend curl -sf http://backend:8000/health && echo "backend reachable"
+docker compose exec backend curl -sf http://localhost:8000/models && echo "models endpoint reachable"
 
 # Test Ollama connectivity from inside the container
 # macOS / Windows:
-docker compose exec rag-api curl -v http://host.docker.internal:11434/api/tags
+docker compose exec backend curl -v http://host.docker.internal:11434/api/tags
 # Linux:
-docker compose exec rag-api curl -v http://172.18.0.1:11434/api/tags
+docker compose exec backend curl -v http://172.18.0.1:11434/api/tags
 ```
 
 ### Log Analysis
@@ -357,12 +354,10 @@ docker compose exec rag-api curl -v http://172.18.0.1:11434/api/tags
 ./start-docker.sh logs
 
 # Follow specific service logs
-docker compose logs -f rag-api
 docker compose logs -f backend
 docker compose logs -f frontend
 
 # Search for errors
-docker compose logs rag-api 2>&1 | grep -i error
 docker compose logs backend 2>&1 | grep -i "traceback\|error"
 
 # Save logs to file
@@ -386,21 +381,15 @@ journalctl -u docker.service -f
 
 #### Test Individual Containers
 ```bash
-# Test RAG API alone
-docker build -f Dockerfile.rag-api -t test-rag-api .
-# macOS / Windows:
-docker run --rm -p 8001:8001 -e OLLAMA_HOST=http://host.docker.internal:11434 test-rag-api &
-# Linux (replace with your bridge gateway IP):
-# docker run --rm -p 8001:8001 -e OLLAMA_HOST=http://172.18.0.1:11434 test-rag-api &
-sleep 30
-curl http://localhost:8001/models
-pkill -f test-rag-api
-
-# Test Backend alone
+# Test Backend alone (runs the RAG runtime in-process)
 docker build -f Dockerfile.backend -t test-backend .
-docker run --rm -p 8000:8000 test-backend &
+# macOS / Windows:
+docker run --rm -p 8000:8000 -e OLLAMA_HOST=http://host.docker.internal:11434 test-backend &
+# Linux (replace with your bridge gateway IP):
+# docker run --rm -p 8000:8000 -e OLLAMA_HOST=http://172.18.0.1:11434 test-backend &
 sleep 30
 curl http://localhost:8000/health
+curl http://localhost:8000/models
 pkill -f test-backend
 ```
 
@@ -444,7 +433,7 @@ sleep 60
 echo "🔍 Testing endpoints..."
 curl -f http://localhost:3000 && echo "✅ Frontend OK" || echo "❌ Frontend FAIL"
 curl -f http://localhost:8000/health && echo "✅ Backend OK" || echo "❌ Backend FAIL"  
-curl -f http://localhost:8001/models && echo "✅ RAG API OK" || echo "❌ RAG API FAIL"
+curl -f http://localhost:8000/models && echo "✅ Models OK" || echo "❌ Models FAIL"
 curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK" || echo "❌ Ollama FAIL"
 
 # Test container health
@@ -551,22 +540,20 @@ docker volume prune -f
 python run_system.py
 ```
 
-#### 2. Minimal Docker (RAG API only)
+#### 2. Minimal Docker (backend only)
 ```bash
-# Run only RAG API in Docker
-docker build -f Dockerfile.rag-api -t rag-api .
-docker run -p 8001:8001 rag-api
+# Run only the backend in Docker (RAG runtime runs in-process)
+docker build -f Dockerfile.backend -t backend .
+docker run -p 8000:8000 backend
 
-# Run other components directly
-cd backend && python server.py &
+# Run the frontend directly
 npm run dev
 ```
 
 #### 3. Hybrid Approach
 ```bash
 # Run some services in Docker, others directly
-docker compose up -d rag-api
-cd backend && python server.py &
+docker compose up -d backend
 npm run dev
 ```
 

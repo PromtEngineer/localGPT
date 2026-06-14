@@ -82,7 +82,7 @@ docker compose ps
 # Test endpoints
 curl http://localhost:3000      # Frontend
 curl http://localhost:8000/health  # Backend  
-curl http://localhost:8001/models  # RAG API
+curl http://localhost:8000/models  # Models
 ```
 
 ### Step 5: Access Application
@@ -135,13 +135,10 @@ python run_system.py
 **Or start components manually in separate terminals:**
 
 ```bash
-# Terminal 1: RAG API
-python -m rag_system.api_server
+# Terminal 1: Backend (unified FastAPI server, runs the RAG runtime in-process)
+python backend/server.py
 
-# Terminal 2: Backend
-cd backend && python server.py
-
-# Terminal 3: Frontend
+# Terminal 2: Frontend
 npm run dev
 ```
 
@@ -154,7 +151,7 @@ python system_health_check.py
 # Test endpoints
 curl http://localhost:3000      # Frontend
 curl http://localhost:8000/health  # Backend
-curl http://localhost:8001/models  # RAG API
+curl http://localhost:8000/models  # Models
 ```
 
 ### Step 5: Access Application
@@ -214,8 +211,7 @@ python run_system.py               # Start all services
 python system_health_check.py      # Check system health
 
 # Individual components
-python -m rag_system.api_server    # RAG API only
-cd backend && python server.py     # Backend only
+python backend/server.py           # Backend only (runs RAG runtime in-process)
 npm run dev                         # Frontend only
 
 # Stop: Press Ctrl+C in terminal running services
@@ -239,7 +235,7 @@ docker version
 **Port conflicts?**
 ```bash
 # Check what's using ports
-lsof -i :3000 -i :8000 -i :8001
+lsof -i :3000 -i :8000
 
 # Stop conflicting processes
 ./start-docker.sh stop
@@ -297,7 +293,7 @@ Run this comprehensive check:
 # Check all endpoints
 curl -f http://localhost:3000 && echo "✅ Frontend OK"
 curl -f http://localhost:8000/health && echo "✅ Backend OK"  
-curl -f http://localhost:8001/models && echo "✅ RAG API OK"
+curl -f http://localhost:8000/models && echo "✅ Models OK"
 curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 
 # For Docker: Check containers

@@ -148,7 +148,7 @@ docker compose ps
 # Test all endpoints
 curl http://localhost:3000      # Frontend
 curl http://localhost:8000/health  # Backend
-curl http://localhost:8001/models  # RAG API
+curl http://localhost:8000/models  # Models list
 curl http://localhost:11434/api/tags  # Ollama
 ```
 
@@ -178,13 +178,13 @@ docker compose up --build -d        # Rebuild and restart
 #### **Individual Container Management**
 ```bash
 # Restart specific service
-docker compose restart rag-api
+docker compose restart backend
 
 # View specific service logs
 docker compose logs -f backend
 
 # Execute commands in container
-docker compose exec rag-api python -c "print('Hello')"
+docker compose exec backend python -c "print('Hello')"
 ```
 
 ---
@@ -237,13 +237,10 @@ python run_system.py
 
 **Option B: Manual Component Startup**
 ```bash
-# Terminal 1: RAG API
-python -m rag_system.api_server
-
-# Terminal 2: Backend
+# Terminal 1: Backend (runs the RAG runtime in-process)
 cd backend && python server.py
 
-# Terminal 3: Frontend
+# Terminal 2: Frontend
 npm run dev
 
 # Access at http://localhost:3000
@@ -257,7 +254,7 @@ python system_health_check.py
 # Test endpoints
 curl http://localhost:3000      # Frontend
 curl http://localhost:8000/health  # Backend
-curl http://localhost:8001/models  # RAG API
+curl http://localhost:8000/models  # Models list
 ```
 
 ### 3.2 Direct Development Management
@@ -277,8 +274,7 @@ python system_health_check.py
 #### **Individual Component Management**
 ```bash
 # Start components individually
-python -m rag_system.api_server    # RAG API on port 8001
-cd backend && python server.py     # Backend on port 8000
+cd backend && python server.py     # Backend on port 8000 (RAG runtime in-process)
 npm run dev                         # Frontend on port 3000
 
 # Development tools
@@ -296,8 +292,7 @@ pip install -r requirements.txt --upgrade  # Update Python packages
 graph TB
     subgraph "Docker Containers"
         Frontend[Frontend Container<br/>Next.js<br/>Port 3000]
-        Backend[Backend Container<br/>Python API<br/>Port 8000]
-        RAG[RAG API Container<br/>Document Processing<br/>Port 8001]
+        Backend[Backend Container<br/>FastAPI + RAG runtime in-process<br/>Port 8000]
     end
     
     subgraph "Local System"
@@ -305,8 +300,7 @@ graph TB
     end
     
     Frontend --> Backend
-    Backend --> RAG
-    RAG --> Ollama
+    Backend --> Ollama
 ```
 
 ### 4.2 Direct Development Architecture
@@ -315,14 +309,12 @@ graph TB
 graph TB
     subgraph "Local Processes"
         Frontend[Next.js Dev Server<br/>Port 3000]
-        Backend[Python Backend<br/>Port 8000]
-        RAG[RAG API<br/>Port 8001]
+        Backend[Python Backend<br/>FastAPI + RAG runtime in-process<br/>Port 8000]
         Ollama[Ollama Server<br/>Port 11434]
     end
     
     Frontend --> Backend
-    Backend --> RAG
-    RAG --> Ollama
+    Backend --> Ollama
 ```
 
 ---
@@ -343,7 +335,6 @@ OLLAMA_HOST=http://172.18.0.1:11434
 
 # Service Configuration
 NODE_ENV=production
-RAG_API_URL=http://rag-api:8001
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
@@ -357,7 +348,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 # Environment variables are set automatically by run_system.py
 # Override in environment if needed:
 export OLLAMA_HOST=http://localhost:11434
-export RAG_API_URL=http://localhost:8001
 ```
 
 ### 5.2 Model Configuration
@@ -409,7 +399,7 @@ CHUNK_OVERLAP = 64         # Overlap between chunks
 # Comprehensive system check
 curl -f http://localhost:3000 && echo "✅ Frontend OK"
 curl -f http://localhost:8000/health && echo "✅ Backend OK"
-curl -f http://localhost:8001/models && echo "✅ RAG API OK"
+curl -f http://localhost:8000/models && echo "✅ Models endpoint OK"
 curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 ```
 
@@ -431,7 +421,7 @@ nvidia-smi     # GPU usage (if available)
 docker compose logs -f
 
 # Specific service
-docker compose logs -f rag-api
+docker compose logs -f backend
 
 # Save logs to file
 docker compose logs > system.log 2>&1
@@ -484,7 +474,7 @@ python run_system.py  # Direct development
 #### **Port Conflicts**
 ```bash
 # Check what's using ports
-lsof -i :3000 -i :8000 -i :8001 -i :11434
+lsof -i :3000 -i :8000 -i :11434
 
 # For Docker: Stop conflicting containers
 ./start-docker.sh stop
@@ -492,7 +482,6 @@ lsof -i :3000 -i :8000 -i :8001 -i :11434
 # For Direct: Kill processes
 pkill -f "npm run dev"
 pkill -f "server.py"
-pkill -f "api_server"
 ```
 
 #### **Docker Issues**
@@ -542,7 +531,7 @@ docker stats      # Docker containers
 curl http://localhost:11434/api/tags
 
 # Monitor component response times
-time curl http://localhost:8001/models
+time curl http://localhost:8000/models
 
 # Solutions:
 # 1. Use SSD storage
@@ -576,7 +565,7 @@ time curl http://localhost:8001/models
 ```bash
 # Use Docker Swarm or Kubernetes
 # Load balance frontend and backend
-# Scale RAG API instances based on load
+# Scale backend instances based on load
 ```
 
 #### **Resource Optimization**

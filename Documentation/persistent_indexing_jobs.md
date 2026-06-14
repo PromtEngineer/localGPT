@@ -25,7 +25,7 @@ Instead of indexing jobs living in memory and being lost on crashes, all progres
 
 Verified on 2026-06-06:
 - `.venv/bin/python -m pytest test_backend_api_contract.py -q` -> 23 passed
-- `python -m py_compile backend/server.py rag_system/api_server.py rag_system/api_server_with_progress.py rag_system/main.py rag_system/retrieval/retrievers.py rag_system/agent/loop.py`
+- `python -m py_compile backend/server.py rag_system/chat_runtime.py rag_system/indexing_runtime.py rag_system/main.py rag_system/retrieval/retrievers.py rag_system/agent/loop.py`
 - `npx tsc --noEmit`
 
 Covered by the backend contract tests:

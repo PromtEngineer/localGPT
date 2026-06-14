@@ -292,14 +292,9 @@ def show_graph():
         print(f"\nCould not visualize the graph. Matplotlib might not be installed or configured for your environment.")
         print(f"Error: {e}")
 
-def run_api_server():
-    """Starts the advanced RAG API server."""
-    from rag_system.api_server import start_server
-    start_server()
-
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python main.py [index|chat|show_graph|api] [query]")
+        print("Usage: python main.py [index|chat|show_graph] [query]")
         return
 
     command = sys.argv[1]
@@ -316,8 +311,6 @@ def main():
         print(run_chat(query))
     elif command == "show_graph":
         show_graph()
-    elif command == "api":
-        run_api_server()
     else:
         print(f"Unknown command: {command}")
 

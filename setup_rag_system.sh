@@ -260,7 +260,6 @@ DEBUG=false
 # Service URLs
 FRONTEND_URL=http://localhost:3000
 BACKEND_URL=http://localhost:8000
-RAG_API_URL=http://localhost:8001
 OLLAMA_URL=http://localhost:11434
 
 # Database Configuration
@@ -372,7 +371,7 @@ log "Step 7: Verifying system installation..."
 
 # Check service health
 info "Checking service health..."
-services=("frontend:3000" "backend:8000" "rag-api:8001" "ollama:11434")
+services=("frontend:3000" "backend:8000" "ollama:11434")
 for service in "${services[@]}"; do
     name="${service%:*}"
     port="${service#*:}"
@@ -419,7 +418,6 @@ echo ""
 echo "=== Service Health ==="
 curl -s -f http://localhost:3000 && echo "✅ Frontend: OK" || echo "❌ Frontend: FAIL"
 curl -s -f http://localhost:8000/health && echo "✅ Backend: OK" || echo "❌ Backend: FAIL"
-curl -s -f http://localhost:8001/models && echo "✅ RAG API: OK" || echo "❌ RAG API: FAIL"
 curl -s -f http://localhost:11434/api/tags && echo "✅ Ollama: OK" || echo "❌ Ollama: FAIL"
 EOF
 chmod +x status_rag_system.sh
@@ -514,7 +512,6 @@ echo ""
 echo "✅ System Status:"
 echo "   - Frontend: http://localhost:3000"
 echo "   - Backend API: http://localhost:8000"
-echo "   - RAG API: http://localhost:8001"
 echo "   - Ollama: http://localhost:11434"
 echo ""
 echo "📚 Documentation:"

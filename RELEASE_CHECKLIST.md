@@ -38,7 +38,7 @@ This file is the canonical release readiness checklist for LocalGPT. It consolid
 
 ## 5. Known gaps and deferred items
 - ✅ Per-file progress display, resume/repair actions, and the maintenance health-report panel are implemented in `IndexPicker.tsx`; manual test cases for all three flows are documented in `Documentation/ui_manual_test_cases.md` (no headless-browser harness in CI yet, so these remain manual).
-- ✅ FastAPI owns chat, SSE, and index execution; standard startup and frontend traffic no longer use the legacy port-8001 server. Deleting the compatibility module is deferred cleanup.
+- ✅ FastAPI owns chat, SSE, and index execution in-process; the standalone port-8001 RAG API (`rag_system/api_server.py`, `api_server_with_progress.py`, `Dockerfile.rag-api`) has been deleted and all startup, frontend, MCP, eval, and Docker paths run through port 8000.
 - ✅ Fusion weights and search modes affect retrieval behavior and have behavioral regression coverage.
 - ✅ Generation model, embedding/fusion, Provence, table selection, and late-chunk settings are request-scoped; the global RAG-agent lock has been removed.
 - ⚠️ Stream and sanitize uploads instead of reading up to 500 MB into memory.

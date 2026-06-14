@@ -35,20 +35,24 @@ open http://localhost:3000
 
 ### Current Setup (Local Ollama + Docker Containers)
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │────│    Backend      │────│    RAG API      │
-│  (Container)    │    │  (Container)    │    │  (Container)    │
-│   Port: 3000    │    │   Port: 8000    │    │   Port: 8001    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                                        │
-                                                        │ API calls
-                                                        ▼
-                                               ┌─────────────────┐
-                                               │     Ollama      │
-                                               │ (Local/Host)    │
-                                               │   Port: 11434   │
-                                               └─────────────────┘
+┌─────────────────┐    ┌─────────────────┐
+│   Frontend      │────│    Backend      │
+│  (Container)    │    │  (Container)    │
+│   Port: 3000    │    │   Port: 8000    │
+└─────────────────┘    └─────────────────┘
+                                │
+                                │ API calls
+                                ▼
+                       ┌─────────────────┐
+                       │     Ollama      │
+                       │ (Local/Host)    │
+                       │   Port: 11434   │
+                       └─────────────────┘
 ```
+
+The backend is a single unified FastAPI server (`backend/server.py`) that runs the
+RAG runtime in-process (chat via `rag_system/chat_runtime.py`, indexing via
+`rag_system/indexing_runtime.py`). There is no separate RAG API container.
 
 **Why Local Ollama?**
 - ✅ Better performance (direct GPU access)
@@ -68,15 +72,8 @@ open http://localhost:3000
 ### Backend Container (rag-backend) 
 - **Image**: Custom Python 3.11 build
 - **Port**: 8000
-- **Purpose**: Session management, chat history, API gateway
+- **Purpose**: Session management, chat history, and the in-process RAG runtime (document indexing, retrieval, AI processing)
 - **Health Check**: HTTP GET to /health
-- **Memory**: ~300MB
-
-### RAG API Container (rag-api)
-- **Image**: Custom Python 3.11 build
-- **Port**: 8001
-- **Purpose**: Document indexing, retrieval, AI processing
-- **Health Check**: HTTP GET to /models
 - **Memory**: ~2GB (varies with model usage)
 
 ## 📂 Volume Mounts & Data
@@ -104,7 +101,6 @@ OLLAMA_HOST=http://172.18.0.1:11434
 
 # Service Configuration  
 NODE_ENV=production
-RAG_API_URL=http://rag-api:8001
 NEXT_PUBLIC_API_URL=http://localhost:8000
 
 # Database Paths (inside containers)
@@ -162,7 +158,6 @@ docker compose ps
 docker compose logs -f
 
 # View specific service logs
-docker compose logs -f rag-api
 docker compose logs -f backend
 docker compose logs -f frontend
 ```
@@ -176,8 +171,8 @@ docker compose --env-file docker.env up --build -d
 docker compose down
 
 # Rebuild specific service
-docker compose build --no-cache rag-api
-docker compose up -d rag-api
+docker compose build --no-cache backend
+docker compose up -d backend
 ```
 
 ### Health Checks
@@ -185,7 +180,7 @@ docker compose up -d rag-api
 # Test all endpoints
 curl -f http://localhost:3000 && echo "✅ Frontend OK"
 curl -f http://localhost:8000/health && echo "✅ Backend OK"
-curl -f http://localhost:8001/models && echo "✅ RAG API OK"
+curl -f http://localhost:8000/models && echo "✅ Models OK"
 curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 ```
 
@@ -193,10 +188,7 @@ curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 
 ### Access Container Shells
 ```bash
-# RAG API container (most debugging happens here)
-docker compose exec rag-api bash
-
-# Backend container
+# Backend container (most debugging happens here — runs the RAG runtime in-process)
 docker compose exec backend bash
 
 # Frontend container
@@ -206,7 +198,7 @@ docker compose exec frontend sh
 ### Common Debug Commands
 ```bash
 # Test RAG system initialization
-docker compose exec rag-api python -c "
+docker compose exec backend python -c "
 from rag_system.main import get_agent
 agent = get_agent('default')
 print('✅ RAG System OK')
@@ -214,15 +206,15 @@ print('✅ RAG System OK')
 
 # Test Ollama connection from container
 # macOS / Windows:
-docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+docker compose exec backend curl http://host.docker.internal:11434/api/tags
 # Linux:
-docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
+docker compose exec backend curl http://172.18.0.1:11434/api/tags
 
 # Check environment variables
-docker compose exec rag-api env | grep OLLAMA
+docker compose exec backend env | grep OLLAMA
 
 # View Python packages
-docker compose exec rag-api pip list | grep -E "(torch|transformers|lancedb)"
+docker compose exec backend pip list | grep -E "(torch|transformers|lancedb)"
 ```
 
 ### Resource Monitoring
@@ -253,7 +245,7 @@ docker system prune -f
 ./start-docker.sh
 
 # Check for port conflicts
-lsof -i :3000 -i :8000 -i :8001
+lsof -i :3000 -i :8000
 ```
 
 #### Can't Connect to Ollama
@@ -266,9 +258,9 @@ pkill ollama
 ollama serve
 
 # Test from container (macOS / Windows)
-docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+docker compose exec backend curl http://host.docker.internal:11434/api/tags
 # Test from container (Linux — use bridge gateway IP)
-docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
+docker compose exec backend curl http://172.18.0.1:11434/api/tags
 
 # On Linux, if host.docker.internal doesn't resolve, update docker.env:
 # Find your bridge IP first:

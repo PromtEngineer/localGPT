@@ -44,8 +44,6 @@ build_and_test() {
         curl -f "http://localhost:$port" >/dev/null 2>&1
     elif [ "$service" = "backend" ]; then
         curl -f "http://localhost:$port/health" >/dev/null 2>&1
-    elif [ "$service" = "rag-api" ]; then
-        curl -f "http://localhost:$port/models" >/dev/null 2>&1
     fi
     
     if [ $? -eq 0 ]; then
@@ -72,21 +70,14 @@ docker image prune -f >/dev/null 2>&1
 # Build in dependency order
 echo "📦 Building containers in dependency order..."
 
-# 1. RAG API (no dependencies)
-build_and_test "rag-api" "Dockerfile.rag-api" "8001"
-if [ $? -ne 0 ]; then
-    echo "❌ RAG API build failed, stopping"
-    exit 1
-fi
-
-# 2. Backend (depends on RAG API)
+# 1. Backend (unified FastAPI + in-process RAG runtime on port 8000)
 build_and_test "backend" "Dockerfile.backend" "8000"
 if [ $? -ne 0 ]; then
     echo "❌ Backend build failed, stopping"
     exit 1
 fi
 
-# 3. Frontend (depends on Backend)
+# 2. Frontend (depends on Backend)
 build_and_test "frontend" "Dockerfile.frontend" "3000"
 if [ $? -ne 0 ]; then
     echo "❌ Frontend build failed, stopping"

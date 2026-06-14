@@ -10,7 +10,7 @@ This document provides a comprehensive overview of the Advanced Retrieval-Augmen
 
 ### 1.1 High-Level Architecture
 
-The RAG system implements a sophisticated 4-tier microservices architecture:
+The RAG system implements a consolidated architecture built around a single unified backend that runs the RAG runtime in-process:
 
 ```mermaid
 graph TB
@@ -20,19 +20,14 @@ graph TB
         Browser --> UI
     end
     
-    subgraph "API Gateway Layer"
-        Backend[Backend Server<br/>Python HTTP Server<br/>Port 8000]
+    subgraph "Backend Layer"
+        Backend[Unified FastAPI Backend<br/>backend/server.py<br/>API + In-Process RAG Runtime<br/>Port 8000]
         UI -->|REST API| Backend
-    end
-    
-    subgraph "Processing Layer"
-        RAG[RAG API Server<br/>Document Processing<br/>Port 8001]
-        Backend -->|Internal API| RAG
     end
     
     subgraph "LLM Service Layer"
         Ollama[Ollama Server<br/>LLM Inference<br/>Port 11434]
-        RAG -->|Model Calls| Ollama
+        Backend -->|Model Calls| Ollama
     end
     
     subgraph "Storage Layer"
@@ -41,8 +36,8 @@ graph TB
         FileSystem[File System<br/>Documents & Indexes]
         
         Backend --> SQLite
-        RAG --> LanceDB
-        RAG --> FileSystem
+        Backend --> LanceDB
+        Backend --> FileSystem
     end
 ```
 
@@ -51,8 +46,7 @@ graph TB
 | Component | Technology | Port | Purpose |
 |-----------|------------|------|---------|
 | **Frontend** | Next.js 15, React 19, TypeScript | 3000 | User interface, chat interactions |
-| **Backend** | Python 3.11, HTTP Server | 8000 | API gateway, session management, routing |
-| **RAG API** | Python 3.11, Advanced NLP | 8001 | Document processing, retrieval, generation |
+| **Backend** | Python 3.11, FastAPI | 8000 | Unified API + in-process RAG runtime (document processing, retrieval, generation, session management, routing) |
 | **Ollama** | Go-based LLM server | 11434 | Local LLM inference (embedding, generation) |
 | **SQLite** | Embedded database | - | Sessions, messages, index metadata |
 | **LanceDB** | Vector database | - | Document embeddings, similarity search |

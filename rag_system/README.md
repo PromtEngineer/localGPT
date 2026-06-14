@@ -1,6 +1,6 @@
 # LocalGPT RAG System
 
-This package contains the document processing, retrieval, and answer-generation core used by LocalGPT. It is served through `rag_system/api_server.py` on port `8001` and is normally called by the backend API on port `8000`.
+This package contains the document processing, retrieval, and answer-generation core used by LocalGPT. It runs **in-process** inside the unified FastAPI backend on port `8000` — chat is dispatched through `rag_system/chat_runtime.py` and indexing through `rag_system/indexing_runtime.py`. (The standalone RAG API that used to listen on port `8001` has been retired.)
 
 For canonical docs, see:
 - [System overview](../Documentation/system_overview.md)
@@ -24,8 +24,9 @@ Multimodal and graph features appear in parts of the codebase and roadmap, but t
 
 | Path | Purpose |
 |------|---------|
-| `api_server.py` | HTTP API for `/index`, `/chat`, `/chat/stream`, and `/models` |
-| `main.py` | Runtime model and pipeline configuration entry point |
+| `chat_runtime.py` | Transport-neutral chat dispatch (`execute_chat`) used in-process by the backend |
+| `indexing_runtime.py` | Transport-neutral index build/config used in-process by the backend |
+| `main.py` | Runtime model and pipeline configuration entry point; CLI for `index`/`chat`/`show_graph` |
 | `pipelines/indexing_pipeline.py` | Document conversion, chunking, enrichment, embedding, storage |
 | `pipelines/retrieval_pipeline.py` | Query processing, retrieval, reranking, synthesis |
 | `agent/` | Routing, orchestration, verification helpers |
@@ -41,16 +42,18 @@ Start the whole stack from the project root:
 ./start-localgpt
 ```
 
-Start only the RAG API:
+The RAG runtime is embedded in the backend; there is no separate service to launch. Check it through the unified backend:
 
 ```bash
-python -m rag_system.api_server
+curl http://localhost:8000/health
+curl http://localhost:8000/models
 ```
 
-Check the RAG API:
+For ad-hoc local use, `main.py` still exposes a CLI:
 
 ```bash
-curl http://localhost:8001/models
+python -m rag_system.main index <files...>
+python -m rag_system.main chat "your question"
 ```
 
 ## Current Model Defaults

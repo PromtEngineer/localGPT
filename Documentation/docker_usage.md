@@ -20,7 +20,7 @@ This guide provides practical Docker commands and procedures for running the RAG
 ├─────────────────────────────────────┤
 │ Frontend (Port 3000)               │
 │ Backend (Port 8000)                │
-│ RAG API (Port 8001)                │
+│   └─ RAG runtime runs in-process   │
 └─────────────────────────────────────┘
             │
             ▼
@@ -30,6 +30,10 @@ This guide provides practical Docker commands and procedures for running the RAG
 │ Ollama Server (Port 11434)         │
 └─────────────────────────────────────┘
 ```
+
+The unified backend (`backend/server.py`) runs the RAG runtime in-process —
+chat via `rag_system/chat_runtime.py` and indexing via
+`rag_system/indexing_runtime.py`. There is no separate RAG API service.
 
 ---
 
@@ -92,7 +96,6 @@ curl http://localhost:11434/api/tags
 Once running, access the system at:
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8000  
-- **RAG API**: http://localhost:8001
 - **Ollama**: http://localhost:11434
 
 ---
@@ -145,16 +148,15 @@ docker compose up --build -d
 # Start specific service
 docker compose up -d frontend
 docker compose up -d backend
-docker compose up -d rag-api
 
 # Restart specific service
-docker compose restart rag-api
+docker compose restart backend
 
 # Stop specific service
 docker compose stop backend
 
 # View specific service logs
-docker compose logs -f rag-api
+docker compose logs -f backend
 ```
 
 ---
@@ -167,15 +169,13 @@ docker compose logs -f rag-api
 # After frontend changes
 docker compose restart frontend
 
-# After backend changes  
+# After backend or RAG system changes
+# (the RAG runtime is bundled into the backend service)
 docker compose restart backend
 
-# After RAG system changes
-docker compose restart rag-api
-
 # Rebuild after dependency changes
-docker compose build --no-cache rag-api
-docker compose up -d rag-api
+docker compose build --no-cache backend
+docker compose up -d backend
 ```
 
 ### 3.2 Debugging Containers
@@ -184,14 +184,13 @@ docker compose up -d rag-api
 # Access container shell
 docker compose exec frontend sh
 docker compose exec backend bash
-docker compose exec rag-api bash
 
 # Run commands in container
-docker compose exec rag-api python -c "from rag_system.main import get_agent; print('✅ RAG System OK')"
+docker compose exec backend python -c "from rag_system.main import get_agent; print('✅ RAG System OK')"
 docker compose exec backend curl http://localhost:8000/health
 
 # Check environment variables
-docker compose exec rag-api env | grep OLLAMA
+docker compose exec backend env | grep OLLAMA
 ```
 
 ### 3.3 Development vs Production
@@ -217,7 +216,6 @@ docker compose logs
 # View specific service logs
 docker compose logs frontend
 docker compose logs backend
-docker compose logs rag-api
 
 # Follow logs in real-time
 docker compose logs -f
@@ -243,7 +241,7 @@ docker compose logs --since=2025-01-01T00:00:00
 docker stats
 
 # Monitor specific containers
-docker stats rag-frontend rag-backend rag-api
+docker stats rag-frontend rag-backend
 
 # Check container health
 docker compose ps
@@ -281,9 +279,9 @@ ollama list
 ```bash
 # Check model status from container
 # macOS / Windows:
-docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+docker compose exec backend curl http://host.docker.internal:11434/api/tags
 # Linux:
-docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
+docker compose exec backend curl http://172.18.0.1:11434/api/tags
 
 # Test Ollama connection
 curl -X POST http://localhost:11434/api/generate \
@@ -364,7 +362,7 @@ docker compose exec backend sqlite3 /app/backend/chat_data.db
 cp backend/chat_data.db backup/chat_data_$(date +%Y%m%d).db
 
 # Check LanceDB tables from container
-docker compose exec rag-api python -c "
+docker compose exec backend python -c "
 import lancedb
 db = lancedb.connect('/app/lancedb')
 print('Tables:', db.table_names())
@@ -375,14 +373,14 @@ print('Tables:', db.table_names())
 
 ```bash
 # Access shared files
-docker compose exec rag-api ls -la /app/shared_uploads
+docker compose exec backend ls -la /app/shared_uploads
 
 # Copy files to/from containers
-docker cp local_file.pdf rag-api:/app/shared_uploads/
-docker cp rag-api:/app/shared_uploads/file.pdf ./local_file.pdf
+docker cp local_file.pdf backend:/app/shared_uploads/
+docker cp backend:/app/shared_uploads/file.pdf ./local_file.pdf
 
 # Check disk usage
-docker compose exec rag-api df -h
+docker compose exec backend df -h
 ```
 
 ---
@@ -397,7 +395,7 @@ docker compose exec rag-api df -h
 docker version
 
 # Check for port conflicts
-lsof -i :3000 -i :8000 -i :8001
+lsof -i :3000 -i :8000
 
 # Check container logs
 docker compose logs [service-name]
@@ -418,9 +416,9 @@ ollama serve
 
 # Check from container
 # macOS / Windows:
-docker compose exec rag-api curl http://host.docker.internal:11434/api/tags
+docker compose exec backend curl http://host.docker.internal:11434/api/tags
 # Linux:
-docker compose exec rag-api curl http://172.18.0.1:11434/api/tags
+docker compose exec backend curl http://172.18.0.1:11434/api/tags
 ```
 
 #### Performance Issues
@@ -458,14 +456,14 @@ docker system prune -a --volumes
 # Comprehensive health check
 curl -f http://localhost:3000 && echo "✅ Frontend OK"
 curl -f http://localhost:8000/health && echo "✅ Backend OK"
-curl -f http://localhost:8001/models && echo "✅ RAG API OK"
+curl -f http://localhost:8000/models && echo "✅ Models endpoint OK"
 curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 
 # Check all container status
 docker compose ps
 
 # Test model loading
-docker compose exec rag-api python -c "
+docker compose exec backend python -c "
 from rag_system.main import get_agent
 agent = get_agent('default')
 print('✅ RAG System initialized successfully')
@@ -493,7 +491,7 @@ docker update --restart unless-stopped $(docker ps -q)
 
 ```bash
 # Scale specific services
-docker compose up -d --scale backend=2 --scale rag-api=2
+docker compose up -d --scale backend=2
 
 # Use Docker Swarm for clustering
 docker swarm init
@@ -506,7 +504,6 @@ docker stack deploy -c docker-compose.yml localgpt
 # Scan images for vulnerabilities
 docker scout cves rag-frontend
 docker scout cves rag-backend
-docker scout cves rag-api
 
 # Update base images
 docker compose build --no-cache --pull
@@ -531,7 +528,6 @@ OLLAMA_HOST=http://172.18.0.1:11434
 
 # Service configuration
 NODE_ENV=production
-RAG_API_URL=http://rag-api:8001
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
@@ -563,7 +559,7 @@ Your Docker deployment is successful when:
 - ✅ Ollama is accessible: `curl http://localhost:11434/api/tags`
 - ✅ Frontend loads: `curl http://localhost:3000`
 - ✅ Backend responds: `curl http://localhost:8000/health`
-- ✅ RAG API works: `curl http://localhost:8001/models`
+- ✅ Models endpoint works: `curl http://localhost:8000/models`
 - ✅ You can create indexes and chat with documents
 
 ### Performance Expectations

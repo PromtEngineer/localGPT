@@ -162,7 +162,7 @@ done
 # Test all endpoints
 curl -f http://localhost:3000 && echo "✅ Frontend OK"
 curl -f http://localhost:8000/health && echo "✅ Backend OK"
-curl -f http://localhost:8001/models && echo "✅ RAG API OK"
+curl -f http://localhost:8000/models && echo "✅ Models OK"
 curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 
 # Access the application
@@ -244,9 +244,8 @@ curl http://localhost:11434/api/tags
 python run_system.py
 
 # Or start components manually in separate terminals:
-# Terminal 1: python -m rag_system.api_server
-# Terminal 2: cd backend && python server.py  
-# Terminal 3: npm run dev
+# Terminal 1: python backend/server.py   # unified backend (runs RAG runtime in-process)
+# Terminal 2: npm run dev
 ```
 
 ### 4.3 Test Direct Development
@@ -258,7 +257,7 @@ python system_health_check.py
 # Test endpoints
 curl -f http://localhost:3000 && echo "✅ Frontend OK"
 curl -f http://localhost:8000/health && echo "✅ Backend OK"
-curl -f http://localhost:8001/models && echo "✅ RAG API OK"
+curl -f http://localhost:8000/models && echo "✅ Models OK"
 
 # Access the application
 open http://localhost:3000
@@ -299,7 +298,6 @@ OLLAMA_HOST=http://172.18.0.1:11434
 # Containerized Ollama — use with --profile with-ollama (see Section 3.4)
 # OLLAMA_HOST=http://ollama:11434
 NODE_ENV=production
-RAG_API_URL=http://rag-api:8001
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
@@ -313,7 +311,6 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 For Direct Development (set automatically by `run_system.py`):
 ```bash
 OLLAMA_HOST=http://localhost:11434
-RAG_API_URL=http://localhost:8001
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
@@ -356,7 +353,7 @@ python system_health_check.py
 # Universal health check
 curl -f http://localhost:3000 && echo "✅ Frontend OK"
 curl -f http://localhost:8000/health && echo "✅ Backend OK"
-curl -f http://localhost:8001/models && echo "✅ RAG API OK"
+curl -f http://localhost:8000/models && echo "✅ Models OK"
 curl -f http://localhost:11434/api/tags && echo "✅ Ollama OK"
 ```
 
@@ -396,11 +393,10 @@ curl -X POST http://localhost:8000/sessions \
   -d '{"title": "Test Session"}'
 
 # Test models endpoint
-curl http://localhost:8001/models
+curl http://localhost:8000/models
 
-# Test health endpoints
+# Test health endpoint
 curl http://localhost:8000/health
-curl http://localhost:8001/health
 ```
 
 ---
@@ -491,7 +487,7 @@ ollama pull nomic-embed-text        # Alternative embedding model
 ollama pull llama3.1:8b            # Alternative generation model
 
 # Test model switching
-curl -X POST http://localhost:8001/chat \
+curl -X POST http://localhost:8000/rag/chat \
   -H "Content-Type: application/json" \
   -d '{"query": "Hello", "model": "qwen3:8b"}'
 ```
@@ -506,7 +502,6 @@ chmod 700 lancedb/                # Restrict vector DB access
 # Configure firewall (production)
 sudo ufw allow 3000/tcp           # Frontend
 sudo ufw deny 8000/tcp            # Backend (internal only)
-sudo ufw deny 8001/tcp            # RAG API (internal only)
 ```
 
 ### 8.3 Backup Setup

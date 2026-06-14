@@ -753,9 +753,12 @@ class RequestScopedConcurrencyTests(unittest.TestCase):
         self.assertEqual(ollama_config["generation_model"], "default-model")
 
     def test_api_chat_path_has_no_global_serialization_or_config_writes(self):
+        # The in-process chat path (chat_runtime.execute_chat) replaced the
+        # retired standalone 8001 api_server. It must stay lock-free and never
+        # mutate shared config — request scoping is what let the global lock go.
         root = os.path.dirname(os.path.abspath(__file__))
         source = open(
-            os.path.join(root, "rag_system", "api_server.py"), encoding="utf-8"
+            os.path.join(root, "rag_system", "chat_runtime.py"), encoding="utf-8"
         ).read()
 
         self.assertNotIn("_rag_agent_lock", source)
@@ -765,7 +768,7 @@ class RequestScopedConcurrencyTests(unittest.TestCase):
 
 
 class MultiIndexSelectionTests(unittest.TestCase):
-    """Backend (table) and RAG server (embedding model/fusion) must resolve
+    """Backend (table) and RAG runtime (embedding model/fusion) must resolve
     the same index for a session — they diverged once (last vs first)."""
 
     def test_active_index_is_last_linked(self):
@@ -781,7 +784,7 @@ class MultiIndexSelectionTests(unittest.TestCase):
         # exactly how the two sides diverged. All picks must go through
         # rag_system.index_selection.select_active_index_id.
         root = os.path.dirname(os.path.abspath(__file__))
-        for rel in ("backend/server.py", os.path.join("rag_system", "api_server.py")):
+        for rel in ("backend/server.py", os.path.join("rag_system", "chat_runtime.py")):
             src = open(os.path.join(root, rel), encoding="utf-8").read()
             self.assertNotIn("idx_ids[0]", src, f"private index pick in {rel}")
             self.assertNotIn("idx_ids[-1]", src, f"private index pick in {rel}")

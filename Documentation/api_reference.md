@@ -1,4 +1,4 @@
-# 📚 API Reference (Backend & RAG API)
+# 📚 API Reference (Unified Backend)
 
 _Last updated: 2025-01-07_
 
@@ -33,15 +33,17 @@ _Last updated: 2025-01-07_
 
 ---
 
-## RAG API (Python `rag_system/api_server.py`)
-**Base URL**: `http://localhost:8001`
+## RAG Endpoints (unified backend `backend/server.py`)
+**Base URL**: `http://localhost:8000`
+
+The standalone RAG API that used to listen on port 8001 has been removed. The RAG pipeline now runs **in-process** inside the unified FastAPI backend (chat via `rag_system/chat_runtime.py`, indexing via `rag_system/indexing_runtime.py`). The RAG chat routes are namespaced under `/rag/`. The MCP server and eval harness call `http://localhost:8000/rag/chat`.
 
 | Endpoint | Method | Description | Request Body | Success Response |
 |----------|--------|-------------|--------------|------------------|
-| `/chat` | POST | Run RAG query with full pipeline | See RAG ChatRequest ▼ | `{ answer:str, source_documents:[], reasoning?:str, confidence?:float }` |
-| `/chat/stream` | POST | Run RAG query with SSE streaming | Same as /chat | Server-Sent Events stream |
-| `/index` | POST | Index documents with full configuration | See Index Request ▼ | `{ message:str, indexed_files:[], table_name:str }` |
-| `/models` | GET | List available models | – | `{ generation_models:str[], embedding_models:str[] }` |
+| `/rag/chat` | POST | Run RAG query through the in-process pipeline | See RAG ChatRequest ▼ | `{ answer:str, source_documents:[], ... }` |
+| `/rag/chat/stream` | POST | Run RAG query with SSE streaming | Same as `/rag/chat` (requires `query`) | Server-Sent Events stream (`data: {type, data}` lines; terminal `complete`/`error` events) |
+
+> Document indexing is handled by the backend's index routes (e.g. `POST /sessions/<id>/index`, `POST /indexes/<id>/build`) and the in-process indexing runtime, not a separate `/index` endpoint. Model listing remains at the backend `GET /models` (see the Backend HTTP API table above).
 
 ### RAG ChatRequest (Advanced Options)
 ```jsonc
@@ -66,7 +68,8 @@ _Last updated: 2025-01-07_
 }
 ```
 
-### Index Request (Document Indexing)
+### Indexing Options (in-process `rag_system/indexing_runtime.py`)
+These options drive the in-process indexing runtime invoked by the backend index routes (e.g. `POST /sessions/<id>/index`, `POST /indexes/<id>/build`):
 ```jsonc
 {
   "file_paths": ["path1.pdf", "path2.pdf"],  // Required – files to index
@@ -86,7 +89,7 @@ _Last updated: 2025-01-07_
 }
 ```
 
-> **Note on CORS** – All endpoints include `Access-Control-Allow-Origin: *` header.
+> **Note on CORS** – CORS is handled by FastAPI's `CORSMiddleware` in `backend/server.py`, with allowed origins driven by the `CORS_ORIGINS` environment variable.
 
 ---
 
@@ -158,4 +161,4 @@ The React/Next.js frontend calls the backend via a typed wrapper. Important meth
 
 ---
 
-_This reference is derived from static code analysis of `backend/server.py`, `rag_system/api_server.py`, and `src/lib/api.ts`. Keep it in sync with route or type changes._ 
+_This reference is derived from static code analysis of `backend/server.py`, `rag_system/chat_runtime.py`, `rag_system/indexing_runtime.py`, and `src/lib/api.ts`. Keep it in sync with route or type changes._ 

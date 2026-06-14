@@ -104,7 +104,7 @@ The immediate order is:
 | ⚠️ Partial | CI invokes mypy + black, but adding a command is not completion: the current codebase does not pass the configured lint/format gates. |
 | ✅ Done | Dependency hygiene — duplicate top-level requirements were removed; `fuzzywuzzy` / `python-Levenshtein` were replaced with `rapidfuzz`; `rank_bm25`, `scikit-learn`, and `sentence_transformers` were removed from all three requirements files (zero real usage — confirmed via grep and `pip show` reverse-dependency checks; BM25 retrieval was already replaced by LanceDB native FTS), along with the dead `_get_bm25_retriever()` method in `retrieval_pipeline.py` that referenced a no-longer-existing `BM25Retriever` class. `requirements.txt` and `requirements-docker.txt` are now consistent. |
 | ✅ Done | Runtime health/config hygiene — CORS is driven by `CORS_ORIGINS`; RAG `/health` avoids eager embedder loading; Docker Compose sets `BACKEND_URL=http://backend:8000` so RAG index progress callbacks work across containers. |
-| ✅ Done | FastAPI owns chat, SSE, and index execution through transport-neutral runtimes. Standard startup, frontend, MCP, evaluation, and Docker configuration no longer depend on port 8001. The legacy HTTP module remains only as compatibility cleanup. |
+| ✅ Done | FastAPI owns chat, SSE, and index execution in-process through transport-neutral runtimes (`chat_runtime.py`, `indexing_runtime.py`). The standalone port-8001 RAG API has been deleted; all startup, frontend, MCP, evaluation, and Docker paths run through port 8000. |
 
 ---
 

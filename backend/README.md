@@ -1,6 +1,6 @@
 # LocalGPT Backend
 
-The backend is the API gateway for the current LocalGPT application. It runs on port `8000` and sits between the Next.js frontend, the RAG API server, Ollama, and the SQLite metadata database.
+The backend is the unified API server for the current LocalGPT application. It runs on port `8000` and sits between the Next.js frontend, Ollama, and the SQLite metadata database. The RAG runtime (indexing, retrieval, generation) runs **in-process** inside this server.
 
 For the full architecture, start with:
 - [System overview](../Documentation/system_overview.md)
@@ -14,17 +14,16 @@ For the full architecture, start with:
 - Index metadata, document uploads, and session/index linking
 - Background index build jobs and job progress endpoints
 - Maintenance endpoints for index repair, cleanup, and diagnostics
-- Routing chat requests to direct Ollama responses or the RAG API
+- Routing chat requests to direct Ollama responses or the in-process RAG runtime
 
-The backend does not perform the heavy RAG indexing work itself. It delegates document processing and retrieval to the RAG API on port `8001`.
+The backend performs RAG indexing and retrieval in-process via `rag_system/indexing_runtime.py` and `rag_system/chat_runtime.py` — there is no separate RAG service. (The standalone RAG API that used to run on port `8001` has been retired.)
 
 ## Main Services
 
 | Service | Port | Purpose |
 |---------|------|---------|
 | Frontend | `3000` | Next.js UI |
-| Backend | `8000` | API gateway, sessions, jobs, metadata |
-| RAG API | `8001` | Indexing, retrieval, generation pipeline |
+| Backend | `8000` | Unified API: sessions, jobs, metadata, **and** the in-process RAG runtime |
 | Ollama | `11434` | Local model serving |
 
 ## Start
