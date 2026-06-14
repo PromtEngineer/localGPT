@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional
 
 from rag_system.index_selection import select_active_index_id
+from rag_system.utils.logging_utils import StageTimings, timings_enabled
 
 EventCallback = Optional[Callable[[str, Any], None]]
 
@@ -79,7 +80,23 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
     provence_threshold = data.get("provence_threshold")
     ai_rerank = data.get("ai_rerank")
 
-    if bool(data.get("force_rag", False)):
+    # Opt-in per-stage timing. The observer wraps the event stream (so it only
+    # adds detail on the streaming path, never flipping a non-streaming request
+    # into one); total latency is captured regardless.
+    timer = StageTimings() if timings_enabled() else None
+    callback = event_callback
+    if timer is not None and event_callback is not None:
+
+        def _timed_callback(
+            event_type: str, payload: Any, _t=timer, _orig=event_callback
+        ) -> None:
+            _t.observe(event_type, payload)
+            _orig(event_type, payload)
+
+        callback = _timed_callback
+
+    force_rag = bool(data.get("force_rag", False))
+    if force_rag:
         overrides = {
             "retrieval_k": retrieval_k,
             "reranker_top_k": reranker_top_k,
@@ -91,39 +108,53 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
             "generation_model": generation_model,
             "latechunk_enabled": True,
         }
-        return agent.retrieval_pipeline.run(
+        result = agent.retrieval_pipeline.run(
             query,
             table_name=table_name,
             window_size_override=context_window_size,
-            event_callback=event_callback,
+            event_callback=callback,
             collections=collections,
             filters=(
                 data.get("filters") if isinstance(data.get("filters"), dict) else None
             ),
             overrides=overrides,
         )
+    else:
+        result = agent.run(
+            query,
+            table_name=table_name,
+            collections=collections,
+            filters=(
+                data.get("filters") if isinstance(data.get("filters"), dict) else None
+            ),
+            session_id=session_id,
+            compose_sub_answers=data.get("compose_sub_answers"),
+            query_decompose=data.get("query_decompose"),
+            ai_rerank=ai_rerank,
+            context_expand=data.get("context_expand"),
+            verify=data.get("verify"),
+            retrieval_k=retrieval_k,
+            context_window_size=context_window_size,
+            reranker_top_k=reranker_top_k,
+            search_type=search_type,
+            dense_weight=dense_weight,
+            agentic=(
+                data.get("agentic") if isinstance(data.get("agentic"), bool) else None
+            ),
+            generation_model=generation_model,
+            document_overviews=document_overviews,
+            provence_prune=provence_prune,
+            provence_threshold=provence_threshold,
+            latechunk_enabled=True,
+            event_callback=callback,
+        )
 
-    return agent.run(
-        query,
-        table_name=table_name,
-        collections=collections,
-        filters=data.get("filters") if isinstance(data.get("filters"), dict) else None,
-        session_id=session_id,
-        compose_sub_answers=data.get("compose_sub_answers"),
-        query_decompose=data.get("query_decompose"),
-        ai_rerank=ai_rerank,
-        context_expand=data.get("context_expand"),
-        verify=data.get("verify"),
-        retrieval_k=retrieval_k,
-        context_window_size=context_window_size,
-        reranker_top_k=reranker_top_k,
-        search_type=search_type,
-        dense_weight=dense_weight,
-        agentic=data.get("agentic") if isinstance(data.get("agentic"), bool) else None,
-        generation_model=generation_model,
-        document_overviews=document_overviews,
-        provence_prune=provence_prune,
-        provence_threshold=provence_threshold,
-        latechunk_enabled=True,
-        event_callback=event_callback,
-    )
+    if timer is not None and isinstance(result, dict):
+        result.update(timer.as_dict())
+        timer.log(
+            session_id=session_id,
+            table_name=table_name,
+            force_rag=force_rag,
+            source_count=len(result.get("source_documents") or []),
+        )
+    return result

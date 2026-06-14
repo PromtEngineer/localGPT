@@ -791,5 +791,151 @@ class MultiIndexSelectionTests(unittest.TestCase):
             self.assertIn("select_active_index_id", src, f"{rel} no longer uses the shared helper")
 
 
+class _FakeTimingPipeline:
+    """Emits the pipeline's real stage events through the callback it's given."""
+
+    def run(self, query, *, event_callback=None, **kwargs):
+        if event_callback:
+            event_callback("retrieval_started", {})
+            event_callback("retrieval_done", {"count": 2})
+            event_callback("rerank_started", {"count": 2})
+            event_callback("rerank_done", {"count": 2})
+            event_callback("token", {"text": "hello"})
+            event_callback("token", {"text": " there"})
+        return {"answer": "hello there", "source_documents": [{"document_id": "d"}]}
+
+
+class _FakeTimingAgent:
+    def __init__(self):
+        self.ollama_config = {"generation_model": "m"}
+        self.retrieval_pipeline = _FakeTimingPipeline()
+
+    def get_overviews_for_indexes(self, _ids):
+        return []
+
+
+class _FakeTimingDB:
+    def list_indexes(self):
+        return []
+
+    def get_indexes_for_session(self, _sid):
+        return []
+
+    def get_index(self, _iid):
+        return None
+
+
+class StageTimingsTests(unittest.TestCase):
+    """Opt-in per-stage timing + TTFT (LOCALGPT_TIMINGS). Off => no behavior
+    change; on => timings_ms/ttft_ms ride along on the chat response."""
+
+    def test_timings_enabled_parses_flag(self):
+        from unittest.mock import patch
+
+        from rag_system.utils.logging_utils import timings_enabled
+
+        cases = {"1": True, "true": True, "YES": True, "on": True,
+                 "0": False, "": False, "off": False}
+        for value, want in cases.items():
+            with patch.dict(os.environ, {"LOCALGPT_TIMINGS": value}):
+                self.assertEqual(timings_enabled(), want, value)
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(timings_enabled())
+
+    def test_stage_timings_observes_streaming_sequence(self):
+        from rag_system.utils.logging_utils import StageTimings
+
+        timer = StageTimings()
+        for event in ("retrieval_started", "retrieval_done", "rerank_started",
+                      "rerank_done", "prune_started", "prune_done"):
+            timer.observe(event, {})
+        timer.observe("token", {"text": "hi"})
+        timer.observe("token", {"text": " more"})  # only the first sets TTFT
+
+        snapshot = timer.as_dict()
+        self.assertLessEqual(
+            {"retrieval", "rerank", "prune", "total"}, set(snapshot["timings_ms"])
+        )
+        self.assertIn("ttft_ms", snapshot)
+        self.assertGreaterEqual(snapshot["ttft_ms"], 0.0)
+
+    def test_stage_timings_accumulate_across_rounds(self):
+        from rag_system.utils.logging_utils import StageTimings
+
+        timer = StageTimings()
+        timer.observe("retrieval_started", {})
+        timer.observe("retrieval_done", {})
+        after_first = timer.stages_ms["retrieval"]
+        timer.observe("retrieval_started", {})
+        timer.observe("retrieval_done", {})
+        # Second round accumulates into the same bucket rather than overwriting.
+        self.assertGreaterEqual(timer.stages_ms["retrieval"], after_first)
+        self.assertEqual(list(timer.stages_ms), ["retrieval"])
+
+    def test_stage_timings_omit_ttft_without_token(self):
+        from rag_system.utils.logging_utils import StageTimings
+
+        timer = StageTimings()
+        timer.observe("retrieval_started", {})
+        timer.observe("retrieval_done", {})
+        snapshot = timer.as_dict()
+        self.assertNotIn("ttft_ms", snapshot)
+        self.assertIn("total", snapshot["timings_ms"])
+
+    def test_execute_chat_attaches_timings_when_enabled(self):
+        from unittest.mock import patch
+
+        from rag_system import chat_runtime
+
+        seen = []
+        with patch.dict(os.environ, {"LOCALGPT_TIMINGS": "1"}):
+            result = chat_runtime.execute_chat(
+                _FakeTimingAgent(),
+                _FakeTimingDB(),
+                {"query": "q", "force_rag": True},
+                event_callback=lambda event_type, _p: seen.append(event_type),
+            )
+        self.assertIn("timings_ms", result)
+        self.assertLessEqual(
+            {"retrieval", "rerank", "total"}, set(result["timings_ms"])
+        )
+        self.assertIn("ttft_ms", result)
+        # Observer is passive: the original callback still saw every event.
+        self.assertIn("retrieval_started", seen)
+        self.assertIn("token", seen)
+
+    def test_execute_chat_no_timings_when_disabled(self):
+        from unittest.mock import patch
+
+        from rag_system import chat_runtime
+
+        with patch.dict(os.environ, {"LOCALGPT_TIMINGS": "0"}):
+            result = chat_runtime.execute_chat(
+                _FakeTimingAgent(),
+                _FakeTimingDB(),
+                {"query": "q", "force_rag": True},
+                event_callback=lambda _e, _p: None,
+            )
+        self.assertNotIn("timings_ms", result)
+        self.assertNotIn("ttft_ms", result)
+
+    def test_execute_chat_total_only_without_callback(self):
+        from unittest.mock import patch
+
+        from rag_system import chat_runtime
+
+        # No event_callback => no stage events fire (and none are forced), but
+        # total latency is still recorded.
+        with patch.dict(os.environ, {"LOCALGPT_TIMINGS": "1"}):
+            result = chat_runtime.execute_chat(
+                _FakeTimingAgent(),
+                _FakeTimingDB(),
+                {"query": "q", "force_rag": True},
+                event_callback=None,
+            )
+        self.assertEqual(list(result["timings_ms"]), ["total"])
+        self.assertNotIn("ttft_ms", result)
+
+
 if __name__ == "__main__":
     unittest.main()

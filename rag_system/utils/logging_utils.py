@@ -7,6 +7,7 @@ performance metrics, and comprehensive observability features.
 
 import json
 import logging
+import os
 import sys
 import threading
 import time
@@ -301,6 +302,84 @@ indexing_logger = StructuredLogger("localgpt.indexing")
 query_logger = StructuredLogger("localgpt.query")
 api_logger = StructuredLogger("localgpt.api")
 _structured_loggers = [system_logger, indexing_logger, query_logger, api_logger]
+
+
+_TIMINGS_ENV = "LOCALGPT_TIMINGS"
+
+
+def timings_enabled() -> bool:
+    """Per-request RAG stage timing is opt-in via the LOCALGPT_TIMINGS env flag.
+
+    Off by default so the chat hot path is byte-for-byte unchanged unless an
+    operator explicitly turns instrumentation on.
+    """
+    return os.getenv(_TIMINGS_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+class StageTimings:
+    """Observes a chat request's event_callback stream to record per-stage
+    wall-clock timings, time-to-first-token, and total latency.
+
+    It is a passive observer: it never alters the events it sees, so attaching
+    it is behavior-neutral. Stage spans are derived from the pipeline's existing
+    ``*_started`` / ``*_done`` events; repeated rounds (agentic / decomposition)
+    accumulate into the same stage bucket. TTFT is the first ``token`` event
+    measured from request start, so it includes retrieve + rerank + prefill.
+    """
+
+    _STARTED = {
+        "retrieval_started": "retrieval",
+        "rerank_started": "rerank",
+        "context_expand_started": "context_expand",
+        "prune_started": "prune",
+    }
+    _DONE = {
+        "retrieval_done": "retrieval",
+        "rerank_done": "rerank",
+        "context_expand_done": "context_expand",
+        "prune_done": "prune",
+    }
+
+    def __init__(self) -> None:
+        self._t0 = time.perf_counter()
+        self._open: Dict[str, float] = {}
+        self.stages_ms: Dict[str, float] = {}
+        self.ttft_ms: Optional[float] = None
+
+    def observe(self, event_type: str, _payload: Any = None) -> None:
+        """Record one event. Safe to call for every event in the stream."""
+        now = time.perf_counter()
+        name = self._STARTED.get(event_type)
+        if name is not None:
+            self._open[name] = now
+            return
+        name = self._DONE.get(event_type)
+        if name is not None:
+            start = self._open.pop(name, None)
+            if start is not None:
+                self.stages_ms[name] = (
+                    self.stages_ms.get(name, 0.0) + (now - start) * 1000.0
+                )
+            return
+        if event_type == "token" and self.ttft_ms is None:
+            self.ttft_ms = (now - self._t0) * 1000.0
+
+    def as_dict(self) -> Dict[str, Any]:
+        """Snapshot for attaching to a chat response. Always carries 'total'."""
+        stages = {name: round(ms, 1) for name, ms in self.stages_ms.items()}
+        stages["total"] = round((time.perf_counter() - self._t0) * 1000.0, 1)
+        out: Dict[str, Any] = {"timings_ms": stages}
+        if self.ttft_ms is not None:
+            out["ttft_ms"] = round(self.ttft_ms, 1)
+        return out
+
+    def log(self, **context: Any) -> None:
+        """Emit one structured 'rag_timings' line via the query logger."""
+        snapshot = self.as_dict()
+        fields = {f"{name}_ms": ms for name, ms in snapshot["timings_ms"].items()}
+        query_logger.info(
+            "rag_timings", ttft_ms=snapshot.get("ttft_ms"), **fields, **context
+        )
 
 
 def set_log_level(level: Union[str, int]):
