@@ -14,6 +14,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+
+def _connect(db_path: str) -> sqlite3.Connection:
+    """Open a connection with foreign-key enforcement.
+
+    SQLite disables foreign keys per-connection by default; enabling it on
+    every connection keeps ON DELETE CASCADE / referential integrity honest
+    and consistent with backend.database._connect.
+    """
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,7 +70,7 @@ class IncrementalIndexer:
 
     def _init_database(self):
         """Initialize database tables for incremental indexing"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.cursor()
 
         # Document metadata tracking table
@@ -161,7 +174,7 @@ class IncrementalIndexer:
         self, file_path: str, index_id: str = "default"
     ) -> Optional[DocumentMetadata]:
         """Get stored metadata from database"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.execute(
             """
             SELECT file_hash, modification_time, file_size, last_indexed, chunk_count, index_id
@@ -253,7 +266,7 @@ class IncrementalIndexer:
             file_hash = self.calculate_file_hash(file_path)
         now = time.time()
 
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.cursor()
 
         # Update or insert index-scoped metadata
@@ -336,7 +349,7 @@ class IncrementalIndexer:
 
     def get_index_stats(self, index_id: Optional[str] = None) -> Dict[str, Any]:
         """Get statistics about indexed documents"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.cursor()
 
         if index_id:
@@ -396,7 +409,7 @@ class IncrementalIndexer:
         Returns:
             Number of entries cleaned up
         """
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.cursor()
 
         # Get all tracked files
@@ -440,7 +453,7 @@ class IncrementalIndexer:
 
     def reset_index(self, index_id: str):
         """Reset all metadata for an index (useful for forced reindexing)"""
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = _connect(self.db_path)
         cursor = conn.cursor()
 
         # Remove metadata for this index
