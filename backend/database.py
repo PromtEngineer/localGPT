@@ -2,10 +2,22 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_now_iso() -> str:
+    """Naive UTC ISO timestamp.
+
+    index_jobs / index_job_files rows are written by BOTH this module and
+    rag_system.job_persistence (which uses datetime.utcnow()). They must agree
+    on a timezone or a single job's timeline mixes local and UTC stamps —
+    yielding negative/out-of-order stage durations. This matches the persistence
+    layer's naive-UTC format without the deprecated datetime.utcnow().
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
@@ -727,7 +739,7 @@ class ChatDatabase:
     def create_index_job(
         self, job_id: str, index_id: str, options: dict, documents: list[dict]
     ) -> dict:
-        now = datetime.now().isoformat()
+        now = _utc_now_iso()  # UTC: job_persistence writes these same rows in UTC
         conn = _connect(self.db_path)
         conn.execute(
             """
@@ -803,7 +815,7 @@ class ChatDatabase:
             normalized["options"] = json.dumps(normalized["options"])
         if "result" in normalized and normalized["result"] is not None:
             normalized["result"] = json.dumps(normalized["result"])
-        normalized["updated_at"] = datetime.now().isoformat()
+        normalized["updated_at"] = _utc_now_iso()  # UTC (see _utc_now_iso)
 
         allowed = {
             "status",
@@ -862,7 +874,7 @@ class ChatDatabase:
         updates: dict | None = None,
     ) -> dict | None:
         updates = dict(updates or {})
-        updates["updated_at"] = datetime.now().isoformat()
+        updates["updated_at"] = _utc_now_iso()  # UTC (see _utc_now_iso)
         if updates.get("status") == "processing" and not updates.get("started_at"):
             updates["started_at"] = updates["updated_at"]
         if updates.get("status") in {

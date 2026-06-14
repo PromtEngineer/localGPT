@@ -9,7 +9,7 @@ import tempfile
 import threading
 import types
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -646,6 +646,72 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), dict(REFLECTION_DEFAULTS))
         self.assertEqual(response.json()["max_loops"], 2)
+
+    def test_index_job_timestamps_are_utc(self):
+        # index_jobs/index_job_files are written by both backend.database and
+        # rag_system.job_persistence (UTC). database.py must also use UTC or a
+        # job's timeline mixes local + UTC stamps. created_at should be ~now-UTC.
+        from backend.database import _utc_now_iso
+
+        helper = datetime.fromisoformat(_utc_now_iso())
+        utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+        self.assertLess(abs((helper - utc_now).total_seconds()), 5)
+
+        index_id = server.db.create_index("Job TZ")
+        job = server.db.create_index_job("job-tz-1", index_id, {}, [])
+        created = datetime.fromisoformat(job["created_at"])
+        # Naive (no offset) and within seconds of UTC now — not shifted by the
+        # local-vs-UTC offset the bug produced.
+        self.assertIsNone(created.tzinfo)
+        self.assertLess(abs((created - utc_now).total_seconds()), 30)
+
+    def test_export_diagnostics_reads_json_body(self):
+        # Options used to be query params, so a JSON body was silently ignored
+        # (and logs/config exported regardless). They must now come from the body.
+        class _Rec:
+            def __init__(self):
+                self.args = None
+
+            def export_diagnostics_bundle(self, *args):
+                self.args = args
+                return {"bundle": "ok"}
+
+        rec = _Rec()
+        with patch.object(server, "maintenance_tools", rec):
+            r1 = self.client.post(
+                "/maintenance/export-diagnostics",
+                json={"include_logs": False, "include_config": True},
+            )
+            self.assertEqual(r1.status_code, 200, r1.text)
+            self.assertEqual(rec.args, (None, False, True))  # body respected
+
+            rec.args = None
+            r2 = self.client.post("/maintenance/export-diagnostics")  # no body
+            self.assertEqual(r2.status_code, 200, r2.text)
+            self.assertEqual(rec.args, (None, True, True))  # defaults
+
+    def test_vacuum_dry_run_previews_without_running(self):
+        tools = MaintenanceTools(db_path=self.db_path, project_root=self.temp_dir)
+        result = tools.vacuum_database(dry_run=True)
+        self.assertTrue(result["dry_run"])
+        self.assertFalse(result["vacuumed"])  # never modifies on a dry run
+        self.assertIn("would_vacuum", result)
+        self.assertIn("fragmentation_pct", result)
+
+        # The endpoint must pass the flag through.
+        class _Rec:
+            def __init__(self):
+                self.dry_run = None
+
+            def vacuum_database(self, dry_run=False):
+                self.dry_run = dry_run
+                return {"vacuumed": False, "dry_run": dry_run, "would_vacuum": False}
+
+        rec = _Rec()
+        with patch.object(server, "maintenance_tools", rec):
+            resp = self.client.post("/maintenance/vacuum-database?dry_run=true")
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertTrue(rec.dry_run)
 
     def test_maintenance_endpoints_contract(self):
         response = self.client.get("/maintenance/index-health")

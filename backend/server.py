@@ -2743,14 +2743,26 @@ async def get_index_health(index_id: Optional[str] = None):
 
 
 @app.post("/maintenance/export-diagnostics")
-async def export_diagnostics(
-    output_path: Optional[str] = None,
-    include_logs: bool = True,
-    include_config: bool = True,
-):
-    """Export complete diagnostics bundle (logs, configs, state)"""
+async def export_diagnostics(request: Request):
+    """Export a diagnostics bundle (logs, configs, state).
+
+    Options come from the JSON body so they aren't silently dropped:
+      {"output_path"?: str, "include_logs"?: bool, "include_config"?: bool}
+    include_logs/include_config default to True (the bundle's purpose) and can
+    be turned off per request.
+    """
     if not maintenance_tools:
         raise HTTPException(status_code=503, detail="Maintenance tools not available")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    output_path = body.get("output_path")
+    include_logs = bool(body.get("include_logs", True))
+    include_config = bool(body.get("include_config", True))
 
     try:
         result = maintenance_tools.export_diagnostics_bundle(
@@ -2766,12 +2778,16 @@ async def export_diagnostics(
 
 
 @app.post("/maintenance/vacuum-database")
-async def vacuum_database():
-    """Run SQLite VACUUM to reclaim fragmented pages."""
+async def vacuum_database(dry_run: bool = False):
+    """Run SQLite VACUUM to reclaim fragmented pages.
+
+    dry_run=true previews fragmentation / reclaimable space and whether a VACUUM
+    would run, without modifying the database.
+    """
     if not maintenance_tools:
         raise HTTPException(status_code=503, detail="Maintenance tools not available")
     try:
-        result = maintenance_tools.vacuum_database()
+        result = maintenance_tools.vacuum_database(dry_run=dry_run)
         if result.get("error"):
             raise HTTPException(status_code=500, detail=result["error"])
         return result

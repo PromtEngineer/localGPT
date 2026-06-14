@@ -939,8 +939,12 @@ class MaintenanceTools:
     # 7. SQLITE VACUUM
     # ========================================================================
 
-    def vacuum_database(self) -> Dict[str, Any]:
-        """Run SQLite VACUUM if fragmentation exceeds 10%, free unused pages."""
+    def vacuum_database(self, dry_run: bool = False) -> Dict[str, Any]:
+        """Run SQLite VACUUM if fragmentation exceeds 10%, free unused pages.
+
+        dry_run=True previews the outcome (fragmentation, reclaimable space, and
+        whether a VACUUM would run) without modifying the database.
+        """
         db = self._get_db()
         if db is None:
             return {"error": "Database connection unavailable"}
@@ -953,8 +957,9 @@ class MaintenanceTools:
             )
             page_size = cursor.execute("PRAGMA page_size").fetchone()[0]
             freed_kb = round((freelist * page_size) / 1024, 1)
+            would_vacuum = fragmentation_pct >= 10
 
-            if fragmentation_pct >= 10:
+            if would_vacuum and not dry_run:
                 cursor.execute("VACUUM")
                 cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                 db.commit()
@@ -964,14 +969,19 @@ class MaintenanceTools:
                 )
             else:
                 vacuumed = False
-                logger.info(
-                    f"SQLite fragmentation {fragmentation_pct}% < 10%; skipping VACUUM"
+                reason = (
+                    "dry run"
+                    if dry_run
+                    else f"fragmentation {fragmentation_pct}% < 10%"
                 )
+                logger.info(f"SQLite VACUUM skipped ({reason})")
 
             return {
                 "fragmentation_pct": fragmentation_pct,
                 "freed_kb": freed_kb,
                 "vacuumed": vacuumed,
+                "would_vacuum": would_vacuum,
+                "dry_run": dry_run,
             }
         except Exception as e:
             logger.error(f"VACUUM failed: {e}")
