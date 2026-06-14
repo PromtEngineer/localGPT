@@ -16,6 +16,10 @@ def _connect(db_path: str) -> sqlite3.Connection:
     """
     conn = sqlite3.connect(db_path, timeout=30)
     conn.execute("PRAGMA foreign_keys = ON")
+    # Centralized here so every connection yields dict-like rows uniformly.
+    # sqlite3.Row is a superset of tuple access (positional indexing and
+    # unpacking still work), so positional call sites are unaffected.
+    conn.row_factory = sqlite3.Row
     return conn
 
 
@@ -281,7 +285,6 @@ class ChatDatabase:
     def get_sessions(self, limit: int = 50) -> List[Dict]:
         """Get all chat sessions, ordered by most recent"""
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
             SELECT id, title, created_at, updated_at, model_used, message_count
@@ -298,7 +301,6 @@ class ChatDatabase:
     def get_session(self, session_id: str) -> Optional[Dict]:
         """Get a specific session"""
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
             SELECT id, title, created_at, updated_at, model_used, message_count
@@ -341,7 +343,6 @@ class ChatDatabase:
     def get_messages(self, session_id: str, limit: int = 100) -> List[Dict]:
         """Get the most recent messages for a session, in chronological order"""
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
 
         # Select the newest `limit` rows (rowid breaks same-timestamp ties),
         # then reverse so callers still get oldest-to-newest order.
@@ -506,7 +507,6 @@ class ChatDatabase:
 
     def get_index(self, index_id: str) -> dict | None:
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         cur = conn.execute('SELECT * FROM indexes WHERE id=?', (index_id,))
         row = cur.fetchone()
         if not row:
@@ -523,7 +523,6 @@ class ChatDatabase:
 
     def list_indexes(self) -> list[dict]:
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         rows = conn.execute('SELECT * FROM indexes').fetchall()
         res = []
         for r in rows:
@@ -593,7 +592,6 @@ class ChatDatabase:
     def update_index_metadata(self, index_id: str, updates: dict):
         """Merge new key/values into an index's metadata JSON column."""
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         try:
             # BEGIN IMMEDIATE holds a write lock across the read-modify-write
             # so concurrent writers (build thread, cancel endpoint) can't
@@ -660,7 +658,6 @@ class ChatDatabase:
 
     def get_index_job(self, job_id: str, include_options: bool = True, include_files: bool = True) -> dict | None:
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         row = conn.execute('SELECT * FROM index_jobs WHERE id=?', (job_id,)).fetchone()
         if not row:
             conn.close()
@@ -715,7 +712,6 @@ class ChatDatabase:
         if conn is None:
             conn = _connect(self.db_path)
             close_conn = True
-        conn.row_factory = sqlite3.Row
         rows = conn.execute('''
             SELECT id, job_id, index_id, stored_path, filename, status, stage,
                    chunks_generated, error, started_at, finished_at, updated_at
@@ -759,7 +755,6 @@ class ChatDatabase:
             return None
 
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         # Safe SQL construction: assignments validated through allowlist, where clause parameterized
         sql_update = "UPDATE index_job_files SET " + ", ".join(assignments) + " WHERE " + where
         conn.execute(sql_update, values + where_values)
@@ -773,7 +768,6 @@ class ChatDatabase:
 
     def list_unfinished_index_jobs(self) -> list[dict]:
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         rows = conn.execute('''
             SELECT * FROM index_jobs
             WHERE status IN ('queued', 'running', 'building')
@@ -791,7 +785,6 @@ class ChatDatabase:
 
     def get_latest_index_job(self, index_id: str, include_options: bool = False, include_files: bool = True) -> dict | None:
         conn = _connect(self.db_path)
-        conn.row_factory = sqlite3.Row
         row = conn.execute('''
             SELECT id FROM index_jobs
             WHERE index_id=?
