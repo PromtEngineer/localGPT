@@ -84,5 +84,8 @@ jobs:
       - name: Run full lint
         run: npm run lint
 
+      - name: Run UI render smokes
+        run: npm run test:ui
+
       - name: Build frontend
         run: npm run build
