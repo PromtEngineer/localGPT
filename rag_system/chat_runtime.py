@@ -81,20 +81,29 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
     provence_threshold = data.get("provence_threshold")
     ai_rerank = data.get("ai_rerank")
 
-    # Opt-in per-stage timing. The observer wraps the event stream (so it only
-    # adds detail on the streaming path, never flipping a non-streaming request
-    # into one); total latency is captured regardless.
+    # Opt-in per-stage timing. We observe the pipeline's event stream to bucket
+    # stage latencies. Generation always streams internally (stream_completion),
+    # so observing — even without a client stream — changes no behavior or
+    # result; it only enables the breakdown. With a client callback we forward
+    # events too; without one we attach a sink that just observes.
     timer = StageTimings() if timings_enabled() else None
     callback = event_callback
-    if timer is not None and event_callback is not None:
+    if timer is not None:
+        if event_callback is not None:
 
-        def _timed_callback(
-            event_type: str, payload: Any, _t=timer, _orig=event_callback
-        ) -> None:
-            _t.observe(event_type, payload)
-            _orig(event_type, payload)
+            def _timed_callback(
+                event_type: str, payload: Any, _t=timer, _orig=event_callback
+            ) -> None:
+                _t.observe(event_type, payload)
+                _orig(event_type, payload)
 
-        callback = _timed_callback
+            callback = _timed_callback
+        else:
+
+            def _sink_callback(event_type: str, payload: Any, _t=timer) -> None:
+                _t.observe(event_type, payload)
+
+            callback = _sink_callback
 
     # Two-axis self-reflection is opt-in per request. It runs on the retrieval
     # pipeline directly (like force_rag), so enabling it implies that path.

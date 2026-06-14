@@ -929,13 +929,15 @@ class StageTimingsTests(unittest.TestCase):
         self.assertNotIn("timings_ms", result)
         self.assertNotIn("ttft_ms", result)
 
-    def test_execute_chat_total_only_without_callback(self):
+    def test_execute_chat_times_stages_without_client_stream(self):
         from unittest.mock import patch
 
         from rag_system import chat_runtime
 
-        # No event_callback => no stage events fire (and none are forced), but
-        # total latency is still recorded.
+        # No client event_callback, but the timing sink still observes the
+        # pipeline's stage events — so non-streaming /rag/chat gets the full
+        # breakdown (and ttft), not just total. Behavior is unchanged because
+        # generation streams internally regardless.
         with patch.dict(os.environ, {"LOCALGPT_TIMINGS": "1"}):
             result = chat_runtime.execute_chat(
                 _FakeTimingAgent(),
@@ -943,8 +945,10 @@ class StageTimingsTests(unittest.TestCase):
                 {"query": "q", "force_rag": True},
                 event_callback=None,
             )
-        self.assertEqual(list(result["timings_ms"]), ["total"])
-        self.assertNotIn("ttft_ms", result)
+        self.assertLessEqual(
+            {"retrieval", "rerank", "total"}, set(result["timings_ms"])
+        )
+        self.assertIn("ttft_ms", result)
 
 
 class _ReflectFakePipeline:
