@@ -1,3 +1,5 @@
+import asyncio
+import io
 import json
 import os
 import shutil
@@ -11,7 +13,9 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from starlette.datastructures import Headers, UploadFile
 
 from backend.database import ChatDatabase
 import backend.server as server
@@ -558,6 +562,80 @@ class BackendApiContractTests(unittest.TestCase):
 
         self.assertEqual(first.status_code, 200, first.text)
         self.assertEqual(second.status_code, 404, second.text)
+
+    # ---- Upload streaming: size limit + batch rollback ------------------
+
+    @staticmethod
+    def _make_upload(filename, data, size="auto", content_type="text/plain"):
+        if size == "auto":
+            size = len(data)
+        headers = Headers({"content-type": content_type})
+        return UploadFile(
+            file=io.BytesIO(data), size=size, filename=filename, headers=headers
+        )
+
+    def test_upload_rejects_disallowed_extension(self):
+        upload_dir = os.path.join(self.temp_dir, "up")
+        bad = self._make_upload(
+            "malware.exe", b"MZ\x90\x00", content_type="application/x-msdownload"
+        )
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(server._save_uploads([bad], upload_dir=upload_dir))
+        self.assertEqual(ctx.exception.status_code, 415)
+        # Validation runs before any write — nothing landed on disk.
+        self.assertEqual(
+            os.listdir(upload_dir) if os.path.exists(upload_dir) else [], []
+        )
+
+    def test_upload_rejects_oversize_via_declared_size(self):
+        upload_dir = os.path.join(self.temp_dir, "up")
+        with patch.object(server, "_MAX_UPLOAD_BYTES", 50):
+            big = self._make_upload("big.txt", b"x" * 200)  # declared size 200 > 50
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(server._save_uploads([big], upload_dir=upload_dir))
+        self.assertEqual(ctx.exception.status_code, 413)
+        self.assertEqual(
+            os.listdir(upload_dir) if os.path.exists(upload_dir) else [], []
+        )
+
+    def test_upload_rejects_oversize_mid_stream_and_removes_partial(self):
+        # size=None forces the streaming guard (not the declared-size pre-check),
+        # which opens the file then aborts — the partial must be cleaned up.
+        upload_dir = os.path.join(self.temp_dir, "up")
+        with patch.object(server, "_MAX_UPLOAD_BYTES", 50):
+            big = self._make_upload("big.txt", b"x" * 200, size=None)
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(server._save_uploads([big], upload_dir=upload_dir))
+        self.assertEqual(ctx.exception.status_code, 413)
+        self.assertEqual(
+            os.listdir(upload_dir) if os.path.exists(upload_dir) else [], []
+        )
+
+    def test_upload_batch_rolls_back_completed_file_on_later_failure(self):
+        # First file is within the limit and fully written; the second blows the
+        # limit mid-stream. The already-completed first file must be rolled back
+        # too, so a rejected batch leaves the directory empty.
+        upload_dir = os.path.join(self.temp_dir, "up")
+        with patch.object(server, "_MAX_UPLOAD_BYTES", 50):
+            good = self._make_upload("ok.txt", b"y" * 10, size=None)
+            bad = self._make_upload("big.txt", b"x" * 200, size=None)
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(server._save_uploads([good, bad], upload_dir=upload_dir))
+        self.assertEqual(ctx.exception.status_code, 413)
+        self.assertEqual(os.listdir(upload_dir), [])
+
+    def test_upload_happy_path_streams_all_files(self):
+        upload_dir = os.path.join(self.temp_dir, "up")
+        f1 = self._make_upload("a.txt", b"alpha", size=None)
+        f2 = self._make_upload("b.txt", b"beta", size=None)
+        saved = asyncio.run(server._save_uploads([f1, f2], upload_dir=upload_dir))
+        self.assertEqual([s["filename"] for s in saved], ["a.txt", "b.txt"])
+        # Both on disk under uuid-prefixed names, content intact.
+        names = sorted(os.listdir(upload_dir))
+        self.assertEqual(len(names), 2)
+        self.assertTrue(all("_" in n for n in names))
+        with open(saved[0]["stored_path"], "rb") as handle:
+            self.assertEqual(handle.read(), b"alpha")
 
     def test_maintenance_endpoints_contract(self):
         response = self.client.get("/maintenance/index-health")
