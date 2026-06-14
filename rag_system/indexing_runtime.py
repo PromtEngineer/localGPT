@@ -7,14 +7,36 @@ import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
+from pathlib import Path
 from typing import Any, Dict, List
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _absolute_runtime_path(value: str) -> str:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return str(path.resolve(strict=False))
 
 
 def build_config(base_config: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
     config = copy.deepcopy(base_config)
+    config["db_path"] = _absolute_runtime_path(
+        config.get("db_path", "backend/chat_data.db")
+    )
+    config["index_store_path"] = _absolute_runtime_path(
+        config.get("index_store_path", "index_store")
+    )
+    storage = config.setdefault("storage", {})
+    for path_key in ("db_path", "lancedb_path", "lancedb_uri"):
+        if storage.get(path_key):
+            storage[path_key] = _absolute_runtime_path(storage[path_key])
+
     table_name = options.get("table_name")
     if table_name:
-        config["storage"]["text_table_name"] = table_name
+        storage["text_table_name"] = table_name
         config.setdefault("retrievers", {}).setdefault("dense", {})[
             "lancedb_table_name"
         ] = table_name
@@ -65,7 +87,7 @@ def build_config(base_config: Dict[str, Any], options: Dict[str, Any]) -> Dict[s
     if options.get("overview_model_name"):
         config["overview_model_name"] = options["overview_model_name"]
     if options.get("index_id"):
-        config["overview_path"] = (
+        config["overview_path"] = _absolute_runtime_path(
             f"index_store/overviews/{options['index_id']}.jsonl"
         )
     return config

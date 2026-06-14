@@ -58,7 +58,8 @@ This file is the canonical release readiness checklist for LocalGPT. It consolid
 ## Review Snapshot: 2026-06-13
 - ✅ `npm run lint:ui`
 - ✅ `npm run build`
-- ✅ `.venv/bin/python -m pytest -q` (74 passed)
+- ✅ `.venv/bin/python -m pytest -q` (77 passed)
+- ✅ Live index crash/restart/resume completed with 4/4 files and a healthy 108-row LanceDB table.
 - ✅ Retrieval evaluation gate (100%)
 - ✅ Live parallel mixed-model/mixed-search RAG requests returned HTTP 200 without global serialization
 - ✅ Legacy live connectivity scripts are no longer misreported as pytest passes; run them explicitly when the required services are available.

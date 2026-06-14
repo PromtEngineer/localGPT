@@ -704,6 +704,10 @@ def _recover_stale_index_builds() -> int:
         with index_jobs_lock:
             if job_id and str(job_id) in index_jobs:
                 continue
+        persisted_job = db.get_index_job(str(job_id)) if job_id else None
+        job_was_recovered = bool(
+            persisted_job and persisted_job.get("status") == "paused"
+        )
 
         started_raw = meta.get("build_started_at")
         try:
@@ -711,7 +715,7 @@ def _recover_stale_index_builds() -> int:
         except ValueError:
             started_at = None
 
-        if started_at and now - started_at < STALE_BUILD_AFTER:
+        if not job_was_recovered and started_at and now - started_at < STALE_BUILD_AFTER:
             continue
 
         db.update_index_metadata(idx["id"], {

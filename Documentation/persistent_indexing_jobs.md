@@ -1,8 +1,8 @@
 # 📊 Persistent Indexing Jobs - Implementation Guide
 
-**Status**: ⚠️ Implemented with focused coverage - Pipeline integration, resume,
-recovery, and post-build validation exist. Live kill/restart validation and UI
-timeline browsing remain pending.
+**Status**: ⚠️ Implemented and live recovery validated - Pipeline integration,
+resume, recovery, and post-build validation passed a live kill/restart test on
+2026-06-13. UI timeline browsing remains pending.
 
 This feature adds crash recovery, resumable indexing, and detailed audit trails to the LocalGPT indexing system.
 
@@ -557,7 +557,7 @@ curl http://localhost:8000/index-jobs/test-job/statistics
 
 ✅ **Atomic writes** - Each stage write is a transaction
 ✅ **No data loss** - All progress persisted before continuing
-⚠️ **Crash recovery capable** - Can resume from persisted stage state; live kill/restart validation is pending
+✅ **Crash recovery validated** - A live interrupted build recovered to paused and resumed to a healthy completed index
 ✅ **Audit trail** - Complete history for debugging
 ⚠️ **Conditional stage reuse** - Completed stages are reused only when required persisted artifacts remain valid
 

@@ -1,7 +1,7 @@
 # ✅ Feature #11 - Validation Checklist
 
 **Date**: May 2025 (updated 2026-05-23)
-**Status**: PIPELINE INTEGRATED ⚠️ — END-TO-END TESTING AND ONE INDEX-VALIDATION PATH PENDING
+**Status**: PIPELINE INTEGRATED ⚠️ — LIVE CRASH/RESUME PASSED; MANUAL UI CLICK-THROUGH PENDING
 
 ## Code Components - Verified ✅
 
@@ -203,7 +203,7 @@ Pipeline integration complete (commit `a114e6d`):
 | Documentation | ✅ 100% | 4 comprehensive guides |
 | Error Handling | ✅ 100% | All error cases covered |
 | Type Safety | ✅ 100% | Type hints throughout |
-| End-to-end testing | ⏳ Pending | Crash/resume/skip validation not yet run |
+| End-to-end testing | ✅ Passed | On 2026-06-13, a live background build was killed during enrichment, startup recovered it to paused, resume reused cached work, and the job completed with 4/4 files and a healthy 108-row table. |
 | UI integration | ⚠️ Partial | Resume/repair UI is present in `IndexPicker.tsx` and manual test cases are documented in `Documentation/ui_manual_test_cases.md`; the manual pass itself has not yet been run against a live crash/resume scenario. |
 
 ## Summary
@@ -216,7 +216,7 @@ Pipeline integration complete (commit `a114e6d`):
 - ✅ Auto-recovery — startup hook implemented
 - ✅ Pipeline integration — stage tracking live in indexing pipeline
 - ✅ Documentation — comprehensive guides (1500+ lines total)
-- ⏳ End-to-end crash/resume test — not yet formally validated
+- ✅ End-to-end crash/resume test — live process-kill/restart/resume completed on 2026-06-13
 - ⚠️ UI — resume/repair flow present; manual test cases documented in `Documentation/ui_manual_test_cases.md`, but the live manual pass has not been run
 
 ## Manual UI Test Cases
@@ -229,8 +229,7 @@ specifically — use it instead of duplicating the steps here.
 
 ## Next Action
 
-1. **End-to-end test**: start a background build, kill the backend mid-run, restart, call `POST /index-jobs/{job_id}/resume`, verify completed stages are skipped.
-2. **Manual UI validation**: run the cases in `Documentation/ui_manual_test_cases.md` §2 against the index picker resume/repair workflow and confirm the job progress UI updates correctly.
+1. **Manual UI validation**: run the cases in `Documentation/ui_manual_test_cases.md` §2 against the index picker resume/repair workflow and confirm the job progress UI updates correctly.
 
 ---
 

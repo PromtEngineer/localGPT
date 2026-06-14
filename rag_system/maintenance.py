@@ -47,6 +47,11 @@ class MaintenanceTools:
     def _lancedb_table_names(conn) -> List[str]:
         if hasattr(conn, "list_tables"):
             raw = conn.list_tables()
+            if not isinstance(raw, dict):
+                try:
+                    raw = dict(raw)
+                except (TypeError, ValueError):
+                    raw = getattr(raw, "tables", raw)
             if isinstance(raw, dict):
                 raw = raw.get("tables", [])
             return [

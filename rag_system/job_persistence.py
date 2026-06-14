@@ -520,6 +520,23 @@ class JobProgressTracker:
                     """,
                     (datetime.utcnow().isoformat(), job_id),
                 )
+                cursor.execute(
+                    """
+                    UPDATE index_job_files
+                    SET status = 'pending', stage = NULL, updated_at = ?
+                    WHERE job_id = ? AND status IN ('processing', 'in_progress')
+                    """,
+                    (datetime.utcnow().isoformat(), job_id),
+                )
+                cursor.execute(
+                    """
+                    UPDATE index_job_file_stages
+                    SET status = 'pending', finished_at = NULL,
+                        duration_seconds = NULL
+                    WHERE job_id = ? AND status = 'in_progress'
+                    """,
+                    (job_id,),
+                )
 
                 recovered += 1
 

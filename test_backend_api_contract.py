@@ -547,6 +547,23 @@ class BackendApiContractTests(unittest.TestCase):
         self.assertEqual(report["indexes"][0]["health"], "unhealthy")
         self.assertFalse(report["indexes"][0]["vector_store"]["exists"])
 
+    def test_lancedb_table_names_accepts_response_objects(self):
+        class ListTablesResponse:
+            tables = ["text_pages_alpha", "text_pages_beta"]
+
+            def __iter__(self):
+                yield ("tables", self.tables)
+                yield ("page_token", None)
+
+        class FakeConnection:
+            def list_tables(self):
+                return ListTablesResponse()
+
+        self.assertEqual(
+            MaintenanceTools._lancedb_table_names(FakeConnection()),
+            ["text_pages_alpha", "text_pages_beta"],
+        )
+
     def test_health_deep_uses_local_rag_runtime_and_ollama(self):
         class DummyResponse:
             def __init__(self, status_code):
@@ -688,6 +705,79 @@ class BackendApiContractTests(unittest.TestCase):
         metadata = server.db.get_index(index_id)["metadata"]
         self.assertEqual(metadata["status"], "paused")
         self.assertIn("interrupted", metadata["build_error"])
+
+    def test_startup_recovery_syncs_metadata_for_already_paused_job(self):
+        index_id = server.db.create_index("Recovered Job Metadata")
+        job = server.db.create_index_job(
+            "recovered-job-metadata",
+            index_id,
+            {"background": True},
+            [{"filename": "doc.txt", "stored_path": "/tmp/doc.txt"}],
+        )
+        server.db.update_index_job(job["id"], {"status": "paused"})
+        server.db.update_index_metadata(index_id, {
+            "status": "building",
+            "build_job_id": job["id"],
+            "build_started_at": datetime.now().isoformat(),
+        })
+
+        recovered = server._recover_stale_index_builds()
+
+        self.assertEqual(recovered, 1)
+        metadata = server.db.get_index(index_id)["metadata"]
+        self.assertEqual(metadata["status"], "paused")
+
+    def test_stale_job_recovery_resets_interrupted_file_and_stage(self):
+        tracker = JobProgressTracker(self.db_path)
+        index_id = server.db.create_index("Interrupted file recovery")
+        job = server.db.create_index_job(
+            "interrupted-file-job",
+            index_id,
+            {"background": True},
+            [{"filename": "doc.txt", "stored_path": "/tmp/doc.txt"}],
+        )
+        job_id = job["id"]
+        old_time = (datetime.utcnow() - timedelta(minutes=30)).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            file_id = conn.execute(
+                "SELECT id FROM index_job_files WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()[0]
+            conn.execute(
+                "UPDATE index_jobs SET status = 'running', updated_at = ? WHERE id = ?",
+                (old_time, job_id),
+            )
+            conn.execute(
+                "UPDATE index_job_files SET status = 'processing', stage = 'embedding' WHERE id = ?",
+                (file_id,),
+            )
+            conn.execute(
+                """
+                INSERT INTO index_job_file_stages
+                    (file_id, job_id, stage_name, status, started_at)
+                VALUES (?, ?, 'embedding', 'in_progress', ?)
+                """,
+                (file_id, job_id, old_time),
+            )
+            conn.commit()
+
+        result = tracker.recover_stale_jobs(older_than_minutes=5)
+
+        self.assertEqual(result["recovered"], 1)
+        with sqlite3.connect(self.db_path) as conn:
+            file_status = conn.execute(
+                "SELECT status, stage FROM index_job_files WHERE id = ?",
+                (file_id,),
+            ).fetchone()
+            stage_status = conn.execute(
+                """
+                SELECT status FROM index_job_file_stages
+                WHERE file_id = ? AND stage_name = 'embedding'
+                """,
+                (file_id,),
+            ).fetchone()[0]
+        self.assertEqual(file_status, ("pending", None))
+        self.assertEqual(stage_status, "pending")
 
     def test_all_skipped_resume_still_validates_existing_vector_table(self):
         import_stubs = _install_indexing_pipeline_import_stubs()

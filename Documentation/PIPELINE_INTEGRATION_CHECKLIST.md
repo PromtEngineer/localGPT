@@ -298,9 +298,9 @@ else:
 > Pipeline integration is in production code. End-to-end validation below is pending.
 
 - [ ] **Unit Test**: Verify tracker methods work in isolation
-- [ ] **Integration Test**: Run full pipeline with tracking enabled
-- [ ] **Crash Recovery Test**: Kill backend mid-job, restart, verify auto-recovery
-- [ ] **Resume Test**: Resume paused job, verify skips completed stages
+- [x] **Integration Test**: Run full pipeline with tracking enabled
+- [x] **Crash Recovery Test**: Kill backend mid-job, restart, verify auto-recovery
+- [x] **Resume Test**: Resume paused job, verify persisted work is reused and the build completes
 - [ ] **Error Handling Test**: Induce failures, verify proper error recording
 - [ ] **Performance Test**: Verify stage tracking adds <1ms per file
 - [ ] **Database Test**: Verify database schema consistency after pipeline run
@@ -331,7 +331,7 @@ curl http://localhost:8000/index-jobs/{job_id}/timeline
 ✅ **Resumable**: Can skip completed stages on retry
 ✅ **Error tracking**: All failures recorded with error code + message
 ⚠️ **Performance**: Overhead target is not benchmarked
-⚠️ **Crash recovery**: Recovery logic and focused tests exist; live kill/restart validation is pending
+✅ **Crash recovery**: Live kill/restart/resume validation passed on 2026-06-13
 ✅ **Audit trail**: Complete timeline available via API
 
 ## Related Files
