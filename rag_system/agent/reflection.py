@@ -55,6 +55,30 @@ def _context_from_sources(sources: List[Dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
+def _budget_context(sources: List[Dict[str, Any]]) -> str:
+    """Build a synthesis context trimmed to the model's window.
+
+    The pipeline's run() budgets its context before generating; the
+    groundedness-regeneration path must do the same or a large source set
+    overflows num_ctx and the model can return an empty/garbled answer.
+    """
+    from rag_system.utils.ollama_client import NUM_CTX
+
+    max_chars = (NUM_CTX - 2500) * 4  # ≈4 chars/token, reserve instructions+answer
+    kept: List[Dict[str, Any]] = []
+    used = 0
+    for doc in sources:
+        used += len(doc.get("text", "")) + 60
+        if used > max_chars and kept:
+            break
+        kept.append(doc)
+    return _context_from_sources(kept)
+
+
+def _has_answer(result: Dict[str, Any]) -> bool:
+    return bool((result.get("answer") or "").strip())
+
+
 def _suppress_tokens(callback: EventCallback) -> EventCallback:
     """Forward stage events but swallow token events.
 
@@ -132,6 +156,11 @@ def reflective_run(
     stage_cb = _suppress_tokens(event_callback)
     current_query = query
     result = pipeline.run(current_query, event_callback=stage_cb, **run_kwargs)
+    # Best non-empty answer seen so far. Reflection scoring on small local
+    # models is noisy and a regeneration can come back empty (thinking models
+    # occasionally emit no final text), so we never let the loop downgrade a
+    # good answer to an empty one.
+    best = result if _has_answer(result) else None
 
     rounds = 0
     relevance: Optional[int] = None
@@ -157,19 +186,24 @@ def reflective_run(
             result = pipeline.run(current_query, event_callback=stage_cb, **run_kwargs)
         else:
             # Context is fine but the answer drifts → regenerate on the same
-            # context with stronger adherence (no re-retrieval).
+            # context (budgeted to the window) with stronger adherence.
             answer = pipeline._synthesize_final_answer(
                 _adherence_wrap(query),
-                context,
+                _budget_context(sources),
                 event_callback=None,
                 generation_model=model,
             )
             result = {"answer": answer, "source_documents": sources}
+        if _has_answer(result):
+            best = result
 
-    _emit_answer(event_callback, result.get("answer", ""))
-    result["reflection"] = {
+    # Prefer the loop's final result, but fall back to the best non-empty
+    # answer rather than ever returning an empty one.
+    final = result if _has_answer(result) else (best or result)
+    _emit_answer(event_callback, final.get("answer", ""))
+    final["reflection"] = {
         "rounds": rounds,
         "relevance": relevance,
         "groundedness": groundedness,
     }
-    return result
+    return final

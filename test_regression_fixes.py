@@ -941,10 +941,11 @@ class _ReflectFakePipeline:
     """Scripted RetrievalPipeline: returns queued answers/sources per run(),
     records calls, and emits a stage + (suppressible) token event."""
 
-    def __init__(self, answers, sources):
+    def __init__(self, answers, sources, synth_answer="REGENERATED"):
         self.ollama_client = self
         self._answers = list(answers)
         self._sources = list(sources)
+        self._synth_answer = synth_answer
         self.run_queries = []
         self.synth_queries = []
 
@@ -962,7 +963,7 @@ class _ReflectFakePipeline:
         self, query, facts, *, event_callback=None, generation_model=None
     ):
         self.synth_queries.append(query)
-        return "REGENERATED"
+        return self._synth_answer
 
     def generate_completion(self, model, prompt, format=None):  # rewrite path
         return {"response": json.dumps({"query": "REWRITTEN"})}
@@ -1065,6 +1066,25 @@ class ReflectionLoopTests(unittest.TestCase):
         )
         self.assertEqual(out["reflection"]["rounds"], 2)
         self.assertEqual(pipe.run_queries, ["q", "REWRITTEN", "REWRITTEN"])
+
+    def test_empty_regeneration_falls_back_to_prior_answer(self):
+        # Noisy scoring can keep firing the groundedness branch, and a
+        # regeneration may come back empty. The loop must never return an empty
+        # answer when an earlier round produced a real one.
+        from rag_system.agent import reflection
+
+        pipe = _ReflectFakePipeline(["GOOD"], [_one_source()], synth_answer="")
+        verifier = _ReflectFakeVerifier(rel=[2], ground=[0])
+        out = reflection.reflective_run(
+            pipe,
+            verifier,
+            "q",
+            run_kwargs={},
+            event_callback=None,
+            cfg=self._cfg(max_loops=1),
+        )
+        self.assertEqual(out["answer"], "GOOD")  # not the empty regeneration
+        self.assertEqual(out["reflection"]["rounds"], 1)
 
     def test_suppresses_intermediate_tokens_and_streams_only_final(self):
         from rag_system.agent import reflection
