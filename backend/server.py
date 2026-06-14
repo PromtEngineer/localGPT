@@ -2145,6 +2145,15 @@ async def _handle_rag_query(session_id: str, message: str, data: dict, idx_ids: 
 
 def main():
     """Main function to initialize and start the server"""
+    # The embedded in-process RAG agent (and the /rag/chat routes) resolve
+    # storage paths — lancedb, index_store, overviews — relative to the CWD,
+    # exactly as the standalone RAG API does from the repo root. The backend
+    # is commonly launched from backend/, which would point those at
+    # backend/lancedb (empty) → "could not find an answer". Anchor the CWD to
+    # the repo root here, at startup ONLY — never at import, which would
+    # corrupt the CWD of test processes that import this module.
+    os.chdir(PROJECT_ROOT)
+
     PORT = 8000  # 🆕 Define port
     try:
         # Initialize the database
