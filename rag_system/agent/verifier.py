@@ -108,3 +108,44 @@ class Verifier:
             )
         except (json.JSONDecodeError, AttributeError):
             return VerificationResult(False, "Failed async parse", "NOT_SUPPORTED", 0)
+
+    # --- Reflection scoring (0-2 scale, sync) -------------------------
+    # Used by the self-reflection loop (rag_system.agent.reflection): a 0-2
+    # score is coarse enough to be stable across local models yet enough to
+    # gate a bounded retry. Any LLM/parse failure scores 0 (fail-safe: the
+    # loop will try to improve, bounded by max_loops).
+
+    def _reflection_score(self, prompt: str, model_override: str | None) -> int:
+        try:
+            resp = self.llm_client.generate_completion(
+                model_override or self.llm_model, prompt, format="json"
+            )
+            raw = json.loads(resp.get("response", "{}")).get("score", 0)
+            return max(0, min(2, int(raw)))
+        except (json.JSONDecodeError, AttributeError, TypeError, ValueError):
+            return 0
+
+    def score_context_relevance(
+        self, query: str, context: str, model_override: str | None = None
+    ) -> int:
+        """Rate the retrieved context for the query: 0=irrelevant, 1=partial, 2=high."""
+        prompt = (
+            "Rate how relevant the CONTEXT is for answering the QUERY on a 0-2 "
+            "scale:\n0 = not relevant, 1 = partially relevant, 2 = highly relevant.\n"
+            'Reply with JSON only: {"score": <0|1|2>}.\n\n'
+            f"QUERY:\n{query}\n\nCONTEXT:\n{context[:4000]}"
+        )
+        return self._reflection_score(prompt, model_override)
+
+    def score_response_groundedness(
+        self, query: str, context: str, answer: str, model_override: str | None = None
+    ) -> int:
+        """Rate the answer against its context: 0=unsupported, 1=partial, 2=grounded."""
+        prompt = (
+            "Rate how well the ANSWER is grounded in the CONTEXT on a 0-2 scale:\n"
+            "0 = unsupported or hallucinated, 1 = partially supported, "
+            "2 = fully supported.\n"
+            'Reply with JSON only: {"score": <0|1|2>}.\n\n'
+            f"QUERY:\n{query}\n\nCONTEXT:\n{context[:4000]}\n\nANSWER:\n{answer[:2000]}"
+        )
+        return self._reflection_score(prompt, model_override)

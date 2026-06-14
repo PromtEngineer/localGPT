@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
+from rag_system.agent import reflection
 from rag_system.index_selection import select_active_index_id
 from rag_system.utils.logging_utils import StageTimings, timings_enabled
 
@@ -95,8 +96,14 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
 
         callback = _timed_callback
 
+    # Two-axis self-reflection is opt-in per request. It runs on the retrieval
+    # pipeline directly (like force_rag), so enabling it implies that path.
+    reflect_cfg = reflection.parse_config(data, generation_model)
+    verifier = getattr(agent, "verifier", None)
+    reflect_on = reflect_cfg["enabled"] and verifier is not None
+
     force_rag = bool(data.get("force_rag", False))
-    if force_rag:
+    if force_rag or reflect_on:
         overrides = {
             "retrieval_k": retrieval_k,
             "reranker_top_k": reranker_top_k,
@@ -108,17 +115,28 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
             "generation_model": generation_model,
             "latechunk_enabled": True,
         }
-        result = agent.retrieval_pipeline.run(
-            query,
-            table_name=table_name,
-            window_size_override=context_window_size,
-            event_callback=callback,
-            collections=collections,
-            filters=(
+        run_kwargs = {
+            "table_name": table_name,
+            "window_size_override": context_window_size,
+            "collections": collections,
+            "filters": (
                 data.get("filters") if isinstance(data.get("filters"), dict) else None
             ),
-            overrides=overrides,
-        )
+            "overrides": overrides,
+        }
+        if reflect_on:
+            result = reflection.reflective_run(
+                agent.retrieval_pipeline,
+                verifier,
+                query,
+                run_kwargs=run_kwargs,
+                event_callback=callback,
+                cfg=reflect_cfg,
+            )
+        else:
+            result = agent.retrieval_pipeline.run(
+                query, event_callback=callback, **run_kwargs
+            )
     else:
         result = agent.run(
             query,

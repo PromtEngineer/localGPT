@@ -937,5 +937,216 @@ class StageTimingsTests(unittest.TestCase):
         self.assertNotIn("ttft_ms", result)
 
 
+class _ReflectFakePipeline:
+    """Scripted RetrievalPipeline: returns queued answers/sources per run(),
+    records calls, and emits a stage + (suppressible) token event."""
+
+    def __init__(self, answers, sources):
+        self.ollama_client = self
+        self._answers = list(answers)
+        self._sources = list(sources)
+        self.run_queries = []
+        self.synth_queries = []
+
+    def run(self, query, *, event_callback=None, **_kwargs):
+        self.run_queries.append(query)
+        if event_callback:
+            event_callback("retrieval_started", {})
+            event_callback("token", {"text": "INTERMEDIATE"})  # must be suppressed
+            event_callback("retrieval_done", {"count": 1})
+        answer = self._answers.pop(0) if self._answers else "final"
+        sources = self._sources.pop(0) if self._sources else [{"text": "t"}]
+        return {"answer": answer, "source_documents": sources}
+
+    def _synthesize_final_answer(
+        self, query, facts, *, event_callback=None, generation_model=None
+    ):
+        self.synth_queries.append(query)
+        return "REGENERATED"
+
+    def generate_completion(self, model, prompt, format=None):  # rewrite path
+        return {"response": json.dumps({"query": "REWRITTEN"})}
+
+
+class _ReflectFakeVerifier:
+    def __init__(self, rel, ground):
+        self._rel = list(rel)
+        self._ground = list(ground)
+
+    def score_context_relevance(self, query, context, model=None):
+        return self._rel.pop(0) if self._rel else 2
+
+    def score_response_groundedness(self, query, context, answer, model=None):
+        return self._ground.pop(0) if self._ground else 2
+
+
+class _ReflectFakeAgent:
+    def __init__(self, pipeline, verifier):
+        self.ollama_config = {"generation_model": "m"}
+        self.retrieval_pipeline = pipeline
+        self.verifier = verifier
+
+    def get_overviews_for_indexes(self, _ids):
+        return []
+
+    def run(self, query, **_kwargs):  # non-reflective default path
+        return {"answer": "agent-path", "source_documents": []}
+
+
+def _one_source():
+    return [{"text": "t", "document_id": "d"}]
+
+
+class ReflectionLoopTests(unittest.TestCase):
+    """Two-axis (relevance + groundedness) bounded-retry self-reflection."""
+
+    @staticmethod
+    def _cfg(**override):
+        base = {
+            "model": "m",
+            "max_loops": 2,
+            "relevance_threshold": 1,
+            "groundedness_threshold": 1,
+        }
+        base.update(override)
+        return base
+
+    def test_accepts_first_answer_when_scores_pass(self):
+        from rag_system.agent import reflection
+
+        pipe = _ReflectFakePipeline(["A"], [_one_source()])
+        verifier = _ReflectFakeVerifier(rel=[2], ground=[2])
+        out = reflection.reflective_run(
+            pipe, verifier, "q", run_kwargs={}, event_callback=None, cfg=self._cfg()
+        )
+        self.assertEqual(out["answer"], "A")
+        self.assertEqual(out["reflection"]["rounds"], 0)
+        self.assertEqual(pipe.run_queries, ["q"])  # one retrieval, original query
+        self.assertEqual(pipe.synth_queries, [])
+
+    def test_rewrites_and_reretrieves_on_low_relevance(self):
+        from rag_system.agent import reflection
+
+        pipe = _ReflectFakePipeline(["A", "B"], [_one_source(), _one_source()])
+        verifier = _ReflectFakeVerifier(rel=[0, 2], ground=[2, 2])
+        out = reflection.reflective_run(
+            pipe, verifier, "q", run_kwargs={}, event_callback=None, cfg=self._cfg()
+        )
+        self.assertEqual(out["reflection"]["rounds"], 1)
+        self.assertEqual(pipe.run_queries, ["q", "REWRITTEN"])  # re-retrieve broadened
+        self.assertEqual(pipe.synth_queries, [])
+        self.assertEqual(out["answer"], "B")
+
+    def test_regenerates_on_low_groundedness_without_reretrieval(self):
+        from rag_system.agent import reflection
+
+        pipe = _ReflectFakePipeline(["A"], [_one_source()])
+        verifier = _ReflectFakeVerifier(rel=[2, 2], ground=[0, 2])
+        out = reflection.reflective_run(
+            pipe, verifier, "q", run_kwargs={}, event_callback=None, cfg=self._cfg()
+        )
+        self.assertEqual(out["reflection"]["rounds"], 1)
+        self.assertEqual(pipe.run_queries, ["q"])  # no re-retrieval
+        self.assertEqual(len(pipe.synth_queries), 1)  # regenerated on same context
+        self.assertEqual(out["answer"], "REGENERATED")
+
+    def test_respects_max_loops(self):
+        from rag_system.agent import reflection
+
+        pipe = _ReflectFakePipeline(["A", "B", "C"], [_one_source()] * 3)
+        verifier = _ReflectFakeVerifier(rel=[0, 0, 0], ground=[2, 2, 2])
+        out = reflection.reflective_run(
+            pipe,
+            verifier,
+            "q",
+            run_kwargs={},
+            event_callback=None,
+            cfg=self._cfg(max_loops=2),
+        )
+        self.assertEqual(out["reflection"]["rounds"], 2)
+        self.assertEqual(pipe.run_queries, ["q", "REWRITTEN", "REWRITTEN"])
+
+    def test_suppresses_intermediate_tokens_and_streams_only_final(self):
+        from rag_system.agent import reflection
+
+        events = []
+        pipe = _ReflectFakePipeline(["FINAL"], [_one_source()])
+        verifier = _ReflectFakeVerifier(rel=[2], ground=[2])
+        reflection.reflective_run(
+            pipe,
+            verifier,
+            "q",
+            run_kwargs={},
+            event_callback=lambda et, p: events.append((et, p)),
+            cfg=self._cfg(),
+        )
+        types = [et for et, _ in events]
+        self.assertIn("retrieval_started", types)  # stage events forwarded
+        self.assertIn("retrieval_done", types)
+        token_texts = [p["text"] for et, p in events if et == "token"]
+        self.assertEqual(token_texts, ["FINAL"])  # intermediate token swallowed
+
+
+class ReflectionConfigTests(unittest.TestCase):
+    def test_defaults_and_overrides(self):
+        from rag_system.agent import reflection
+
+        default = reflection.parse_config({}, "gen-model")
+        self.assertFalse(default["enabled"])
+        self.assertEqual(default["max_loops"], 2)
+        self.assertEqual(default["relevance_threshold"], 1)
+        self.assertEqual(default["model"], "gen-model")
+
+        custom = reflection.parse_config(
+            {
+                "reflect": True,
+                "reflection_max_loops": 3,
+                "relevance_threshold": 2,
+                "groundedness_threshold": 0,
+                "reflection_model": "r",
+            },
+            "gen",
+        )
+        self.assertTrue(custom["enabled"])
+        self.assertEqual(custom["max_loops"], 3)
+        self.assertEqual(custom["relevance_threshold"], 2)
+        self.assertEqual(custom["groundedness_threshold"], 0)
+        self.assertEqual(custom["model"], "r")
+
+    def test_bad_types_fall_back(self):
+        from rag_system.agent import reflection
+
+        # bool must not be read as int; non-int values fall back to defaults
+        cfg = reflection.parse_config(
+            {"reflection_max_loops": True, "relevance_threshold": "x"}, "g"
+        )
+        self.assertEqual(cfg["max_loops"], 2)
+        self.assertEqual(cfg["relevance_threshold"], 1)
+
+
+class ReflectionWiringTests(unittest.TestCase):
+    def test_execute_chat_uses_reflection_when_requested(self):
+        from rag_system import chat_runtime
+
+        pipe = _ReflectFakePipeline(["RES"], [_one_source()])
+        agent = _ReflectFakeAgent(pipe, _ReflectFakeVerifier(rel=[2], ground=[2]))
+        out = chat_runtime.execute_chat(
+            agent, _FakeTimingDB(), {"query": "q", "reflect": True}
+        )
+        self.assertIn("reflection", out)
+        self.assertEqual(out["reflection"]["rounds"], 0)
+        self.assertEqual(out["answer"], "RES")
+        self.assertEqual(pipe.run_queries, ["q"])
+
+    def test_execute_chat_skips_reflection_by_default(self):
+        from rag_system import chat_runtime
+
+        pipe = _ReflectFakePipeline(["RES"], [_one_source()])
+        agent = _ReflectFakeAgent(pipe, _ReflectFakeVerifier(rel=[2], ground=[2]))
+        out = chat_runtime.execute_chat(agent, _FakeTimingDB(), {"query": "q"})
+        self.assertNotIn("reflection", out)
+        self.assertEqual(out["answer"], "agent-path")
+
+
 if __name__ == "__main__":
     unittest.main()
