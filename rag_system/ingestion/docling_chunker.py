@@ -284,6 +284,7 @@ class DoclingChunker:
             nonlocal buf_txt, buf_meta
             if not buf_txt:
                 return
+            assert buf_meta is not None  # set whenever buf_txt is non-empty
             merged_text = " ".join(buf_txt)
             # Re-use meta from first piece but update chunk_id later
             new_chunk = {
@@ -306,6 +307,7 @@ class DoclingChunker:
                 buf_meta = ch
                 continue
 
+            assert buf_meta is not None  # set whenever buf_txt is non-empty
             same_page = ch["metadata"].get("page") == buf_meta["metadata"].get("page")
             same_heading = ch["metadata"].get("heading_path") == buf_meta[
                 "metadata"

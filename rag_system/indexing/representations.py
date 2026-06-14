@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, List, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Tuple, cast
 
 import numpy as np
 import torch
@@ -14,7 +14,7 @@ class EmbeddingModel(Protocol):
 
 
 # Global cache for models - use dict to cache by model name
-_MODEL_CACHE = {}
+_MODEL_CACHE: Dict[str, Tuple[Any, Any]] = {}
 
 
 # --- New Ollama Embedder ---
@@ -29,9 +29,9 @@ class QwenEmbedder(EmbeddingModel):
         self.model_name = model_name
         # Weights and device are resolved on first use.
         self._loaded = False
-        self.tokenizer = None
-        self.model = None
-        self.device = None
+        self.tokenizer: Any = None
+        self.model: Any = None
+        self.device: Optional[str] = None
 
     def _ensure_loaded(self) -> None:
         if self._loaded:
@@ -99,6 +99,7 @@ class QwenEmbedder(EmbeddingModel):
     def create_embeddings(self, texts: List[str]) -> np.ndarray:
         self._ensure_loaded()
         print(f"Generating {len(texts)} embeddings with {self.model_name} model...")
+        assert self.device is not None
         budget = self._DEVICE_TOKEN_BUDGET.get(self.device, 6144)
 
         # Sort by approximate token count (≈ chars/4), pack greedily into
@@ -132,7 +133,7 @@ class QwenEmbedder(EmbeddingModel):
             batch_max = new_max
         _flush()
 
-        embeddings_np = np.vstack(results)
+        embeddings_np = np.vstack(cast(List[np.ndarray], results))
 
         # Check for NaN or infinite values
         if np.isnan(embeddings_np).any():
@@ -260,7 +261,7 @@ class OllamaEmbedder(EmbeddingModel):
     def create_embeddings(self, texts: List[str]):
         import numpy as np
 
-        vectors = []
+        vectors: List[np.ndarray] = []
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]
             if self._use_legacy_endpoint:

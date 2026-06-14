@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import requests
 import uvicorn
@@ -123,7 +123,9 @@ app.add_middleware(
 
 # Import metrics singleton
 try:
-    from metrics import metrics as _metrics
+    from metrics import metrics as _metrics_imported
+
+    _metrics: Any = _metrics_imported
 except ImportError:
     _metrics = None
 
@@ -239,7 +241,7 @@ async def _save_uploads(
 
     # Pass 1: validate every file before writing anything
     for file in candidates:
-        ext = os.path.splitext(file.filename)[1].lower()
+        ext = os.path.splitext(cast(str, file.filename))[1].lower()
         if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
             raise HTTPException(
                 status_code=415,
@@ -265,7 +267,9 @@ async def _save_uploads(
     file_path = None
     try:
         for file in candidates:
-            unique_filename = f"{uuid.uuid4()}_{os.path.basename(file.filename)}"
+            unique_filename = (
+                f"{uuid.uuid4()}_{os.path.basename(cast(str, file.filename))}"
+            )
             file_path = os.path.join(upload_dir, unique_filename)
             written = 0
             with open(file_path, "wb") as out:
@@ -278,7 +282,10 @@ async def _save_uploads(
                         )
                     out.write(chunk)
             saved.append(
-                {"filename": file.filename, "stored_path": os.path.abspath(file_path)}
+                {
+                    "filename": cast(str, file.filename),
+                    "stored_path": os.path.abspath(file_path),
+                }
             )
             file_path = None
     except Exception:
@@ -468,7 +475,7 @@ def _inspect_vector_table(table_name: str | None) -> Dict[str, Any]:
         if not os.path.exists(db_path):
             continue
         try:
-            conn = lancedb.connect(db_path)
+            conn = lancedb.connect(db_path)  # type: ignore[attr-defined]
             # list_tables() returns a ListTablesResponse that iterates as
             # (key, value) pairs: {"tables": [...], "page_token": ...}
             # table_names() is deprecated but returns a plain list.
@@ -560,7 +567,7 @@ def _delete_index_artifacts(index: Dict[str, Any]) -> Dict[str, List[str]]:
                 if not os.path.exists(db_path):
                     continue
                 try:
-                    conn = lancedb.connect(db_path)
+                    conn = lancedb.connect(db_path)  # type: ignore[attr-defined]
                     names = _lancedb_table_names(conn)
                     for candidate in (table_name, f"{table_name}_lc"):
                         if candidate in names:
@@ -632,7 +639,7 @@ def _clear_index_build_artifacts(index_id: str, table_name: str | None) -> None:
         for db_path in _lancedb_path_candidates():
             if not os.path.exists(db_path):
                 continue
-            conn = lancedb.connect(db_path)
+            conn = lancedb.connect(db_path)  # type: ignore[attr-defined]
             names = _lancedb_table_names(conn)
             for candidate in (table_name, f"{table_name}_lc"):
                 if candidate in names:
@@ -979,7 +986,7 @@ async def health_deep():
 
         for candidate in _lancedb_path_candidates():
             if os.path.exists(candidate):
-                _lancedb.connect(candidate)
+                _lancedb.connect(candidate)  # type: ignore[attr-defined]
                 checks["lancedb"] = "ok"
                 break
         else:
@@ -2148,7 +2155,8 @@ async def build_index(index_id: str, request: Request):
             try:
                 is_stale = (
                     bool(updated)
-                    and (now_dt - datetime.fromisoformat(updated)) > STALE_BUILD_AFTER
+                    and (now_dt - datetime.fromisoformat(cast(str, updated)))
+                    > STALE_BUILD_AFTER
                 )
             except ValueError:
                 is_stale = False

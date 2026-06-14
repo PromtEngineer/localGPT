@@ -11,7 +11,7 @@ import lancedb
 class LanceDBManager:
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.db = lancedb.connect(db_path)
+        self.db = lancedb.connect(db_path)  # type: ignore[attr-defined]
         print(f"LanceDB connection established at: {db_path}")
 
     def get_table(self, table_name: str):

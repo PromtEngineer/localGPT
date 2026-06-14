@@ -26,7 +26,7 @@ from rag_system.utils.ollama_client import OllamaClient
 try:
     from rag_system.job_persistence import JobProgressTracker
 except Exception:  # pragma: no cover - job persistence is optional for standalone runs
-    JobProgressTracker = None
+    JobProgressTracker = None  # type: ignore[assignment,misc]
 
 
 def convert_and_chunk_document(
@@ -40,6 +40,7 @@ def convert_and_chunk_document(
             "chunk_overlap", config.get("chunk_overlap", 200)
         )
 
+        chunker: Any
         if chunker_mode == "docling":
             converter = DocumentConverter()
             try:
@@ -126,6 +127,7 @@ class IndexingPipeline:
         self.llm_client = ollama_client
         self.ollama_config = ollama_config
         self.document_converter = DocumentConverter()
+        self.chunker: Any = None
         # Chunker selection: docling (token-based) or legacy (character-based)
         chunker_mode = config.get("chunker_mode", "docling")
 
@@ -567,6 +569,8 @@ class IndexingPipeline:
                         file_chunks = self._load_chunk_cache(cache_key)
                         _chunk_cache_hit = file_chunks is not None
                         if _chunk_cache_hit:
+                            # _chunk_cache_hit is set iff file_chunks is not None.
+                            assert file_chunks is not None
                             chunk_cache_hits += 1
                             indexing_logger.info(
                                 "chunk_cache_hit",
@@ -574,6 +578,9 @@ class IndexingPipeline:
                                 file_path=file_path,
                             )
                             if file_id is not None:
+                                # file_id is only set when both tracker and job_id
+                                # are truthy (see start of try-block above).
+                                assert tracker is not None and job_id is not None
                                 if not tracker.should_skip_stage(file_id, "conversion"):
                                     active_stage = "conversion"
                                     tracker.start_stage(file_id, job_id, active_stage)
@@ -1091,7 +1098,7 @@ class IndexingPipeline:
             or "./lancedb"
         )
         try:
-            conn = lancedb.connect(lancedb_uri)
+            conn = lancedb.connect(lancedb_uri)  # type: ignore[attr-defined]
             table = conn.open_table(table_name)
         except Exception as e:
             raise RuntimeError(
@@ -1142,7 +1149,8 @@ class IndexingPipeline:
 
         def _reader() -> None:
             try:
-                line = self._worker.stdout.readline()
+                # _worker (and its pipes) are live whenever a read is requested.
+                line = self._worker.stdout.readline()  # type: ignore[union-attr]
                 result_q.put(("ok", line))
             except Exception as exc:
                 result_q.put(("err", exc))
@@ -1151,7 +1159,7 @@ class IndexingPipeline:
         try:
             kind, value = result_q.get(timeout=timeout_s)
         except queue.Empty:
-            self._worker.kill()
+            self._worker.kill()  # type: ignore[union-attr]
             self._worker = None
             raise TimeoutError(f"Conversion worker timed out after {timeout_s}s")
         if kind == "err":
@@ -1162,7 +1170,10 @@ class IndexingPipeline:
         self, file_path: str, document_id: str
     ) -> List[Dict[str, Any]]:
         """Send one conversion request to the persistent worker; restart if needed."""
-        if getattr(self, "_worker", None) is None or self._worker.poll() is not None:
+        if (
+            getattr(self, "_worker", None) is None
+            or self._worker.poll() is not None  # type: ignore[union-attr]
+        ):
             indexing_logger.warning("persistent_worker_dead_restarting")
             self._start_persistent_worker()
 
@@ -1171,12 +1182,12 @@ class IndexingPipeline:
             default=str,
         )
         try:
-            self._worker.stdin.write(request + "\n")
-            self._worker.stdin.flush()
+            self._worker.stdin.write(request + "\n")  # type: ignore[union-attr]
+            self._worker.stdin.flush()  # type: ignore[union-attr]
         except BrokenPipeError:
             self._start_persistent_worker()
-            self._worker.stdin.write(request + "\n")
-            self._worker.stdin.flush()
+            self._worker.stdin.write(request + "\n")  # type: ignore[union-attr]
+            self._worker.stdin.flush()  # type: ignore[union-attr]
 
         raw = self._read_worker_response(self.conversion_timeout_seconds)
         if not raw or not raw.strip():
@@ -1440,7 +1451,7 @@ class IndexingPipeline:
     ):
         """Log final indexing statistics"""
         processed_files = num_files - unchanged_count if incremental else num_files
-        stats = {
+        stats: Dict[str, Any] = {
             "total_files_considered": num_files,
             "files_processed": processed_files,
             "chunks_generated": num_chunks,

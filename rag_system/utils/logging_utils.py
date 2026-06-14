@@ -12,7 +12,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Union
+from typing import Any, Dict, Optional, Union
 
 # Thread-local storage for correlation IDs
 _local = threading.local()
@@ -132,7 +132,7 @@ class StructuredLogger:
         index_id: str,
         processed: int,
         total: int,
-        current_file: str = None,
+        current_file: Optional[str] = None,
         **kwargs,
     ):
         """Log indexing progress"""
@@ -283,7 +283,7 @@ class PerformanceTimer:
         self.logger = logger
         self.operation = operation
         self.context = context
-        self.start_time = None
+        self.start_time: Optional[float] = None
 
     def __enter__(self):
         self.start_time = time.time()
@@ -345,9 +345,9 @@ def configure_logging(log_level: str = "INFO", log_file: Optional[str] = None):
 
 
 # Legacy compatibility functions
-def log_query(query: str, sub_queries: list = None) -> None:
+def log_query(query: str, sub_queries: Optional[list] = None) -> None:
     """Legacy function for backward compatibility"""
-    context = {"query": query}
+    context: Dict[str, Any] = {"query": query}
     if sub_queries:
         context["sub_queries"] = sub_queries
     query_logger.info("user_query", **context)

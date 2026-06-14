@@ -3,7 +3,7 @@ import logging
 import sqlite3
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -28,19 +28,21 @@ class DatabaseTransaction:
 
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.conn = None
+        self.conn: Optional[sqlite3.Connection] = None
 
-    def __enter__(self):
+    def __enter__(self) -> sqlite3.Connection:
         """Open connection and enable foreign key constraints."""
         self.conn = _connect(self.db_path)
         return self.conn
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, exc_tb) -> Literal[False]:
         """Commit on success, rollback on error, then close."""
         try:
             if exc_type is None:
+                assert self.conn is not None
                 self.conn.commit()
             else:
+                assert self.conn is not None
                 self.conn.rollback()
         finally:
             if self.conn:
@@ -49,7 +51,7 @@ class DatabaseTransaction:
 
 
 class ChatDatabase:
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
             # Auto-detect environment and set appropriate path
             import os
@@ -350,7 +352,11 @@ class ChatDatabase:
         return dict(row) if row else None
 
     def add_message(
-        self, session_id: str, content: str, sender: str, metadata: Dict = None
+        self,
+        session_id: str,
+        content: str,
+        sender: str,
+        metadata: Optional[Dict] = None,
     ) -> str:
         """Add a message to a session"""
         message_id = str(uuid.uuid4())
@@ -525,6 +531,7 @@ class ChatDatabase:
         conn.commit()
         conn.close()
         print(f"📄 Added document '{file_path}' to session {session_id[:8]}...")
+        assert doc_id is not None
         return doc_id
 
     def get_documents_for_session(self, session_id: str) -> List[str]:
@@ -762,7 +769,9 @@ class ChatDatabase:
             )
         conn.commit()
         conn.close()
-        return self.get_index_job(job_id)
+        job = self.get_index_job(job_id)
+        assert job is not None
+        return job
 
     def get_index_job(
         self, job_id: str, include_options: bool = True, include_files: bool = True

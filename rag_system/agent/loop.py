@@ -5,7 +5,7 @@ import json
 import os
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 import numpy as np
 from cachetools import LRUCache
@@ -50,11 +50,11 @@ class Agent:
         self._query_cache = PersistentCache(
             cache_dir=cache_dir,
             redis_url=redis_url,
-            max_size=self.pipeline_configs.get("cache_max_size", 1000),
-            semantic_threshold=self.pipeline_configs.get(
-                "semantic_cache_threshold", 0.98
+            max_size=cast(int, self.pipeline_configs.get("cache_max_size", 1000)),
+            semantic_threshold=cast(
+                float, self.pipeline_configs.get("semantic_cache_threshold", 0.98)
             ),
-            cache_scope=self.pipeline_configs.get("cache_scope", "global"),
+            cache_scope=cast(str, self.pipeline_configs.get("cache_scope", "global")),
         )
 
         # 🚀 NEW: In-memory store for conversational history per session
@@ -258,7 +258,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
             return self.retrieval_pipeline.run(
                 contextual_query, window_size_override=0, overrides=overrides
             )
-        results = self.graph_retriever.retrieve(structured_query)
+        results = self.graph_retriever.retrieve(cast(str, structured_query))
         if not results:
             return self.retrieval_pipeline.run(
                 contextual_query, window_size_override=0, overrides=overrides
@@ -422,10 +422,10 @@ Respond with JSON: {{"category": "<your_choice>"}}
     def run(
         self,
         query: str,
-        table_name: str = None,
+        table_name: Optional[str] = None,
         collections: list | None = None,
         filters: dict | None = None,
-        session_id: str = None,
+        session_id: Optional[str] = None,
         compose_sub_answers: Optional[bool] = None,
         query_decompose: Optional[bool] = None,
         ai_rerank: Optional[bool] = None,
@@ -443,7 +443,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
         provence_prune: Optional[bool] = None,
         provence_threshold: Optional[float] = None,
         latechunk_enabled: Optional[bool] = None,
-        event_callback: Optional[callable] = None,
+        event_callback: Optional[Callable[..., Any]] = None,
     ) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
@@ -482,10 +482,10 @@ Respond with JSON: {{"category": "<your_choice>"}}
     async def _run_async(
         self,
         query: str,
-        table_name: str = None,
+        table_name: Optional[str] = None,
         collections: list | None = None,
         filters: dict | None = None,
-        session_id: str = None,
+        session_id: Optional[str] = None,
         compose_sub_answers: Optional[bool] = None,
         query_decompose: Optional[bool] = None,
         ai_rerank: Optional[bool] = None,
@@ -503,7 +503,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
         provence_prune: Optional[bool] = None,
         provence_threshold: Optional[float] = None,
         latechunk_enabled: Optional[bool] = None,
-        event_callback: Optional[callable] = None,
+        event_callback: Optional[Callable[..., Any]] = None,
     ) -> Dict[str, Any]:
         start_time = time.time()
         gen_model = generation_model or self.ollama_config["generation_model"]
@@ -756,7 +756,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     )
                     result = self.retrieval_pipeline.run(
                         sub_queries[0],
-                        table_name,
+                        cast(str, table_name),
                         0 if context_expand is False else None,
                         event_callback=event_callback,
                         collections=collections,
@@ -820,7 +820,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                             executor.submit(
                                 self.retrieval_pipeline.run,
                                 sub_query,
-                                table_name,
+                                cast(str, table_name),
                                 0 if context_expand is False else None,
                                 make_cb(i),
                                 collections=collections,
@@ -970,7 +970,7 @@ FINAL ANSWER:
                 # Standard retrieval (single-query)
                 result = self.retrieval_pipeline.run(
                     contextual_query,
-                    table_name,
+                    cast(str, table_name),
                     0 if context_expand is False else None,
                     event_callback=event_callback,
                     collections=collections,

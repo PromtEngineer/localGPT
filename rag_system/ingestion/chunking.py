@@ -56,7 +56,7 @@ class MarkdownRecursiveChunker:
             return max(1, len(text) // 4)
 
     def _split_text(self, text: str, separators: List[str]) -> List[str]:
-        final_chunks = []
+        final_chunks: List[str] = []
         chunks_to_process = [text]
 
         for sep in separators:

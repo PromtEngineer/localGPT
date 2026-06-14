@@ -64,7 +64,7 @@ def check_conversation_history():
     print("\n🗨️  Testing conversation history...")
 
     # First message
-    conversation = []
+    conversation: list = []
 
     message1 = {
         "message": "My name is Alice. Remember this.",

@@ -117,14 +117,17 @@ def create_enrichment_client(
 
     if provider == "anthropic":
         key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
+        assert key is not None  # env fallback default ("") guarantees a str
         return AnthropicEnricher(api_key=key)
 
     if provider == "openai":
         key = api_key or os.getenv("OPENAI_API_KEY", "")
+        assert key is not None  # env fallback default ("") guarantees a str
         return OpenAICompatibleEnricher(api_key=key)
 
     if provider == "groq":
         key = api_key or os.getenv("GROQ_API_KEY", "")
+        assert key is not None  # env fallback default ("") guarantees a str
         return OpenAICompatibleEnricher(
             api_key=key,
             base_url=OpenAICompatibleEnricher._GROQ_BASE,

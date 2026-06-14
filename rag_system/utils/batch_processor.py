@@ -197,7 +197,7 @@ def batch_chunks_by_document(
     chunks: List[Dict[str, Any]],
 ) -> Dict[str, List[Dict[str, Any]]]:
     """Group chunks by document_id for document-level batch processing"""
-    document_batches = {}
+    document_batches: Dict[str, List[Dict[str, Any]]] = {}
     for chunk in chunks:
         doc_id = chunk.get("metadata", {}).get("document_id", "unknown")
         if doc_id not in document_batches:

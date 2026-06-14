@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+from typing import Any, Dict
 
 from dotenv import load_dotenv
 
@@ -29,14 +30,14 @@ from rag_system.utils.ollama_client import OllamaClient
 # All model configurations are centralized here to prevent conflicts
 
 # Ollama Models Configuration (for inference via Ollama)
-OLLAMA_CONFIG = {
+OLLAMA_CONFIG: Dict[str, Any] = {
     "host": os.getenv("OLLAMA_HOST", "http://localhost:11434"),
     "generation_model": os.getenv("GENERATION_MODEL", "qwen3:8b"),
     "enrichment_model": os.getenv("ENRICHMENT_MODEL", "qwen3:8b"),
 }
 
 # External Model Configuration (HuggingFace models used directly)
-EXTERNAL_MODELS = {
+EXTERNAL_MODELS: Dict[str, Any] = {
     "embedding_model": os.getenv("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
     "reranker_model": os.getenv(
         "RERANKER_MODEL",
@@ -50,7 +51,7 @@ EXTERNAL_MODELS = {
 # 🔧 PIPELINE CONFIGURATIONS
 # ============================================================================
 
-PIPELINE_CONFIGS = {
+PIPELINE_CONFIGS: Dict[str, Any] = {
     "default": {
         "description": "Production-ready pipeline with hybrid search, AI reranking, and verification",
         "storage": {
@@ -223,7 +224,8 @@ def run_indexing(docs_path: str, config_mode: str = "default"):
     from rag_system.pipelines.indexing_pipeline import IndexingPipeline
 
     # Get the appropriate indexing pipeline from the factory
-    indexing_pipeline = IndexingPipeline(PIPELINE_CONFIGS[config_mode])
+    # Pre-existing call shape; preserving runtime behavior.
+    indexing_pipeline = IndexingPipeline(PIPELINE_CONFIGS[config_mode])  # type: ignore[call-arg]
 
     # Find all PDF files in the directory
     pdf_files = [
@@ -309,7 +311,8 @@ def main():
     if command == "index":
         # Allow passing file paths from the command line
         files = sys.argv[2:] if len(sys.argv) > 2 else None
-        run_indexing(files)
+        # Pre-existing arg shape (list/None vs str path); preserving runtime behavior.
+        run_indexing(files)  # type: ignore[arg-type]
     elif command == "chat":
         if len(sys.argv) < 3:
             print("Usage: python main.py chat <query>")

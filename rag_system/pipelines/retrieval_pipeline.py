@@ -86,13 +86,14 @@ class RetrievalPipeline:
         self.storage_config = self.config["storage"]
 
         # Defer initialization to just-in-time methods
-        self.db_manager = None
-        self.text_embedder = None
-        self.dense_retriever = None
+        self.db_manager: Optional[LanceDBManager] = None
+        self.text_embedder: Any = None
+        self.dense_retriever: Optional[MultiVectorRetriever] = None
         # Use a private attribute to avoid clashing with the public property
-        self._graph_retriever = None
-        self.reranker = None
-        self.ai_reranker = None
+        self._graph_retriever: Optional[GraphRetriever] = None
+        # Holds a LanceDB internal reranker (type not visible to mypy).
+        self.reranker: Any = None
+        self.ai_reranker: Optional[QwenReranker] = None
 
     def _get_db_manager(self):
         if self.db_manager is None:
@@ -137,7 +138,7 @@ class RetrievalPipeline:
                         self.dense_retriever = MultiVectorRetriever(
                             db_manager,
                             text_embedder,
-                            vision_model=None,
+                            vision_model=None,  # type: ignore[arg-type]
                             fusion_config=fusion_cfg,
                         )
                     except Exception as e:
@@ -178,7 +179,7 @@ class RetrievalPipeline:
                             MultiVectorRetriever(
                                 self._get_db_manager(),
                                 select_embedder(embedding_model),
-                                vision_model=None,
+                                vision_model=None,  # type: ignore[arg-type]
                                 fusion_config=self.config.get("fusion", {}),
                             )
                         )
@@ -219,7 +220,7 @@ class RetrievalPipeline:
             and reranker_config.get("type") == "linear_combination"
         ):
             rerank_weight = reranker_config.get("weight", 0.5)
-            self.reranker = lancedb.rerankers.LinearCombinationReranker(
+            self.reranker = lancedb.rerankers.LinearCombinationReranker(  # type: ignore[attr-defined]
                 weight=rerank_weight
             )
             logger.info(
@@ -411,7 +412,7 @@ Reminder: every fact in your answer must end with its source number in square br
     def run(
         self,
         query: str,
-        table_name: str = None,
+        table_name: Optional[str] = None,
         window_size_override: Optional[int] = None,
         event_callback=None,
         collections: Optional[List[Dict[str, Any]]] = None,
@@ -846,7 +847,7 @@ Reminder: every fact in your answer must end with its source number in square br
                 "final_documents_for_synthesis document_count=%s", len(final_docs)
             )
             for i, doc in enumerate(final_docs):
-                logger.debug(
+                logger.debug(  # type: ignore[call-arg]
                     "final_document_summary",
                     position=i + 1,
                     chunk_id=doc.get("chunk_id"),
@@ -896,7 +897,8 @@ Reminder: every fact in your answer must end with its source number in square br
         max_context_chars = (
             NUM_CTX - 2500
         ) * 4  # ≈4 chars/token, reserve for instructions+answer
-        kept, used = [], 0
+        kept: List[Dict[str, Any]] = []
+        used = 0
         for doc in final_docs:
             used += len(doc.get("text", "")) + 60
             if used > max_context_chars and kept:
@@ -926,7 +928,7 @@ Reminder: every fact in your answer must end with its source number in square br
         )
 
         # 👀 DEBUG: Show the exact context passed to the LLM after pruning
-        logger.debug(
+        logger.debug(  # type: ignore[call-arg]
             "context_passed_to_llm",
             length=len(context),
             preview=(
@@ -1006,7 +1008,7 @@ Reminder: every fact in your answer must end with its source number in square br
         """Switch embedding model at runtime and clear cached objects so they re-initialize."""
         if self.config.get("embedding_model_name") == model_name:
             return  # nothing to do
-        logger.info(
+        logger.info(  # type: ignore[call-arg]
             "embedding_model_switch",
             new_model=model_name,
             previous_model=self.config.get("embedding_model_name"),

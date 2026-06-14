@@ -62,7 +62,7 @@ class OllamaClient:
         self,
         message: str,
         model: str = "llama3.2",
-        conversation_history: List[Dict] = None,
+        conversation_history: Optional[List[Dict]] = None,
         enable_thinking: bool = True,
     ) -> str:
         """Send a chat message to Ollama"""
@@ -133,7 +133,7 @@ class OllamaClient:
         self,
         message: str,
         model: str = "llama3.2",
-        conversation_history: List[Dict] = None,
+        conversation_history: Optional[List[Dict]] = None,
         enable_thinking: bool = True,
     ):
         """Stream chat response from Ollama"""

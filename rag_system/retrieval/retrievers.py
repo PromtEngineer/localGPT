@@ -3,7 +3,7 @@ import json
 import logging
 import math
 from functools import lru_cache
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import networkx as nx
 import pandas as pd
@@ -19,7 +19,7 @@ from rag_system.utils.logging_utils import log_retrieval_results
 try:
     from rapidfuzz import process
 except ImportError:  # pragma: no cover - graph retrieval is optional.
-    process = None
+    process = None  # type: ignore[assignment]
     logging.getLogger(__name__).warning(
         "rapidfuzz is not installed; graph retrieval is disabled. Run: pip install rapidfuzz"
     )
@@ -71,7 +71,7 @@ class MultiVectorRetriever:
         self,
         db_manager: LanceDBManager,
         text_embedder: QwenEmbedder,
-        vision_model: LocalVisionModel = None,
+        vision_model: Optional[LocalVisionModel] = None,
         *,
         fusion_config: Dict[str, Any] | None = None,
     ):

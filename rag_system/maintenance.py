@@ -88,7 +88,12 @@ class MaintenanceTools:
             Report of repaired jobs
         """
         db = self._get_db()
-        report = {"found": 0, "repaired": 0, "stuck_jobs": [], "errors": []}
+        report: Dict[str, Any] = {
+            "found": 0,
+            "repaired": 0,
+            "stuck_jobs": [],
+            "errors": [],
+        }
 
         try:
             cursor = db.cursor()
@@ -174,7 +179,7 @@ class MaintenanceTools:
         Returns:
             Report of orphan files found and removed
         """
-        report = {
+        report: Dict[str, Any] = {
             "total_scanned": 0,
             "orphans_found": 0,
             "orphans_removed": 0,
@@ -258,7 +263,7 @@ class MaintenanceTools:
         Returns:
             Report of deleted indexes
         """
-        report = {
+        report: Dict[str, Any] = {
             "total_indexes": 0,
             "broken_found": 0,
             "deleted": 0,
@@ -352,7 +357,7 @@ class MaintenanceTools:
         Returns:
             List of failed files with paths and errors
         """
-        report = {
+        report: Dict[str, Any] = {
             "index_id": index_id,
             "failed_files": [],
             "total_failed": 0,
@@ -424,7 +429,7 @@ class MaintenanceTools:
         Returns:
             Report of prepared rebuild
         """
-        report = {
+        report: Dict[str, Any] = {
             "index_id": index_id,
             "files_prepared": 0,
             "job_id": None,
@@ -529,7 +534,7 @@ class MaintenanceTools:
         Returns:
             Detailed health diagnostics
         """
-        report = {
+        report: Dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
             "indexes": [],
             "summary": {"total": 0, "healthy": 0, "warning": 0, "unhealthy": 0},
@@ -544,7 +549,9 @@ class MaintenanceTools:
                 try:
                     import lancedb
 
-                    vector_db = lancedb.connect(str(self.lancedb_path))
+                    vector_db = lancedb.connect(  # type: ignore[attr-defined]
+                        str(self.lancedb_path)
+                    )
                     vector_table_names = set(self._lancedb_table_names(vector_db))
                 except Exception as exc:
                     report["vector_store_error"] = str(exc)
@@ -675,7 +682,7 @@ class MaintenanceTools:
         Returns:
             Report of exported bundle
         """
-        report = {
+        report: Dict[str, Any] = {
             "bundle_path": None,
             "files_included": 0,
             "total_size": 0,
@@ -770,8 +777,8 @@ class MaintenanceTools:
                 manifest = {
                     "created_at": datetime.utcnow().isoformat(),
                     "system": {
-                        "python_version": os.sys.version,
-                        "platform": os.sys.platform,
+                        "python_version": os.sys.version,  # type: ignore[attr-defined]
+                        "platform": os.sys.platform,  # type: ignore[attr-defined]
                     },
                     "contents": report["sections"],
                     "errors": report["errors"],
@@ -845,7 +852,7 @@ class MaintenanceTools:
         if self.lancedb_path.exists():
             import lancedb
 
-            conn = lancedb.connect(str(self.lancedb_path))
+            conn = lancedb.connect(str(self.lancedb_path))  # type: ignore[attr-defined]
             table_names = set(self._lancedb_table_names(conn))
 
             base_table = vector_table_name or f"text_pages_{index_id}"
@@ -909,11 +916,12 @@ class MaintenanceTools:
     @staticmethod
     def _format_bytes(size: int) -> str:
         """Format bytes to human readable"""
+        value: float = size
         for unit in ("B", "KB", "MB", "GB", "TB"):
-            if size < 1024 or unit == "TB":
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB"
+            if value < 1024 or unit == "TB":
+                return f"{value:.1f} {unit}"
+            value /= 1024
+        return f"{value:.1f} TB"
 
     @staticmethod
     def _dir_size(path: Path) -> int:
@@ -1006,7 +1014,7 @@ class MaintenanceTools:
             return result
 
         try:
-            conn = lancedb.connect(str(self.lancedb_path))
+            conn = lancedb.connect(str(self.lancedb_path))  # type: ignore[attr-defined]
             all_tables = self._lancedb_table_names(conn)
         except Exception as e:
             result["error"] = (

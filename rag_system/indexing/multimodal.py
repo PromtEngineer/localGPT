@@ -1,4 +1,5 @@
 import os
+from typing import Tuple, cast
 
 import fitz  # PyMuPDF
 import torch
@@ -90,7 +91,9 @@ class MultimodalProcessor:
 
             # 2. Extract Image
             pix = page.get_pixmap()
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            img = Image.frombytes(
+                "RGB", cast(Tuple[int, int], [pix.width, pix.height]), pix.samples
+            )
             all_pages_images.append(img)
 
         # --- Batch Indexing ---
@@ -108,7 +111,7 @@ class MultimodalProcessor:
 
         # Index all images
         if all_pages_images:
-            image_embeddings = self.vision_model.create_image_embeddings(
+            image_embeddings = self.vision_model.create_image_embeddings(  # type: ignore[attr-defined]
                 all_pages_images
             )
             # We use the text chunks as placeholders for metadata

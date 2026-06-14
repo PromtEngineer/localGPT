@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import fitz  # PyMuPDF for quick text inspection
 from docling.datamodel.base_models import InputFormat
@@ -30,22 +30,26 @@ class DocumentConverter:
             # --- Converter WITHOUT OCR (fast path) ---
             pipeline_no_ocr = PdfPipelineOptions()
             pipeline_no_ocr.do_ocr = False
-            format_no_ocr = {
+            format_no_ocr: Dict[InputFormat, Any] = {
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_no_ocr)
             }
-            self.converter_no_ocr = DoclingConverter(format_options=format_no_ocr)
+            self.converter_no_ocr: Optional[DoclingConverter] = DoclingConverter(
+                format_options=format_no_ocr
+            )
 
             # --- Converter WITH OCR (fallback) ---
             pipeline_ocr = PdfPipelineOptions()
             pipeline_ocr.do_ocr = True
             ocr_options = OcrMacOptions(force_full_page_ocr=True)
             pipeline_ocr.ocr_options = ocr_options
-            format_ocr = {
+            format_ocr: Dict[InputFormat, Any] = {
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_ocr)
             }
-            self.converter_ocr = DoclingConverter(format_options=format_ocr)
+            self.converter_ocr: Optional[DoclingConverter] = DoclingConverter(
+                format_options=format_ocr
+            )
 
-            self.converter_general = DoclingConverter()
+            self.converter_general: Optional[DoclingConverter] = DoclingConverter()
 
             print("docling DocumentConverter(s) initialized (OCR + no-OCR + general).")
         except Exception as e:
@@ -77,7 +81,9 @@ class DocumentConverter:
         elif input_format == "TXT":
             return self._convert_txt_to_markdown(file_path)
         else:
-            return self._convert_general_to_markdown(file_path, input_format)
+            return self._convert_general_to_markdown(
+                file_path, cast(InputFormat, input_format)
+            )
 
     def _convert_pdf_to_markdown(
         self, pdf_path: str
@@ -146,7 +152,8 @@ class DocumentConverter:
             # expect only (markdown, metadata) can simply ignore the extra value.
             pages_data.append((markdown_content, metadata, result.document))
             print(f"Successfully converted {file_path} with docling {format_msg}.")
-            return pages_data
+            # Intentionally returns 3-tuples (see note above); legacy 2-tuple signature.
+            return pages_data  # type: ignore[return-value]
         except Exception as e:
             print(f"Error processing {file_path} with docling: {e}")
             return []

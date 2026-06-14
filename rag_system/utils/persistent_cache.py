@@ -23,7 +23,7 @@ try:
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
-    redis = None
+    redis = None  # type: ignore[assignment]  # module placeholder when redis is absent
 
 
 class PersistentCache:
@@ -58,7 +58,7 @@ class PersistentCache:
         self.cache_scope = cache_scope
 
         # Initialize Redis connection if available
-        self.redis_client = None
+        self.redis_client: Any = None
         if REDIS_AVAILABLE:
             try:
                 self.redis_client = redis.from_url(redis_url, decode_responses=False)

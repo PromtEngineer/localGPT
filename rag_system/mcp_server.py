@@ -21,6 +21,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from typing import cast
 
 PROTOCOL_VERSION = "2025-03-26"
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -208,7 +209,7 @@ def _handle(msg: dict) -> None:
     elif method == "tools/call":
         params = msg.get("params") or {}
         name = params.get("name")
-        func = TOOL_FUNCS.get(name)
+        func = TOOL_FUNCS.get(cast(str, name))
         if not func:
             _error(req_id, -32601, f"Unknown tool: {name}")
             return
