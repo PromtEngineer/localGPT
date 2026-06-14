@@ -111,7 +111,9 @@ def _rewrite_query(llm_client: Any, model: str, query: str, context: str) -> str
         f"QUESTION: {query}\n\nWEAK CONTEXT:\n{context[:2000]}"
     )
     try:
-        resp = llm_client.generate_completion(model, prompt, format="json")
+        resp = llm_client.generate_completion(
+            model, prompt, format="json", temperature=0.0, enable_thinking=False
+        )
         rewritten = json.loads(resp.get("response", "{}")).get("query")
         if isinstance(rewritten, str) and rewritten.strip():
             return rewritten

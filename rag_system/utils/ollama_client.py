@@ -61,6 +61,7 @@ class OllamaClient:
         format: str = "",
         images: List[Image.Image] | None = None,
         enable_thinking: bool | None = None,
+        temperature: float | None = None,
         timeout: int = 300,
     ) -> Dict[str, Any]:
         """
@@ -72,14 +73,19 @@ class OllamaClient:
             format: The format for the response, e.g., "json".
             images: A list of Pillow Image objects to send to the VLM.
             enable_thinking: Optional flag to disable chain-of-thought for Qwen models.
+            temperature: Optional sampling temperature; 0 = greedy/deterministic
+                (used by the reflection scorers so scores don't drift run-to-run).
         """
         try:
-            payload = {
+            options: Dict[str, Any] = {"num_ctx": NUM_CTX}
+            if temperature is not None:
+                options["temperature"] = temperature
+            payload: Dict[str, Any] = {
                 "model": model,
                 "prompt": prompt,
                 "stream": False,
                 "keep_alive": KEEP_ALIVE,
-                "options": {"num_ctx": NUM_CTX},
+                "options": options,
             }
             if format:
                 payload["format"] = format

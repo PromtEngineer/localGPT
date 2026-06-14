@@ -57,7 +57,9 @@ def standalone_query(
         f"HISTORY:\n{_format_history(turns)}\n\nLATEST MESSAGE: {query}"
     )
     try:
-        resp = llm_client.generate_completion(model, prompt, format="json")
+        resp = llm_client.generate_completion(
+            model, prompt, format="json", temperature=0.0, enable_thinking=False
+        )
         rewritten = json.loads(resp.get("response", "{}")).get("query")
         if isinstance(rewritten, str) and rewritten.strip():
             return rewritten.strip()

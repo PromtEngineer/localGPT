@@ -117,8 +117,15 @@ class Verifier:
 
     def _reflection_score(self, prompt: str, model_override: str | None) -> int:
         try:
+            # Greedy decoding (temperature=0) keeps the 0-2 score stable across
+            # identical calls — the reflection loop was thrashing on run-to-run
+            # variance. Thinking off also makes each score fast (no CoT tokens).
             resp = self.llm_client.generate_completion(
-                model_override or self.llm_model, prompt, format="json"
+                model_override or self.llm_model,
+                prompt,
+                format="json",
+                temperature=0.0,
+                enable_thinking=False,
             )
             raw = json.loads(resp.get("response", "{}")).get("score", 0)
             return max(0, min(2, int(raw)))

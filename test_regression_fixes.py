@@ -979,7 +979,7 @@ class _ReflectFakePipeline:
         self.synth_queries.append(query)
         return self._synth_answer
 
-    def generate_completion(self, model, prompt, format=None):  # rewrite path
+    def generate_completion(self, model, prompt, format=None, **kwargs):  # rewrite
         return {"response": json.dumps({"query": "REWRITTEN"})}
 
 
@@ -1122,6 +1122,34 @@ class ReflectionLoopTests(unittest.TestCase):
         self.assertEqual(token_texts, ["FINAL"])  # intermediate token swallowed
 
 
+class ReflectionScoringTests(unittest.TestCase):
+    def test_scores_use_deterministic_thinking_off_decoding(self):
+        # Run-to-run score drift was the noise source; scoring must call the LLM
+        # greedily (temperature=0) with thinking disabled.
+        from rag_system.agent.verifier import Verifier
+
+        llm = _RewriteLLM({"response": json.dumps({"score": 2})})
+        verifier = Verifier(llm, "judge-model")
+
+        self.assertEqual(verifier.score_context_relevance("q", "ctx"), 2)
+        self.assertEqual(llm.last_kwargs.get("temperature"), 0.0)
+        self.assertIs(llm.last_kwargs.get("enable_thinking"), False)
+
+        self.assertEqual(verifier.score_response_groundedness("q", "ctx", "ans"), 2)
+        self.assertEqual(llm.last_kwargs.get("temperature"), 0.0)
+        self.assertIs(llm.last_kwargs.get("enable_thinking"), False)
+
+    def test_score_clamps_and_failsafe(self):
+        from rag_system.agent.verifier import Verifier
+
+        # out-of-range clamps to 0..2
+        hi = Verifier(_RewriteLLM({"response": json.dumps({"score": 9})}), "m")
+        self.assertEqual(hi.score_context_relevance("q", "c"), 2)
+        # unparseable -> fail-safe 0
+        bad = Verifier(_RewriteLLM({"response": "not json"}), "m")
+        self.assertEqual(bad.score_response_groundedness("q", "c", "a"), 0)
+
+
 class ReflectionConfigTests(unittest.TestCase):
     def test_defaults_and_overrides(self):
         from rag_system.agent import reflection
@@ -1189,9 +1217,11 @@ class _RewriteLLM:
     def __init__(self, response):
         self._response = response
         self.calls = 0
+        self.last_kwargs = {}
 
-    def generate_completion(self, model, prompt, format=None):
+    def generate_completion(self, model, prompt, format=None, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         return self._response
 
 
@@ -1245,6 +1275,9 @@ class QueryRewriteTests(unittest.TestCase):
             llm, "m", "what about it?", [{"user": "tell me about X", "assistant": "X."}]
         )
         self.assertEqual(out, "standalone Q")
+        # Deterministic + thinking-off keeps the rewrite reproducible and fast.
+        self.assertEqual(llm.last_kwargs.get("temperature"), 0.0)
+        self.assertIs(llm.last_kwargs.get("enable_thinking"), False)
 
     def test_standalone_query_falls_back_on_bad_json(self):
         from rag_system.agent import query_rewrite
