@@ -394,6 +394,38 @@ class BackendApiContractTests(unittest.TestCase):
             [os.path.realpath(external_path)],
         )
 
+    def test_delete_index_preserves_file_shared_with_another_index(self):
+        """Deleting one index must not remove an owned upload that another
+        index still references — mirrors the maintenance path's is_shared
+        guard. Behavior-neutral under normal uploads (unique paths), but
+        guards against data loss if a path is ever shared across indexes."""
+        upload_dir = os.path.join(self.temp_dir, "uploads")
+        os.makedirs(upload_dir)
+        shared_path = os.path.join(upload_dir, "shared.txt")
+        with open(shared_path, "w", encoding="utf-8") as handle:
+            handle.write("shared upload")
+
+        doomed = server.db.create_index("Doomed")
+        keeper = server.db.create_index("Keeper")
+        server.db.add_document_to_index(doomed, "shared.txt", shared_path)
+        server.db.add_document_to_index(keeper, "shared.txt", shared_path)
+
+        with (
+            patch.object(server, "_UPLOAD_DIR", upload_dir),
+            patch.object(server, "_lancedb_path_candidates", return_value=[]),
+            patch.object(server, "_overview_path_candidates", return_value=[]),
+        ):
+            response = self.client.delete(f"/indexes/{doomed}")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        removed = response.json()["removed"]
+        self.assertEqual(removed["shared_files"], [os.path.realpath(shared_path)])
+        self.assertEqual(removed["files"], [])
+        # The file the surviving index needs is still on disk.
+        self.assertTrue(os.path.exists(shared_path))
+        self.assertIsNone(server.db.get_index(doomed))
+        self.assertIsNotNone(server.db.get_index(keeper))
+
     def test_delete_index_artifact_failure_preserves_db_record(self):
         """If artifact cleanup fails, the DB record must survive so the delete
         is retryable — deletion does artifacts first (1501) then the DB row

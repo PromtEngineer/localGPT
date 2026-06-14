@@ -469,6 +469,7 @@ def _delete_index_artifacts(index: Dict[str, Any]) -> Dict[str, List[str]]:
         "files": [],
         "overviews": [],
         "skipped_files": [],
+        "shared_files": [],
     }
     failures: List[str] = []
     table_name = index.get("vector_table_name")
@@ -493,6 +494,24 @@ def _delete_index_artifacts(index: Dict[str, Any]) -> Dict[str, List[str]]:
                     failures.append(f"Could not clean LanceDB at {db_path}: {e}")
 
     upload_root = os.path.realpath(_UPLOAD_DIR)
+    # A file still referenced by another index must survive this delete. The
+    # maintenance path (maintenance._delete_index_completely) already guards
+    # this; mirror it here so removing one index never deletes an upload that
+    # another index depends on. Behavior-neutral today (each upload gets a
+    # unique uuid path), but a safety net for any future clone/import feature.
+    current_id = index.get("id")
+    shared_real_paths: set = set()
+    try:
+        for other in db.list_indexes():
+            if other.get("id") == current_id:
+                continue
+            for other_doc in other.get("documents") or []:
+                other_path = other_doc.get("stored_path")
+                if other_path:
+                    shared_real_paths.add(os.path.realpath(other_path))
+    except Exception:
+        shared_real_paths = set()
+
     for document in index.get("documents") or []:
         stored_path = document.get("stored_path")
         if not stored_path:
@@ -504,6 +523,10 @@ def _delete_index_artifacts(index: Dict[str, Any]) -> Dict[str, List[str]]:
                 continue
         except ValueError:
             removed["skipped_files"].append(real_path)
+            continue
+        if real_path in shared_real_paths:
+            # Owned and under uploads, but another index references it → keep.
+            removed["shared_files"].append(real_path)
             continue
         try:
             if os.path.exists(real_path):
