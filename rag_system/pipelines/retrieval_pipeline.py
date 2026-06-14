@@ -397,7 +397,11 @@ ORIGINAL QUESTION: "{query}"
 
 Reminder: every fact in your answer must end with its source number in square brackets, e.g. "The budget is 7.3M [2]." — matching the numbered [Source N: ...] labels above. Do not skip this.
 """
-        # Stream the answer token-by-token so the caller can forward them as SSE
+        # Stream the answer token-by-token so the caller can forward them as SSE.
+        # generation_started/done bracket the LLM call so timing can attribute
+        # synthesis latency (usually the dominant cost) as its own stage.
+        if event_callback:
+            event_callback("generation_started", {})
         answer_parts: list[str] = []
         for tok in self.ollama_client.stream_completion(
             model=generation_model or self.ollama_config["generation_model"],
@@ -407,7 +411,10 @@ Reminder: every fact in your answer must end with its source number in square br
             if event_callback:
                 event_callback("token", {"text": tok})
 
-        return "".join(answer_parts)
+        final_answer = "".join(answer_parts)
+        if event_callback:
+            event_callback("generation_done", {"chars": len(final_answer)})
+        return final_answer
 
     def run(
         self,

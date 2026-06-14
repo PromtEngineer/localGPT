@@ -192,10 +192,12 @@ def reflective_run(
         else:
             # Context is fine but the answer drifts → regenerate on the same
             # context (budgeted to the window) with stronger adherence.
+            # stage_cb (not None): suppresses the regeneration's tokens but lets
+            # its generation_started/done through so its latency is still timed.
             answer = pipeline._synthesize_final_answer(
                 _adherence_wrap(query),
                 _budget_context(sources),
-                event_callback=None,
+                event_callback=stage_cb,
                 generation_model=gen_model,
             )
             result = {"answer": answer, "source_documents": sources}

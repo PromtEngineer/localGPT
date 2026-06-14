@@ -859,6 +859,16 @@ class StageTimingsTests(unittest.TestCase):
         self.assertIn("ttft_ms", snapshot)
         self.assertGreaterEqual(snapshot["ttft_ms"], 0.0)
 
+    def test_stage_timings_includes_generation(self):
+        from rag_system.utils.logging_utils import StageTimings
+
+        timer = StageTimings()
+        timer.observe("generation_started", {})
+        timer.observe("generation_done", {"chars": 120})
+        snapshot = timer.as_dict()
+        self.assertIn("generation", snapshot["timings_ms"])
+        self.assertGreaterEqual(snapshot["timings_ms"]["generation"], 0.0)
+
     def test_stage_timings_accumulate_across_rounds(self):
         from rag_system.utils.logging_utils import StageTimings
 

@@ -332,12 +332,14 @@ class StageTimings:
         "rerank_started": "rerank",
         "context_expand_started": "context_expand",
         "prune_started": "prune",
+        "generation_started": "generation",
     }
     _DONE = {
         "retrieval_done": "retrieval",
         "rerank_done": "rerank",
         "context_expand_done": "context_expand",
         "prune_done": "prune",
+        "generation_done": "generation",
     }
 
     def __init__(self) -> None:
