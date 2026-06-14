@@ -58,7 +58,7 @@ class DocumentConverter:
             self.converter_ocr = None
             self.converter_general = None
 
-    def convert_to_markdown(self, file_path: str) -> List[Tuple[str, Dict[str, Any]]]:
+    def convert_to_markdown(self, file_path: str) -> List[Tuple[Any, ...]]:
         """
         Converts a document to a single Markdown string, preserving layout and tables.
         Supports PDF, DOCX, HTML, and other formats.
@@ -85,9 +85,7 @@ class DocumentConverter:
                 file_path, cast(InputFormat, input_format)
             )
 
-    def _convert_pdf_to_markdown(
-        self, pdf_path: str
-    ) -> List[Tuple[str, Dict[str, Any]]]:
+    def _convert_pdf_to_markdown(self, pdf_path: str) -> List[Tuple[Any, ...]]:
         """Convert PDF with OCR detection logic."""
 
         # Quick heuristic: if the PDF already contains a text layer, skip OCR for speed
@@ -108,9 +106,7 @@ class DocumentConverter:
         print(f"Converting {pdf_path} to Markdown using docling {ocr_msg}...")
         return self._perform_conversion(pdf_path, converter, ocr_msg)
 
-    def _convert_txt_to_markdown(
-        self, file_path: str
-    ) -> List[Tuple[str, Dict[str, Any]]]:
+    def _convert_txt_to_markdown(self, file_path: str) -> List[Tuple[Any, ...]]:
         """Convert plain text files to markdown by reading content directly."""
         print(f"Converting {file_path} (TXT) to Markdown...")
         try:
@@ -128,7 +124,7 @@ class DocumentConverter:
 
     def _convert_general_to_markdown(
         self, file_path: str, input_format: InputFormat
-    ) -> List[Tuple[str, Dict[str, Any]]]:
+    ) -> List[Tuple[Any, ...]]:
         """Convert non-PDF formats using general converter."""
         print(
             f"Converting {file_path} ({input_format.name}) to Markdown using docling..."
@@ -139,7 +135,7 @@ class DocumentConverter:
 
     def _perform_conversion(
         self, file_path: str, converter, format_msg: str
-    ) -> List[Tuple[str, Dict[str, Any]]]:
+    ) -> List[Tuple[Any, ...]]:
         """Perform the actual conversion using the specified converter."""
         pages_data = []
         try:
@@ -152,8 +148,7 @@ class DocumentConverter:
             # expect only (markdown, metadata) can simply ignore the extra value.
             pages_data.append((markdown_content, metadata, result.document))
             print(f"Successfully converted {file_path} with docling {format_msg}.")
-            # Intentionally returns 3-tuples (see note above); legacy 2-tuple signature.
-            return pages_data  # type: ignore[return-value]
+            return pages_data
         except Exception as e:
             print(f"Error processing {file_path} with docling: {e}")
             return []

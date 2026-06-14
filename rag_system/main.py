@@ -223,9 +223,11 @@ def run_indexing(docs_path: str, config_mode: str = "default"):
     # Local import to avoid circular dependencies
     from rag_system.pipelines.indexing_pipeline import IndexingPipeline
 
-    # Get the appropriate indexing pipeline from the factory
-    # Pre-existing call shape; preserving runtime behavior.
-    indexing_pipeline = IndexingPipeline(PIPELINE_CONFIGS[config_mode])  # type: ignore[call-arg]
+    # Construct the in-process pipeline: config + LLM client + Ollama config.
+    ollama_client = OllamaClient(OLLAMA_CONFIG["host"])
+    indexing_pipeline = IndexingPipeline(
+        PIPELINE_CONFIGS[config_mode], ollama_client, OLLAMA_CONFIG
+    )
 
     # Find all PDF files in the directory
     pdf_files = [
@@ -309,10 +311,10 @@ def main():
 
     command = sys.argv[1]
     if command == "index":
-        # Allow passing file paths from the command line
-        files = sys.argv[2:] if len(sys.argv) > 2 else None
-        # Pre-existing arg shape (list/None vs str path); preserving runtime behavior.
-        run_indexing(files)  # type: ignore[arg-type]
+        if len(sys.argv) < 3:
+            print("Usage: python -m rag_system.main index <documents_dir>")
+            return
+        run_indexing(sys.argv[2])
     elif command == "chat":
         if len(sys.argv) < 3:
             print("Usage: python main.py chat <query>")

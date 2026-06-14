@@ -111,9 +111,9 @@ class MultimodalProcessor:
 
         # Index all images
         if all_pages_images:
-            image_embeddings = self.vision_model.create_image_embeddings(  # type: ignore[attr-defined]
-                all_pages_images
-            )
+            image_embeddings = [
+                self.vision_model.embed_image(image) for image in all_pages_images
+            ]
             # We use the text chunks as placeholders for metadata
             self.image_vector_indexer.index(
                 image_table_name, all_pages_text_chunks, image_embeddings
