@@ -41,6 +41,37 @@ def _source_display_name(document_id) -> str:
     return _UUID_PREFIX_RE.sub("", str(document_id or "unknown"))
 
 
+def _dedup_within_collection(docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Collapse docs that are the SAME chunk within the SAME collection.
+
+    A collection's base + late-chunk legs both carry the same
+    ``(_source_table, chunk_id)`` for an overlapping chunk, so the passage would
+    otherwise be double-counted in reranking / RRF / the synthesis context.
+    Identity is ``(_source_table, chunk_id)``, NOT chunk_id alone: chunk_id is
+    only unique within a collection, so the same chunk_id from two different
+    indexes is different content and is intentionally kept. Keeps the
+    best-ranked occurrence (lowest ``_collection_rank``); docs without a
+    chunk_id pass through unchanged and first-seen order is preserved.
+    """
+    best: Dict[Any, Dict[str, Any]] = {}
+    order: List[Any] = []
+    passthrough: List[Dict[str, Any]] = []
+    _WORST = 10**18
+    for doc in docs:
+        cid = doc.get("chunk_id")
+        if cid is None:
+            passthrough.append(doc)
+            continue
+        key = (doc.get("_source_table"), cid)
+        prev = best.get(key)
+        if prev is None:
+            best[key] = doc
+            order.append(key)
+        elif doc.get("_collection_rank", _WORST) < prev.get("_collection_rank", _WORST):
+            best[key] = doc
+    return [best[k] for k in order] + passthrough
+
+
 # ---------------------------------------------------------------------------
 # Thread-safety helpers
 # ---------------------------------------------------------------------------
@@ -606,6 +637,20 @@ Reminder: every fact in your answer must end with its source number in square br
         logger.debug(
             "Retrieved %s chunks in %.2fs", len(retrieved_docs), retrieval_time
         )
+
+        # Collapse the same chunk reached via a collection's base + late-chunk
+        # legs so one passage isn't double-counted in reranking / RRF / the
+        # synthesis context. Keyed on (_source_table, chunk_id) — the same
+        # chunk_id from two different indexes is different content and is kept.
+        if retrieved_docs:
+            before = len(retrieved_docs)
+            retrieved_docs = _dedup_within_collection(retrieved_docs)
+            if len(retrieved_docs) != before:
+                logger.info(
+                    "retrieval_deduped_by_chunk_id kept=%s of=%s",
+                    len(retrieved_docs),
+                    before,
+                )
 
         # -----------------------------------------------------------
         #  LATE-CHUNK MERGING (merge ±1 sub-vector into central hit)

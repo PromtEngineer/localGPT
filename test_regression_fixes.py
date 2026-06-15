@@ -1389,6 +1389,51 @@ class QueryRewriteTests(unittest.TestCase):
         self.assertEqual(pipe.run_queries, ["q"])
 
 
+class RetrievalDedupTests(unittest.TestCase):
+    """Within one collection, the base + late-chunk legs can return the same
+    (_source_table, chunk_id); collapse those to one (best rank). The same
+    chunk_id from a DIFFERENT collection is different content and is kept."""
+
+    def test_collapses_base_and_lc_within_a_collection(self):
+        from rag_system.pipelines.retrieval_pipeline import _dedup_within_collection
+
+        docs = [
+            {"_source_table": "t", "chunk_id": "d_0", "_collection_rank": 1, "text": "base"},
+            {"_source_table": "t", "chunk_id": "d_1", "_collection_rank": 2, "text": "other"},
+            {"_source_table": "t", "chunk_id": "d_0", "_collection_rank": 5, "text": "lc-dup"},
+        ]
+        out = _dedup_within_collection(docs)
+        self.assertEqual([d["chunk_id"] for d in out], ["d_0", "d_1"])  # order kept
+        self.assertEqual(out[0]["text"], "base")  # better-ranked copy survived
+
+    def test_same_chunk_id_in_different_collections_is_kept(self):
+        from rag_system.pipelines.retrieval_pipeline import _dedup_within_collection
+
+        docs = [
+            {"_source_table": "table_a", "chunk_id": "report.txt_0", "_collection_rank": 1},
+            {"_source_table": "table_b", "chunk_id": "report.txt_0", "_collection_rank": 1},
+        ]
+        out = _dedup_within_collection(docs)
+        self.assertEqual(len(out), 2)  # different content across indexes
+
+    def test_keeps_best_rank_even_when_it_arrives_later(self):
+        from rag_system.pipelines.retrieval_pipeline import _dedup_within_collection
+
+        docs = [
+            {"_source_table": "t", "chunk_id": "x", "_collection_rank": 9, "text": "worse"},
+            {"_source_table": "t", "chunk_id": "x", "_collection_rank": 2, "text": "better"},
+        ]
+        out = _dedup_within_collection(docs)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["text"], "better")
+
+    def test_docs_without_chunk_id_pass_through(self):
+        from rag_system.pipelines.retrieval_pipeline import _dedup_within_collection
+
+        docs = [{"chunk_id": None}, {"chunk_id": None}, {"chunk_id": "k", "_source_table": "t"}]
+        self.assertEqual(len(_dedup_within_collection(docs)), 3)
+
+
 class ChatRuntimeLimitsTests(unittest.TestCase):
     """Request-knob clamping (local DoS guard)."""
 
