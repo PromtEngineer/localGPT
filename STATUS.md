@@ -245,11 +245,17 @@ has no visible LICENSE — borrow architecture/ideas, do **not** copy code.
 
 **Adopt selectively (candidates, in priority order):**
 
-1. **`feat/eval-suite`** *(High compat / Low risk — do first).* Extend the
-   existing harness, don't add RAGAS: dataset categories + difficulty, per-index
-   regression baselines, a helpfulness/completeness score, failure explanations
-   attached to results, and a prompt-injection/safety set. Gate: existing eval
-   gate stays 100%.
+1. **`feat/eval-suite`** *(High compat / Low risk)* — **DELIVERED ✅** (merged
+   from branch `feat/eval-suite`, 3 commits). Extended the existing harness
+   (no RAGAS/LangChain): question **categories + difficulty** with per-group
+   recall/chunk-hit breakdowns; per-case **failure attribution** (first-cause,
+   retrieval + e2e) dumped to `results-*-cases.jsonl`; a **helpfulness** judge
+   axis; opt-in **per-index regression baselines** (`--save-baseline` /
+   `--compare-baseline --tolerance`, exit 1 on a real drop); and a
+   **config-comparison** command (`compare`, dense-weight sweep tabulated with
+   per-column winners). Fixture gate stayed 100% throughout; suite 131 → 144;
+   no app/runtime code touched. *Deferred to `feat/data-policy`:* the
+   prompt-injection/safety eval set (better owned alongside the policy layer).
 2. **`feat/data-policy`** *(High compat / Medium risk).* A provider-neutral
    PII/secret classifier + policy decision (local / cloud / block / confirm)
    before any external request. **Reframed:** this governs an egress that
