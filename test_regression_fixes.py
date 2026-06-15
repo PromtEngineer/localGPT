@@ -1066,6 +1066,33 @@ class ReflectionLoopTests(unittest.TestCase):
         self.assertEqual(len(pipe.synth_queries), 1)  # regenerated on same context
         self.assertEqual(out["answer"], "REGENERATED")
 
+    def test_reports_converged_flag(self):
+        from rag_system.agent import reflection
+
+        # accepted first try -> converged
+        pipe = _ReflectFakePipeline(["A"], [_one_source()])
+        out = reflection.reflective_run(
+            pipe,
+            _ReflectFakeVerifier(rel=[2], ground=[2]),
+            "q",
+            run_kwargs={},
+            event_callback=None,
+            cfg=self._cfg(),
+        )
+        self.assertTrue(out["reflection"]["converged"])
+
+        # never passes -> loop exhausts -> not converged
+        pipe2 = _ReflectFakePipeline(["A", "B", "C"], [_one_source()] * 3)
+        out2 = reflection.reflective_run(
+            pipe2,
+            _ReflectFakeVerifier(rel=[0, 0, 0], ground=[2, 2, 2]),
+            "q",
+            run_kwargs={},
+            event_callback=None,
+            cfg=self._cfg(max_loops=2),
+        )
+        self.assertFalse(out2["reflection"]["converged"])
+
     def test_respects_max_loops(self):
         from rag_system.agent import reflection
 
@@ -1187,6 +1214,20 @@ class ReflectionConfigTests(unittest.TestCase):
         )
         self.assertEqual(cfg["max_loops"], 2)
         self.assertEqual(cfg["relevance_threshold"], 1)
+
+    def test_max_loops_is_clamped(self):
+        from rag_system.agent import reflection
+
+        # request-controlled value is clamped to a hard ceiling (DoS guard)
+        big = reflection.parse_config(
+            {"reflect": True, "reflection_max_loops": 100000}, "m"
+        )
+        self.assertEqual(big["max_loops"], reflection._MAX_REFLECTION_LOOPS)
+        self.assertLessEqual(big["max_loops"], 5)
+        # and a floor of 1
+        self.assertEqual(
+            reflection.parse_config({"reflection_max_loops": 0}, "m")["max_loops"], 1
+        )
 
 
 class ReflectionWiringTests(unittest.TestCase):

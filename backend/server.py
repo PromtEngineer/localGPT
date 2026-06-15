@@ -55,7 +55,7 @@ except Exception as _wal_err:
     print(f"⚠️ Could not enable WAL mode: {_wal_err}")
 
 import simple_pdf_processor as pdf_module
-from database import db, generate_session_title
+from database import _utc_now_iso, db, generate_session_title
 from ollama_client import OllamaClient, OllamaError
 from pydantic import ValidationError
 from validators import (
@@ -812,7 +812,7 @@ def _update_index_job(job_id: str, **updates):
         if not job:
             return
         job.update(updates)
-        job["updated_at"] = datetime.now().isoformat()
+        job["updated_at"] = _utc_now_iso()  # UTC: matches the persisted index_jobs row
 
 
 def _get_index_job(job_id: str) -> Optional[Dict[str, Any]]:
@@ -916,7 +916,7 @@ async def update_index_job_progress(job_id: str, request: Request):
         updates["progress"] = min(int(p if p is not None else 100), 99)
     elif data.get("stage") == "cancelled":
         updates["status"] = "cancelled"
-        updates["finished_at"] = datetime.now().isoformat()
+        updates["finished_at"] = _utc_now_iso()
     _update_index_job(job_id, **updates)
     file_status = data.get("file_status")
     file_path = data.get("file_path")
@@ -2101,7 +2101,7 @@ def _run_index_build_job(job_id: str, options_override: Dict[str, Any] | None = 
             progress=100,
             message=message,
             result=result,
-            finished_at=datetime.now().isoformat(),
+            finished_at=_utc_now_iso(),
         )
     except Exception as e:
         if isinstance(e, RuntimeError) and str(e) == "indexing_cancelled":
@@ -2118,7 +2118,7 @@ def _run_index_build_job(job_id: str, options_override: Dict[str, Any] | None = 
                 stage="cancelled",
                 progress=100,
                 message="Indexing cancelled",
-                finished_at=datetime.now().isoformat(),
+                finished_at=_utc_now_iso(),
             )
             return
         # Everything else marks the job failed. Re-raising here would vanish
@@ -2139,7 +2139,7 @@ def _run_index_build_job(job_id: str, options_override: Dict[str, Any] | None = 
             progress=100,
             message=str(e),
             error=str(e),
-            finished_at=datetime.now().isoformat(),
+            finished_at=_utc_now_iso(),
         )
 
 
@@ -2317,7 +2317,7 @@ async def cancel_index_job(job_id: str):
             status="cancelled",
             stage="cancelled",
             progress=100,
-            finished_at=datetime.now().isoformat(),
+            finished_at=_utc_now_iso(),
         )
         db.update_index_metadata(
             job["index_id"],

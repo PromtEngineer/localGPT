@@ -22,7 +22,7 @@ only items left are an on-demand **manual browser pass** and a release-time
 
 | Gate | Result |
 |------|--------|
-| Python tests (`pytest -q`) | ✅ 121 passed |
+| Python tests (`pytest -q`) | ✅ 123 passed |
 | Retrieval evaluation gate (`rag_eval.py gate`) | ✅ 100% |
 | ruff / black / mypy (`rag_system/` + `backend/`) | ✅ clean (enforced in CI, pinned versions) |
 | UI tests (`npm run test:ui`) | ✅ 11 passed (render + request-contract smokes) |
@@ -31,6 +31,7 @@ only items left are an on-demand **manual browser pass** and a release-time
 | Live disposable index lifecycle (create→upload→preflight→build→SSE→diagnostics→RAG chat→delete) | ✅ |
 | Live crash/restart/resume (4/4 files, healthy LanceDB table) | ✅ |
 | Live parallel mixed-model/mixed-search RAG | ✅ HTTP 200, no global serialization |
+| Docker compose static validation + `pip check` | ✅ both compose files valid; deps consistent |
 
 ---
 
@@ -104,6 +105,24 @@ only items left are an on-demand **manual browser pass** and a release-time
   and **concurrent maintenance sweeps** (4 sweeps on one SQLite DB, no
   errors/corruption under WAL + busy-timeout).
 
+### Closed in the 2nd audit round (2026-06-14)
+- **Job `finished_at`/in-memory `updated_at` were still local** — the UTC fix in
+  `database.py` was undermined by `server.py` writing these `index_jobs` fields
+  with `datetime.now()`. All `index_jobs` timestamp writers now use
+  `_utc_now_iso()`, so the whole timeline (created/updated/finished + persistence
+  stages) is naive-UTC.
+- **`reflection_max_loops` is clamped** to a hard ceiling (5) — an unbounded
+  request value was a resource-exhaustion lever (each loop is a full
+  retrieval+generation). Tested.
+- **Reflection metadata gained `converged`** — when `max_loops` is hit the
+  reported relevance/groundedness describe the last-evaluated (possibly
+  pre-final-regeneration) answer; `converged` now flags whether the thresholds
+  were actually met. Tested.
+- **Docker/clean-env: static portion validated** — both compose files parse with
+  valid services + present Dockerfiles, and `pip check` reports a consistent
+  dependency graph. (A fresh-host `docker compose up` / clean install still needs
+  the deployment machine — see Decisions.)
+
 ---
 
 ## Open / remaining
@@ -122,11 +141,11 @@ a decision below.
   `Documentation/ui_manual_test_cases.md`; no headless-browser harness in CI and
   the Browser-Use bridge isn't available here, so this is run on demand by a
   person, not blocking.
-- **Clean-environment / Docker validation → deferred to the target host.**
-  `docker` isn't available in this environment, so a fresh `pip install`/`npm ci`/
-  `docker compose` run can't be done here; it's a release-time check on the
-  deployment machine. Compose files and requirements are in the repo and
-  syntactically maintained.
+- **Clean-environment / Docker validation → static done, runtime deferred to the
+  target host.** Compose files are validated (parse, services, present
+  Dockerfiles) and `pip check` confirms a consistent dependency graph. `docker`
+  isn't available here, so the actual `docker compose up` + fresh
+  `pip install`/`npm ci` is a release-time check on the deployment machine.
 - **Small-model synthesis fallback → accepted quirk.** `qwen3:0.6b` once appended
   the "could not find that information" fallback after a correct answer;
   `qwen3:8b` was clean. The recommended synthesis models don't exhibit it; a

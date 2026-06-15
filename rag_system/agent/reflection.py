@@ -31,6 +31,10 @@ REFLECTION_DEFAULTS: Dict[str, int] = {
     "groundedness_threshold": 1,
 }
 
+# Hard ceiling on reflection rounds, regardless of the request value — each
+# round is a full retrieval+generation (or synthesis) pass.
+_MAX_REFLECTION_LOOPS = 5
+
 
 def parse_config(data: Dict[str, Any], generation_model: Any) -> Dict[str, Any]:
     """Parse per-request reflection knobs from a chat request payload."""
@@ -45,8 +49,15 @@ def parse_config(data: Dict[str, Any], generation_model: Any) -> Dict[str, Any]:
     judge = data.get("reflection_model")
     return {
         "enabled": bool(data.get("reflect", False)),
+        # Clamp to a hard ceiling: each loop is a full retrieval+generation (or a
+        # synthesis) call, so an unbounded request value is a resource-exhaustion
+        # lever.
         "max_loops": max(
-            1, _int("reflection_max_loops", REFLECTION_DEFAULTS["max_loops"])
+            1,
+            min(
+                _MAX_REFLECTION_LOOPS,
+                _int("reflection_max_loops", REFLECTION_DEFAULTS["max_loops"]),
+            ),
         ),
         "relevance_threshold": _int(
             "relevance_threshold", REFLECTION_DEFAULTS["relevance_threshold"]
@@ -186,6 +197,7 @@ def reflective_run(
     rounds = 0
     relevance: Optional[int] = None
     groundedness: Optional[int] = None
+    converged = False
 
     for _ in range(max_loops):
         sources = result.get("source_documents") or []
@@ -197,6 +209,7 @@ def reflective_run(
             query, context, result.get("answer", ""), model
         )
         if relevance >= rel_threshold and groundedness >= ground_threshold:
+            converged = True
             break
         rounds += 1
         if relevance < rel_threshold:
@@ -224,9 +237,12 @@ def reflective_run(
     # answer rather than ever returning an empty one.
     final = result if _has_answer(result) else (best or result)
     _emit_answer(event_callback, final.get("answer", ""))
+    # converged=False means max_loops was hit: the scores describe the
+    # last-evaluated answer, which may predate a final groundedness regeneration.
     final["reflection"] = {
         "rounds": rounds,
         "relevance": relevance,
         "groundedness": groundedness,
+        "converged": converged,
     }
     return final
