@@ -5,7 +5,7 @@ work.** It replaces the former scattered trackers (release checklist, Feature 10
 summaries and checklists, upgrade/improvement plans). How-to and reference docs
 live under [`Documentation/`](Documentation/) and in the `*_QUICK_START.md` files.
 
-_Last reconciled against the code + gates: 2026-06-14._
+_Last reconciled against the code + gates: 2026-06-15._
 
 ---
 
@@ -14,18 +14,22 @@ _Last reconciled against the code + gates: 2026-06-14._
 LocalGPT is a local-first RAG app: one unified FastAPI backend (port 8000) with
 the RAG runtime in-process, a Next.js frontend (3000), LanceDB + SQLite + Ollama.
 All automated gates are green and **no blocking code/test work remains**. The
-only items left are an on-demand **manual browser pass** and a release-time
-**Docker / clean-environment check on the target host** — both accepted gates
-(see Decisions), not open code work.
+**external-pattern review (Brev workshop + NVIDIA report-gen) is fully closed —
+all five adopted candidates are delivered and merged** (eval-suite, data-policy,
+tool-events, local research-mode, session-skills); see the detailed section
+below. The only items left are an on-demand **manual browser pass**, a
+release-time **Docker / clean-environment check on the target host**, and the
+deliberately deferred **web-augmented research variant** — all accepted gates /
+deferred-by-design (see Decisions), not open code work.
 
-## Verification snapshot (2026-06-14)
+## Verification snapshot (2026-06-15)
 
 | Gate | Result |
 |------|--------|
-| Python tests (`pytest -q`) | ✅ 131 passed |
+| Python tests (`pytest -q`) | ✅ 167 passed |
 | Retrieval evaluation gate (`rag_eval.py gate`) | ✅ 100% |
 | ruff / black / mypy (`rag_system/` + `backend/`) | ✅ clean (enforced in CI, pinned versions) |
-| UI tests (`npm run test:ui`) | ✅ 11 passed (render + request-contract smokes) |
+| UI tests (`npm run test:ui`) | ✅ 20 passed (render + request-contract + activity-trace smokes) |
 | `npx tsc --noEmit` / `npm run lint` / `npm run lint:ui` | ✅ clean |
 | `npm run build` | ✅ passes |
 | Live disposable index lifecycle (create→upload→preflight→build→SSE→diagnostics→RAG chat→delete) | ✅ |
@@ -64,6 +68,23 @@ only items left are an on-demand **manual browser pass** and a release-time
 - All three are surfaced in the chat **Settings → Reflection & Multi-turn**
   (toggles + reflection model, max loops, relevance/groundedness thresholds,
   defaults sourced from the backend), with a per-answer metrics footer.
+
+### External-pattern-review candidates (all 5 delivered & merged)
+Adopted from the Brev "build-an-agent" workshop + NVIDIA report-gen blog as a
+pattern catalogue (full rationale + per-feature detail in the review section
+below). Each shipped as its own gated worktree:
+- **Expanded evaluation harness** — question categories/difficulty + per-group
+  breakdowns, per-case failure attribution, a helpfulness judge axis, per-index
+  regression baselines, and a `compare` config-sweep command.
+- **Cloud-egress data policy** — deterministic secret/PII detectors + fail-closed
+  `allow/redact/block` enforced at the single cloud-enrichment factory (block →
+  local fallback); per-index policy + UI; audit via the rotating log.
+- **Generic activity trace** — `foldActivityEvents()` over the existing SSE
+  `<stage>_started/_done` convention + a compact expandable `ActivityTrace`.
+- **Local long-form report mode** — opt-in `report: true`: plan → per-section
+  local retrieval → global citation remap (drops hallucinated cites) → Markdown.
+- **Prompt-only skill packs** — allowlisted Markdown skills selected by id,
+  injected subordinate to grounding/citation rules; `GET /rag/skills` + selector.
 
 ### Persistent indexing jobs (Feature 11)
 - Crash-recoverable, resumable indexing with per-stage tracking; SSE progress;
@@ -176,10 +197,14 @@ state, and that decomposition parallelism is bounded (≤10 sub-queries, pool of
 
 ## Open / remaining
 
-**None blocking.** Every code/test item is closed (above). The two items below
-are accepted gates that fundamentally require a human tester or a target host —
-automated coverage stands in for the logic; the irreducible step is recorded as
-a decision below.
+**None blocking.** Every code/test item is closed (above), including all five
+external-pattern-review candidates. What remains is not open code work: two
+accepted gates that fundamentally require a human tester or a target host
+(manual browser pass; Docker / clean-environment check), plus one feature
+**deferred by design** — the **web-augmented research variant** (gated behind a
+future web tool + the data-policy egress layer). Automated coverage stands in
+for the logic where it can; each irreducible item is recorded as a decision
+below.
 
 ## Decisions / accepted (not open bugs)
 
@@ -243,7 +268,7 @@ local-first, Ollama/LanceDB/in-process runtime and the pinned deps
 (`torch==2.4.1`, `transformers==4.51.0`). **Licensing caveat:** the workshop repo
 has no visible LICENSE — borrow architecture/ideas, do **not** copy code.
 
-**Adopt selectively (candidates, in priority order):**
+**Adopt selectively (candidates, in priority order) — ✅ ALL 5 DELIVERED & MERGED:**
 
 1. **`feat/eval-suite`** *(High compat / Low risk)* — **DELIVERED ✅** (merged
    from branch `feat/eval-suite`, 3 commits). Extended the existing harness
@@ -333,9 +358,13 @@ until governance lands — note we are already an MCP **server** via
 Persistent agentic-query checkpoints are **low value** — `job_persistence.py`
 already checkpoints indexing in SQLite and retrieval queries are short-lived.
 
-**Status:** analysis only — no LocalGPT files changed for this review. Each
-candidate above should land as an independent worktree behind its own gate; do
-not combine policy + web + skills + tool-exec into one migration.
+**Status:** ✅ **complete.** All five candidates landed as independent gated
+worktrees (each merged `--no-ff`, branch deleted) without combining policy + web
++ skills + tool-exec into one migration, and without touching the do-not-adopt
+stack. Across the effort: Python suite 127 → 167, UI 11 → 20, eval gate 100%
+throughout, ruff/black/mypy + tsc/eslint clean. The only review item still open
+is the **web-augmented research variant**, deferred by design behind a future
+web tool + the data-policy layer.
 
 ---
 
