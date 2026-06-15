@@ -1748,5 +1748,102 @@ class DataPolicyTests(unittest.TestCase):
             )
 
 
+class _FakeReportLLM:
+    """Returns a fixed planning JSON regardless of prompt."""
+
+    def __init__(self, sections_json):
+        self._json = sections_json
+
+    def generate_completion(self, model, prompt, **kwargs):
+        return {"response": self._json}
+
+
+class _FakeReportPipeline:
+    """Returns a canned retrieval result per section, in call order."""
+
+    def __init__(self, ollama_client, results):
+        self.ollama_client = ollama_client
+        self._results = results
+        self.calls = []
+
+    def run(self, query, event_callback=None, **kwargs):
+        self.calls.append(query)
+        return self._results[len(self.calls) - 1]
+
+
+class ReportModeTests(unittest.TestCase):
+    """Local long-form report generation (rag_system.agent.report)."""
+
+    def test_parse_sections_dedups_clamps_and_falls_back(self):
+        from rag_system.agent.report import parse_sections
+
+        out = parse_sections('{"sections": ["A", "a", "B", "C", "D"]}', max_sections=3)
+        self.assertEqual(out, ["A", "B", "C"])  # case-dedup + clamp to 3
+        self.assertEqual(parse_sections("not json", 4), ["Overview"])  # fallback
+        self.assertEqual(parse_sections('{"sections": []}', 4), ["Overview"])
+
+    def test_remap_citations_globalizes_and_dedups(self):
+        from rag_system.agent.report import remap_citations
+
+        s1 = {"document_id": "a.txt", "chunk_id": "a.txt_0", "_source_table": "t"}
+        s2 = {"document_id": "b.txt", "chunk_id": "b.txt_1", "_source_table": "t"}
+        gs, gk = [], {}
+        t1, d1 = remap_citations("Alpha [1] beta [2]", [s1, s2], gs, gk)
+        self.assertEqual(t1, "Alpha [1] beta [2]")
+        self.assertEqual(d1, 0)
+        # second section cites the SAME chunk -> reuses global index 1
+        t2, d2 = remap_citations("Gamma [1]", [s1], gs, gk)
+        self.assertEqual(t2, "Gamma [1]")
+        self.assertEqual(len(gs), 2)  # s1, s2 only
+
+    def test_remap_drops_out_of_range_citation(self):
+        from rag_system.agent.report import remap_citations
+
+        s1 = {"document_id": "a.txt", "chunk_id": "a.txt_0", "_source_table": "t"}
+        gs, gk = [], {}
+        text, dropped = remap_citations("see [5] only", [s1], gs, gk)
+        self.assertEqual(dropped, 1)
+        self.assertNotIn("[5]", text)
+        self.assertEqual(gs, [])  # nothing valid cited
+
+    def test_compile_report_structure(self):
+        from rag_system.agent.report import compile_report
+
+        md = compile_report("My Q", [("Sec A", "body a [1]")], [{"document_id": "a.txt"}])
+        self.assertIn("# My Q", md)
+        self.assertIn("## Sec A", md)
+        self.assertIn("body a [1]", md)
+        self.assertIn("## References", md)
+        self.assertIn("1. a.txt", md)
+
+    def test_generate_report_end_to_end(self):
+        from rag_system.agent.report import generate_report
+
+        s1 = {"document_id": "a.txt", "chunk_id": "a.txt_0", "_source_table": "t", "text": "alpha"}
+        s2 = {"document_id": "b.txt", "chunk_id": "b.txt_1", "_source_table": "t", "text": "beta"}
+        pipeline = _FakeReportPipeline(
+            _FakeReportLLM('{"sections": ["Background", "Findings"]}'),
+            results=[
+                {"answer": "Alpha [1] and [2]", "source_documents": [s1, s2]},
+                {"answer": "Reuse [1]", "source_documents": [s1]},  # same chunk -> [1]
+            ],
+        )
+        events = []
+        out = generate_report(
+            pipeline, "model", "Explain the project",
+            run_kwargs={"table_name": "t", "overrides": {}},
+            event_callback=lambda t, p: events.append(t),
+            max_sections=4,
+        )
+        self.assertEqual(len(pipeline.calls), 2)  # one retrieval per section
+        self.assertEqual(out["report"]["section_count"], 2)
+        self.assertEqual(len(out["source_documents"]), 2)  # deduped across sections
+        self.assertIn("## Background", out["answer"])
+        self.assertIn("## Findings", out["answer"])
+        self.assertIn("Reuse [1]", out["answer"])  # section 2 reused global 1
+        self.assertIn("report_started", events)
+        self.assertIn("report_done", events)
+
+
 if __name__ == "__main__":
     unittest.main()

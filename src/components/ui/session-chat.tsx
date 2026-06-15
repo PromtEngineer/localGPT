@@ -89,6 +89,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   const [enableReflect, setEnableReflect] = useState<boolean>(false)
   // Standalone multi-turn query rewrite. Default off.
   const [enableRewrite, setEnableRewrite] = useState<boolean>(false)
+  // Long-form local report mode (plan -> retrieve -> draft -> compile). Off.
+  const [enableReport, setEnableReport] = useState<boolean>(false)
   // Reflection advanced controls. Empty model = judge with the answer model;
   // pick a small fast model to keep scoring cheap. Loops cap the retry depth.
   const [reflectionModel, setReflectionModel] = useState<string>('')
@@ -353,7 +355,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand,
               enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
               searchType, forceDocs, provencePrune, agenticMode, enableReflect,
-              enableRewrite, reflectionModel, reflectionMaxLoops,
+              enableRewrite, enableReport, reflectionModel, reflectionMaxLoops,
               relevanceThreshold, groundednessThreshold,
               filters: parseMetadataFilters(metadataFilters),
             }),
@@ -588,7 +590,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand,
             enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
             searchType, forceDocs, provencePrune, agenticMode, enableReflect,
-            enableRewrite, reflectionModel, reflectionMaxLoops,
+            enableRewrite, enableReport, reflectionModel, reflectionMaxLoops,
             relevanceThreshold, groundednessThreshold,
             filters: parseMetadataFilters(metadataFilters),
           }))
@@ -794,6 +796,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'toggle', label:'Verify answer', checked: enableVerify, setter: setEnableVerify},
             {type: 'toggle', label:'Self-reflection', checked: enableReflect, setter: setEnableReflect},
             {type: 'toggle', label:'Multi-turn query rewrite', checked: enableRewrite, setter: setEnableRewrite},
+            {type: 'toggle', label:'Long-form report', checked: enableReport, setter: setEnableReport},
             {type: 'dropdown', label:'Reflection model', value: reflectionModel, setter: setReflectionModel, options: [{value:'',label:'Same as answer model'}, ...generationModels.map(m=>({value:m,label:m}))]},
             {type: 'slider', label:'Max reflection loops', value: reflectionMaxLoops, setter: setReflectionMaxLoops, min: 1, max: 3, unit: ' loops'},
             {type: 'slider', label:'Relevance threshold', value: relevanceThreshold, setter: setRelevanceThreshold, min: 0, max: 2, unit: '/2'},

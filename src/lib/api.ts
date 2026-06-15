@@ -435,6 +435,7 @@ class ChatAPI {
       reflectionMaxLoops?: number;
       relevanceThreshold?: number;
       groundednessThreshold?: number;
+      report?: boolean;
     } = {}
   ): Promise<SessionChatResponse & { source_documents: SourceDocument[] }> {
     try {
@@ -468,6 +469,7 @@ class ChatAPI {
           ...(typeof opts.reflectionMaxLoops === 'number' && { reflection_max_loops: opts.reflectionMaxLoops }),
           ...(typeof opts.relevanceThreshold === 'number' && { relevance_threshold: opts.relevanceThreshold }),
           ...(typeof opts.groundednessThreshold === 'number' && { groundedness_threshold: opts.groundednessThreshold }),
+          ...(typeof opts.report === 'boolean' && { report: opts.report }),
         }),
       });
 
@@ -925,11 +927,12 @@ class ChatAPI {
       reflectionMaxLoops?: number;
       relevanceThreshold?: number;
       groundednessThreshold?: number;
+      report?: boolean;
     },
     onEvent: (event: { type: string; data: ApiRecord }) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune, reflect, rewriteQuery, reflectionModel, reflectionMaxLoops, relevanceThreshold, groundednessThreshold } = params;
+    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune, reflect, rewriteQuery, reflectionModel, reflectionMaxLoops, relevanceThreshold, groundednessThreshold, report } = params;
 
     const payload: Record<string, unknown> = { query };
     if (model) payload.model = model;
@@ -956,6 +959,7 @@ class ChatAPI {
     if (typeof reflectionMaxLoops === 'number') payload.reflection_max_loops = reflectionMaxLoops;
     if (typeof relevanceThreshold === 'number') payload.relevance_threshold = relevanceThreshold;
     if (typeof groundednessThreshold === 'number') payload.groundedness_threshold = groundednessThreshold;
+    if (typeof report === 'boolean') payload.report = report;
 
     const resp = await fetch(`${API_BASE_URL}/rag/chat/stream`, {
       method: 'POST',

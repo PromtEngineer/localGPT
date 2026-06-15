@@ -20,6 +20,7 @@ const base: ChatUiState = {
   agenticMode: false,
   enableReflect: false,
   enableRewrite: false,
+  enableReport: false,
   reflectionModel: '',
   reflectionMaxLoops: 2,
   relevanceThreshold: 1,
@@ -32,6 +33,7 @@ describe('buildChatRequestSettings', () => {
       ...base,
       enableReflect: true,
       enableRewrite: true,
+      enableReport: true,
       reflectionModel: 'qwen3:0.6b',
       reflectionMaxLoops: 3,
       relevanceThreshold: 2,
@@ -40,6 +42,7 @@ describe('buildChatRequestSettings', () => {
     expect(out).toMatchObject({
       reflect: true,
       rewriteQuery: true,
+      report: true,
       reflectionModel: 'qwen3:0.6b',
       reflectionMaxLoops: 3,
       relevanceThreshold: 2,

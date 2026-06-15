@@ -287,13 +287,24 @@ has no visible LICENSE — borrow architecture/ideas, do **not** copy code.
    step on `complete`, rendered beside `MetricsFooter`. 9 vitest cases (reducer
    contract + render/expand smoke); UI 11 → 20; tsc/eslint clean; production
    build passes; backend untouched (gate 100%, Python suite 156).
-4. **`feat/research-mode` — split by data source.** A long-form report workflow
-   (plan sections → retrieve evidence → dedupe → draft → verify citations →
-   compile), request-gated like timings/reflect/rewrite, reusing the reflection
-   budgeting (max-loops/regen clamps). **Local-only variant can ship early**
-   (no external network → no policy dependency); the **web-augmented variant is
-   gated behind `feat/data-policy`**, web disabled by default, with `[Local]` vs
-   `[Web]` citation labelling.
+4. **`feat/research-mode` (local)** — **DELIVERED ✅** (merged from branch
+   `feat/research-mode`, 1 commit). `rag_system/agent/report.py`: an opt-in
+   `report: true` request turns one query into a structured multi-section
+   Markdown report grounded entirely in the local indexes. `plan_sections()`
+   (one LLM call → budget-clamped ≤8 titles, single-overview fallback) →
+   per-section reuse of the existing `pipeline.run` for local retrieval +
+   grounded synthesis → `remap_citations()` rewrites each section's local `[n]`
+   to global `[N]` (dedup by `(_source_table, chunk_id)`) and **drops
+   hallucinated out-of-range citations** (the verify-citations step) →
+   `compile_report()` Markdown with one merged References list. Wired into
+   `execute_chat` as a request-gated branch (same overrides/run_kwargs + rewrite
+   path), section count clamped via `report_max_sections`, emits
+   `report_started`/`report_done` so the activity trace shows it. Frontend
+   "Long-form report" toggle on both send paths. 10 tests; ruff/black/mypy +
+   tsc/eslint clean; UI 20/20; build passes; gate 100%; suite 156 → 161. **The
+   web-augmented variant remains deferred** (gated behind a future web-tool +
+   `feat/data-policy`, `[Local]`/`[Web]` citation labelling) — local-only shipped
+   first by design.
 5. **`feat/session-skills`** *(prototype carefully).* Markdown "skill packs"
    (report writing, contract compare, incident analysis, etc.) implemented as
    **prompt modules only — never executable plugins.** Allowlisted directory,
