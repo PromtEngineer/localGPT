@@ -1415,6 +1415,15 @@ async def rag_reflection_defaults():
     return dict(REFLECTION_DEFAULTS)
 
 
+@app.get("/rag/skills")
+async def rag_skills():
+    """Selectable prompt-only skill packs from the allowlisted skills directory.
+    Ids returned here are the only values the chat endpoint accepts for `skill`."""
+    from rag_system.agent.skills import list_skills
+
+    return {"skills": list_skills()}
+
+
 @app.post("/rag/chat")
 async def rag_chat(request: Request):
     """Run the transport-neutral RAG pipeline through FastAPI."""

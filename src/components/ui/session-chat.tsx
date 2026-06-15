@@ -3,7 +3,7 @@
 import * as React from "react"
 import { ConversationPage } from "./conversation-page"
 import { ChatInput } from "./chat-input"
-import { ApiRecord, ChatMessage, ChatSession, IndexSummary, PREFERRED_CHAT_MODELS, SourceDocument, chatAPI, generateUUID, pickDefaultChatModel } from "@/lib/api"
+import { ApiRecord, ChatMessage, ChatSession, IndexSummary, PREFERRED_CHAT_MODELS, SkillSummary, SourceDocument, chatAPI, generateUUID, pickDefaultChatModel } from "@/lib/api"
 import { AttachedFile } from "@/lib/types"
 import { useEffect, useState, forwardRef, useImperativeHandle, useCallback, useRef } from "react"
 import { Button } from "./button"
@@ -91,6 +91,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   const [enableRewrite, setEnableRewrite] = useState<boolean>(false)
   // Long-form local report mode (plan -> retrieve -> draft -> compile). Off.
   const [enableReport, setEnableReport] = useState<boolean>(false)
+  // Selected prompt-only skill pack (id), '' = none. Populated from the backend.
+  const [selectedSkill, setSelectedSkill] = useState<string>('')
+  const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([])
   // Reflection advanced controls. Empty model = judge with the answer model;
   // pick a small fast model to keep scoring cheap. Loops cap the retry depth.
   const [reflectionModel, setReflectionModel] = useState<string>('')
@@ -146,6 +149,12 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   useEffect(() => {
     return () => { streamAbortRef.current?.abort() }
   }, [])
+  // Load the allowlisted skill packs once for the selector.
+  useEffect(() => {
+    let active = true
+    apiService.getSkills().then(s => { if (active) setAvailableSkills(s) }).catch(() => {})
+    return () => { active = false }
+  }, [apiService])
 
   const ensureIndexHealthyForChat = async (idxId: string | null, indexName?: string | null) => {
     if (!idxId) return;
@@ -355,7 +364,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand,
               enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
               searchType, forceDocs, provencePrune, agenticMode, enableReflect,
-              enableRewrite, enableReport, reflectionModel, reflectionMaxLoops,
+              enableRewrite, enableReport, selectedSkill, reflectionModel, reflectionMaxLoops,
               relevanceThreshold, groundednessThreshold,
               filters: parseMetadataFilters(metadataFilters),
             }),
@@ -590,7 +599,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand,
             enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
             searchType, forceDocs, provencePrune, agenticMode, enableReflect,
-            enableRewrite, enableReport, reflectionModel, reflectionMaxLoops,
+            enableRewrite, enableReport, selectedSkill, reflectionModel, reflectionMaxLoops,
             relevanceThreshold, groundednessThreshold,
             filters: parseMetadataFilters(metadataFilters),
           }))
@@ -797,6 +806,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'toggle', label:'Self-reflection', checked: enableReflect, setter: setEnableReflect},
             {type: 'toggle', label:'Multi-turn query rewrite', checked: enableRewrite, setter: setEnableRewrite},
             {type: 'toggle', label:'Long-form report', checked: enableReport, setter: setEnableReport},
+            {type: 'dropdown', label:'Skill pack', value: selectedSkill, setter: setSelectedSkill, options: [{value:'',label:'None'}, ...availableSkills.map(s=>({value:s.id,label:s.name}))]},
             {type: 'dropdown', label:'Reflection model', value: reflectionModel, setter: setReflectionModel, options: [{value:'',label:'Same as answer model'}, ...generationModels.map(m=>({value:m,label:m}))]},
             {type: 'slider', label:'Max reflection loops', value: reflectionMaxLoops, setter: setReflectionMaxLoops, min: 1, max: 3, unit: ' loops'},
             {type: 'slider', label:'Relevance threshold', value: relevanceThreshold, setter: setRelevanceThreshold, min: 0, max: 2, unit: '/2'},
