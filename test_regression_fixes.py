@@ -1587,5 +1587,142 @@ class EvalSuiteTests(unittest.TestCase):
         self.assertIn("0.600 ", table)  # loser not starred
 
 
+class _RecordingClient:
+    """Stands in for a cloud/local enrichment client; records what it received."""
+
+    def __init__(self, name):
+        self.name = name
+        self.calls = []
+
+    def generate_completion(self, model, prompt, **kwargs):
+        self.calls.append(prompt)
+        return {"response": f"{self.name}:ok"}
+
+
+class DataPolicyTests(unittest.TestCase):
+    """Egress governance in front of optional cloud enrichment.
+
+    Security invariants: secrets block by default, fail-closed on bad policy,
+    and no matched value is ever forwarded, redacted output, or audited.
+    """
+
+    # --- detection ---
+
+    def test_detects_common_secrets(self):
+        from rag_system.utils.data_policy import scan_text
+
+        samples = {
+            "anthropic_key": "key sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAA here",
+            "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+            "github_token": "ghp_" + "a" * 36,
+            "private_key_block": "-----BEGIN RSA PRIVATE KEY-----",
+            "assigned_secret": 'password = "hunter2hunter2hunter2"',
+        }
+        for expected, text in samples.items():
+            cats = {f.detector for f in scan_text(text)}
+            self.assertIn(expected, cats, f"missed {expected} in {text!r}")
+
+    def test_credit_card_requires_luhn(self):
+        from rag_system.utils.data_policy import scan_text
+
+        valid = [f.detector for f in scan_text("card 4111 1111 1111 1111")]
+        invalid = [f.detector for f in scan_text("id 4111 1111 1111 1112")]
+        self.assertIn("credit_card", valid)
+        self.assertNotIn("credit_card", invalid)  # fails checksum -> not flagged
+
+    def test_clean_text_has_no_findings(self):
+        from rag_system.utils.data_policy import scan_text
+
+        self.assertEqual(scan_text("The Aurora Dam has a capacity of 240 MW."), [])
+
+    def test_findings_never_carry_the_value(self):
+        from rag_system.utils.data_policy import scan_text, Finding
+
+        f = scan_text("AKIAIOSFODNN7EXAMPLE")[0]
+        self.assertIsInstance(f, Finding)
+        self.assertEqual(set(vars(f)), {"detector", "category", "start", "end"})
+
+    # --- redaction ---
+
+    def test_redaction_masks_the_secret(self):
+        from rag_system.utils.data_policy import scan_text, redact_text
+
+        text = "before AKIAIOSFODNN7EXAMPLE after"
+        out = redact_text(text, scan_text(text))
+        self.assertNotIn("AKIAIOSFODNN7EXAMPLE", out)
+        self.assertIn("[REDACTED:aws_access_key_id]", out)
+        self.assertIn("before", out)
+        self.assertIn("after", out)
+
+    # --- policy resolution (fail-closed) ---
+
+    def test_normalize_policy_defaults_and_fail_closed(self):
+        from rag_system.utils.data_policy import normalize_policy, SECRET, PII, BLOCK, ALLOW
+
+        self.assertEqual(normalize_policy(None), {SECRET: BLOCK, PII: ALLOW})
+        self.assertEqual(normalize_policy({"pii": "redact"})[PII], "redact")
+        # unknown action must not open egress
+        self.assertEqual(normalize_policy({"secret": "yolo"})[SECRET], BLOCK)
+
+    def test_evaluate_actions(self):
+        from rag_system.utils.data_policy import evaluate, BLOCK, ALLOW, REDACT
+
+        self.assertEqual(evaluate("just a normal sentence").action, ALLOW)
+        self.assertEqual(evaluate("AKIAIOSFODNN7EXAMPLE").action, BLOCK)  # secret default
+        self.assertEqual(evaluate("email a@b.com").action, ALLOW)  # pii default
+        red = evaluate("email a@b.com", {"pii": REDACT})
+        self.assertEqual(red.action, REDACT)
+        self.assertNotIn("a@b.com", red.redacted_text)
+        # explicit override can permit a secret (e.g. trusted internal index)
+        self.assertEqual(evaluate("AKIAIOSFODNN7EXAMPLE", {"secret": "allow"}).action, ALLOW)
+
+    # --- enforcement at the egress boundary ---
+
+    def test_guard_blocks_to_local_fallback(self):
+        from rag_system.utils.data_policy import PolicyGuardedEnricher
+
+        cloud, local = _RecordingClient("cloud"), _RecordingClient("local")
+        audited = []
+        guard = PolicyGuardedEnricher(
+            cloud, local_fallback=local, audit=audited.append, provider="anthropic"
+        )
+        out = guard.generate_completion("m", "leak AKIAIOSFODNN7EXAMPLE")
+        self.assertEqual(out["response"], "local:ok")  # served locally
+        self.assertEqual(cloud.calls, [])  # nothing left the machine
+        self.assertEqual(local.calls[0], "leak AKIAIOSFODNN7EXAMPLE")
+        self.assertEqual(audited[0]["action"], "block")
+        self.assertIn("aws_access_key_id", audited[0]["findings"])
+        # audit carries counts/types only, never the value
+        self.assertNotIn("AKIAIOSFODNN7EXAMPLE", json.dumps(audited[0]))
+
+    def test_guard_blocks_with_no_fallback_returns_empty(self):
+        from rag_system.utils.data_policy import PolicyGuardedEnricher
+
+        cloud = _RecordingClient("cloud")
+        guard = PolicyGuardedEnricher(cloud, local_fallback=None)
+        self.assertEqual(guard.generate_completion("m", "AKIAIOSFODNN7EXAMPLE"), {})
+        self.assertEqual(cloud.calls, [])  # fail-closed: no egress, no result
+
+    def test_guard_redacts_before_forwarding(self):
+        from rag_system.utils.data_policy import PolicyGuardedEnricher
+
+        cloud = _RecordingClient("cloud")
+        guard = PolicyGuardedEnricher(cloud, policy={"pii": "redact"})
+        guard.generate_completion("m", "contact a@b.com please")
+        self.assertEqual(len(cloud.calls), 1)
+        self.assertNotIn("a@b.com", cloud.calls[0])  # masked before send
+        self.assertIn("[REDACTED:email]", cloud.calls[0])
+
+    def test_guard_allows_clean_text_unchanged(self):
+        from rag_system.utils.data_policy import PolicyGuardedEnricher
+
+        cloud = _RecordingClient("cloud")
+        audited = []
+        guard = PolicyGuardedEnricher(cloud, audit=audited.append)
+        guard.generate_completion("m", "Aurora Dam capacity is 240 MW")
+        self.assertEqual(cloud.calls, ["Aurora Dam capacity is 240 MW"])
+        self.assertEqual(audited, [])  # allow is not audited
+
+
 if __name__ == "__main__":
     unittest.main()

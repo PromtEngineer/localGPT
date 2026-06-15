@@ -83,6 +83,10 @@ def build_config(
         config["enrich_provider"] = options["enrich_provider"]
         if options.get("enrich_api_key"):
             config["enrich_api_key"] = options["enrich_api_key"]
+        # Per-index data-egress policy governing what may leave for the cloud
+        # provider. Absent -> the fail-closed defaults in data_policy apply.
+        if options.get("data_policy"):
+            config["data_policy"] = options["data_policy"]
     if options.get("overview_model_name"):
         config["overview_model_name"] = options["overview_model_name"]
     if options.get("index_id"):
