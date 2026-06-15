@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
-from rag_system.agent import query_rewrite, reflection
+from rag_system.agent import query_rewrite, reflection, report
 from rag_system.index_selection import select_active_index_id
 from rag_system.utils.logging_utils import StageTimings, timings_enabled
 
@@ -129,7 +129,10 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
     reflect_on = reflect_cfg["enabled"] and verifier is not None
 
     force_rag = bool(data.get("force_rag", False))
-    if force_rag or reflect_on:
+    # Opt-in long-form report mode. Local-only (no web), so no egress-policy
+    # dependency; runs on the retrieval pipeline like force_rag.
+    report_on = bool(data.get("report", False))
+    if force_rag or reflect_on or report_on:
         overrides = {
             "retrieval_k": retrieval_k,
             "reranker_top_k": reranker_top_k,
@@ -163,7 +166,16 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
                     query,
                     turns,
                 )
-        if reflect_on:
+        if report_on:
+            result = report.generate_report(
+                agent.retrieval_pipeline,
+                generation_model,
+                retrieval_query,
+                run_kwargs=run_kwargs,
+                event_callback=callback,
+                max_sections=_clamp_int(data.get("report_max_sections"), 4, 1, 8),
+            )
+        elif reflect_on:
             result = reflection.reflective_run(
                 agent.retrieval_pipeline,
                 verifier,

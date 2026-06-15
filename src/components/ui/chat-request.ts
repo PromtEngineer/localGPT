@@ -19,6 +19,7 @@ export interface ChatUiState {
   agenticMode: boolean;
   enableReflect: boolean;
   enableRewrite: boolean;
+  enableReport: boolean;
   reflectionModel: string;
   reflectionMaxLoops: number;
   relevanceThreshold: number;
@@ -42,6 +43,7 @@ export interface ChatRequestSettings {
   agentic: boolean;
   reflect: boolean;
   rewriteQuery: boolean;
+  report: boolean;
   reflectionModel: string;
   reflectionMaxLoops: number;
   relevanceThreshold: number;
@@ -66,6 +68,7 @@ export function buildChatRequestSettings(s: ChatUiState): ChatRequestSettings {
     agentic: s.agenticMode,
     reflect: s.enableReflect,
     rewriteQuery: s.enableRewrite,
+    report: s.enableReport,
     reflectionModel: s.reflectionModel,
     reflectionMaxLoops: s.reflectionMaxLoops,
     relevanceThreshold: s.relevanceThreshold,
