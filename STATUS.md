@@ -256,12 +256,24 @@ has no visible LICENSE — borrow architecture/ideas, do **not** copy code.
    per-column winners). Fixture gate stayed 100% throughout; suite 131 → 144;
    no app/runtime code touched. *Deferred to `feat/data-policy`:* the
    prompt-injection/safety eval set (better owned alongside the policy layer).
-2. **`feat/data-policy`** *(High compat / Medium risk).* A provider-neutral
-   PII/secret classifier + policy decision (local / cloud / block / confirm)
-   before any external request. **Reframed:** this governs an egress that
-   **already exists today** — the optional `enrichApiKey` cloud-enrichment path —
-   so it is retroactive governance, not future-proofing. Fail-closed; index-level
-   policies; audit records; no-cloud-by-default fixtures.
+2. **`feat/data-policy`** *(High compat / Medium risk)* — **DELIVERED ✅**
+   (merged from branch `feat/data-policy`, 2 commits). New
+   `rag_system/utils/data_policy.py`: deterministic secret/PII detectors
+   (keys, private-key blocks, JWTs, bearer headers, assigned secrets; emails,
+   SSNs, Luhn-validated cards — findings never carry the matched value),
+   `allow/redact/block` per category resolved **fail-closed**, and a
+   `PolicyGuardedEnricher` that enforces the decision at the single cloud
+   factory (`create_enrichment_client`): **block → local Ollama fallback** so
+   content never leaves, **redact → mask before send**, **allow → pass through**.
+   Per-index `dataPolicy` threads request → `indexing_runtime` → pipeline;
+   server validates it fail-closed; the IndexForm shows Secrets/Personal-data
+   selectors for cloud providers. Audit (`data_policy_action`, counts/types only)
+   persists via the rotating `localgpt.log`. Extensible safety corpus at
+   `tests/eval_fixtures/safety_samples.jsonl` (the item deferred from
+   `feat/eval-suite`, now owned here). 12 DataPolicyTests + safety-corpus loader;
+   ruff/black/mypy + tsc/eslint clean; gate 100%; suite 144 → 156. This is the
+   reframed governance for the egress that **already exists today** (the optional
+   `enrichApiKey` cloud-enrichment path).
 3. **`feat/tool-events`** *(High compat / Medium risk).* A generic SSE
    tool/activity event contract (index selection, rewrite, retrieve, rerank,
    reflect, verify, optional web/skill) over the existing `event_callback` in

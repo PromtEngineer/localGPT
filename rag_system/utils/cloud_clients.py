@@ -106,31 +106,49 @@ def create_enrichment_client(
     provider: str,
     api_key: str | None = None,
     ollama_client=None,
+    policy=None,
+    audit=None,
 ):
     """Return the right LLM client for the given enrichment provider.
 
     provider : "ollama" | "anthropic" | "openai" | "groq"
     api_key  : optional — falls back to env vars per provider
-    ollama_client : returned unchanged for "ollama" provider
+    ollama_client : returned unchanged for "ollama" provider; also used as the
+        local fallback when the egress policy blocks cloud enrichment
+    policy : optional data-egress policy (see rag_system.utils.data_policy)
+    audit  : optional callback recording policy actions (counts only, no values)
+
+    Every cloud provider is wrapped in a PolicyGuardedEnricher so document text
+    is scanned for secrets/PII before any request leaves the machine.
     """
     provider = (provider or "ollama").lower()
 
+    cloud: object | None = None
     if provider == "anthropic":
         key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
         assert key is not None  # env fallback default ("") guarantees a str
-        return AnthropicEnricher(api_key=key)
-
-    if provider == "openai":
+        cloud = AnthropicEnricher(api_key=key)
+    elif provider == "openai":
         key = api_key or os.getenv("OPENAI_API_KEY", "")
         assert key is not None  # env fallback default ("") guarantees a str
-        return OpenAICompatibleEnricher(api_key=key)
-
-    if provider == "groq":
+        cloud = OpenAICompatibleEnricher(api_key=key)
+    elif provider == "groq":
         key = api_key or os.getenv("GROQ_API_KEY", "")
         assert key is not None  # env fallback default ("") guarantees a str
-        return OpenAICompatibleEnricher(
+        cloud = OpenAICompatibleEnricher(
             api_key=key,
             base_url=OpenAICompatibleEnricher._GROQ_BASE,
+        )
+
+    if cloud is not None:
+        from rag_system.utils.data_policy import PolicyGuardedEnricher
+
+        return PolicyGuardedEnricher(
+            cloud,
+            local_fallback=ollama_client,
+            policy=policy,
+            audit=audit,
+            provider=provider,
         )
 
     # "ollama" or anything unrecognised → use local Ollama

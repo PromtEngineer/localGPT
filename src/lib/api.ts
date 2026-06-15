@@ -202,11 +202,15 @@ export type IndexBuildOptions = {
   enrichModel?: string;
   enrichProvider?: EnrichProvider;
   enrichApiKey?: string;
+  /** Cloud-egress policy per data category; only sent for cloud providers. */
+  dataPolicy?: { secret?: DataPolicyAction; pii?: DataPolicyAction };
   overviewModel?: string;
   batchSizeEmbed?: number;
   batchSizeEnrich?: number;
   forceReindex?: boolean;
 };
+
+export type DataPolicyAction = 'allow' | 'redact' | 'block';
 
 export type IndexJob = {
   id: string;
@@ -744,6 +748,7 @@ class ChatAPI {
       enrichModel: opts.enrichModel,
       enrichProvider: opts.enrichProvider ?? 'ollama',
       enrichApiKey: opts.enrichApiKey,
+      dataPolicy: opts.dataPolicy,
       overviewModel: opts.overviewModel,
       batchSizeEmbed: opts.batchSizeEmbed ?? 50,
       batchSizeEnrich: opts.batchSizeEnrich ?? 25,

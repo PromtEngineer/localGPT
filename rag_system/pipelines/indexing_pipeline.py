@@ -254,10 +254,16 @@ class IndexingPipeline:
             if enrich_provider != "ollama":
                 from rag_system.utils.cloud_clients import create_enrichment_client
 
+                def _policy_audit(entry: dict) -> None:
+                    # Counts/types only — the matched secret value is never here.
+                    indexing_logger.warning("data_policy_action", **entry)
+
                 enrichment_client = create_enrichment_client(
                     provider=enrich_provider,
                     api_key=self.config.get("enrich_api_key"),
                     ollama_client=self.llm_client,
+                    policy=self.config.get("data_policy"),
+                    audit=_policy_audit,
                 )
                 indexing_logger.info("enrichment_provider", provider=enrich_provider)
             else:
