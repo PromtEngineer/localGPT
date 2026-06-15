@@ -22,7 +22,7 @@ only items left are an on-demand **manual browser pass** and a release-time
 
 | Gate | Result |
 |------|--------|
-| Python tests (`pytest -q`) | ✅ 127 passed |
+| Python tests (`pytest -q`) | ✅ 131 passed |
 | Retrieval evaluation gate (`rag_eval.py gate`) | ✅ 100% |
 | ruff / black / mypy (`rag_system/` + `backend/`) | ✅ clean (enforced in CI, pinned versions) |
 | UI tests (`npm run test:ui`) | ✅ 11 passed (render + request-contract smokes) |
@@ -200,16 +200,17 @@ a decision below.
   `qwen3:8b` was clean. The recommended synthesis models don't exhibit it; a
   narrow strip-the-exact-sentence guard can be added on request if tiny synthesis
   models are used heavily.
-- **Cross-collection / late-chunk dedup uses `(table, chunk_id)` → deferred.**
-  `chunk_id` isn't globally unique (it's `doc_<n>`-style) and the base + `_lc`
-  legs of one collection share it, so the same logical chunk indexed into two
-  collections (or a base/late-chunk pair) can be double-counted in RRF or
-  silently deduped during context expansion. Real, but it touches the core
-  fusion/identity logic where the retrieval eval gate is the safety net — a fix
-  needs its own change + eval validation rather than a blind edit. (Also noted:
-  the multi-collection routing cache ignores conversation history, and a
-  mixed int-vs-float schema across collections can silently narrow a list
-  filter — same "fix deliberately with eval coverage" bucket.)
+- **Within-collection base/late-chunk dedup → fixed ✅ (0930e0d).** A collection's
+  base and `_lc` legs can both return the same chunk, double-counting one passage
+  in RRF / reranking / synthesis. Added `_dedup_within_collection()` keyed on
+  `(_source_table, chunk_id)` — deliberately the pair, since `chunk_id` is only
+  unique within a collection (`<document_id>_<chunk_index>`), so the same
+  `chunk_id` from two indexes is distinct content and is kept. Validated against
+  the retrieval eval gate (still 100%) plus `RetrievalDedupTests` and the existing
+  `MultiCollectionRetrievalTests` cross-index guard. Two related items stay
+  deferred (same "fix deliberately with eval coverage" bucket): the multi-collection
+  routing cache ignores conversation history, and a mixed int-vs-float schema
+  across collections can silently narrow a list filter.
 - **Overview written before storage → minor, transient.** A file's overview
   (triage/routing data) is appended before its embed/store stages, so a file that
   fails at storage can briefly have an overview but zero vectors. This only
