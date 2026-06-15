@@ -1845,5 +1845,92 @@ class ReportModeTests(unittest.TestCase):
         self.assertIn("report_done", events)
 
 
+class SessionSkillsTests(unittest.TestCase):
+    """Prompt-only, allowlisted skill packs (rag_system.agent.skills).
+
+    Security-critical: only well-formed *.md from the allowlisted directory may
+    load, selection is by id (never path/content), and unknown ids resolve to
+    None rather than leaking anything.
+    """
+
+    def setUp(self):
+        from pathlib import Path
+
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+
+    def _write(self, name, text):
+        (self.dir / name).write_text(text, encoding="utf-8")
+
+    def test_loads_valid_skill_and_lists_without_body(self):
+        from rag_system.agent.skills import load_skills, list_skills
+
+        self._write("report.md", "---\nname: Report\ndescription: d\nversion: 2\n---\nDo the thing.")
+        skills = load_skills(self.dir)
+        self.assertIn("report", skills)
+        self.assertEqual(skills["report"].name, "Report")
+        self.assertEqual(skills["report"].body, "Do the thing.")
+        listed = list_skills(self.dir)
+        self.assertEqual(listed[0]["id"], "report")
+        self.assertNotIn("body", listed[0])  # body never exposed to the UI
+
+    def test_get_instruction_by_id_and_unknown_is_none(self):
+        from rag_system.agent.skills import get_skill_instruction
+
+        self._write("brief.md", "---\nname: Brief\n---\nBe concise.")
+        self.assertEqual(get_skill_instruction("brief", self.dir), "Be concise.")
+        self.assertIsNone(get_skill_instruction("does-not-exist", self.dir))
+        self.assertIsNone(get_skill_instruction(None, self.dir))
+        self.assertIsNone(get_skill_instruction("", self.dir))
+
+    def test_skips_malformed_oversize_and_non_md(self):
+        from rag_system.agent.skills import load_skills
+
+        self._write("nofront.md", "just text, no frontmatter")
+        self._write("empty.md", "---\nname: X\n---\n   ")  # empty body
+        self._write("big.md", "---\nname: Big\n---\n" + ("x" * 20000))  # > 16KB
+        self._write("notes.txt", "---\nname: T\n---\nbody")  # not .md
+        self.assertEqual(load_skills(self.dir), {})
+
+    def test_missing_directory_is_empty_not_error(self):
+        from pathlib import Path
+        from rag_system.agent.skills import load_skills
+
+        self.assertEqual(load_skills(Path(self.dir / "nope")), {})
+
+    def test_bundled_skill_packs_load(self):
+        # The committed skills/ directory must contain valid, loadable packs.
+        from rag_system.agent.skills import load_skills, skills_dir
+
+        skills = load_skills(skills_dir())
+        self.assertIn("technical-report", skills)
+        self.assertTrue(skills["technical-report"].body)
+
+    def test_skill_instruction_is_subordinate_in_synthesis(self):
+        # The skill text is injected as STYLE & APPROACH, above the prompt but
+        # explicitly subordinate to the grounding/citation rules.
+        from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
+
+        captured = {}
+
+        class _LLM:
+            def stream_completion(self, model, prompt):
+                captured["prompt"] = prompt
+                yield "ok"
+
+        config = {"storage": {"text_table_name": "t", "db_path": tempfile.mkdtemp()},
+                  "retrieval": {}, "reranker": {"enabled": False}}
+        self.addCleanup(shutil.rmtree, config["storage"]["db_path"], ignore_errors=True)
+        pipe = RetrievalPipeline(config, _LLM(), {"generation_model": "m"})
+        pipe._synthesize_final_answer("q", "facts", skill_instruction="Write tersely.")
+        self.assertIn("STYLE & APPROACH", captured["prompt"])
+        self.assertIn("Write tersely.", captured["prompt"])
+        # grounding/citation rules still present and after the skill block
+        self.assertLess(
+            captured["prompt"].index("Write tersely."),
+            captured["prompt"].index("Cite your sources inline"),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

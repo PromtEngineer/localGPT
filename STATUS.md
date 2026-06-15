@@ -305,12 +305,20 @@ has no visible LICENSE — borrow architecture/ideas, do **not** copy code.
    web-augmented variant remains deferred** (gated behind a future web-tool +
    `feat/data-policy`, `[Local]`/`[Web]` citation labelling) — local-only shipped
    first by design.
-5. **`feat/session-skills`** *(prototype carefully).* Markdown "skill packs"
-   (report writing, contract compare, incident analysis, etc.) implemented as
-   **prompt modules only — never executable plugins.** Allowlisted directory,
-   metadata schema, size limits, versioning, explicit user selection; skill text
-   is treated as privileged instructions and arbitrary uploaded Markdown is never
-   loaded as a skill.
+5. **`feat/session-skills`** — **DELIVERED ✅** (merged from branch
+   `feat/session-skills`, 1 commit). `rag_system/agent/skills.py`: prompt-only
+   Markdown "skill packs" (tone/structure/approach), **never executable**.
+   Loaded only from the allowlisted `skills/` dir (`LOCALGPT_SKILLS_DIR`
+   override); selection is **by id** (validated file stem) so no path/glob/
+   content crosses the request boundary; 16KB/file cap, top-level `*.md` only,
+   symlink-escape containment check, malformed packs skipped. The injected text
+   is a **STYLE & APPROACH block explicitly subordinate to the grounding +
+   citation rules** (can't license invention). `execute_chat` resolves
+   `data["skill"]` → `overrides["skill_instruction"]`; synthesis prepends it.
+   `GET /rag/skills` lists selectable packs (ids only); frontend "Skill pack"
+   dropdown on both send paths. Two bundled packs (technical-report,
+   incident-analysis). 12 tests; ruff/black/mypy + tsc/eslint clean; UI 20/20;
+   build passes; gate 100%; suite 156 → 167.
 
 **Do not adopt:** LangGraph/DeepAgents migration, FAISS (we use LanceDB),
 NIM/Nemotron/OpenRouter/Tavily as defaults, GRPO training + NeMo synthetic data,

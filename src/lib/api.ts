@@ -212,6 +212,8 @@ export type IndexBuildOptions = {
 
 export type DataPolicyAction = 'allow' | 'redact' | 'block';
 
+export type SkillSummary = { id: string; name: string; description?: string; version?: string };
+
 export type IndexJob = {
   id: string;
   index_id: string;
@@ -436,6 +438,7 @@ class ChatAPI {
       relevanceThreshold?: number;
       groundednessThreshold?: number;
       report?: boolean;
+      skill?: string;
     } = {}
   ): Promise<SessionChatResponse & { source_documents: SourceDocument[] }> {
     try {
@@ -470,6 +473,7 @@ class ChatAPI {
           ...(typeof opts.relevanceThreshold === 'number' && { relevance_threshold: opts.relevanceThreshold }),
           ...(typeof opts.groundednessThreshold === 'number' && { groundedness_threshold: opts.groundednessThreshold }),
           ...(typeof opts.report === 'boolean' && { report: opts.report }),
+          ...(opts.skill && { skill: opts.skill }),
         }),
       });
 
@@ -721,6 +725,18 @@ class ChatAPI {
     }
   }
 
+  /** Selectable prompt-only skill packs (ids are the only accepted `skill` values). */
+  async getSkills(): Promise<SkillSummary[]> {
+    try {
+      const resp = await fetch(`${API_BASE_URL}/rag/skills`);
+      if (!resp.ok) return [];
+      const data = await resp.json();
+      return Array.isArray(data?.skills) ? (data.skills as SkillSummary[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
   async uploadFilesToIndex(
     indexId: string,
     files: File[],
@@ -928,11 +944,12 @@ class ChatAPI {
       relevanceThreshold?: number;
       groundednessThreshold?: number;
       report?: boolean;
+      skill?: string;
     },
     onEvent: (event: { type: string; data: ApiRecord }) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune, reflect, rewriteQuery, reflectionModel, reflectionMaxLoops, relevanceThreshold, groundednessThreshold, report } = params;
+    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune, reflect, rewriteQuery, reflectionModel, reflectionMaxLoops, relevanceThreshold, groundednessThreshold, report, skill } = params;
 
     const payload: Record<string, unknown> = { query };
     if (model) payload.model = model;
@@ -960,6 +977,7 @@ class ChatAPI {
     if (typeof relevanceThreshold === 'number') payload.relevance_threshold = relevanceThreshold;
     if (typeof groundednessThreshold === 'number') payload.groundedness_threshold = groundednessThreshold;
     if (typeof report === 'boolean') payload.report = report;
+    if (skill) payload.skill = skill;
 
     const resp = await fetch(`${API_BASE_URL}/rag/chat/stream`, {
       method: 'POST',

@@ -397,9 +397,19 @@ class RetrievalPipeline:
         *,
         event_callback=None,
         generation_model: Optional[str] = None,
+        skill_instruction: Optional[str] = None,
     ) -> str:
         """Uses a text LLM to synthesize a final answer from extracted facts."""
-        prompt = f"""
+        # A selected skill pack guides tone/structure but stays subordinate to
+        # the grounding + citation rules below (it can't license invention).
+        skill_block = ""
+        if skill_instruction:
+            skill_block = (
+                "STYLE & APPROACH (apply where it does not conflict with the "
+                "grounding and citation rules below):\n"
+                f"{skill_instruction.strip()}\n\n"
+            )
+        prompt = f"""{skill_block}
 You are an AI assistant specialised in answering questions from retrieved context.
 
 Context you receive
@@ -995,6 +1005,7 @@ Reminder: every fact in your answer must end with its source number in square br
             context,
             event_callback=event_callback,
             generation_model=ov.get("generation_model"),
+            skill_instruction=ov.get("skill_instruction"),
         )
 
         return {"answer": final_answer, "source_documents": final_docs}

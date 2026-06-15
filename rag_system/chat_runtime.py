@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
-from rag_system.agent import query_rewrite, reflection, report
+from rag_system.agent import query_rewrite, reflection, report, skills
 from rag_system.index_selection import select_active_index_id
 from rag_system.utils.logging_utils import StageTimings, timings_enabled
 
@@ -143,6 +143,9 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
             "provence_threshold": provence_threshold,
             "generation_model": generation_model,
             "latechunk_enabled": True,
+            # Selected skill pack (prompt-only, resolved from the allowlisted
+            # registry by id — never arbitrary request text).
+            "skill_instruction": skills.get_skill_instruction(data.get("skill")),
         }
         run_kwargs = {
             "table_name": table_name,
