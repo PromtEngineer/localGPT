@@ -12,6 +12,8 @@ import Markdown from "@/components/Markdown"
 import { normalizeWhitespace } from "@/utils/textNormalization"
 import { highlightTerms } from "@/lib/highlight"
 import { MetricsFooter, type TimingsMs, type ReflectionInfo } from "@/components/ui/metrics-footer"
+import { ActivityTrace } from "@/components/ui/activity-trace"
+import type { ActivityStage } from "@/lib/activity-trace"
 
 interface ConversationPageProps {
   messages: ChatMessage[]
@@ -185,6 +187,9 @@ function StructuredMessageBlock({
                   <MetricsFooter
                     timings={(step.details as ApiRecord).timings_ms as TimingsMs | undefined}
                     reflection={(step.details as ApiRecord).reflection as ReflectionInfo | undefined}
+                  />
+                  <ActivityTrace
+                    stages={(step.details as ApiRecord).activity as ActivityStage[] | undefined}
                   />
                 </div>
               ) : step.key === 'final' && step.details && typeof step.details === 'string' ? (

@@ -8,6 +8,7 @@ import { AttachedFile } from "@/lib/types"
 import { useEffect, useState, forwardRef, useImperativeHandle, useCallback, useRef } from "react"
 import { Button } from "./button"
 import type { Step } from '@/lib/api'
+import { foldActivityEvents, type RawEvent } from '@/lib/activity-trace'
 import { buildChatRequestSettings } from '@/components/ui/chat-request'
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal'
 import { IndexForm } from '@/components/IndexForm'
@@ -137,6 +138,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   // Active answer stream — aborted on unmount and on session switch so a
   // stale stream can't keep updating state for a conversation we left
   const streamAbortRef = useRef<AbortController | null>(null)
+  // Raw SSE events for the in-flight answer, folded into the activity trace on
+  // completion. A ref (not state) so accumulation never affects updater purity.
+  const activityRef = useRef<RawEvent[]>([])
   useEffect(() => {
     return () => { streamAbortRef.current?.abort() }
   }, [])
@@ -337,6 +341,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         streamAbortRef.current?.abort()
         const streamController = new AbortController()
         streamAbortRef.current = streamController
+        activityRef.current = []  // fresh trace per answer
 
         await apiService.streamSessionMessage(
           {
@@ -355,6 +360,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           },
           (evt) => {
             console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
+            // Accumulate every event for the generic activity trace (ref write
+            // is a side effect, safe outside the pure updater below).
+            activityRef.current.push({ type: evt.type, data: evt.data as Record<string, unknown> });
             // Side effects stay outside the setMessages updater — updaters
             // must be pure (StrictMode invokes them twice).
             if (['token', 'sub_query_token', 'final_answer', 'single_query_result', 'complete', 'error'].includes(evt.type)) {
@@ -544,6 +552,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                     source_documents: evt.data.source_documents || [],
                     timings_ms: evt.data.timings_ms,
                     reflection: evt.data.reflection,
+                    activity: foldActivityEvents(activityRef.current),
                   };
                 }
 
