@@ -300,25 +300,57 @@ def _case_records(cases: list, ranks: list, chunk_hits: list, k: int) -> list:
     return records
 
 
-def _summarize(name: str, ranks: list, chunk_hits: list, k: int) -> dict:
-    """Print and return the metric set (returned dict feeds the CI gate)."""
+def _summarize(name: str, ranks: list, chunk_hits: list, k: int, quiet: bool = False) -> dict:
+    """Print and return the metric set (returned dict feeds the CI gate).
+
+    `quiet` suppresses the per-run printout — used when sweeping configs, where
+    only the final comparison table matters.
+    """
     n = len(ranks)
     metrics = {"n": n}
-    print(f"\n=== {name} (n={n}) ===")
+    if not quiet:
+        print(f"\n=== {name} (n={n}) ===")
     for kk in (1, 3, 5, 10, k):
         if kk > k:
             continue
         hits = sum(1 for r in ranks if r is not None and r <= kk)
         metrics[f"doc_recall@{kk}"] = hits / n if n else 0.0
-        print(f"doc recall@{kk:<2}: {hits}/{n} ({100*hits/n:.0f}%)")
+        if not quiet:
+            print(f"doc recall@{kk:<2}: {hits}/{n} ({100*hits/n:.0f}%)")
     mrr = sum(1.0 / r for r in ranks if r is not None) / n if n else 0.0
     metrics["mrr"] = mrr
-    print(f"MRR (doc):     {mrr:.3f}")
     chunks = sum(chunk_hits)
     metrics[f"chunk_hit@{k}"] = chunks / n if n else 0.0
     metrics["chunk_hit"] = chunks / n if n else 0.0
-    print(f"chunk hit@{k}:  {chunks}/{n} ({100*chunks/n:.0f}%)  ← the chunk that contains the answer")
+    if not quiet:
+        print(f"MRR (doc):     {mrr:.3f}")
+        print(f"chunk hit@{k}:  {chunks}/{n} ({100*chunks/n:.0f}%)  ← the chunk that contains the answer")
     return metrics
+
+
+def _fusion_from_weight(dense_weight: "float | None") -> "dict | None":
+    """Translate a 0..1 vector weight into the retriever's fusion override."""
+    if dense_weight is None:
+        return None
+    w = max(0.0, min(1.0, dense_weight))
+    return {"bm25_weight": 1.0 - w, "vec_weight": w}
+
+
+def _score_retrieval(retriever, cases, table, k, fusion_override, verbose=True):
+    """Run retrieval for every case; return (ranks, chunk_hits) in case order."""
+    ranks, chunk_hits = [], []
+    for c in cases:
+        docs = retriever.retrieve(
+            c["question"], table_name=table, k=k, fusion_override=fusion_override
+        )
+        rank = _doc_rank(c["expected_doc"], docs)
+        ranks.append(rank)
+        chunk_hits.append(_chunk_hit(c["chunk_id"], docs))
+        if verbose:
+            mark = "✓" if rank is not None else "✗"
+            cmark = "chunk✓" if chunk_hits[-1] else "chunk✗"
+            print(f"  {mark} rank={rank if rank else '-'} {cmark}  {c['question'][:70]}")
+    return ranks, chunk_hits
 
 
 def cmd_run_retrieval(args, full_id: str, table: str, embedding_model: str):
@@ -328,19 +360,8 @@ def cmd_run_retrieval(args, full_id: str, table: str, embedding_model: str):
 
     cases = _load_eval_set(full_id)
     retriever = MultiVectorRetriever(LanceDBManager("./lancedb"), select_embedder(embedding_model))
-    fusion_override = None
-    if args.dense_weight is not None:
-        w = max(0.0, min(1.0, args.dense_weight))
-        fusion_override = {"bm25_weight": 1.0 - w, "vec_weight": w}
-    ranks, chunk_hits = [], []
-    for c in cases:
-        docs = retriever.retrieve(c["question"], table_name=table, k=args.k, fusion_override=fusion_override)
-        rank = _doc_rank(c["expected_doc"], docs)
-        ranks.append(rank)
-        chunk_hits.append(_chunk_hit(c["chunk_id"], docs))
-        mark = "✓" if rank is not None else "✗"
-        cmark = "chunk✓" if chunk_hits[-1] else "chunk✗"
-        print(f"  {mark} rank={rank if rank else '-'} {cmark}  {c['question'][:70]}")
+    fusion_override = _fusion_from_weight(args.dense_weight)
+    ranks, chunk_hits = _score_retrieval(retriever, cases, table, args.k, fusion_override)
     metrics = _summarize(f"retrieval — {table}", ranks, chunk_hits, args.k)
     metrics["by_category"] = _breakdown(cases, ranks, chunk_hits, "category", args.k)
     metrics["by_difficulty"] = _breakdown(cases, ranks, chunk_hits, "difficulty", args.k)
@@ -349,6 +370,60 @@ def cmd_run_retrieval(args, full_id: str, table: str, embedding_model: str):
     _dump_results(full_id, "retrieval", metrics)
     _dump_cases(full_id, "retrieval", _case_records(cases, ranks, chunk_hits, args.k))
     _handle_baseline(full_id, "retrieval", metrics, args)
+
+
+_COMPARE_METRICS = ["doc_recall@1", "doc_recall@5", "mrr", "chunk_hit"]
+
+
+def _best_per_metric(results: list, metric_keys: list) -> dict:
+    """Label of the winning config for each metric (higher is better).
+
+    `results` is a list of (label, metrics) pairs. Ties keep the first config,
+    so an order like ascending dense-weight prefers the lower-weight winner.
+    """
+    best = {}
+    for key in metric_keys:
+        scored = [(label, m.get(key)) for label, m in results if m.get(key) is not None]
+        if scored:
+            best[key] = max(scored, key=lambda lv: lv[1])[0]
+    return best
+
+
+def _format_comparison(results: list, metric_keys: list) -> str:
+    """Render a config x metric table, starring the winner in each column."""
+    best = _best_per_metric(results, metric_keys)
+    width = max([len("config")] + [len(label) for label, _ in results])
+    header = "  " + "config".ljust(width) + "".join(f"  {k:>12}" for k in metric_keys)
+    lines = [header, "  " + "-" * (len(header) - 2)]
+    for label, m in results:
+        cells = []
+        for k in metric_keys:
+            val = m.get(k)
+            star = "*" if best.get(k) == label else " "
+            cells.append(f"  {('%.3f' % val if val is not None else '-'):>11}{star}")
+        lines.append("  " + label.ljust(width) + "".join(cells))
+    return "\n".join(lines)
+
+
+def cmd_compare(args, full_id: str, table: str, embedding_model: str):
+    """Sweep one retrieval knob (dense-weight) and tabulate the metrics so the
+    best setting for an index is a single fast, server-free run."""
+    from rag_system.indexing.embedders import LanceDBManager
+    from rag_system.indexing.representations import select_embedder
+    from rag_system.retrieval.retrievers import MultiVectorRetriever
+
+    cases = _load_eval_set(full_id)
+    retriever = MultiVectorRetriever(LanceDBManager("./lancedb"), select_embedder(embedding_model))
+    results = []
+    for w in args.dense_weights:
+        fusion = _fusion_from_weight(w)
+        ranks, chunk_hits = _score_retrieval(retriever, cases, table, args.k, fusion, verbose=False)
+        metrics = _summarize("", ranks, chunk_hits, args.k, quiet=True)
+        results.append((f"dense={w:.2f}", metrics))
+        print(f"  scored dense-weight {w:.2f}")
+    print(f"\n=== config comparison — {table} (n={len(cases)}, k={args.k}) ===")
+    print(_format_comparison(results, _COMPARE_METRICS))
+    print("\n  (* = best in column)")
 
 
 def _dump_results(full_id: str, mode: str, metrics: dict):
@@ -691,6 +766,12 @@ def main():
     r.add_argument("--tolerance", type=float, default=0.02,
                    help="allowed quality-metric drop before a baseline regression is flagged")
 
+    c = sub.add_parser("compare", help="sweep a retrieval knob and tabulate metrics side by side")
+    c.add_argument("--index", required=True, help="index id (prefix ok)")
+    c.add_argument("--k", type=int, default=20)
+    c.add_argument("--dense-weights", type=float, nargs="+", default=[0.0, 0.3, 0.5, 0.7, 1.0],
+                   help="vector weights to compare (0..1); each is one column row")
+
     g2 = sub.add_parser("gate", help="CI gate: score the committed fixture corpus against thresholds")
     g2.add_argument("--k", type=int, default=20)
 
@@ -703,6 +784,8 @@ def main():
 
     if args.cmd == "generate":
         cmd_generate(args)
+    elif args.cmd == "compare":
+        cmd_compare(args, full_id, table, model)
     elif args.mode == "retrieval":
         cmd_run_retrieval(args, full_id, table, model)
     else:

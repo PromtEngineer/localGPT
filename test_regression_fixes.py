@@ -1558,6 +1558,34 @@ class EvalSuiteTests(unittest.TestCase):
             _compare_to_baseline({"mrr": 0.9}, {"mrr": 0.9, "helpfulness": 0.8}, 0.02), []
         )
 
+    def test_best_per_metric_picks_winner_per_column(self):
+        from rag_eval import _best_per_metric
+
+        results = [
+            ("dense=0.00", {"mrr": 0.6, "chunk_hit": 0.9}),
+            ("dense=0.50", {"mrr": 0.8, "chunk_hit": 0.9}),
+            ("dense=1.00", {"mrr": 0.7, "chunk_hit": 0.95}),
+        ]
+        best = _best_per_metric(results, ["mrr", "chunk_hit"])
+        self.assertEqual(best["mrr"], "dense=0.50")
+        self.assertEqual(best["chunk_hit"], "dense=1.00")
+
+    def test_best_per_metric_ties_keep_first(self):
+        from rag_eval import _best_per_metric
+
+        results = [("a", {"mrr": 0.8}), ("b", {"mrr": 0.8})]
+        self.assertEqual(_best_per_metric(results, ["mrr"])["mrr"], "a")
+
+    def test_format_comparison_marks_winner(self):
+        from rag_eval import _format_comparison
+
+        results = [("dense=0.00", {"mrr": 0.6}), ("dense=0.50", {"mrr": 0.8})]
+        table = _format_comparison(results, ["mrr"])
+        self.assertIn("dense=0.00", table)
+        self.assertIn("dense=0.50", table)
+        self.assertIn("0.800*", table)  # winner starred
+        self.assertIn("0.600 ", table)  # loser not starred
+
 
 if __name__ == "__main__":
     unittest.main()
