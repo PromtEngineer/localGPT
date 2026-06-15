@@ -1453,5 +1453,78 @@ class ChatRuntimeLimitsTests(unittest.TestCase):
             chat_runtime.execute_chat(object(), object(), {"query": "x" * 20001})
 
 
+class EvalSuiteTests(unittest.TestCase):
+    """Pure helpers behind the extended evaluation harness (rag_eval.py).
+
+    Categories/difficulty, failure attribution, and per-group breakdowns are
+    additive: legacy golden sets (no labels) must still summarize cleanly.
+    """
+
+    def test_norm_label_coerces_to_vocabulary(self):
+        from rag_eval import _norm_label, _CATEGORIES
+
+        self.assertEqual(_norm_label(" Numeric ", _CATEGORIES, "factual"), "numeric")
+        self.assertEqual(_norm_label("bogus", _CATEGORIES, "factual"), "factual")
+        self.assertEqual(_norm_label(None, _CATEGORIES, "factual"), "factual")
+
+    def test_retrieval_failure_attribution(self):
+        from rag_eval import _classify_retrieval_failure
+
+        self.assertEqual(_classify_retrieval_failure(None, False, 20), "doc_not_retrieved")
+        self.assertIn("beyond_k", _classify_retrieval_failure(25, True, 20))
+        self.assertEqual(_classify_retrieval_failure(2, False, 20), "answer_chunk_missed")
+        self.assertIsNone(_classify_retrieval_failure(2, True, 20))  # clean
+
+    def test_e2e_failure_reports_first_cause(self):
+        from rag_eval import _classify_e2e_failure
+
+        # retrieval miss dominates downstream judge failures
+        self.assertEqual(
+            _classify_e2e_failure(None, False, 20, False, False, False, False, False),
+            "doc_not_retrieved",
+        )
+        # retrieval fine -> first failing judge axis (relevance before accuracy)
+        self.assertEqual(
+            _classify_e2e_failure(1, True, 20, False, True, False, True, True),
+            "context_irrelevant",
+        )
+        self.assertEqual(
+            _classify_e2e_failure(1, True, 20, True, True, True, True, False),
+            "bad_citation",
+        )
+        # everything passes -> no failure
+        self.assertIsNone(
+            _classify_e2e_failure(1, True, 20, True, True, True, True, True)
+        )
+
+    def test_breakdown_groups_by_label(self):
+        from rag_eval import _breakdown
+
+        cases = [
+            {"category": "numeric"}, {"category": "numeric"}, {"category": "entity"},
+        ]
+        ranks = [1, None, 3]
+        hits = [True, False, True]
+        out = _breakdown(cases, ranks, hits, "category", 20)
+        self.assertEqual(out["numeric"]["n"], 2)
+        self.assertAlmostEqual(out["numeric"]["recall@20"], 0.5)  # one of two found
+        self.assertAlmostEqual(out["entity"]["recall@20"], 1.0)
+
+    def test_breakdown_defaults_missing_label_to_unknown(self):
+        from rag_eval import _breakdown
+
+        out = _breakdown([{}], [1], [True], "category", 20)
+        self.assertIn("unknown", out)
+
+    def test_case_records_carry_failure_reason(self):
+        from rag_eval import _case_records
+
+        cases = [{"question": "q", "expected_doc": "d.txt", "category": "numeric"}]
+        recs = _case_records(cases, [None], [False], 20)
+        self.assertEqual(recs[0]["failure"], "doc_not_retrieved")
+        self.assertEqual(recs[0]["category"], "numeric")
+        self.assertEqual(recs[0]["difficulty"], "unknown")  # legacy default
+
+
 if __name__ == "__main__":
     unittest.main()
