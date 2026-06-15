@@ -16,17 +16,16 @@ the RAG runtime in-process, a Next.js frontend (3000), LanceDB + SQLite + Ollama
 All automated gates are green and **no blocking code/test work remains**. The
 **external-pattern review (Brev workshop + NVIDIA report-gen) is fully closed —
 all five adopted candidates are delivered and merged** (eval-suite, data-policy,
-tool-events, local research-mode, session-skills); see the detailed section
-below. The only items left are an on-demand **manual browser pass**, a
-release-time **Docker / clean-environment check on the target host**, and the
-deliberately deferred **web-augmented research variant** — all accepted gates /
-deferred-by-design (see Decisions), not open code work.
+tool-events, research-mode incl. the **web-augmented variant**, session-skills);
+see the detailed section below. The only items left are an on-demand **manual
+browser pass** and a release-time **Docker / clean-environment check on the
+target host** — both accepted gates (see Decisions), not open code work.
 
 ## Verification snapshot (2026-06-15)
 
 | Gate | Result |
 |------|--------|
-| Python tests (`pytest -q`) | ✅ 167 passed |
+| Python tests (`pytest -q`) | ✅ 172 passed |
 | Retrieval evaluation gate (`rag_eval.py gate`) | ✅ 100% |
 | ruff / black / mypy (`rag_system/` + `backend/`) | ✅ clean (enforced in CI, pinned versions) |
 | UI tests (`npm run test:ui`) | ✅ 20 passed (render + request-contract + activity-trace smokes) |
@@ -81,8 +80,10 @@ below). Each shipped as its own gated worktree:
   local fallback); per-index policy + UI; audit via the rotating log.
 - **Generic activity trace** — `foldActivityEvents()` over the existing SSE
   `<stage>_started/_done` convention + a compact expandable `ActivityTrace`.
-- **Local long-form report mode** — opt-in `report: true`: plan → per-section
-  local retrieval → global citation remap (drops hallucinated cites) → Markdown.
+- **Long-form report mode** — opt-in `report: true`: plan → per-section local
+  retrieval → global citation remap (drops hallucinated cites) → Markdown. An
+  optional, policy-gated **web-augmented** variant (off by default) folds in web
+  evidence with `[Local]`/`[Web]` labelling.
 - **Prompt-only skill packs** — allowlisted Markdown skills selected by id,
   injected subordinate to grounding/citation rules; `GET /rag/skills` + selector.
 
@@ -198,13 +199,11 @@ state, and that decomposition parallelism is bounded (≤10 sub-queries, pool of
 ## Open / remaining
 
 **None blocking.** Every code/test item is closed (above), including all five
-external-pattern-review candidates. What remains is not open code work: two
-accepted gates that fundamentally require a human tester or a target host
-(manual browser pass; Docker / clean-environment check), plus one feature
-**deferred by design** — the **web-augmented research variant** (gated behind a
-future web tool + the data-policy egress layer). Automated coverage stands in
-for the logic where it can; each irreducible item is recorded as a decision
-below.
+external-pattern-review candidates **and the web-augmented research variant**.
+What remains is not open code work: two accepted gates that fundamentally
+require a human tester or a target host (manual browser pass; Docker /
+clean-environment check). Automated coverage stands in for the logic where it
+can; each irreducible item is recorded as a decision below.
 
 ## Decisions / accepted (not open bugs)
 
@@ -326,10 +325,18 @@ has no visible LICENSE — borrow architecture/ideas, do **not** copy code.
    path), section count clamped via `report_max_sections`, emits
    `report_started`/`report_done` so the activity trace shows it. Frontend
    "Long-form report" toggle on both send paths. 10 tests; ruff/black/mypy +
-   tsc/eslint clean; UI 20/20; build passes; gate 100%; suite 156 → 161. **The
-   web-augmented variant remains deferred** (gated behind a future web-tool +
-   `feat/data-policy`, `[Local]`/`[Web]` citation labelling) — local-only shipped
-   first by design.
+   tsc/eslint clean; UI 20/20; build passes; gate 100%; suite 156 → 161.
+   **Web-augmented variant — also DELIVERED ✅** (branch `feat/research-mode-web`):
+   `rag_system/agent/web_search.py` adds opt-in, provider-neutral web search
+   (Tavily reference) that is **off by default** and a no-op unless a key is
+   configured. `policy_gated_search()` routes every outbound query through the
+   **`feat/data-policy` egress layer** first (BLOCK → no egress, REDACT → masked
+   query, ALLOW → as-is), so secrets/PII never leave in a search. Per section,
+   web results are folded into the evidence and re-synthesized over combined
+   local+web facts (one citation space); sources are labelled **`[Local]`/`[Web]`**
+   (web entries carry the URL). `GET /rag/web-search` reports provider
+   availability; frontend "Augment report with web" toggle (report-mode only).
+   13 more tests; suite 167 → 172.
 5. **`feat/session-skills`** — **DELIVERED ✅** (merged from branch
    `feat/session-skills`, 1 commit). `rag_system/agent/skills.py`: prompt-only
    Markdown "skill packs" (tone/structure/approach), **never executable**.
@@ -361,10 +368,10 @@ already checkpoints indexing in SQLite and retrieval queries are short-lived.
 **Status:** ✅ **complete.** All five candidates landed as independent gated
 worktrees (each merged `--no-ff`, branch deleted) without combining policy + web
 + skills + tool-exec into one migration, and without touching the do-not-adopt
-stack. Across the effort: Python suite 127 → 167, UI 11 → 20, eval gate 100%
-throughout, ruff/black/mypy + tsc/eslint clean. The only review item still open
-is the **web-augmented research variant**, deferred by design behind a future
-web tool + the data-policy layer.
+stack. The optional **web-augmented research variant** was subsequently delivered
+too (policy-gated, off by default). Across the effort: Python suite 127 → 172,
+UI 11 → 20, eval gate 100% throughout, ruff/black/mypy + tsc/eslint clean.
+Nothing from the review remains open.
 
 ---
 

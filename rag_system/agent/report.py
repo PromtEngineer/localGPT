@@ -113,6 +113,17 @@ def remap_citations(
     return re.sub(r"\[(\d+)\]", repl, text), dropped
 
 
+def _reference_line(i: int, doc: Dict[str, Any]) -> str:
+    """One References entry, labelled by origin so web-sourced facts are
+    visibly distinct from local-index ones."""
+    if doc.get("_origin") == "web":
+        url = doc.get("url") or ""
+        name = doc.get("document_id") or url or "web source"
+        return f"{i}. [Web] {name}" + (f" — {url}" if url else "")
+    name = doc.get("document_id") or doc.get("_source_table") or "source"
+    return f"{i}. [Local] {name}"
+
+
 def compile_report(
     query: str,
     sections: List[Tuple[str, str]],
@@ -133,9 +144,86 @@ def compile_report(
         lines.append("## References")
         lines.append("")
         for i, doc in enumerate(global_sources, 1):
-            name = doc.get("document_id") or doc.get("_source_table") or "source"
-            lines.append(f"{i}. {name}")
+            lines.append(_reference_line(i, doc))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _format_facts(docs: List[Dict[str, Any]]) -> str:
+    """Number snippets as the synthesizer expects ([Source N: label]), tagging
+    web origins so the model can attribute them correctly."""
+
+    def label(doc: Dict[str, Any]) -> str:
+        name = doc.get("document_id") or doc.get("url") or "source"
+        return f"{name} (web)" if doc.get("_origin") == "web" else str(name)
+
+    return "\n\n".join(
+        f"[Source {i}: {label(d)}]\n{d.get('text', '')}"
+        for i, d in enumerate(docs, start=1)
+    )
+
+
+def _web_docs(raw_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Adapt provider web results into the source-document shape, tagged web."""
+    docs: List[Dict[str, Any]] = []
+    for r in raw_results:
+        docs.append(
+            {
+                "document_id": r.get("title") or r.get("url") or "web source",
+                "url": r.get("url", ""),
+                "text": r.get("text", ""),
+                "chunk_id": None,
+                "_origin": "web",
+            }
+        )
+    return docs
+
+
+def _augment_section_with_web(
+    pipeline: Any,
+    generation_model: Any,
+    section_query: str,
+    local_result: Dict[str, Any],
+    *,
+    web_max_results: int,
+    web_policy: Optional[Dict[str, Any]],
+    web_audit: Optional[Callable[[Dict[str, Any]], None]],
+    skill_instruction: Optional[str],
+    emit: Callable[[str, Any], None],
+) -> Tuple[str, List[Dict[str, Any]], int]:
+    """Run a policy-gated web search and, if it returns anything, re-synthesize
+    the section over combined local + web evidence (one citation space).
+
+    Returns (body, section_sources, web_count). Falls back to the local answer
+    when web search is unconfigured, blocked, or empty — so enabling web never
+    degrades the local report.
+    """
+    from rag_system.agent import web_search
+
+    local_docs = list(local_result.get("source_documents") or [])
+    for doc in local_docs:
+        doc.setdefault("_origin", "local")
+
+    if not web_search.is_configured():
+        return str(local_result.get("answer") or ""), local_docs, 0
+
+    emit("web_search_started", {})
+    raw = web_search.policy_gated_search(
+        section_query, policy=web_policy, audit=web_audit, max_results=web_max_results
+    )
+    web_docs = _web_docs(raw)
+    emit("web_search_done", {"count": len(web_docs)})
+    if not web_docs:
+        return str(local_result.get("answer") or ""), local_docs, 0
+
+    combined = local_docs + web_docs
+    facts = _format_facts(combined)
+    body = pipeline._synthesize_final_answer(
+        section_query,
+        facts,
+        generation_model=generation_model,
+        skill_instruction=skill_instruction,
+    )
+    return body, combined, len(web_docs)
 
 
 def generate_report(
@@ -146,10 +234,19 @@ def generate_report(
     run_kwargs: Dict[str, Any],
     event_callback: EventCallback = None,
     max_sections: int = _DEFAULT_SECTIONS,
+    web_enabled: bool = False,
+    web_max_results: int = 3,
+    web_policy: Optional[Dict[str, Any]] = None,
+    web_audit: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     """Plan sections, draft each from local retrieval, and compile a grounded
     Markdown report. Returns the standard {answer, source_documents} shape plus
-    a `report` summary, so the existing chat UI renders it unchanged."""
+    a `report` summary, so the existing chat UI renders it unchanged.
+
+    With `web_enabled`, each section is additionally augmented by a policy-gated
+    web search (off by default; no-op unless a provider is configured). Web and
+    local citations share one numbering and are labelled [Web]/[Local].
+    """
 
     def emit(event_type: str, payload: Any) -> None:
         if event_callback is not None:
@@ -158,12 +255,14 @@ def generate_report(
     titles = plan_sections(
         pipeline.ollama_client, generation_model, query, max_sections
     )
-    emit("report_started", {"count": len(titles)})
+    emit("report_started", {"count": len(titles), "web": bool(web_enabled)})
+    skill_instruction = (run_kwargs.get("overrides") or {}).get("skill_instruction")
 
     global_sources: List[Dict[str, Any]] = []
     global_keys: Dict[Any, int] = {}
     compiled: List[Tuple[str, str]] = []
     dropped_total = 0
+    web_total = 0
 
     for idx, title in enumerate(titles):
         emit("report_section", {"index": idx, "title": title})
@@ -174,8 +273,26 @@ def generate_report(
             )
         except Exception:
             result = {"answer": "", "source_documents": []}
-        body = str(result.get("answer") or "")
-        section_sources = list(result.get("source_documents") or [])
+
+        if web_enabled:
+            body, section_sources, web_count = _augment_section_with_web(
+                pipeline,
+                generation_model,
+                section_query,
+                result,
+                web_max_results=web_max_results,
+                web_policy=web_policy,
+                web_audit=web_audit,
+                skill_instruction=skill_instruction,
+                emit=emit,
+            )
+            web_total += web_count
+        else:
+            body = str(result.get("answer") or "")
+            section_sources = list(result.get("source_documents") or [])
+            for doc in section_sources:
+                doc.setdefault("_origin", "local")
+
         remapped, dropped = remap_citations(
             body, section_sources, global_sources, global_keys
         )
@@ -191,5 +308,6 @@ def generate_report(
             "sections": titles,
             "section_count": len(titles),
             "dropped_citations": dropped_total,
+            "web_sources": web_total,
         },
     }

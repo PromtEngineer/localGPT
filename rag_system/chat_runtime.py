@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Dict, Optional
 
 from rag_system.agent import query_rewrite, reflection, report, skills
@@ -177,6 +178,18 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
                 run_kwargs=run_kwargs,
                 event_callback=callback,
                 max_sections=_clamp_int(data.get("report_max_sections"), 4, 1, 8),
+                # Web augmentation is opt-in and routes every outbound query
+                # through the data-egress policy (secrets/PII never leave).
+                web_enabled=bool(data.get("web", False)),
+                web_max_results=_clamp_int(data.get("web_max_results"), 3, 1, 8),
+                web_policy=(
+                    data.get("data_policy")
+                    if isinstance(data.get("data_policy"), dict)
+                    else None
+                ),
+                web_audit=lambda entry: logging.getLogger("localgpt.web").warning(
+                    "web_search_policy_action %s", entry
+                ),
             )
         elif reflect_on:
             result = reflection.reflective_run(

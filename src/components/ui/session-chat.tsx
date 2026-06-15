@@ -94,6 +94,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   // Selected prompt-only skill pack (id), '' = none. Populated from the backend.
   const [selectedSkill, setSelectedSkill] = useState<string>('')
   const [availableSkills, setAvailableSkills] = useState<SkillSummary[]>([])
+  // Web-augmented report mode (only meaningful with report on). Off by default;
+  // a no-op unless the backend has a web-search provider configured.
+  const [enableWeb, setEnableWeb] = useState<boolean>(false)
+  const [webSearchConfigured, setWebSearchConfigured] = useState<boolean>(false)
   // Reflection advanced controls. Empty model = judge with the answer model;
   // pick a small fast model to keep scoring cheap. Loops cap the retry depth.
   const [reflectionModel, setReflectionModel] = useState<string>('')
@@ -149,10 +153,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   useEffect(() => {
     return () => { streamAbortRef.current?.abort() }
   }, [])
-  // Load the allowlisted skill packs once for the selector.
+  // Load the allowlisted skill packs + web-search availability once.
   useEffect(() => {
     let active = true
     apiService.getSkills().then(s => { if (active) setAvailableSkills(s) }).catch(() => {})
+    apiService.getWebSearchStatus().then(s => { if (active) setWebSearchConfigured(!!s.configured) }).catch(() => {})
     return () => { active = false }
   }, [apiService])
 
@@ -364,7 +369,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand,
               enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
               searchType, forceDocs, provencePrune, agenticMode, enableReflect,
-              enableRewrite, enableReport, selectedSkill, reflectionModel, reflectionMaxLoops,
+              enableRewrite, enableReport, enableWeb, selectedSkill, reflectionModel, reflectionMaxLoops,
               relevanceThreshold, groundednessThreshold,
               filters: parseMetadataFilters(metadataFilters),
             }),
@@ -599,7 +604,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand,
             enableVerify, selectedModel, retrievalK, contextWindowSize, rerankerTopK,
             searchType, forceDocs, provencePrune, agenticMode, enableReflect,
-            enableRewrite, enableReport, selectedSkill, reflectionModel, reflectionMaxLoops,
+            enableRewrite, enableReport, enableWeb, selectedSkill, reflectionModel, reflectionMaxLoops,
             relevanceThreshold, groundednessThreshold,
             filters: parseMetadataFilters(metadataFilters),
           }))
@@ -806,6 +811,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'toggle', label:'Self-reflection', checked: enableReflect, setter: setEnableReflect},
             {type: 'toggle', label:'Multi-turn query rewrite', checked: enableRewrite, setter: setEnableRewrite},
             {type: 'toggle', label:'Long-form report', checked: enableReport, setter: setEnableReport},
+            ...(enableReport ? [{type: 'toggle' as const, label: webSearchConfigured ? 'Augment report with web' : 'Augment with web (no provider configured)', checked: enableWeb, setter: setEnableWeb}] : []),
             {type: 'dropdown', label:'Skill pack', value: selectedSkill, setter: setSelectedSkill, options: [{value:'',label:'None'}, ...availableSkills.map(s=>({value:s.id,label:s.name}))]},
             {type: 'dropdown', label:'Reflection model', value: reflectionModel, setter: setReflectionModel, options: [{value:'',label:'Same as answer model'}, ...generationModels.map(m=>({value:m,label:m}))]},
             {type: 'slider', label:'Max reflection loops', value: reflectionMaxLoops, setter: setReflectionMaxLoops, min: 1, max: 3, unit: ' loops'},

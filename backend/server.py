@@ -1424,6 +1424,15 @@ async def rag_skills():
     return {"skills": list_skills()}
 
 
+@app.get("/rag/web-search")
+async def rag_web_search_status():
+    """Whether the optional web-augmented report mode has a provider configured.
+    Web search is off by default and stays a no-op until a key is set."""
+    from rag_system.agent import web_search
+
+    return {"configured": web_search.is_configured(), "provider": web_search.provider()}
+
+
 @app.post("/rag/chat")
 async def rag_chat(request: Request):
     """Run the transport-neutral RAG pipeline through FastAPI."""

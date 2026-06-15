@@ -1814,7 +1814,7 @@ class ReportModeTests(unittest.TestCase):
         self.assertIn("## Sec A", md)
         self.assertIn("body a [1]", md)
         self.assertIn("## References", md)
-        self.assertIn("1. a.txt", md)
+        self.assertIn("1. [Local] a.txt", md)
 
     def test_generate_report_end_to_end(self):
         from rag_system.agent.report import generate_report
@@ -1843,6 +1843,99 @@ class ReportModeTests(unittest.TestCase):
         self.assertIn("Reuse [1]", out["answer"])  # section 2 reused global 1
         self.assertIn("report_started", events)
         self.assertIn("report_done", events)
+
+
+class WebAugmentedReportTests(unittest.TestCase):
+    """Web augmentation for report mode: off by default, policy-gated egress,
+    and [Local]/[Web] citation labelling."""
+
+    def test_policy_gated_search_blocks_secret_query_no_egress(self):
+        from rag_system.agent import web_search
+
+        calls = []
+        orig = web_search.search
+        web_search.search = lambda q, max_results=3: calls.append(q) or [{"title": "x"}]
+        self.addCleanup(setattr, web_search, "search", orig)
+
+        # default policy blocks secrets -> query must NOT reach the provider
+        out = web_search.policy_gated_search("leak AKIAIOSFODNN7EXAMPLE now")
+        self.assertEqual(out, [])
+        self.assertEqual(calls, [])  # no egress
+
+    def test_policy_gated_search_redacts_before_egress(self):
+        from rag_system.agent import web_search
+
+        sent = []
+        orig = web_search.search
+        web_search.search = lambda q, max_results=3: (sent.append(q), [])[1]
+        self.addCleanup(setattr, web_search, "search", orig)
+
+        web_search.policy_gated_search("mail a@b.com about it", policy={"pii": "redact"})
+        self.assertEqual(len(sent), 1)
+        self.assertNotIn("a@b.com", sent[0])  # masked before leaving
+
+    def test_policy_gated_search_allows_clean_query(self):
+        from rag_system.agent import web_search
+
+        sent = []
+        orig = web_search.search
+        web_search.search = lambda q, max_results=3: (sent.append(q), [{"title": "t"}])[1]
+        self.addCleanup(setattr, web_search, "search", orig)
+
+        out = web_search.policy_gated_search("dam capacity figures")
+        self.assertEqual(sent, ["dam capacity figures"])
+        self.assertEqual(len(out), 1)
+
+    def test_report_web_disabled_by_default_no_search(self):
+        from rag_system.agent import report, web_search
+
+        called = []
+        orig = web_search.policy_gated_search
+        web_search.policy_gated_search = lambda *a, **k: called.append(1) or []
+        self.addCleanup(setattr, web_search, "policy_gated_search", orig)
+
+        pipeline = _FakeReportPipeline(
+            _FakeReportLLM('{"sections": ["A"]}'),
+            results=[{"answer": "local [1]", "source_documents": [
+                {"document_id": "a.txt", "chunk_id": "a.txt_0", "_source_table": "t"}]}],
+        )
+        out = report.generate_report(
+            pipeline, "m", "q", run_kwargs={"overrides": {}}
+        )  # web_enabled defaults False
+        self.assertEqual(called, [])  # never searched
+        self.assertIn("[Local] a.txt", out["answer"])
+
+    def test_report_web_enabled_merges_and_labels(self):
+        from rag_system.agent import report, web_search
+
+        orig_cfg = web_search.is_configured
+        orig_search = web_search.policy_gated_search
+        web_search.is_configured = lambda: True
+        web_search.policy_gated_search = lambda *a, **k: [
+            {"title": "MDN", "url": "https://mdn.example", "text": "web fact"}
+        ]
+        self.addCleanup(setattr, web_search, "is_configured", orig_cfg)
+        self.addCleanup(setattr, web_search, "policy_gated_search", orig_search)
+
+        local = {"document_id": "a.txt", "chunk_id": "a.txt_0", "_source_table": "t", "text": "loc"}
+
+        class _Pipe(_FakeReportPipeline):
+            def _synthesize_final_answer(self, q, facts, **kw):
+                # cite both the local [1] and the web [2] snippet
+                return "Combined [1] and [2]"
+
+        pipe = _Pipe(
+            _FakeReportLLM('{"sections": ["Only"]}'),
+            results=[{"answer": "local only [1]", "source_documents": [local]}],
+        )
+        out = report.generate_report(
+            pipe, "m", "q", run_kwargs={"overrides": {}}, web_enabled=True
+        )
+        self.assertEqual(out["report"]["web_sources"], 1)
+        self.assertIn("[Local] a.txt", out["answer"])
+        self.assertIn("[Web] MDN", out["answer"])
+        self.assertIn("https://mdn.example", out["answer"])
+        self.assertEqual(len(out["source_documents"]), 2)  # local + web
 
 
 class SessionSkillsTests(unittest.TestCase):
