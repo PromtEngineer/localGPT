@@ -236,7 +236,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
     try {
       setError(null)
       
-      let activeSessionId = sessionId
+      // Prefer the loaded session: after the first message in a brand-new chat,
+      // the sessionId prop hasn't propagated back yet, so regenerate/resend must
+      // reuse currentSession rather than create a second session.
+      let activeSessionId = sessionId || currentSession?.id
       if (!activeSessionId) {
         try {
           const newSession = await apiService.createSession()
@@ -364,8 +367,13 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             if (evt.type === 'complete' && activeSessionId) {
               // 🔄 REFRESH SESSION: refresh session data so updated title & message count are reflected in the UI
               setTimeout(async () => {
+                // If the user switched sessions in this window, the stream was
+                // aborted by the session-switch effect — don't clobber the now-
+                // current session with the just-finished (old) one.
+                if (streamController.signal.aborted) return;
                 try {
                   const { session } = await apiService.getSession(activeSessionId as string);
+                  if (streamController.signal.aborted) return;
                   setCurrentSession(session);
                   if (onSessionChange) {
                     onSessionChange(session);
@@ -449,6 +457,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'sub_query_result') {
+                if (steps.length < 8) return m; // not the RAG step layout (e.g. direct-answer)
                 steps[5].status = 'active';
                 const existing = Array.isArray(steps[5].details) ? steps[5].details : [];
                 if (!existing.some((d) => (d as SubQueryDetail).question === evt.data.query)) {
@@ -463,6 +472,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'final_answer' || evt.type === 'single_query_result') {
+                if (steps.length < 8) return m; // not the RAG step layout (e.g. direct-answer)
                 steps[5].status = 'done';
                 steps[6].status = 'active';
                 steps[6].details = 'Synthesizing final answer...';

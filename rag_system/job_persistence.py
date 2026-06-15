@@ -326,7 +326,9 @@ class JobProgressTracker:
 
             if result and result["started_at"]:
                 started = datetime.fromisoformat(result["started_at"])
-                duration = (now - started).total_seconds()
+                # Clamp: clock skew between the connection that wrote started_at
+                # and `now` can otherwise produce a negative duration.
+                duration = max(0.0, (now - started).total_seconds())
 
             cursor.execute(
                 """
@@ -361,7 +363,9 @@ class JobProgressTracker:
             duration = None
             if result and result["started_at"]:
                 started = datetime.fromisoformat(result["started_at"])
-                duration = (now - started).total_seconds()
+                # Clamp: clock skew between the connection that wrote started_at
+                # and `now` can otherwise produce a negative duration.
+                duration = max(0.0, (now - started).total_seconds())
 
             cursor.execute(
                 """

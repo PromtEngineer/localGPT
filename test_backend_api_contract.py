@@ -728,6 +728,20 @@ class BackendApiContractTests(unittest.TestCase):
             self.assertEqual(resp.status_code, 200, resp.text)
             self.assertTrue(rec.dry_run)
 
+    def test_convert_via_worker_raises_cleanly_when_restart_fails(self):
+        # If the persistent docling worker is dead and the restart fails
+        # (_worker stays None), the per-file convert must raise a clear
+        # RuntimeError, not AttributeError on None.stdin — the batch loop relies
+        # on a clean per-file failure to keep going.
+        import_stubs = _install_indexing_pipeline_import_stubs()
+        with patch.dict(sys.modules, import_stubs):
+            from rag_system.pipelines.indexing_pipeline import IndexingPipeline
+
+        fake = SimpleNamespace(_worker=None, _start_persistent_worker=lambda: None)
+        with self.assertRaises(RuntimeError) as ctx:
+            IndexingPipeline._convert_via_worker(fake, "f.pdf", "doc-1")
+        self.assertIn("unavailable", str(ctx.exception))
+
     def test_remove_orphan_lancedb_tables_execute_mode(self):
         import uuid as _uuid
 

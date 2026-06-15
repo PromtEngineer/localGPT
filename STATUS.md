@@ -22,7 +22,7 @@ only items left are an on-demand **manual browser pass** and a release-time
 
 | Gate | Result |
 |------|--------|
-| Python tests (`pytest -q`) | ✅ 123 passed |
+| Python tests (`pytest -q`) | ✅ 124 passed |
 | Retrieval evaluation gate (`rag_eval.py gate`) | ✅ 100% |
 | ruff / black / mypy (`rag_system/` + `backend/`) | ✅ clean (enforced in CI, pinned versions) |
 | UI tests (`npm run test:ui`) | ✅ 11 passed (render + request-contract smokes) |
@@ -123,6 +123,28 @@ only items left are an on-demand **manual browser pass** and a release-time
   dependency graph. (A fresh-host `docker compose up` / clean install still needs
   the deployment machine — see Decisions.)
 
+### Closed in the 3rd audit round (frontend + indexing pipeline)
+- **Frontend: cross-session state clobber** — the post-`complete` session refresh
+  ran on a 100 ms `setTimeout` with a stale `activeSessionId`; switching sessions
+  in that window overwrote the now-current session with the just-finished one.
+  Now guarded by the stream's abort signal.
+- **Frontend: regenerate could spawn a second session** — `sendMessage` read the
+  `sessionId` prop, which lags behind a brand-new chat; regenerating before it
+  propagated created a duplicate session. Now falls back to `currentSession?.id`.
+- **Frontend: step-handler crash on mixed events** — `sub_query_result` /
+  `final_answer` indexed a fixed 8-step array that `direct_answer` replaces with
+  one element; guarded against a malformed/mixed stream.
+- **Indexing: NoneType deref when the docling worker restart fails** —
+  `_convert_via_worker` now raises a clean per-file `RuntimeError` instead of
+  `AttributeError` on `None.stdin`, so the batch keeps going. Tested.
+- **Indexing: duplicate vectors on resume** — the pre-append delete was gated on
+  `incremental and not force_reindex`, so a forced/non-incremental build that
+  crashed between the LanceDB append and the SQLite stage commit would re-append
+  on resume. Storage is now always delete-then-insert (idempotent; the delete
+  no-ops when nothing's present).
+- **Indexing: negative stage durations** — `complete_stage`/`fail_stage` now
+  clamp `duration` to ≥ 0 (clock skew between connections could make it negative).
+
 ---
 
 ## Open / remaining
@@ -151,6 +173,13 @@ a decision below.
   `qwen3:8b` was clean. The recommended synthesis models don't exhibit it; a
   narrow strip-the-exact-sentence guard can be added on request if tiny synthesis
   models are used heavily.
+- **Overview written before storage → minor, transient.** A file's overview
+  (triage/routing data) is appended before its embed/store stages, so a file that
+  fails at storage can briefly have an overview but zero vectors. This only
+  persists while the file is in a **failed** build state (user-visible; the file
+  is retried on the next run, which re-creates its vectors). Fixing it "properly"
+  means reordering the tracked stages (overview after storage), which is invasive
+  for the crash/resume path — deferred as a deliberate, separately-tested change.
 - **Orphan cleanup → run on demand.** A 2026-06-14 dry-run found ~11 orphan
   uploads and ~10 orphan LanceDB tables. Tooling exists
   (`/maintenance/remove-orphan-files`, `/maintenance/remove-orphan-tables`, both

@@ -818,10 +818,15 @@ class IndexingPipeline:
                                 chunks_generated=len(file_chunks),
                             )
                             if not storage_completed:
-                                if incremental and not force_reindex:
-                                    self._delete_existing_documents_from_table(
-                                        table_name, [document_id]
-                                    )
+                                # Always delete-then-insert so the storage stage is
+                                # idempotent: a resume after the LanceDB append
+                                # committed but the SQLite stage record didn't would
+                                # otherwise append a duplicate copy (the prior gate
+                                # skipped this for forced/non-incremental builds).
+                                # The delete no-ops when the doc/table isn't present.
+                                self._delete_existing_documents_from_table(
+                                    table_name, [document_id]
+                                )
                                 self.vector_indexer.index(
                                     table_name,
                                     file_chunks,
@@ -837,10 +842,10 @@ class IndexingPipeline:
                                         document_id, file_chunks
                                     )
                                     if lc_vecs is not None and len(lc_vecs) > 0:
-                                        if incremental and not force_reindex:
-                                            self._delete_existing_documents_from_table(
-                                                lc_table_name, [document_id]
-                                            )
+                                        # Idempotent (see main-table note above).
+                                        self._delete_existing_documents_from_table(
+                                            lc_table_name, [document_id]
+                                        )
                                         self.vector_indexer.index(
                                             lc_table_name,
                                             file_chunks,
@@ -1177,6 +1182,13 @@ class IndexingPipeline:
             indexing_logger.warning("persistent_worker_dead_restarting")
             self._start_persistent_worker()
 
+        if self._worker is None:
+            # Restart failed — raise a clean per-file error instead of an
+            # AttributeError on None.stdin (the batch loop handles per-file fails).
+            raise RuntimeError(
+                f"Persistent conversion worker unavailable for {document_id}"
+            )
+
         request = json.dumps(
             {"file_path": file_path, "document_id": document_id, "config": self.config},
             default=str,
@@ -1186,6 +1198,10 @@ class IndexingPipeline:
             self._worker.stdin.flush()  # type: ignore[union-attr]
         except BrokenPipeError:
             self._start_persistent_worker()
+            if self._worker is None:
+                raise RuntimeError(
+                    f"Persistent conversion worker unavailable for {document_id}"
+                )
             self._worker.stdin.write(request + "\n")  # type: ignore[union-attr]
             self._worker.stdin.flush()  # type: ignore[union-attr]
 
