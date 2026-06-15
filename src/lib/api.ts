@@ -438,6 +438,7 @@ class ChatAPI {
       relevanceThreshold?: number;
       groundednessThreshold?: number;
       report?: boolean;
+      web?: boolean;
       skill?: string;
     } = {}
   ): Promise<SessionChatResponse & { source_documents: SourceDocument[] }> {
@@ -473,6 +474,7 @@ class ChatAPI {
           ...(typeof opts.relevanceThreshold === 'number' && { relevance_threshold: opts.relevanceThreshold }),
           ...(typeof opts.groundednessThreshold === 'number' && { groundedness_threshold: opts.groundednessThreshold }),
           ...(typeof opts.report === 'boolean' && { report: opts.report }),
+          ...(typeof opts.web === 'boolean' && { web: opts.web }),
           ...(opts.skill && { skill: opts.skill }),
         }),
       });
@@ -737,6 +739,17 @@ class ChatAPI {
     }
   }
 
+  /** Whether the optional web-augmented report mode has a provider configured. */
+  async getWebSearchStatus(): Promise<{ configured: boolean; provider: string }> {
+    try {
+      const resp = await fetch(`${API_BASE_URL}/rag/web-search`);
+      if (!resp.ok) return { configured: false, provider: '' };
+      return await resp.json();
+    } catch {
+      return { configured: false, provider: '' };
+    }
+  }
+
   async uploadFilesToIndex(
     indexId: string,
     files: File[],
@@ -944,12 +957,13 @@ class ChatAPI {
       relevanceThreshold?: number;
       groundednessThreshold?: number;
       report?: boolean;
+      web?: boolean;
       skill?: string;
     },
     onEvent: (event: { type: string; data: ApiRecord }) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune, reflect, rewriteQuery, reflectionModel, reflectionMaxLoops, relevanceThreshold, groundednessThreshold, report, skill } = params;
+    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune, reflect, rewriteQuery, reflectionModel, reflectionMaxLoops, relevanceThreshold, groundednessThreshold, report, web, skill } = params;
 
     const payload: Record<string, unknown> = { query };
     if (model) payload.model = model;
@@ -977,6 +991,7 @@ class ChatAPI {
     if (typeof relevanceThreshold === 'number') payload.relevance_threshold = relevanceThreshold;
     if (typeof groundednessThreshold === 'number') payload.groundedness_threshold = groundednessThreshold;
     if (typeof report === 'boolean') payload.report = report;
+    if (typeof web === 'boolean') payload.web = web;
     if (skill) payload.skill = skill;
 
     const resp = await fetch(`${API_BASE_URL}/rag/chat/stream`, {

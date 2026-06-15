@@ -20,6 +20,7 @@ export interface ChatUiState {
   enableReflect: boolean;
   enableRewrite: boolean;
   enableReport: boolean;
+  enableWeb: boolean;
   selectedSkill: string;
   reflectionModel: string;
   reflectionMaxLoops: number;
@@ -45,6 +46,7 @@ export interface ChatRequestSettings {
   reflect: boolean;
   rewriteQuery: boolean;
   report: boolean;
+  web: boolean;
   skill: string;
   reflectionModel: string;
   reflectionMaxLoops: number;
@@ -71,6 +73,7 @@ export function buildChatRequestSettings(s: ChatUiState): ChatRequestSettings {
     reflect: s.enableReflect,
     rewriteQuery: s.enableRewrite,
     report: s.enableReport,
+    web: s.enableWeb,
     skill: s.selectedSkill,
     reflectionModel: s.reflectionModel,
     reflectionMaxLoops: s.reflectionMaxLoops,
