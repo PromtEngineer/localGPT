@@ -226,6 +226,74 @@ a decision below.
 
 ---
 
+## External pattern review — Brev "build-an-agent" workshop + NVIDIA report-gen blog
+
+Two sessions independently reviewed `brevdev/workshop-build-an-agent` and the
+NVIDIA "report generator agent on OpenRouter" blog for ideas worth importing.
+Both converged on the same thesis; this is the reconciled, canonical decision.
+
+**Decision: treat them as a pattern catalogue, not a framework migration.**
+LocalGPT already implements ~70% of what they teach (ReAct/agentic loop,
+agentic RAG, query rewrite, 2-axis reflection/verifier, and an e2e eval harness
+in [`rag_eval.py`](rag_eval.py) that already scores groundedness, context
+relevancy, judge-accuracy, and citation validity). The NVIDIA/cloud/GPU stack
+(LangGraph, DeepAgents, FAISS, NIM/Nemotron, OpenRouter, Tavily, GRPO/NeMo) is a
+**poor compatibility match** and is **not adopted** — it conflicts with the
+local-first, Ollama/LanceDB/in-process runtime and the pinned deps
+(`torch==2.4.1`, `transformers==4.51.0`). **Licensing caveat:** the workshop repo
+has no visible LICENSE — borrow architecture/ideas, do **not** copy code.
+
+**Adopt selectively (candidates, in priority order):**
+
+1. **`feat/eval-suite`** *(High compat / Low risk — do first).* Extend the
+   existing harness, don't add RAGAS: dataset categories + difficulty, per-index
+   regression baselines, a helpfulness/completeness score, failure explanations
+   attached to results, and a prompt-injection/safety set. Gate: existing eval
+   gate stays 100%.
+2. **`feat/data-policy`** *(High compat / Medium risk).* A provider-neutral
+   PII/secret classifier + policy decision (local / cloud / block / confirm)
+   before any external request. **Reframed:** this governs an egress that
+   **already exists today** — the optional `enrichApiKey` cloud-enrichment path —
+   so it is retroactive governance, not future-proofing. Fail-closed; index-level
+   policies; audit records; no-cloud-by-default fixtures.
+3. **`feat/tool-events`** *(High compat / Medium risk).* A generic SSE
+   tool/activity event contract (index selection, rewrite, retrieve, rerank,
+   reflect, verify, optional web/skill) over the existing `event_callback` in
+   [`chat_runtime.py`](rag_system/chat_runtime.py). Surface as a compact
+   expandable activity view — not the workshop's drag-and-drop agent builder.
+4. **`feat/research-mode` — split by data source.** A long-form report workflow
+   (plan sections → retrieve evidence → dedupe → draft → verify citations →
+   compile), request-gated like timings/reflect/rewrite, reusing the reflection
+   budgeting (max-loops/regen clamps). **Local-only variant can ship early**
+   (no external network → no policy dependency); the **web-augmented variant is
+   gated behind `feat/data-policy`**, web disabled by default, with `[Local]` vs
+   `[Web]` citation labelling.
+5. **`feat/session-skills`** *(prototype carefully).* Markdown "skill packs"
+   (report writing, contract compare, incident analysis, etc.) implemented as
+   **prompt modules only — never executable plugins.** Allowlisted directory,
+   metadata schema, size limits, versioning, explicit user selection; skill text
+   is treated as privileged instructions and arbitrary uploaded Markdown is never
+   loaded as a skill.
+
+**Do not adopt:** LangGraph/DeepAgents migration, FAISS (we use LanceDB),
+NIM/Nemotron/OpenRouter/Tavily as defaults, GRPO training + NeMo synthetic data,
+and the drag-and-drop agent builder (product-fit mismatch).
+
+**Contingent — not on the roadmap** (revisit only if the prerequisite exists):
+human-approval/checkpoint for side-effect tools (only once such tools exist);
+Docker/OpenShell kernel sandboxing (only if shell/file-exec tools are added — we
+don't execute untrusted code today); MCP **client** for external tools (defer
+until governance lands — note we are already an MCP **server** via
+[`mcp_server.py`](rag_system/mcp_server.py), a different trust direction).
+Persistent agentic-query checkpoints are **low value** — `job_persistence.py`
+already checkpoints indexing in SQLite and retrieval queries are short-lived.
+
+**Status:** analysis only — no LocalGPT files changed for this review. Each
+candidate above should land as an independent worktree behind its own gate; do
+not combine policy + web + skills + tool-exec into one migration.
+
+---
+
 ## Tracking rules
 
 - **Done ✅** — implemented, tested, and its gate passes.
