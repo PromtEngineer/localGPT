@@ -41,11 +41,24 @@ Rules:
 - Prefer questions about concrete facts: names, numbers, dates, equipment, recommendations.
 - The document is part of a collection of similar reports about DIFFERENT projects/sites. Make the question self-contained: include the project name, mine/site name, company, or document identifier (visible in the passage or the document name) so the question cannot be confused with another report. Questions like "What is the NPV of the project?" are useless; "What is the NPV of the Las Chispas base case?" is good.
 - Do not mention "the passage" or "the document" in the question.
-- Reply with JSON only: {{"question": "...", "answer": "..."}}
+- Also classify the question:
+  - "category": one of "numeric" (asks for a number/amount/date), "entity" (asks for a name/place/org), or "factual" (anything else).
+  - "difficulty": "easy" if the answer is stated verbatim and unambiguous, "medium" if it requires locating one specific detail among similar ones, "hard" if it needs combining or disambiguating details.
+- Reply with JSON only: {{"question": "...", "answer": "...", "category": "...", "difficulty": "..."}}
 
 PASSAGE (from {doc_name}):
 {passage}
 """
+
+# Accepted label vocabularies; anything else is normalized to the default.
+_CATEGORIES = {"numeric", "entity", "factual"}
+_DIFFICULTIES = {"easy", "medium", "hard"}
+
+
+def _norm_label(value: object, allowed: set, default: str) -> str:
+    """Coerce a model-supplied label into the accepted vocabulary."""
+    v = str(value or "").strip().lower()
+    return v if v in allowed else default
 
 GROUNDEDNESS_PROMPT = """You will see retrieved source snippets and an answer generated from them.
 
@@ -66,6 +79,15 @@ SOURCES:
 {sources}
 
 Do the sources contain information relevant to answering the question? Reply with JSON only: {{"relevant": true}} or {{"relevant": false}}.
+"""
+
+HELPFULNESS_PROMPT = """You will see a question and a candidate answer.
+
+QUESTION: {question}
+
+CANDIDATE ANSWER: {candidate}
+
+Is the answer directly responsive and complete — does it actually answer what was asked, rather than deflecting, hedging, or saying it cannot find the information? Reply with JSON only: {{"helpful": true}} or {{"helpful": false}}.
 """
 
 JUDGE_PROMPT = """Compare a candidate answer against a reference answer.
@@ -158,6 +180,8 @@ def cmd_generate(args):
                 "reference_answer": answer,
                 "expected_doc": row["document_id"],
                 "chunk_id": row["chunk_id"],
+                "category": _norm_label(qa.get("category"), _CATEGORIES, "factual"),
+                "difficulty": _norm_label(qa.get("difficulty"), _DIFFICULTIES, "medium"),
             }, ensure_ascii=False) + "\n")
             written += 1
             print(f"  [{written}/{args.n}] {question[:80]}")
@@ -195,25 +219,138 @@ def _chunk_hit(expected_chunk: str, docs: list) -> bool:
     return any(d.get("chunk_id") == expected_chunk for d in docs)
 
 
-def _summarize(name: str, ranks: list, chunk_hits: list, k: int) -> dict:
-    """Print and return the metric set (returned dict feeds the CI gate)."""
+def _classify_retrieval_failure(rank: "int | None", chunk_hit: bool, k: int) -> "str | None":
+    """Human-readable reason a retrieval case underperformed, or None if clean.
+
+    The two failure modes are distinct and worth separating: the expected
+    document never surfaced at all, vs. the document surfaced but the chunk
+    that actually holds the answer didn't reach the result set.
+    """
+    if rank is None:
+        return "doc_not_retrieved"
+    if rank > k:
+        return f"doc_rank_beyond_k(rank={rank})"
+    if not chunk_hit:
+        return "answer_chunk_missed"
+    return None
+
+
+def _classify_e2e_failure(
+    rank: "int | None", chunk_hit: bool, k: int,
+    correct: bool, grounded: bool, relevant: bool, helpful: bool, citation_ok: bool,
+) -> "str | None":
+    """First-cause failure reason for an end-to-end case, or None if clean.
+
+    Ordered by where the pipeline broke: a retrieval miss explains a wrong
+    answer, so report it first rather than the downstream symptom.
+    """
+    retrieval = _classify_retrieval_failure(rank, chunk_hit, k)
+    if retrieval is not None:
+        return retrieval
+    if not relevant:
+        return "context_irrelevant"
+    if not correct:
+        return "answer_incorrect"
+    if not grounded:
+        return "answer_ungrounded"
+    if not helpful:
+        return "answer_unhelpful"
+    if not citation_ok:
+        return "bad_citation"
+    return None
+
+
+def _breakdown(cases: list, ranks: list, chunk_hits: list, key: str, k: int) -> dict:
+    """Group cases by a label field (e.g. 'category') and report recall@k +
+    chunk-hit per group, so a regression can be traced to a question type."""
+    groups: dict = {}
+    for case, rank, hit in zip(cases, ranks, chunk_hits, strict=False):
+        groups.setdefault(case.get(key, "unknown"), []).append((rank, hit))
+    out = {}
+    for label, rows in sorted(groups.items()):
+        n = len(rows)
+        recall = sum(1 for r, _ in rows if r is not None and r <= k) / n if n else 0.0
+        chunk = sum(1 for _, h in rows if h) / n if n else 0.0
+        out[label] = {"n": n, f"recall@{k}": recall, "chunk_hit": chunk}
+    return out
+
+
+def _print_breakdown(title: str, groups: dict) -> None:
+    if not groups or set(groups) == {"unknown"}:
+        return  # nothing meaningful to break down (legacy set without labels)
+    print(f"\n  by {title}:")
+    for label, m in groups.items():
+        kk = next(key for key in m if key.startswith("recall@"))
+        print(f"    {label:<10} n={m['n']:<3} recall={100*m[kk]:.0f}%  chunk={100*m['chunk_hit']:.0f}%")
+
+
+def _case_records(cases: list, ranks: list, chunk_hits: list, k: int) -> list:
+    """Per-case rows (with failure reasons) for the dumped results file."""
+    records = []
+    for case, rank, hit in zip(cases, ranks, chunk_hits, strict=False):
+        records.append({
+            "question": case.get("question"),
+            "expected_doc": case.get("expected_doc"),
+            "category": case.get("category", "unknown"),
+            "difficulty": case.get("difficulty", "unknown"),
+            "rank": rank,
+            "chunk_hit": hit,
+            "failure": _classify_retrieval_failure(rank, hit, k),
+        })
+    return records
+
+
+def _summarize(name: str, ranks: list, chunk_hits: list, k: int, quiet: bool = False) -> dict:
+    """Print and return the metric set (returned dict feeds the CI gate).
+
+    `quiet` suppresses the per-run printout — used when sweeping configs, where
+    only the final comparison table matters.
+    """
     n = len(ranks)
     metrics = {"n": n}
-    print(f"\n=== {name} (n={n}) ===")
+    if not quiet:
+        print(f"\n=== {name} (n={n}) ===")
     for kk in (1, 3, 5, 10, k):
         if kk > k:
             continue
         hits = sum(1 for r in ranks if r is not None and r <= kk)
         metrics[f"doc_recall@{kk}"] = hits / n if n else 0.0
-        print(f"doc recall@{kk:<2}: {hits}/{n} ({100*hits/n:.0f}%)")
+        if not quiet:
+            print(f"doc recall@{kk:<2}: {hits}/{n} ({100*hits/n:.0f}%)")
     mrr = sum(1.0 / r for r in ranks if r is not None) / n if n else 0.0
     metrics["mrr"] = mrr
-    print(f"MRR (doc):     {mrr:.3f}")
     chunks = sum(chunk_hits)
     metrics[f"chunk_hit@{k}"] = chunks / n if n else 0.0
     metrics["chunk_hit"] = chunks / n if n else 0.0
-    print(f"chunk hit@{k}:  {chunks}/{n} ({100*chunks/n:.0f}%)  ← the chunk that contains the answer")
+    if not quiet:
+        print(f"MRR (doc):     {mrr:.3f}")
+        print(f"chunk hit@{k}:  {chunks}/{n} ({100*chunks/n:.0f}%)  ← the chunk that contains the answer")
     return metrics
+
+
+def _fusion_from_weight(dense_weight: "float | None") -> "dict | None":
+    """Translate a 0..1 vector weight into the retriever's fusion override."""
+    if dense_weight is None:
+        return None
+    w = max(0.0, min(1.0, dense_weight))
+    return {"bm25_weight": 1.0 - w, "vec_weight": w}
+
+
+def _score_retrieval(retriever, cases, table, k, fusion_override, verbose=True):
+    """Run retrieval for every case; return (ranks, chunk_hits) in case order."""
+    ranks, chunk_hits = [], []
+    for c in cases:
+        docs = retriever.retrieve(
+            c["question"], table_name=table, k=k, fusion_override=fusion_override
+        )
+        rank = _doc_rank(c["expected_doc"], docs)
+        ranks.append(rank)
+        chunk_hits.append(_chunk_hit(c["chunk_id"], docs))
+        if verbose:
+            mark = "✓" if rank is not None else "✗"
+            cmark = "chunk✓" if chunk_hits[-1] else "chunk✗"
+            print(f"  {mark} rank={rank if rank else '-'} {cmark}  {c['question'][:70]}")
+    return ranks, chunk_hits
 
 
 def cmd_run_retrieval(args, full_id: str, table: str, embedding_model: str):
@@ -223,21 +360,70 @@ def cmd_run_retrieval(args, full_id: str, table: str, embedding_model: str):
 
     cases = _load_eval_set(full_id)
     retriever = MultiVectorRetriever(LanceDBManager("./lancedb"), select_embedder(embedding_model))
-    fusion_override = None
-    if args.dense_weight is not None:
-        w = max(0.0, min(1.0, args.dense_weight))
-        fusion_override = {"bm25_weight": 1.0 - w, "vec_weight": w}
-    ranks, chunk_hits = [], []
-    for c in cases:
-        docs = retriever.retrieve(c["question"], table_name=table, k=args.k, fusion_override=fusion_override)
-        rank = _doc_rank(c["expected_doc"], docs)
-        ranks.append(rank)
-        chunk_hits.append(_chunk_hit(c["chunk_id"], docs))
-        mark = "✓" if rank is not None else "✗"
-        cmark = "chunk✓" if chunk_hits[-1] else "chunk✗"
-        print(f"  {mark} rank={rank if rank else '-'} {cmark}  {c['question'][:70]}")
+    fusion_override = _fusion_from_weight(args.dense_weight)
+    ranks, chunk_hits = _score_retrieval(retriever, cases, table, args.k, fusion_override)
     metrics = _summarize(f"retrieval — {table}", ranks, chunk_hits, args.k)
+    metrics["by_category"] = _breakdown(cases, ranks, chunk_hits, "category", args.k)
+    metrics["by_difficulty"] = _breakdown(cases, ranks, chunk_hits, "difficulty", args.k)
+    _print_breakdown("category", metrics["by_category"])
+    _print_breakdown("difficulty", metrics["by_difficulty"])
     _dump_results(full_id, "retrieval", metrics)
+    _dump_cases(full_id, "retrieval", _case_records(cases, ranks, chunk_hits, args.k))
+    _handle_baseline(full_id, "retrieval", metrics, args)
+
+
+_COMPARE_METRICS = ["doc_recall@1", "doc_recall@5", "mrr", "chunk_hit"]
+
+
+def _best_per_metric(results: list, metric_keys: list) -> dict:
+    """Label of the winning config for each metric (higher is better).
+
+    `results` is a list of (label, metrics) pairs. Ties keep the first config,
+    so an order like ascending dense-weight prefers the lower-weight winner.
+    """
+    best = {}
+    for key in metric_keys:
+        scored = [(label, m.get(key)) for label, m in results if m.get(key) is not None]
+        if scored:
+            best[key] = max(scored, key=lambda lv: lv[1])[0]
+    return best
+
+
+def _format_comparison(results: list, metric_keys: list) -> str:
+    """Render a config x metric table, starring the winner in each column."""
+    best = _best_per_metric(results, metric_keys)
+    width = max([len("config")] + [len(label) for label, _ in results])
+    header = "  " + "config".ljust(width) + "".join(f"  {k:>12}" for k in metric_keys)
+    lines = [header, "  " + "-" * (len(header) - 2)]
+    for label, m in results:
+        cells = []
+        for k in metric_keys:
+            val = m.get(k)
+            star = "*" if best.get(k) == label else " "
+            cells.append(f"  {('%.3f' % val if val is not None else '-'):>11}{star}")
+        lines.append("  " + label.ljust(width) + "".join(cells))
+    return "\n".join(lines)
+
+
+def cmd_compare(args, full_id: str, table: str, embedding_model: str):
+    """Sweep one retrieval knob (dense-weight) and tabulate the metrics so the
+    best setting for an index is a single fast, server-free run."""
+    from rag_system.indexing.embedders import LanceDBManager
+    from rag_system.indexing.representations import select_embedder
+    from rag_system.retrieval.retrievers import MultiVectorRetriever
+
+    cases = _load_eval_set(full_id)
+    retriever = MultiVectorRetriever(LanceDBManager("./lancedb"), select_embedder(embedding_model))
+    results = []
+    for w in args.dense_weights:
+        fusion = _fusion_from_weight(w)
+        ranks, chunk_hits = _score_retrieval(retriever, cases, table, args.k, fusion, verbose=False)
+        metrics = _summarize("", ranks, chunk_hits, args.k, quiet=True)
+        results.append((f"dense={w:.2f}", metrics))
+        print(f"  scored dense-weight {w:.2f}")
+    print(f"\n=== config comparison — {table} (n={len(cases)}, k={args.k}) ===")
+    print(_format_comparison(results, _COMPARE_METRICS))
+    print("\n  (* = best in column)")
 
 
 def _dump_results(full_id: str, mode: str, metrics: dict):
@@ -246,6 +432,87 @@ def _dump_results(full_id: str, mode: str, metrics: dict):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2)
     print(f"(metrics written to {path})")
+
+
+def _dump_cases(full_id: str, mode: str, records: list):
+    """Per-case records — the failure rows are what you read after a drop."""
+    os.makedirs(EVAL_DIR, exist_ok=True)
+    path = os.path.join(EVAL_DIR, f"results-{full_id[:8]}-{mode}-cases.jsonl")
+    with open(path, "w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    failures = [r for r in records if r.get("failure")]
+    if failures:
+        print(f"\n  {len(failures)} failing case(s) → {path}")
+        for r in failures[:10]:
+            print(f"    ✗ [{r['failure']}] {(r.get('question') or '')[:64]}")
+
+
+def _baseline_path(full_id: str, mode: str) -> str:
+    return os.path.join(EVAL_DIR, f"baseline-{full_id[:8]}-{mode}.json")
+
+
+def _scalar_metrics(metrics: dict) -> dict:
+    """Flat numeric metrics only — drops n and the nested by_* breakdowns so a
+    baseline compares like-for-like and never trips over a bool/dict."""
+    out = {}
+    for key, value in metrics.items():
+        if key == "n" or isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            out[key] = value
+    return out
+
+
+def _compare_to_baseline(current: dict, baseline: dict, tolerance: float = 0.02) -> list:
+    """Quality metrics that dropped below baseline by more than `tolerance`.
+
+    All tracked quality metrics are higher-is-better, so a regression is a
+    drop. Latency is reported informationally elsewhere, not gated here, since
+    it's noisy and scale-incompatible with the [0,1] tolerance.
+    """
+    regressions = []
+    cur, base = _scalar_metrics(current), _scalar_metrics(baseline)
+    for key, base_val in base.items():
+        if "latency" in key or key not in cur:
+            continue
+        delta = cur[key] - base_val
+        if delta < -tolerance:
+            regressions.append(
+                {"metric": key, "baseline": base_val, "current": cur[key], "delta": delta}
+            )
+    return regressions
+
+
+def _handle_baseline(full_id: str, mode: str, metrics: dict, args) -> None:
+    """Save and/or compare a per-index baseline; exit 1 on a real regression so
+    this doubles as a per-index CI check (separate from the fixture gate)."""
+    if getattr(args, "save_baseline", False):
+        os.makedirs(EVAL_DIR, exist_ok=True)
+        path = _baseline_path(full_id, mode)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(_scalar_metrics(metrics), f, indent=2)
+        print(f"\n(baseline saved to {path})")
+    if getattr(args, "compare_baseline", False):
+        path = _baseline_path(full_id, mode)
+        if not os.path.exists(path):
+            raise SystemExit(f"No baseline at {path} — run once with --save-baseline first")
+        baseline = json.load(open(path, encoding="utf-8"))
+        regressions = _compare_to_baseline(metrics, baseline, args.tolerance)
+        print(f"\n--- baseline comparison (tolerance {args.tolerance:+.2f}) ---")
+        for key in sorted(_scalar_metrics(baseline)):
+            cur = _scalar_metrics(metrics).get(key)
+            base = baseline[key]
+            if cur is None:
+                continue
+            d = cur - base
+            flag = "REGRESSED" if any(r["metric"] == key for r in regressions) else "ok"
+            print(f"  {flag:<10} {key}: {base:.3f} -> {cur:.3f} ({d:+.3f})")
+        if regressions:
+            names = ", ".join(r["metric"] for r in regressions)
+            print(f"\nBASELINE REGRESSION: {names}")
+            raise SystemExit(1)
+        print("\nNo regressions vs baseline.")
 
 
 def cmd_run_e2e(args, full_id: str, table: str, _model: str):
@@ -303,23 +570,46 @@ def cmd_run_e2e(args, full_id: str, table: str, _model: str):
         except (json.JSONDecodeError, AttributeError):
             return False
 
-    correct = grounded = relevant = 0
-    for c, answer, sources in zip(cases, answers, source_sets):
+    correct = grounded = relevant = helpful = 0
+    e2e_cases = []
+    for c, answer, sources, rank, chit, cite_ok in zip(
+        cases, answers, source_sets, ranks, chunk_hits, citation_ok, strict=False
+    ):
         src_text = "\n\n".join(
             f"[{i}] {s.get('text','')[:800]}" for i, s in enumerate(sources[:10], 1)
         )
         ok = _judge(JUDGE_PROMPT.format(reference=c["reference_answer"], candidate=answer[:3000]), "correct")
+        is_grounded = _judge(GROUNDEDNESS_PROMPT.format(sources=src_text, answer=answer[:3000]), "grounded")
+        is_relevant = _judge(RELEVANCY_PROMPT.format(question=c["question"], sources=src_text), "relevant")
+        is_helpful = _judge(HELPFULNESS_PROMPT.format(question=c["question"], candidate=answer[:3000]), "helpful")
         correct += ok
-        grounded += _judge(GROUNDEDNESS_PROMPT.format(sources=src_text, answer=answer[:3000]), "grounded")
-        relevant += _judge(RELEVANCY_PROMPT.format(question=c["question"], sources=src_text), "relevant")
+        grounded += is_grounded
+        relevant += is_relevant
+        helpful += is_helpful
+        e2e_cases.append({
+            "question": c.get("question"),
+            "expected_doc": c.get("expected_doc"),
+            "category": c.get("category", "unknown"),
+            "difficulty": c.get("difficulty", "unknown"),
+            "rank": rank,
+            "chunk_hit": chit,
+            "failure": _classify_e2e_failure(
+                rank, chit, args.k, ok, is_grounded, is_relevant, is_helpful, cite_ok
+            ),
+        })
         print(f"  {'✓' if ok else '✗'} {c['question'][:75]}")
 
     metrics = _summarize(f"e2e retrieval — {table}", ranks, chunk_hits, args.k)
+    metrics["by_category"] = _breakdown(cases, ranks, chunk_hits, "category", args.k)
+    metrics["by_difficulty"] = _breakdown(cases, ranks, chunk_hits, "difficulty", args.k)
+    _print_breakdown("category", metrics["by_category"])
+    _print_breakdown("difficulty", metrics["by_difficulty"])
     n = len(cases)
     metrics.update({
         "answer_accuracy": correct / n,
         "groundedness": grounded / n,
         "context_relevancy": relevant / n,
+        "helpfulness": helpful / n,
         "citation_validity": sum(citation_ok) / n,
         "latency_avg_s": sum(latencies) / n,
         "latency_p95_s": sorted(latencies)[max(0, int(0.95 * n) - 1)],
@@ -327,9 +617,12 @@ def cmd_run_e2e(args, full_id: str, table: str, _model: str):
     print(f"answer accuracy (LLM judge): {correct}/{n} ({100*correct/n:.0f}%)")
     print(f"groundedness:                {grounded}/{n} ({100*grounded/n:.0f}%)")
     print(f"context relevancy:           {relevant}/{n} ({100*relevant/n:.0f}%)")
+    print(f"helpfulness:                 {helpful}/{n} ({100*helpful/n:.0f}%)")
     print(f"citation validity:           {sum(citation_ok)}/{n} ({100*sum(citation_ok)/n:.0f}%)")
     print(f"latency avg/p95:             {metrics['latency_avg_s']:.0f}s / {metrics['latency_p95_s']:.0f}s")
     _dump_results(full_id, "e2e", metrics)
+    _dump_cases(full_id, "e2e", e2e_cases)
+    _handle_baseline(full_id, "e2e", metrics, args)
 
 
 FIXTURES_DIR = os.path.join("tests", "eval_fixtures")
@@ -465,6 +758,19 @@ def main():
     r.add_argument("--dense-weight", type=float, default=None, help="vector weight in hybrid fusion (0..1)")
     r.add_argument("--reranker-top-k", type=int, default=None)
     r.add_argument("--model", default=None, help="synthesis model override (e.g. gpt-oss:20b)")
+    # Per-index regression baselines (separate from the fixture CI gate)
+    r.add_argument("--save-baseline", action="store_true",
+                   help="record this run's metrics as the accepted baseline for the index+mode")
+    r.add_argument("--compare-baseline", action="store_true",
+                   help="compare this run against the saved baseline; exit 1 on a regression")
+    r.add_argument("--tolerance", type=float, default=0.02,
+                   help="allowed quality-metric drop before a baseline regression is flagged")
+
+    c = sub.add_parser("compare", help="sweep a retrieval knob and tabulate metrics side by side")
+    c.add_argument("--index", required=True, help="index id (prefix ok)")
+    c.add_argument("--k", type=int, default=20)
+    c.add_argument("--dense-weights", type=float, nargs="+", default=[0.0, 0.3, 0.5, 0.7, 1.0],
+                   help="vector weights to compare (0..1); each is one column row")
 
     g2 = sub.add_parser("gate", help="CI gate: score the committed fixture corpus against thresholds")
     g2.add_argument("--k", type=int, default=20)
@@ -478,6 +784,8 @@ def main():
 
     if args.cmd == "generate":
         cmd_generate(args)
+    elif args.cmd == "compare":
+        cmd_compare(args, full_id, table, model)
     elif args.mode == "retrieval":
         cmd_run_retrieval(args, full_id, table, model)
     else:
