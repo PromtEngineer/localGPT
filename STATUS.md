@@ -274,11 +274,19 @@ has no visible LICENSE — borrow architecture/ideas, do **not** copy code.
    ruff/black/mypy + tsc/eslint clean; gate 100%; suite 144 → 156. This is the
    reframed governance for the egress that **already exists today** (the optional
    `enrichApiKey` cloud-enrichment path).
-3. **`feat/tool-events`** *(High compat / Medium risk).* A generic SSE
-   tool/activity event contract (index selection, rewrite, retrieve, rerank,
-   reflect, verify, optional web/skill) over the existing `event_callback` in
-   [`chat_runtime.py`](rag_system/chat_runtime.py). Surface as a compact
-   expandable activity view — not the workshop's drag-and-drop agent builder.
+3. **`feat/tool-events`** *(High compat / Medium risk)* — **DELIVERED ✅**
+   (merged from branch `feat/tool-events`, 1 commit). The backend already
+   streams every stage over SSE with a uniform `<stage>_started`/`<stage>_done`
+   convention, so this shipped as a **generic frontend consumer** (no backend
+   change): `src/lib/activity-trace.ts` `foldActivityEvents()` folds the raw SSE
+   stream into ordered, deduplicated stages by suffix — any new
+   `foo_started`/`foo_done` appears automatically, humanized — and
+   `ActivityTrace` renders a compact, collapsed *"Activity · N/M steps"* strip
+   that expands to the per-stage list (an observability view, not the workshop's
+   agent builder). Accumulated via a side-effect-safe ref, attached to the final
+   step on `complete`, rendered beside `MetricsFooter`. 9 vitest cases (reducer
+   contract + render/expand smoke); UI 11 → 20; tsc/eslint clean; production
+   build passes; backend untouched (gate 100%, Python suite 156).
 4. **`feat/research-mode` — split by data source.** A long-form report workflow
    (plan sections → retrieve evidence → dedupe → draft → verify citations →
    compile), request-gated like timings/reflect/rewrite, reusing the reflection
