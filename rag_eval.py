@@ -348,6 +348,7 @@ def cmd_run_retrieval(args, full_id: str, table: str, embedding_model: str):
     _print_breakdown("difficulty", metrics["by_difficulty"])
     _dump_results(full_id, "retrieval", metrics)
     _dump_cases(full_id, "retrieval", _case_records(cases, ranks, chunk_hits, args.k))
+    _handle_baseline(full_id, "retrieval", metrics, args)
 
 
 def _dump_results(full_id: str, mode: str, metrics: dict):
@@ -370,6 +371,73 @@ def _dump_cases(full_id: str, mode: str, records: list):
         print(f"\n  {len(failures)} failing case(s) → {path}")
         for r in failures[:10]:
             print(f"    ✗ [{r['failure']}] {(r.get('question') or '')[:64]}")
+
+
+def _baseline_path(full_id: str, mode: str) -> str:
+    return os.path.join(EVAL_DIR, f"baseline-{full_id[:8]}-{mode}.json")
+
+
+def _scalar_metrics(metrics: dict) -> dict:
+    """Flat numeric metrics only — drops n and the nested by_* breakdowns so a
+    baseline compares like-for-like and never trips over a bool/dict."""
+    out = {}
+    for key, value in metrics.items():
+        if key == "n" or isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            out[key] = value
+    return out
+
+
+def _compare_to_baseline(current: dict, baseline: dict, tolerance: float = 0.02) -> list:
+    """Quality metrics that dropped below baseline by more than `tolerance`.
+
+    All tracked quality metrics are higher-is-better, so a regression is a
+    drop. Latency is reported informationally elsewhere, not gated here, since
+    it's noisy and scale-incompatible with the [0,1] tolerance.
+    """
+    regressions = []
+    cur, base = _scalar_metrics(current), _scalar_metrics(baseline)
+    for key, base_val in base.items():
+        if "latency" in key or key not in cur:
+            continue
+        delta = cur[key] - base_val
+        if delta < -tolerance:
+            regressions.append(
+                {"metric": key, "baseline": base_val, "current": cur[key], "delta": delta}
+            )
+    return regressions
+
+
+def _handle_baseline(full_id: str, mode: str, metrics: dict, args) -> None:
+    """Save and/or compare a per-index baseline; exit 1 on a real regression so
+    this doubles as a per-index CI check (separate from the fixture gate)."""
+    if getattr(args, "save_baseline", False):
+        os.makedirs(EVAL_DIR, exist_ok=True)
+        path = _baseline_path(full_id, mode)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(_scalar_metrics(metrics), f, indent=2)
+        print(f"\n(baseline saved to {path})")
+    if getattr(args, "compare_baseline", False):
+        path = _baseline_path(full_id, mode)
+        if not os.path.exists(path):
+            raise SystemExit(f"No baseline at {path} — run once with --save-baseline first")
+        baseline = json.load(open(path, encoding="utf-8"))
+        regressions = _compare_to_baseline(metrics, baseline, args.tolerance)
+        print(f"\n--- baseline comparison (tolerance {args.tolerance:+.2f}) ---")
+        for key in sorted(_scalar_metrics(baseline)):
+            cur = _scalar_metrics(metrics).get(key)
+            base = baseline[key]
+            if cur is None:
+                continue
+            d = cur - base
+            flag = "REGRESSED" if any(r["metric"] == key for r in regressions) else "ok"
+            print(f"  {flag:<10} {key}: {base:.3f} -> {cur:.3f} ({d:+.3f})")
+        if regressions:
+            names = ", ".join(r["metric"] for r in regressions)
+            print(f"\nBASELINE REGRESSION: {names}")
+            raise SystemExit(1)
+        print("\nNo regressions vs baseline.")
 
 
 def cmd_run_e2e(args, full_id: str, table: str, _model: str):
@@ -479,6 +547,7 @@ def cmd_run_e2e(args, full_id: str, table: str, _model: str):
     print(f"latency avg/p95:             {metrics['latency_avg_s']:.0f}s / {metrics['latency_p95_s']:.0f}s")
     _dump_results(full_id, "e2e", metrics)
     _dump_cases(full_id, "e2e", e2e_cases)
+    _handle_baseline(full_id, "e2e", metrics, args)
 
 
 FIXTURES_DIR = os.path.join("tests", "eval_fixtures")
@@ -614,6 +683,13 @@ def main():
     r.add_argument("--dense-weight", type=float, default=None, help="vector weight in hybrid fusion (0..1)")
     r.add_argument("--reranker-top-k", type=int, default=None)
     r.add_argument("--model", default=None, help="synthesis model override (e.g. gpt-oss:20b)")
+    # Per-index regression baselines (separate from the fixture CI gate)
+    r.add_argument("--save-baseline", action="store_true",
+                   help="record this run's metrics as the accepted baseline for the index+mode")
+    r.add_argument("--compare-baseline", action="store_true",
+                   help="compare this run against the saved baseline; exit 1 on a regression")
+    r.add_argument("--tolerance", type=float, default=0.02,
+                   help="allowed quality-metric drop before a baseline regression is flagged")
 
     g2 = sub.add_parser("gate", help="CI gate: score the committed fixture corpus against thresholds")
     g2.add_argument("--k", type=int, default=20)
