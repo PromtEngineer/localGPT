@@ -78,14 +78,12 @@ Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT.
 - **Real-time Chat**: Streaming responses for immediate feedback
 
 ## 📚 Docs Index
+- `STATUS.md` — **single source of truth**: delivery status, release readiness, and open work
 - `Documentation/system_overview.md` — architecture, components, and data flow
-- `Documentation/improvement_plan.md` — roadmap, priority upgrades, and status summary
 - `Documentation/maintenance_tools.md` — maintenance CLI/API guide and troubleshooting
-- `FEATURE_11_PHASE_1_SUMMARY.md` — job persistence and pipeline integration summary
-- `FEATURE_11_VALIDATION_CHECKLIST.md` — verification checklist for Feature #11
-- `MAINTENANCE_SUMMARY.md` — maintenance feature overview and usage
-- `MAINTENANCE_DELIVERY_CHECKLIST.md` — delivery checklist for maintenance tools
-- `RELEASE_CHECKLIST.md` — consolidated release readiness checklist
+- `Documentation/persistent_indexing_jobs.md` — persistent indexing jobs implementation guide
+- `Documentation/ui_manual_test_cases.md` — manual acceptance test steps
+- `MAINTENANCE_QUICK_START.md`, `PERSISTENT_JOBS_QUICK_START.md` — usage quick references
 
 ---
 
@@ -102,7 +100,7 @@ Note: The installation is currently only tested on macOS.
 
 > Tip: copy `.env.example` to `.env` and adjust host/port settings before starting the system.
 
-> Release readiness and consolidated tracking are documented in `RELEASE_CHECKLIST.md`.
+> Release readiness, delivery status, and open work are tracked in `STATUS.md`.
 
 ### ***NOTE***
 This repository is now on the main branch; clone normally unless you need a specific feature branch.

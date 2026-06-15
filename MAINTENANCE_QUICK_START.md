@@ -248,7 +248,7 @@ Results and reports saved to:
 
 - **Commands**: `./maintain help`
 - **Full guide**: `Documentation/maintenance_tools.md`
-- **Implementation details**: `MAINTENANCE_SUMMARY.md`
+- **Delivery status**: `STATUS.md`
 
 ---
 
