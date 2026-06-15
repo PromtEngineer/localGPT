@@ -180,6 +180,7 @@ BACKEND_BASE_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 
 # Upload safety limits
 _MAX_UPLOAD_BYTES = 500 * 1024 * 1024  # 500 MB per file
+_MAX_TOTAL_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB per upload batch
 _ALLOWED_UPLOAD_EXTENSIONS = {
     ".pdf",
     ".txt",
@@ -265,6 +266,7 @@ async def _save_uploads(
     # Pass 2: stream to disk in chunks (never the whole file in memory)
     saved: List[Dict[str, str]] = []
     file_path = None
+    total_written = 0
     try:
         for file in candidates:
             unique_filename = (
@@ -275,10 +277,16 @@ async def _save_uploads(
             with open(file_path, "wb") as out:
                 while chunk := await file.read(_UPLOAD_CHUNK_BYTES):
                     written += len(chunk)
+                    total_written += len(chunk)
                     if written > _MAX_UPLOAD_BYTES:
                         raise HTTPException(
                             status_code=413,
                             detail=f"'{file.filename}' exceeds the 500 MB upload limit",
+                        )
+                    if total_written > _MAX_TOTAL_UPLOAD_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail="Upload batch exceeds the 2 GB total size limit",
                         )
                     out.write(chunk)
             saved.append(

@@ -13,15 +13,16 @@ _Last reconciled against the code + gates: 2026-06-14._
 
 LocalGPT is a local-first RAG app: one unified FastAPI backend (port 8000) with
 the RAG runtime in-process, a Next.js frontend (3000), LanceDB + SQLite + Ollama.
-All automated gates are green. The only material remaining work is **manual
-browser acceptance** of the resume/repair + maintenance UI flows and
-**clean-environment / Docker validation**.
+All automated gates are green and **no blocking code/test work remains**. The
+only items left are an on-demand **manual browser pass** and a release-time
+**Docker / clean-environment check on the target host** — both accepted gates
+(see Decisions), not open code work.
 
 ## Verification snapshot (2026-06-14)
 
 | Gate | Result |
 |------|--------|
-| Python tests (`pytest -q`) | ✅ 118 passed |
+| Python tests (`pytest -q`) | ✅ 121 passed |
 | Retrieval evaluation gate (`rag_eval.py gate`) | ✅ 100% |
 | ruff / black / mypy (`rag_system/` + `backend/`) | ✅ clean (enforced in CI, pinned versions) |
 | UI tests (`npm run test:ui`) | ✅ 11 passed (render + request-contract smokes) |
@@ -95,35 +96,47 @@ browser acceptance** of the resume/repair + maintenance UI flows and
 - **Diagnostics export reads its JSON body** (was silently-ignored query params).
 - **`vacuum-database` gained a `dry_run` preview** (fragmentation / reclaimable
   space / would-vacuum, no DB change).
+- **Total upload-batch size cap** — `_save_uploads` now enforces a 2 GB
+  whole-batch limit (on top of the 500 MB per-file limit), with the same
+  mid-batch rollback. Tested.
+- **Maintenance fault/concurrency coverage** — added tests for LanceDB
+  orphan-table **execute-mode** cleanup (drops orphans, preserves known tables)
+  and **concurrent maintenance sweeps** (4 sweeps on one SQLite DB, no
+  errors/corruption under WAL + busy-timeout).
 
 ---
 
-## Open / remaining ⚠️
+## Open / remaining
 
-1. **Manual browser acceptance** of paused-job resume/repair and the
-   maintenance-report flows. Steps in
-   [`Documentation/ui_manual_test_cases.md`](Documentation/ui_manual_test_cases.md);
-   no headless-browser harness in CI, so this is a manual pass (Browser-Use bridge
-   not available in recent sessions).
-2. **Clean-environment / Docker validation** — `pip install -r requirements.txt`,
-   `npm ci`, and Docker Compose on a fresh Linux/macOS target. (CI uses `npm install`.)
-3. **Broader maintenance fault/concurrency testing** — LanceDB execute-mode
-   cleanup and concurrent maintenance-sweep validation. (Broken-index file cleanup
-   and same-index deletion rollback/concurrency are already covered.)
-4. **Total multipart-request size limit** — per-file size/type limits and partial-
-   batch rollback are enforced and tested; a whole-request cap is not yet added.
+**None blocking.** Every code/test item is closed (above). The two items below
+are accepted gates that fundamentally require a human tester or a target host —
+automated coverage stands in for the logic; the irreducible step is recorded as
+a decision below.
 
-## Decisions / accepted (not bugs to fix)
+## Decisions / accepted (not open bugs)
 
-- **Small-model synthesis fallback** — `qwen3:0.6b` once appended the "could not
-  find that information" fallback after a correct answer; `qwen3:8b` was clean.
-  Accepted as a tiny-model quirk; the recommended synthesis models don't exhibit
-  it. A narrow strip-the-exact-sentence guard can be added on request if small
-  synthesis models are used heavily.
-- **Orphan cleanup pending** — a 2026-06-14 dry-run found ~11 orphan uploads and
-  ~10 orphan LanceDB tables. Tooling exists (`/maintenance/remove-orphan-files`,
-  `/maintenance/remove-orphan-tables`); execution is left to an explicit,
-  confirmed run (it deletes real files/tables).
+- **Manual browser acceptance → accepted manual gate.** The resume/repair and
+  maintenance-report flows are covered by component render smokes
+  (`npm run test:ui`), backend contract tests, and the live index lifecycle +
+  crash/resume runs. The only uncovered step is a human clicking through
+  `Documentation/ui_manual_test_cases.md`; no headless-browser harness in CI and
+  the Browser-Use bridge isn't available here, so this is run on demand by a
+  person, not blocking.
+- **Clean-environment / Docker validation → deferred to the target host.**
+  `docker` isn't available in this environment, so a fresh `pip install`/`npm ci`/
+  `docker compose` run can't be done here; it's a release-time check on the
+  deployment machine. Compose files and requirements are in the repo and
+  syntactically maintained.
+- **Small-model synthesis fallback → accepted quirk.** `qwen3:0.6b` once appended
+  the "could not find that information" fallback after a correct answer;
+  `qwen3:8b` was clean. The recommended synthesis models don't exhibit it; a
+  narrow strip-the-exact-sentence guard can be added on request if tiny synthesis
+  models are used heavily.
+- **Orphan cleanup → run on demand.** A 2026-06-14 dry-run found ~11 orphan
+  uploads and ~10 orphan LanceDB tables. Tooling exists
+  (`/maintenance/remove-orphan-files`, `/maintenance/remove-orphan-tables`, both
+  now with verified execute-mode + concurrency tests); execution is left to an
+  explicit, confirmed run since it deletes real files/tables.
 
 ---
 

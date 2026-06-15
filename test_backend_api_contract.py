@@ -611,6 +611,21 @@ class BackendApiContractTests(unittest.TestCase):
             os.listdir(upload_dir) if os.path.exists(upload_dir) else [], []
         )
 
+    def test_upload_rejects_when_batch_exceeds_total_limit(self):
+        # Per-file limits aren't enough — a batch of many in-limit files can
+        # still blow the disk budget. The total cap trips mid-batch and the
+        # whole batch rolls back.
+        upload_dir = os.path.join(self.temp_dir, "up")
+        with patch.object(server, "_MAX_TOTAL_UPLOAD_BYTES", 30):
+            first = self._make_upload("a.txt", b"x" * 20, size=None)  # total 20 ok
+            second = self._make_upload("b.txt", b"y" * 20, size=None)  # total 40 > 30
+            with self.assertRaises(HTTPException) as ctx:
+                asyncio.run(
+                    server._save_uploads([first, second], upload_dir=upload_dir)
+                )
+        self.assertEqual(ctx.exception.status_code, 413)
+        self.assertEqual(os.listdir(upload_dir), [])  # nothing left behind
+
     def test_upload_batch_rolls_back_completed_file_on_later_failure(self):
         # First file is within the limit and fully written; the second blows the
         # limit mid-stream. The already-completed first file must be rolled back
@@ -712,6 +727,65 @@ class BackendApiContractTests(unittest.TestCase):
             resp = self.client.post("/maintenance/vacuum-database?dry_run=true")
             self.assertEqual(resp.status_code, 200, resp.text)
             self.assertTrue(rec.dry_run)
+
+    def test_remove_orphan_lancedb_tables_execute_mode(self):
+        import uuid as _uuid
+
+        import lancedb
+
+        project_root = os.path.join(self.temp_dir, "orphan-tables")
+        lancedb_dir = os.path.join(project_root, "lancedb")
+        os.makedirs(lancedb_dir)
+
+        known_id = server.db.create_index("Known index")  # its table must survive
+        known_table = f"text_pages_{known_id}"
+        orphan_table = f"text_pages_{_uuid.uuid4()}"  # no matching index → orphan
+        rows = [{"vector": [0.0, 1.0], "text": "x"}]
+        conn = lancedb.connect(lancedb_dir)
+        conn.create_table(known_table, rows)
+        conn.create_table(orphan_table, rows)
+
+        tools = MaintenanceTools(db_path=self.db_path, project_root=project_root)
+        result = tools.remove_orphan_lancedb_tables(dry_run=False)
+
+        self.assertIn(orphan_table, result["dropped"])
+        self.assertNotIn(known_table, result["orphans"])
+        remaining = conn.list_tables().tables
+        self.assertNotIn(orphan_table, remaining)  # orphan gone
+        self.assertIn(known_table, remaining)  # known preserved
+
+    def test_concurrent_maintenance_sweeps_are_safe(self):
+        # Concurrent maintenance sweeps share one SQLite DB; WAL + busy-timeout
+        # must keep them from corrupting/erroring each other.
+        project_root = os.path.join(self.temp_dir, "mt-concurrent")
+        os.makedirs(os.path.join(project_root, "shared_uploads"))
+        tools = MaintenanceTools(db_path=self.db_path, project_root=project_root)
+
+        errors: List[Exception] = []
+        results: List[object] = []
+        barrier = threading.Barrier(4)
+        sweeps = [
+            lambda: tools.repair_stuck_builds(older_than_minutes=1),
+            lambda: tools.remove_orphan_files(dry_run=True),
+            lambda: tools.repair_stuck_builds(older_than_minutes=1),
+            lambda: tools.remove_orphan_files(dry_run=True),
+        ]
+
+        def run(fn):
+            try:
+                barrier.wait(timeout=10)
+                results.append(fn())
+            except Exception as exc:  # noqa: BLE001 — surface, don't swallow
+                errors.append(exc)
+
+        threads = [threading.Thread(target=run, args=(fn,)) for fn in sweeps]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        self.assertEqual(errors, [], f"concurrent maintenance raised: {errors}")
+        self.assertEqual(len(results), 4)
 
     def test_maintenance_endpoints_contract(self):
         response = self.client.get("/maintenance/index-health")
