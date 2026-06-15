@@ -22,7 +22,7 @@ only items left are an on-demand **manual browser pass** and a release-time
 
 | Gate | Result |
 |------|--------|
-| Python tests (`pytest -q`) | ✅ 124 passed |
+| Python tests (`pytest -q`) | ✅ 127 passed |
 | Retrieval evaluation gate (`rag_eval.py gate`) | ✅ 100% |
 | ruff / black / mypy (`rag_system/` + `backend/`) | ✅ clean (enforced in CI, pinned versions) |
 | UI tests (`npm run test:ui`) | ✅ 11 passed (render + request-contract smokes) |
@@ -145,6 +145,33 @@ only items left are an on-demand **manual browser pass** and a release-time
 - **Indexing: negative stage durations** — `complete_stage`/`fail_stage` now
   clamp `duration` to ≥ 0 (clock skew between connections could make it negative).
 
+### Closed in the 4th audit round (retrieval / agent / security)
+- **Security: unbounded chat knobs (local DoS)** — `retrieval_k` /
+  `reranker_top_k` / `context_window_size` reached LanceDB unclamped, so a
+  request like `retrieval_k=10_000_000` could OOM the host. Now clamped
+  (≤500 / ≤200 / ≤10) and coerced; the `query` is length-capped. Tested.
+- **Security: diagnostics `output_path` traversal** — the request-supplied
+  `output_path` was `mkdir`'d unvalidated (arbitrary directory write / `..`
+  traversal, loopback-guarded). Now contained to the project root. Tested.
+- **Agent: verifier could crash a successful request** — a non-int
+  `confidence_score` or any non-timeout verifier exception propagated and
+  discarded an already-computed answer. Confidence is now coerced+clamped and
+  all verifier failures degrade to "skip annotation."
+- **Agent: hallucinated answer when every sub-query fails** — the
+  compose-from-sub-answers branch ran with empty evidence; now returns the
+  "could not find" fallback when there are no sub-answer sources.
+- **Agent: lost-update on conversation history** — history was a request-start
+  snapshot mutated locally then written back whole, so two concurrent
+  same-session chats clobbered each other's turns. Both write sites now
+  append under the lock to the latest stored history.
+
+The audit also confirmed safe: metadata-filter SQL allow-listing/escaping, the
+model string (Ollama doesn't auto-pull → no SSRF), `table_name` (a table
+lookup, not a SQL identifier), the MCP server, the `/maintenance/*` loopback
+guard, that per-request retrieval overrides do NOT leak into shared pipeline
+state, and that decomposition parallelism is bounded (≤10 sub-queries, pool of
+≤3).
+
 ---
 
 ## Open / remaining
@@ -173,6 +200,16 @@ a decision below.
   `qwen3:8b` was clean. The recommended synthesis models don't exhibit it; a
   narrow strip-the-exact-sentence guard can be added on request if tiny synthesis
   models are used heavily.
+- **Cross-collection / late-chunk dedup uses `(table, chunk_id)` → deferred.**
+  `chunk_id` isn't globally unique (it's `doc_<n>`-style) and the base + `_lc`
+  legs of one collection share it, so the same logical chunk indexed into two
+  collections (or a base/late-chunk pair) can be double-counted in RRF or
+  silently deduped during context expansion. Real, but it touches the core
+  fusion/identity logic where the retrieval eval gate is the safety net — a fix
+  needs its own change + eval validation rather than a blind edit. (Also noted:
+  the multi-collection routing cache ignores conversation history, and a
+  mixed int-vs-float schema across collections can silently narrow a list
+  filter — same "fix deliberately with eval coverage" bucket.)
 - **Overview written before storage → minor, transient.** A file's overview
   (triage/routing data) is appended before its embed/store stages, so a file that
   fails at storage can briefly have an overview but zero vectors. This only

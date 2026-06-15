@@ -1389,5 +1389,24 @@ class QueryRewriteTests(unittest.TestCase):
         self.assertEqual(pipe.run_queries, ["q"])
 
 
+class ChatRuntimeLimitsTests(unittest.TestCase):
+    """Request-knob clamping (local DoS guard)."""
+
+    def test_clamp_int(self):
+        from rag_system.chat_runtime import _clamp_int
+
+        self.assertEqual(_clamp_int(10_000_000, 20, 1, 500), 500)  # ceiling
+        self.assertEqual(_clamp_int(-5, 1, 0, 10), 0)  # floor
+        self.assertEqual(_clamp_int(50, 20, 1, 500), 50)  # in range
+        self.assertEqual(_clamp_int("nope", 20, 1, 500), 20)  # non-int -> default
+        self.assertEqual(_clamp_int(None, 20, 1, 500), 20)
+
+    def test_execute_chat_rejects_overlong_query(self):
+        from rag_system import chat_runtime
+
+        with self.assertRaises(ValueError):
+            chat_runtime.execute_chat(object(), object(), {"query": "x" * 20001})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -645,18 +645,22 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 )
 
                 if cached_result:
-                    # Update history even on cache hit
+                    # Update history even on cache hit. Append under the lock to
+                    # the latest stored history (not the request-start snapshot)
+                    # so concurrent same-session requests don't clobber each
+                    # other's turns.
                     if session_id:
-                        history.append(
-                            {
-                                "query": query,
-                                "answer": cached_result.get(
-                                    "answer", "Cached answer not found."
-                                ),
-                            }
-                        )
                         with self._state_lock:
-                            self.chat_histories[session_id] = history
+                            latest = list(self.chat_histories.get(session_id, []))
+                            latest.append(
+                                {
+                                    "query": query,
+                                    "answer": cached_result.get(
+                                        "answer", "Cached answer not found."
+                                    ),
+                                }
+                            )
+                            self.chat_histories[session_id] = latest
                     return cached_result
 
         if query_type == "direct_answer":
@@ -888,7 +892,16 @@ Respond with JSON: {{"category": "<your_choice>"}}
                         event_callback("retrieval_done", {"count": len(sub_queries)})
                         event_callback("rerank_done", {"count": len(sub_queries)})
 
-                    if compose_from_sub_answers:
+                    if compose_from_sub_answers and not all_source_docs:
+                        # Every sub-query returned no evidence — don't compose a
+                        # confident but ungrounded answer from empty sub-answers.
+                        result = {
+                            "answer": "I could not find relevant information to answer your question.",
+                            "source_documents": [],
+                        }
+                        if event_callback:
+                            event_callback("final_answer", result)
+                    elif compose_from_sub_answers:
                         print("\n--- Composing final answer from sub-answers ---")
                         compose_prompt = f"""
 You are an expert answer composer for a Retrieval-Augmented Generation (RAG) system.
@@ -1011,9 +1024,17 @@ FINAL ANSWER:
                     "⚠️  Verifier timed out after 30 s; skipping confidence annotation."
                 )
                 verification = None
+            except Exception as e:
+                # Verification is a best-effort annotation — never let it discard
+                # an already-computed answer.
+                print(f"⚠️  Verifier failed ({e}); skipping confidence annotation.")
+                verification = None
 
             if verification is not None:
-                score = verification.confidence_score
+                try:
+                    score = max(0, min(100, int(verification.confidence_score)))
+                except (TypeError, ValueError):
+                    score = 0  # non-int confidence from the model
                 if score > 0:
                     result["answer"] += f" [Confidence: {score}%]"
                     if (not verification.is_grounded) or score < 50:
@@ -1027,11 +1048,14 @@ FINAL ANSWER:
         else:
             print("🚀 Skipping verification for speed or lack of sources")
 
-        # 🚀 NEW: Update history
+        # 🚀 NEW: Update history. Append under the lock to the latest stored
+        # history (not the request-start snapshot) so concurrent same-session
+        # requests don't clobber each other's turns (lost-update).
         if session_id:
-            history.append({"query": query, "answer": result["answer"]})
             with self._state_lock:
-                self.chat_histories[session_id] = history
+                latest = list(self.chat_histories.get(session_id, []))
+                latest.append({"query": query, "answer": result["answer"]})
+                self.chat_histories[session_id] = latest
 
         # 🚀 PERSISTENT CACHE: Store result for future queries
         if query_type != "direct_answer" and query_embedding is not None:

@@ -696,7 +696,13 @@ class MaintenanceTools:
                 timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
                 output_path = str(self.project_root / f"diagnostics_bundle_{timestamp}")
 
-            bundle_dir = Path(output_path)
+            # Contain the (request-supplied) output_path inside the project root
+            # so the bundle can't be written to / traverse to an arbitrary dir.
+            bundle_dir = Path(output_path).expanduser().resolve()
+            try:
+                bundle_dir.relative_to(self.project_root)
+            except ValueError:
+                return {"error": "output_path must be inside the project directory"}
             bundle_dir.mkdir(parents=True, exist_ok=True)
 
             db = self._get_db()

@@ -10,6 +10,21 @@ from rag_system.utils.logging_utils import StageTimings, timings_enabled
 
 EventCallback = Optional[Callable[[str, Any], None]]
 
+_MAX_QUERY_CHARS = 16000
+
+
+def _clamp_int(value: Any, default: int, lo: int, hi: int) -> int:
+    """Coerce a request-supplied number to int and clamp it into [lo, hi].
+
+    Guards the retrieval knobs against request-controlled resource exhaustion
+    (e.g. retrieval_k=10_000_000) and against non-int payloads.
+    """
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(hi, v))
+
 
 def _collection_from_index(index: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     table_name = index.get("vector_table_name")
@@ -57,6 +72,8 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
     query = data.get("query")
     if not isinstance(query, str) or not query.strip():
         raise ValueError("Query is required")
+    if len(query) > _MAX_QUERY_CHARS:
+        raise ValueError("Query is too long")
 
     session_id = data.get("session_id")
     table_name, collections = _resolve_targets(db, session_id, data.get("table_name"))
@@ -72,9 +89,9 @@ def execute_chat(agent, db, data: Dict[str, Any], event_callback: EventCallback 
             db.get_indexes_for_session(session_id)
         )
 
-    retrieval_k = data.get("retrieval_k", 20)
-    context_window_size = data.get("context_window_size", 1)
-    reranker_top_k = data.get("reranker_top_k", 10)
+    retrieval_k = _clamp_int(data.get("retrieval_k"), 20, 1, 500)
+    context_window_size = _clamp_int(data.get("context_window_size"), 1, 0, 10)
+    reranker_top_k = _clamp_int(data.get("reranker_top_k"), 10, 1, 200)
     search_type = data.get("search_type", "hybrid")
     dense_weight = data.get("dense_weight")
     provence_prune = data.get("provence_prune")

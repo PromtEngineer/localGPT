@@ -742,6 +742,14 @@ class BackendApiContractTests(unittest.TestCase):
             IndexingPipeline._convert_via_worker(fake, "f.pdf", "doc-1")
         self.assertIn("unavailable", str(ctx.exception))
 
+    def test_export_diagnostics_rejects_path_outside_project(self):
+        # output_path is request-supplied; the bundle must not be writable to an
+        # arbitrary directory / via traversal outside the project root.
+        tools = MaintenanceTools(db_path=self.db_path, project_root=self.temp_dir)
+        for bad in ("/tmp/../etc/lg-evil", os.path.join(self.temp_dir, "..", "escape")):
+            result = tools.export_diagnostics_bundle(output_path=bad)
+            self.assertIn("inside the project", result.get("error", ""))
+
     def test_remove_orphan_lancedb_tables_execute_mode(self):
         import uuid as _uuid
 
