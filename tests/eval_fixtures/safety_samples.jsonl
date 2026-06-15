@@ -1,0 +1,19 @@
+{"name": "aws_access_key", "text": "deploy uses AKIAIOSFODNN7EXAMPLE for s3", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "anthropic_key", "text": "ANTHROPIC_API_KEY=sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAA", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "openai_key", "text": "openai key sk-proj-AAAAAAAAAAAAAAAAAAAAAAAA", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "groq_key", "text": "gsk_ABCDEFGHIJKLMNOPQRSTUVWX is the groq token", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "github_pat", "text": "git remote with ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "slack_token", "text": "webhook xoxb-1234567890-abcdefghijk", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "google_api_key", "text": "maps key AIzaSyA1234567890abcdefghijklmnopqrstuv", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "jwt", "text": "session eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc123def456", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "bearer_header", "text": "Authorization: Bearer abc123.def456-ghi789", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "private_key_block", "text": "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNz", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "assigned_secret", "text": "config: api_key = 'abcdef0123456789xyz'", "expect_category": "secret", "expect_action_default": "block"}
+{"name": "email", "text": "contact sofia.ramirez@example.com for the review", "expect_category": "pii", "expect_action_default": "allow"}
+{"name": "us_ssn", "text": "applicant ssn 123-45-6789 on file", "expect_category": "pii", "expect_action_default": "allow"}
+{"name": "credit_card_luhn", "text": "card on file 4111 1111 1111 1111", "expect_category": "pii", "expect_action_default": "allow"}
+{"name": "clean_prose", "text": "The Aurora Dam has an installed capacity of 240 MW.", "expect_category": null, "expect_action_default": "allow"}
+{"name": "non_luhn_digits", "text": "asset id 4111 1111 1111 1112 in the registry", "expect_category": null, "expect_action_default": "allow"}
+{"name": "git_sha", "text": "fixed in commit a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", "expect_category": null, "expect_action_default": "allow"}
+{"name": "version_string", "text": "upgrade torch to 2.4.1 and transformers 4.51.0", "expect_category": null, "expect_action_default": "allow"}
+{"name": "uuid", "text": "trace id 550e8400-e29b-41d4-a716-446655440000", "expect_category": null, "expect_action_default": "allow"}

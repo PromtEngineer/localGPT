@@ -4,7 +4,7 @@ import { GlassInput } from '@/components/ui/GlassInput';
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { AccordionGroup } from '@/components/ui/AccordionGroup';
 import { ModelSelect } from '@/components/ModelSelect';
-import { chatAPI, streamIndexJob, ChatSession, EnrichProvider, IndexBuildOptions, IndexJob } from '@/lib/api';
+import { chatAPI, streamIndexJob, ChatSession, EnrichProvider, IndexBuildOptions, IndexJob, DataPolicyAction } from '@/lib/api';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 import { useAlert, useConfirm } from '@/components/ui/confirm-dialog';
 
@@ -111,6 +111,9 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const [enableDoclingChunk, setEnableDoclingChunk] = useState(INDEXING_PROFILES.balanced.enableDoclingChunk);
   const [enrichProvider, setEnrichProvider] = useState<EnrichProvider>('ollama');
   const [enrichApiKey, setEnrichApiKey] = useState('');
+  // Cloud-egress policy (fail-closed defaults: never ship credentials).
+  const [secretPolicy, setSecretPolicy] = useState<DataPolicyAction>('block');
+  const [piiPolicy, setPiiPolicy] = useState<DataPolicyAction>('allow');
   const [metadataSchemaJson, setMetadataSchemaJson] = useState('');
   const [documentMetadataJson, setDocumentMetadataJson] = useState('');
 
@@ -161,6 +164,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
     enrichModel,
     enrichProvider,
     enrichApiKey: enrichApiKey || undefined,
+    dataPolicy: enrichProvider !== 'ollama' ? { secret: secretPolicy, pii: piiPolicy } : undefined,
     overviewModel,
     batchSizeEmbed,
     batchSizeEnrich: Math.max(1, Math.min(batchSizeEnrich, 8)),
@@ -518,6 +522,41 @@ export function IndexForm({ onClose, onIndexed }: Props) {
                     onChange={(e) => setEnrichApiKey(e.target.value)}
                     placeholder={`${enrichProvider.toUpperCase()}_API_KEY (or set env var)`}
                   />
+                </div>
+              )}
+
+              {enrichProvider !== 'ollama' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">
+                      Secrets
+                      <InfoTooltip text="What to do when a chunk contains an API key, token, or private key before it is sent to the cloud provider. Block keeps it local." size={12} />
+                    </label>
+                    <select
+                      className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-sm text-gray-200"
+                      value={secretPolicy}
+                      onChange={(e) => setSecretPolicy(e.target.value as DataPolicyAction)}
+                    >
+                      <option value="block">Block (keep local)</option>
+                      <option value="redact">Redact</option>
+                      <option value="allow">Allow</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">
+                      Personal data
+                      <InfoTooltip text="What to do when a chunk contains emails, SSNs, or card numbers before it is sent to the cloud provider." size={12} />
+                    </label>
+                    <select
+                      className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-sm text-gray-200"
+                      value={piiPolicy}
+                      onChange={(e) => setPiiPolicy(e.target.value as DataPolicyAction)}
+                    >
+                      <option value="allow">Allow</option>
+                      <option value="redact">Redact</option>
+                      <option value="block">Block (keep local)</option>
+                    </select>
+                  </div>
                 </div>
               )}
             </div>

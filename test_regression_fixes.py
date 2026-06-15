@@ -1723,6 +1723,30 @@ class DataPolicyTests(unittest.TestCase):
         self.assertEqual(cloud.calls, ["Aurora Dam capacity is 240 MW"])
         self.assertEqual(audited, [])  # allow is not audited
 
+    def test_safety_corpus(self):
+        """Data-driven detector coverage + false-positive guards.
+
+        The committed corpus (tests/eval_fixtures/safety_samples.jsonl) is the
+        extensible safety set this branch owns: every secret must block under
+        the default policy, labelled PII must be detected, and the near-miss
+        rows (non-Luhn digits, git SHAs, UUIDs, versions) must NOT fire.
+        """
+        from rag_system.utils.data_policy import scan_text, evaluate
+
+        path = os.path.join("tests", "eval_fixtures", "safety_samples.jsonl")
+        rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()]
+        self.assertGreaterEqual(len(rows), 15)  # corpus didn't silently shrink
+        for row in rows:
+            cats = {f.category for f in scan_text(row["text"])}
+            action = evaluate(row["text"]).action  # default fail-closed policy
+            if row["expect_category"] is None:
+                self.assertEqual(cats, set(), f"false positive on {row['name']!r}")
+            else:
+                self.assertIn(row["expect_category"], cats, f"missed {row['name']!r}")
+            self.assertEqual(
+                action, row["expect_action_default"], f"wrong action for {row['name']!r}"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

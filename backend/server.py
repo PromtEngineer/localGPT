@@ -1891,6 +1891,9 @@ def _run_index_build(
     enrich_api_key = data.pop(
         "enrichApiKey", None
     )  # extracted and removed so it is never written to the DB
+    # Per-index cloud-egress policy. Safe to persist (no secrets); validated
+    # fail-closed below so a malformed value can never open egress.
+    data_policy = data.get("dataPolicy")
     batch_size_embed = int(data.get("batchSizeEmbed", 50))
     batch_size_enrich = int(data.get("batchSizeEnrich", 25))
     overview_model = data.get("overviewModel")
@@ -1947,6 +1950,13 @@ def _run_index_build(
         payload["enrich_provider"] = enrich_provider
         if enrich_api_key:
             payload["enrich_api_key"] = enrich_api_key
+        # Resolve to a known-good, fail-closed policy for every cloud build so
+        # the egress guard always has an explicit decision to enforce.
+        from rag_system.utils.data_policy import normalize_policy
+
+        payload["data_policy"] = normalize_policy(
+            data_policy if isinstance(data_policy, dict) else None
+        )
     if overview_model:
         payload["overview_model_name"] = overview_model
     if job_id:
