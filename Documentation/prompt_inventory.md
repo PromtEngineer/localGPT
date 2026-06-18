@@ -57,7 +57,7 @@ _Last updated: 2025-07-06_
 
 | ID | File & Lines | Purpose |
 |----|--------------|---------|
-| `vision.placeholder` | `rag_system/utils/ollama_client.py` `169` | Dummy prompt for VLM colour check. |
+| `vision.placeholder` | `rag_system/utils/ollama_client.py` `169` | Dummy prompt for VLM color check. |
 
 ---
 

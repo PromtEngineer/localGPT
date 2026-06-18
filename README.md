@@ -91,7 +91,7 @@ Note: The installation is currently only tested on macOS.
 - Ollama (required for both deployment approaches)
 
 ### ***NOTE***
-Before this brach is moved to the main branch, please clone this branch for instalation:
+Before this brach is moved to the main branch, please clone this branch for installation:
 
 ```bash
 git clone -b localgpt-v2 https://github.com/PromtEngineer/localGPT.git
