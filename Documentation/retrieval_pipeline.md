@@ -1,6 +1,9 @@
 # Retrieval Pipeline
 
 The active implementation is `rag_system/pipelines/retrieval_pipeline.py`, using `MultiVectorRetriever` in `rag_system/retrieval/retrievers.py`.
+For the public durable-run lifecycle, backend/RAG ownership boundary, citations,
+and the ingestion handoff, see the canonical
+[ingestion and retrieval pipeline](ingestion_and_retrieval_pipeline.md).
 
 ## Flow
 
@@ -28,7 +31,7 @@ score = (1 - dense_weight) / (60 + lexical_rank)
 
 ## Multi-index and model compatibility
 
-Sessions may link multiple indexes. The backend passes every corresponding `vector_table_name` to the RAG API. Because a query vector must match the stored vector dimensions, the backend rejects linking an index whose embedding model differs from the models already linked to that session.
+Sessions may link multiple indexes. The backend passes every corresponding `vector_table_name` to the RAG API. A query vector must match the stored vector dimensions, but the current link operation does not enforce embedding-model compatibility. Until per-table embedders are supported, only indexes built with the same embedding model should be linked to one session.
 
 ## Cache isolation
 

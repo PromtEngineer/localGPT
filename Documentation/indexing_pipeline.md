@@ -1,14 +1,17 @@
 # Indexing Pipeline
 
 The active implementation is `rag_system/pipelines/indexing_pipeline.py`.
+For the public API lifecycle, service ownership, storage contracts, and the
+handoff into retrieval, see the canonical
+[ingestion and retrieval pipeline](ingestion_and_retrieval_pipeline.md).
 
 ## End-to-end flow
 
 1. The backend accepts multipart uploads, rejects traversal paths, enforces supported extensions and a size limit, assigns a unique stored name, and records the absolute shared-upload path.
-   Multi-file requests are staged before database rows are written, so a rejected file does not leave earlier files from that request registered as a completed upload.
+   Multi-file requests are processed one file at a time; if a later file is rejected, earlier accepted files remain stored and registered.
 2. `/indexes/{id}/build` sends those paths and build options to the internal RAG `/index` endpoint.
 3. The RAG boundary verifies that every path exists beneath `LOCALGPT_UPLOAD_DIR`.
-4. `DocumentConverter` handles PDF, DOCX, HTML/HTM, Markdown, and text. PDFs use a no-OCR fast path when a text layer exists and an OCR fallback otherwise.
+4. `DocumentConverter` handles PDF, DOCX, PPTX, XLSX, HTML/HTM, Markdown, text, CSV, JSON, and EML. PDFs use a no-OCR fast path when a text layer exists and an OCR fallback otherwise.
 5. The selected chunker is explicit:
    - `enable_docling_chunk=false`: recursive Markdown chunking.
    - `enable_docling_chunk=true`: Docling structure-aware chunking.
@@ -39,9 +42,9 @@ The active implementation is `rag_system/pipelines/indexing_pipeline.py`.
 
 ## Failure behavior
 
-- Unsupported, missing, or out-of-bound files return HTTP 400 before model work begins.
+- Invalid public uploads return HTTP 413 or 422; invalid internal indexing paths return HTTP 400 before model work begins.
 - Conversion and per-document optional-stage errors are counted; status is `partial` when only part of the requested conversion, enrichment, overview, or late-chunk work succeeds. If no chunks are produced, metadata records `empty` and the build request returns HTTP 422 rather than presenting an unusable index as successful.
-- Invalid chunk settings return HTTP 400.
+- Invalid chunk settings are rejected before indexing; the public create path returns HTTP 422 and the internal RAG boundary returns HTTP 400.
 - Rebuilds are idempotent with respect to vectors and overview rows.
 - A requested Docling or late-chunk component that cannot initialize fails the build instead of silently falling back while claiming the requested feature.
 

@@ -212,6 +212,7 @@ success. See the parser research and target architecture below.
 - [System overview](Documentation/system_overview.md)
 - [Architecture overview](Documentation/architecture_overview.md)
 - [API reference](Documentation/api_reference.md)
+- [Ingestion and retrieval pipeline](Documentation/ingestion_and_retrieval_pipeline.md)
 - [Indexing pipeline](Documentation/indexing_pipeline.md)
 - [Retrieval pipeline](Documentation/retrieval_pipeline.md)
 - [Triage/router](Documentation/triage_system.md)
