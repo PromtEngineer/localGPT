@@ -1,49 +1,20 @@
-# ✅ Answer Verifier
+# Answer verifier
 
-_File: `rag_system/agent/verifier.py`_
+`rag_system/agent/verifier.py` optionally asks the configured generation provider whether a completed document-RAG answer is grounded in the retrieved context.
 
-## Objective
-Assess whether an answer produced by RAG is **grounded** in the retrieved context snippets.
+The agent runs it after answer synthesis when the request's `verify` flag is true, or when the active pipeline configuration enables verification and the request does not override it. It receives the query, a context string assembled from retrieved rows, and the answer. Context is capped at 4,000 characters before the prompt is sent.
 
-## Prompt (see `prompt_inventory.md` `verifier.fact_check`)
-Strict JSON schema:
-```jsonc
+The expected JSON fields are:
+
+```json
 {
-  "verdict": "SUPPORTED" | "NOT_SUPPORTED" | "NEEDS_CLARIFICATION",
-  "is_grounded": true | false,
-  "reasoning": "< ≤30 words >",
-  "confidence_score": 0-100
+  "verdict": "SUPPORTED",
+  "is_grounded": true,
+  "reasoning": "short explanation",
+  "confidence_score": 100
 }
 ```
 
-## Sequence Diagram
-```mermaid
-sequenceDiagram
-    participant RP as Retrieval Pipeline
-    participant V as Verifier
-    participant LLM as Ollama
+`verdict` may be `SUPPORTED`, `NOT_SUPPORTED`, or `NEEDS_CLARIFICATION`. Invalid JSON fails closed to `NOT_SUPPORTED`, `is_grounded=false`, and confidence `0`. A low-confidence/non-grounded result can add a warning to the answer; a parser failure does not replace the answer.
 
-    RP->>V: query, context, answer
-    V->>LLM: verification prompt
-    LLM-->>V: JSON verdict
-    V-->>RP: VerificationResult
-```
-
-## Usage Sites
-| Caller | Code | When |
-|--------|------|------|
-| `RetrievalPipeline.answer_stream()` | `pipelines/retrieval_pipeline.py` | If `verify=true` flag from frontend. |
-| `Agent.loop.run()` | fallback path | Experimental for composed answers. |
-
-## Config
-| Flag | Default | Meaning |
-|------|---------|---------|
-| `verify` | false | Frontend toggle; if true verifier runs. |
-| `generation_model` | `qwen3:8b` | Same model as answer generation.
-
-## Failure Modes
-* If LLM returns invalid JSON → parse exception handled, result = NOT_SUPPORTED.
-* If verification call times out → pipeline logs but still returns answer (unverified).
-
----
-_Keep updated when schema or usage flags change._ 
+This is a model-based secondary judgment, not a formal proof and not a substitute for citation-level entailment. The verifier currently uses the same generation model selected for the agent rather than an independently administered model.

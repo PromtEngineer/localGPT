@@ -33,11 +33,6 @@ export function SessionSidebar({
   const [error, setError] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
 
-  // Load sessions on mount
-  useEffect(() => {
-    loadSessions()
-  }, [])
-
   const loadSessions = React.useCallback(async () => {
     try {
       setError(null)
@@ -50,6 +45,11 @@ export function SessionSidebar({
       setIsLoading(false)
     }
   }, [])
+
+  // Load sessions on mount
+  useEffect(() => {
+    loadSessions()
+  }, [loadSessions])
 
   const handleNewSession = () => {
     // Don't create session immediately - just trigger empty state
@@ -70,7 +70,7 @@ export function SessionSidebar({
 
   const handleDeleteSession = async (sessionId: string, event: React.MouseEvent) => {
     event.stopPropagation() // Prevent session selection when clicking delete
-    
+
     if (!confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
       return
     }
@@ -78,7 +78,7 @@ export function SessionSidebar({
     try {
       await chatAPI.deleteSession(sessionId)
       setSessions(prev => prev.filter(s => s.id !== sessionId))
-      
+
       // If the deleted session was currently selected, notify parent
       if (currentSessionId === sessionId && onSessionDelete) {
         onSessionDelete(sessionId)
@@ -108,20 +108,6 @@ export function SessionSidebar({
     } catch (error) {
       console.error('Failed to rename session:', error);
       setError('Failed to rename session');
-    }
-  }
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
-    
-    if (diffInHours < 24) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    } else if (diffInHours < 24 * 7) {
-      return date.toLocaleDateString([], { weekday: 'short' })
-    } else {
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
     }
   }
 
@@ -193,7 +179,7 @@ export function SessionSidebar({
                       {truncateTitle(session.title)}
                     </p>
                   </button>
-                  
+
                   {/* Overflow menu */}
                   <div className="absolute right-2 top-2 index-row-menu">
                     <button onClick={(e)=>{e.stopPropagation(); setMenuOpenId(menuOpenId===session.id?null:session.id);}} className="p-1 text-gray-400 hover:text-white opacity-0 group-hover:opacity-100 transition">
@@ -227,4 +213,4 @@ export function SessionSidebar({
       )}
     </div>
   )
-} 
+}

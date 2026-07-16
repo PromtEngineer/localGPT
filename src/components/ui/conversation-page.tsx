@@ -7,8 +7,7 @@ import {
 } from "@/components/ui/chat-bubble"
 import { Copy, RefreshCcw, ThumbsUp, ThumbsDown, Volume2, MoreHorizontal, ChevronDown, Loader2, CheckCircle, XOctagon } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ChatMessage } from "@/lib/api"
-import { cn } from "@/lib/utils"
+import { AnswerDetail, ChatMessage, FinalDetail, SourceDocument, Step } from "@/lib/api"
 import Markdown from "@/components/Markdown"
 import { normalizeWhitespace } from "@/utils/textNormalization"
 
@@ -29,9 +28,10 @@ const actionIcons = [
 ]
 
 // Citation block toggle component
-function Citation({doc, idx}: {doc:any, idx:number}){
+function Citation({doc, idx}: {doc: SourceDocument, idx:number}){
   const [open,setOpen]=React.useState(false);
-  const preview = (doc.text||'').replace(/\s+/g,' ').trim().slice(0,160) + ((doc.text||'').length>160?'…':'');
+  const text = doc.text || '';
+  const preview = text.replace(/\s+/g,' ').trim().slice(0,160) + (text.length>160?'…':'');
   return (
     <div onClick={()=>setOpen(!open)} className="text-xs text-gray-300 bg-gray-900/60 rounded p-2 cursor-pointer hover:bg-gray-800 transition">
       <span className="font-semibold mr-1">[{idx+1}]</span>{open?doc.text:preview}
@@ -40,9 +40,16 @@ function Citation({doc, idx}: {doc:any, idx:number}){
 }
 
 // NEW: Expandable list of citations per assistant message
-function CitationsBlock({docs}:{docs:any[]}){
+function documentScore(document: SourceDocument): number {
+  if (typeof document.rerank_score === 'number') return document.rerank_score;
+  if (typeof document.score === 'number') return document.score;
+  if (typeof document._distance === 'number' && document._distance !== 0) return 1 / document._distance;
+  return 0;
+}
+
+function CitationsBlock({docs}:{docs: SourceDocument[]}){
   const scored = docs.filter(d => d.rerank_score || d.score || d._distance)
-  scored.sort((a, b) => (b.rerank_score ?? b.score ?? 1/b._distance) - (a.rerank_score ?? a.score ?? 1/a._distance))
+  scored.sort((a, b) => documentScore(b) - documentScore(a))
   const [expanded, setExpanded] = useState(false);
 
   if (scored.length === 0) return null;
@@ -56,8 +63,8 @@ function CitationsBlock({docs}:{docs:any[]}){
         {visibleDocs.map((doc, i) => <Citation key={doc.chunk_id || i} doc={doc} idx={i} />)}
       </div>
       {scored.length > 5 && (
-        <button 
-          onClick={() => setExpanded(!expanded)} 
+        <button
+          onClick={() => setExpanded(!expanded)}
           className="text-blue-400 hover:text-blue-300 mt-2 text-xs"
         >
           {expanded ? 'Show less' : `Show ${scored.length-5} more`}
@@ -117,10 +124,18 @@ function ThinkingText({ text }: { text: string }) {
   );
 }
 
-function StructuredMessageBlock({ content }: { content: Array<Record<string, any>> | { steps: any[] } }) {
-  const steps: any[] = Array.isArray(content) ? content : (content as any).steps;
+function isFinalDetail(value: Step['details']): value is FinalDetail {
+  return Boolean(value && !Array.isArray(value) && typeof value === 'object' && typeof value.answer === 'string');
+}
+
+function isAnswerDetail(value: unknown): value is AnswerDetail {
+  return Boolean(value && typeof value === 'object' && 'question' in value && 'answer' in value);
+}
+
+function StructuredMessageBlock({ content }: { content: Array<Record<string, unknown>> | { steps: Step[] } }) {
+  const steps = (Array.isArray(content) ? content : content.steps) as Step[];
   // Determine if sub-query answers are present
-  const hasSubAnswers = steps.some((s: any) => s.key === 'answer' && Array.isArray(s.details) && s.details.length > 0);
+  const hasSubAnswers = steps.some((step) => step.key === 'answer' && Array.isArray(step.details) && step.details.length > 0);
   // Compute the last index that has started (status !== 'pending') so we only
   // render steps that are in progress or completed. This avoids showing the
   // whole plan upfront and reveals each stage sequentially.
@@ -137,11 +152,11 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
 
   return (
     <div className="flex flex-col">
-      {visibleSteps.map((step: any, index: number) => {
+      {visibleSteps.map((step) => {
         if (step.key && step.label) {
           const borderCls = statusBorder[step.status] || statusBorder['pending']
           const statusClass = `timeline-card card my-1 py-2 pl-3 pr-2 bg-[#0d0d0d] rounded border-l-2 ${borderCls}`
-          
+
           return (
             <div key={step.key} className={statusClass}>
               <div className="flex items-center gap-2 mb-1">
@@ -149,7 +164,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                 <span className="text-sm font-medium text-neutral-100">{step.label}</span>
               </div>
               {/* Details for each step */}
-              {step.key === 'final' && step.details && typeof step.details === 'object' && !Array.isArray(step.details) ? (
+              {step.key === 'final' && isFinalDetail(step.details) ? (
                 <div className="space-y-3">
                   <div className="whitespace-pre-wrap text-gray-100">
                     <ThinkingText text={normalizeWhitespace(step.details.answer)} />
@@ -163,7 +178,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                   <ThinkingText text={normalizeWhitespace(step.details)} />
                 </div>
               ) : Array.isArray(step.details) ? (
-                step.key === 'decompose' && step.details.every((d: any)=> typeof d === 'string') ? (
+                step.key === 'decompose' && step.details.every((detail)=> typeof detail === 'string') ? (
                   // Render list of sub-query strings
                   <ul className="list-disc list-inside space-y-1 text-neutral-200">
                     {step.details.map((q: string, idx:number)=>(
@@ -173,20 +188,20 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                 ) : (
                   // Handle array of sub-answers
                   <div className="space-y-2">
-                    {step.details.map((detail: any, idx: number) => (
-                      <div key={idx} className="border-l-2 border-blue-400 pl-2">
-                        <div className="font-semibold">{detail.question}</div>
-                        <div><ThinkingText text={normalizeWhitespace(detail.answer)} /></div>
-                        {detail.source_documents && detail.source_documents.length > 0 && (
-                          <CitationsBlock docs={detail.source_documents} />
-                        )}
-                      </div>
-                    ))}
+                    {step.details.filter(isAnswerDetail).map((detail, idx) => (
+                        <div key={idx} className="border-l-2 border-blue-400 pl-2">
+                          <div className="font-semibold">{detail.question}</div>
+                          <div><ThinkingText text={normalizeWhitespace(detail.answer)} /></div>
+                          {detail.source_documents && detail.source_documents.length > 0 && (
+                            <CitationsBlock docs={detail.source_documents} />
+                          )}
+                        </div>
+                      ))}
                   </div>
                 )
               ) : (
                 // Handle string details
-                <ThinkingText text={normalizeWhitespace(step.details as string)} />
+                <ThinkingText text={normalizeWhitespace(typeof step.details === 'string' ? step.details : '')} />
               )}
             </div>
           );
@@ -197,8 +212,8 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
   );
 }
 
-export function ConversationPage({ 
-  messages, 
+export function ConversationPage({
+  messages,
   isLoading = false,
   className = "",
   onAction
@@ -213,7 +228,7 @@ export function ConversationPage({
     if(isUserNearBottom){
     scrollToBottom()
     }
-  }, [messages, isLoading])
+  }, [messages, isLoading, isUserNearBottom])
 
   // Monitor scroll position to show/hide scroll button
   useEffect(() => {
@@ -238,7 +253,7 @@ export function ConversationPage({
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
     }
-    
+
     // Fallback: scroll the container directly
     setTimeout(() => {
       if (scrollAreaRef.current) {
@@ -250,29 +265,33 @@ export function ConversationPage({
     }, 100)
   }
 
-  const handleAction = (action: string, messageId: string, messageContent: string) => {
+  const handleAction = (action: string, messageId: string, messageContent: ChatMessage['content']) => {
     if (onAction) {
       // For structured messages, we'll just join the text parts for copy/paste
       let contentToPass: string;
       if (typeof messageContent === 'string') {
         contentToPass = messageContent;
       } else if (Array.isArray(messageContent)) {
-        contentToPass = (messageContent as any[]).map((s: any) => s.text || s.answer || '').join('\n');
-      } else if (messageContent && typeof messageContent === 'object' && Array.isArray((messageContent as any).steps)) {
+        contentToPass = messageContent.map((segment) =>
+          String(segment.text || segment.answer || '')
+        ).join('\n');
+      } else if (messageContent && typeof messageContent === 'object' && Array.isArray(messageContent.steps)) {
         // For {steps: Step[]} structure
-        contentToPass = (messageContent as any).steps.map((s: any) => s.label + (s.details ? (typeof s.details === 'string' ? (': ' + s.details) : '') : '')).join('\n');
+        contentToPass = messageContent.steps.map((step) =>
+          step.label + (typeof step.details === 'string' ? `: ${step.details}` : '')
+        ).join('\n');
       } else {
         contentToPass = '';
       }
       onAction(action, messageId, contentToPass)
       return
     }
-    
+
     console.log(`Action ${action} clicked for message ${messageId}`)
     // Handle different actions here
     switch (action) {
       case 'copy':
-        navigator.clipboard.writeText(messageContent)
+        navigator.clipboard.writeText(typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent))
         break
       case 'regenerate':
         // Regenerate AI response
@@ -298,22 +317,22 @@ export function ConversationPage({
         <div className="max-w-4xl mx-auto space-y-6">
           {messages.map((message) => {
             const isUser = message.sender === "user"
-            
+
             return (
               <div key={message.id} className="w-full group">
                 <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
                   {!isUser && (
-                    <ChatBubbleAvatar 
-                      fallback="AI" 
+                    <ChatBubbleAvatar
+                      fallback="AI"
                       className="mt-1 flex-shrink-0 text-black"
                     />
                   )}
-                  
+
                   <div className={`flex flex-col space-y-2 ${isUser ? 'items-end' : 'items-start'} max-w-full md:max-w-3xl`}>
                     <div
                       className={`rounded-2xl px-5 py-4 ${
-                        isUser 
-                          ? "bg-white text-black" 
+                        isUser
+                          ? "bg-white text-black"
                           : "bg-gray-800 text-gray-100"
                       }`}
                     >
@@ -327,22 +346,21 @@ export function ConversationPage({
                         </div>
                       ) : (
                         <div className="whitespace-pre-wrap text-base leading-relaxed">
-                          {typeof message.content === 'string' 
+                          {typeof message.content === 'string'
                               ? <ThinkingText text={normalizeWhitespace(message.content)} />
                               : <StructuredMessageBlock content={message.content} />
                           }
                         </div>
                       )}
                     </div>
-                    
+
                     {!isUser && !message.isLoading && (
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                         {actionIcons.map(({ icon: Icon, type, action }) => (
                           <button
                             key={action}
                             onClick={() => {
-                              const content = typeof message.content === 'string' ? message.content : (message.content as any[]).map(s => s.text || s.answer).join('\\n');
-                              handleAction(action, message.id, content)
+                              handleAction(action, message.id, message.content)
                             }}
                             className="p-1.5 hover:bg-gray-700 rounded-md transition-colors text-gray-400 hover:text-gray-200"
                             title={type}
@@ -357,14 +375,14 @@ export function ConversationPage({
                     {(!isUser &&
                       !message.isLoading &&
                       typeof message.content === 'string' &&
-                      Array.isArray((message as any).metadata?.source_documents) &&
-                      (message as any).metadata.source_documents.length > 0) && (
-                        <CitationsBlock docs={(message as any).metadata.source_documents} />
+                      Array.isArray(message.metadata?.source_documents) &&
+                      message.metadata.source_documents.length > 0) && (
+                        <CitationsBlock docs={message.metadata.source_documents as SourceDocument[]} />
                     )}
                   </div>
 
                   {isUser && (
-                    <ChatBubbleAvatar 
+                    <ChatBubbleAvatar
                       className="mt-1 flex-shrink-0 text-black"
                       src="https://i.pravatar.cc/40?u=user"
                       fallback="User"
@@ -374,7 +392,7 @@ export function ConversationPage({
               </div>
             )
           })}
-          
+
           {/* Loading indicator for new message */}
           {isLoading && (
             <div className="w-full group">
@@ -394,12 +412,12 @@ export function ConversationPage({
               </div>
             </div>
                       )}
-          
+
           {/* Invisible element to scroll to */}
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
-      
+
       {/* Scroll to bottom button - only show when not at bottom */}
       {showScrollButton && (
         <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-10">
@@ -414,4 +432,4 @@ export function ConversationPage({
       )}
     </div>
   )
-}  
+}

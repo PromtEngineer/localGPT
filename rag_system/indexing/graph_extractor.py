@@ -82,5 +82,8 @@ class GraphExtractor:
         
         return {
             "entities": list(all_entities.values()),
-            "relationships": [{"source": s, "target": t, "label": l} for s, t, l in all_relationships]
+            "relationships": [
+                {"source": source, "target": target, "label": label}
+                for source, target, label in all_relationships
+            ]
         }

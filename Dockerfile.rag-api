@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy RAG system code and backend dependencies
 COPY rag_system/ ./rag_system/
 COPY backend/ ./backend/
+COPY localgpt_runtime.py ./localgpt_runtime.py
 
 # Create necessary directories
 RUN mkdir -p lancedb index_store shared_uploads logs
@@ -25,7 +26,7 @@ EXPOSE 8001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8001/models || exit 1
+    CMD curl -fsS -H "Authorization: Bearer ${LOCALGPT_API_TOKEN}" http://localhost:8001/health || exit 1
 
 # Run the RAG API server
-CMD ["python", "-m", "rag_system.api_server"] 
+CMD ["python", "-m", "rag_system.api_server"]

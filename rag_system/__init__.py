@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Optional
 
 # ---------------------------------------------------------
 # Global logging setup for the entire `rag_system` package.
@@ -27,9 +28,6 @@ logging.getLogger(__name__).debug(
 # ---------------------------------------------------------
 # Authenticate to Hugging Face Hub if a token is provided
 # ---------------------------------------------------------
-from typing import Optional
-
-
 def _hf_auto_login() -> None:
     """Attempt to authenticate with Hugging Face Hub using an env token.
 
@@ -63,4 +61,4 @@ def _hf_auto_login() -> None:
 
 
 # Run on module import
-_hf_auto_login() 
+_hf_auto_login()

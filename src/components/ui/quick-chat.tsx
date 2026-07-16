@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { ChatInput } from '@/components/ui/chat-input';
-import { chatAPI, ChatMessage } from '@/lib/api';
+import { chatAPI, ChatMessage, ChatSession } from '@/lib/api';
+import { AttachedFile } from '@/lib/types';
 import { ConversationPage } from '@/components/ui/conversation-page';
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal';
 
 interface QuickChatProps {
   sessionId?: string;
-  onSessionChange?: (s: any) => void;
+  onSessionChange?: (session: ChatSession) => void;
   className?: string;
 }
 
@@ -30,7 +31,9 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
         try {
           const data = await api.getSession(externalSessionId);
           // Convert DB messages to ChatMessage format expected by UI helper
-          const msgs: ChatMessage[] = data.messages.map((m: any) => api.convertDbMessage(m));
+          const msgs: ChatMessage[] = data.messages.map((message) =>
+            api.convertDbMessage(message as unknown as Record<string, unknown>)
+          );
           setMessages(msgs);
         } catch (err) {
           console.error('Failed to load messages for session', err);
@@ -55,7 +58,10 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
     })();
   },[api]);
 
-  const sendMessage = async (content: string, _files?: any) => {
+  const sendMessage = async (content: string, files?: AttachedFile[]) => {
+    if (files?.length) {
+      throw new Error('Quick Chat does not accept document attachments; create or open an index first.');
+    }
     if (!content.trim()) return;
 
     const userMsg: ChatMessage = {
@@ -75,17 +81,21 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
         const newSess = await api.createSession('Quick Chat');
         activeSessionId = newSess.id;
         setSessionId(activeSessionId);
-        if(onSessionChange){ 
-          onSessionChange(newSess); 
+        if(onSessionChange){
+          onSessionChange(newSess);
         }
       } catch (err) {
         console.error('Failed to create quick-chat session', err);
+        setIsLoading(false);
+        return;
       }
     }
 
     try {
-      const history = api.messagesToHistory(messages);
-      const resp = await api.sendMessage({ message: content, conversation_history: history, model: selectedModel });
+      const resp = await api.sendSessionMessage(activeSessionId, content, {
+        model: selectedModel,
+        forceRag: false,
+      });
 
     const assistantMsg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -135,4 +145,4 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
       )}
     </div>
   );
-} 
+}

@@ -3,13 +3,11 @@
 import * as React from "react"
 import { ConversationPage } from "./conversation-page"
 import { ChatInput } from "./chat-input"
-import { EmptyChatState } from "./empty-chat-state"
-import { ChatMessage, ChatSession, chatAPI, generateUUID } from "@/lib/api"
+import { AnswerDetail, ChatMessage, ChatSession, SourceDocument, Step, chatAPI, generateUUID } from "@/lib/api"
 import { AttachedFile } from "@/lib/types"
 import { useEffect, useState, forwardRef, useImperativeHandle, useCallback } from "react"
 import { normalizeStreamingToken } from "@/utils/textNormalization"
 import { Button } from "./button"
-import type { Step } from '@/lib/api'
 import { ChatSettingsModal } from '@/components/ui/chat-settings-modal'
 import { IndexForm } from '@/components/IndexForm'
 import SessionIndexInfo from '@/components/SessionIndexInfo'
@@ -22,6 +20,10 @@ interface SessionChatProps {
   className?: string
 }
 
+function isAnswerDetail(value: unknown): value is AnswerDetail {
+  return Boolean(value && typeof value === 'object' && 'question' in value && 'answer' in value)
+}
+
 // Export sendMessage function for parent components
 export interface SessionChatRef {
   sendMessage: (content: string, attachedFiles?: AttachedFile[]) => Promise<void>
@@ -31,7 +33,7 @@ export interface SessionChatRef {
 // Helper to shorten long titles
 const truncate = (str: string, n: number = 18) => str.length > n ? str.slice(0, n) + '…' : str;
 
-export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({ 
+export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   sessionId,
   onSessionChange,
   onNewMessage,
@@ -53,20 +55,20 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   const [forceDocs, setForceDocs] = useState<boolean>(false)
   // Provence pruning toggle
   const [provencePrune, setProvencePrune] = useState<boolean>(false)
-  
+
   // ✨ NEW RETRIEVAL PARAMETERS
   const [retrievalK, setRetrievalK] = useState<number>(20)
   const [contextWindowSize, setContextWindowSize] = useState<number>(1)
   const [rerankerTopK, setRerankerTopK] = useState<number>(10)
   const [searchType, setSearchType] = useState<string>('hybrid')
   const [generationModels,setGenerationModels]=useState<string[]>([])
-  const [selectedModel,setSelectedModel]=useState<string>('qwen3:8b')
+  const [selectedModel,setSelectedModel]=useState<string>('')
   const [currentIndexId, setCurrentIndexId] = useState<string | null>(null)
   const [currentIndexName, setCurrentIndexName] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [showIndexForm, setShowIndexForm] = useState(false)
   const [showIndexInfo, setShowIndexInfo] = useState(false)
-  
+
   const apiService = chatAPI
 
   // Define loadSession with useCallback before useEffect
@@ -74,11 +76,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
     try {
       setError(null)
       const { session, messages: sessionMessages } = await apiService.getSession(id)
-      
+
       const convertedMessages = sessionMessages.map((msg: unknown) => apiService.convertDbMessage(msg as Record<string, unknown>))
       setMessages(convertedMessages)
       setCurrentSession(session)
-      
+
       if (onSessionChange) {
         onSessionChange(session)
       }
@@ -87,10 +89,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
       try {
         const idxResp = await apiService.getSessionIndexes(id)
         if (idxResp.indexes && idxResp.indexes.length > 0) {
-          const lastIdxObj = idxResp.indexes[idxResp.indexes.length - 1] as any
-          const idxId = (lastIdxObj.index_id ?? lastIdxObj.id) as string
-          setCurrentIndexId(idxId ?? null)
-          setCurrentIndexName(lastIdxObj.name ?? lastIdxObj.title ?? idxId.slice(0,8))
+          const lastIdxObj = idxResp.indexes[idxResp.indexes.length - 1]
+          const idxId = lastIdxObj.id
+          setCurrentIndexId(idxId)
+          setCurrentIndexName(lastIdxObj.name || idxId.slice(0,8))
         }
       } catch {}
     } catch (error) {
@@ -140,7 +142,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
 
     try {
       setError(null)
-      
+
       let activeSessionId = sessionId
       if (!activeSessionId) {
         try {
@@ -158,7 +160,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
       }
 
       // --- Action Router: Decide if this is an upload or a chat message ---
-      
+
       // A) UPLOAD ACTION: If files are attached, this action's priority is to upload. Ignore any text content.
       if (attachedFiles && attachedFiles.length > 0) {
         setIsLoading(true)
@@ -166,7 +168,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           const files = attachedFiles.map(af => af.file)
           const uploadResult = await apiService.uploadFiles(activeSessionId, files)
           console.log('✅ Files uploaded successfully:', uploadResult)
-          
+
           setUploadedFiles(uploadResult.uploaded_files)
           setIsIndexed(false)
 
@@ -200,10 +202,10 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         try {
           const idxResp = await apiService.getSessionIndexes(activeSessionId as string);
           if (idxResp.indexes && idxResp.indexes.length > 0) {
-            const lastIdxObj = idxResp.indexes[idxResp.indexes.length - 1] as any;
-            idxId = (lastIdxObj.index_id ?? lastIdxObj.id) as string;
-            setCurrentIndexId(idxId ?? null);
-            setCurrentIndexName(lastIdxObj.name ?? lastIdxObj.title ?? idxId.slice(0,8));
+            const lastIdxObj = idxResp.indexes[idxResp.indexes.length - 1];
+            idxId = lastIdxObj.id;
+            setCurrentIndexId(idxId);
+            setCurrentIndexName(lastIdxObj.name || idxId.slice(0,8));
           }
         } catch {}
       }
@@ -257,7 +259,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
             setMessages(prev => prev.map(m => {
               if (m.id !== placeholder.id) return m;
-              const steps = [...(m.content as any).steps];
+              if (typeof m.content === 'string' || Array.isArray(m.content)) return m;
+              const steps = [...m.content.steps];
               if (evt.type === 'analyze') {
                 steps[0].status = 'active';
                 steps[0].details = 'Analyzing your question...';
@@ -266,7 +269,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               if (evt.type === 'decomposition') {
                 steps[0].status = 'done';
                 steps[1].status = 'active';
-                steps[1].details = (evt.data.sub_queries || []);
+                steps[1].details = Array.isArray(evt.data.sub_queries)
+                  ? evt.data.sub_queries.filter((query): query is string => typeof query === 'string')
+                  : [];
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'retrieval_started') {
@@ -328,12 +333,19 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
               }
               if (evt.type === 'sub_query_result') {
                 steps[5].status = 'active';
-                const existing = Array.isArray(steps[5].details) ? steps[5].details : [];
-                if (!existing.some((d: any) => d.question === evt.data.query)) {
+                const existing = Array.isArray(steps[5].details)
+                  ? steps[5].details.filter(isAnswerDetail)
+                  : [];
+                const query = typeof evt.data.query === 'string' ? evt.data.query : '';
+                const answer = typeof evt.data.answer === 'string' ? evt.data.answer : '';
+                const sourceDocuments = Array.isArray(evt.data.source_documents)
+                  ? evt.data.source_documents as SourceDocument[]
+                  : [];
+                if (!existing.some((detail) => detail.question === query)) {
                   steps[5].details = [...existing, {
-                    question: evt.data.query,
-                    answer: evt.data.answer,
-                    source_documents: evt.data.source_documents || []
+                    question: query,
+                    answer,
+                    source_documents: sourceDocuments
                   }];
                 } else {
                   steps[5].details = existing; // no change if duplicate
@@ -360,11 +372,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 let current = '' as string;
                 const detHolder = steps[finalIdx].details;
                 if (detHolder && typeof detHolder === 'object' && !Array.isArray(detHolder)) {
-                  current = (detHolder as any).answer || '';
+                  current = detHolder.answer || '';
                 } else if (typeof detHolder === 'string') {
                   current = detHolder;
                 }
-                const tok: string = (evt.data.text || '') as string;
+                const tok = typeof evt.data.text === 'string' ? evt.data.text : '';
                 if (!tok.trim()) {
                   return m; // skip empty/whitespace-only chunks
                 }
@@ -385,13 +397,18 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'sub_query_token') {
-                const idx = evt.data.index as number;
-                const tok: string = evt.data.text || '';
+                const idx = typeof evt.data.index === 'number' ? evt.data.index : 0;
+                const tok = typeof evt.data.text === 'string' ? evt.data.text : '';
                 if (!tok.trim()) return m;
                 steps[5].status = 'active';
-                let detailsArr: any[] = Array.isArray(steps[5].details) ? steps[5].details as any[] : [];
+                const detailsArr: AnswerDetail[] = Array.isArray(steps[5].details)
+                  ? steps[5].details.filter(isAnswerDetail)
+                  : [];
                 while (detailsArr.length <= idx) {
-                  detailsArr.push({ question: evt.data.question || `Sub-query ${idx+1}`, answer: '' });
+                  detailsArr.push({
+                    question: typeof evt.data.question === 'string' ? evt.data.question : `Sub-query ${idx+1}`,
+                    answer: '',
+                  });
                 }
                 const curAns: string = detailsArr[idx].answer || '';
                 if (!curAns.endsWith(tok)) {
@@ -408,13 +425,17 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 if (finalIdx === -1) return m;
                 steps[finalIdx].status = 'done';
 
+                const answer = typeof evt.data.answer === 'string' ? evt.data.answer : '';
+                const sourceDocuments = Array.isArray(evt.data.source_documents)
+                  ? evt.data.source_documents as SourceDocument[]
+                  : [];
                 if (steps[finalIdx].key === 'direct') {
                   // Direct answer: details is plain string
-                  steps[finalIdx].details = evt.data.answer;
+                  steps[finalIdx].details = answer;
                 } else {
                   steps[finalIdx].details = {
-                    answer: evt.data.answer,
-                    source_documents: evt.data.source_documents || []
+                    answer,
+                    source_documents: sourceDocuments
                   };
                 }
 
@@ -423,7 +444,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 steps.forEach(s => {
                   if (s.status !== 'done') s.status = 'done';
                 });
-                
+
                 // 🔄 REFRESH SESSION: After completion, refresh session data to get updated title
                 if (activeSessionId) {
                   // Always refresh session data so updated title & message count are reflected in the UI
@@ -439,7 +460,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                     }
                   }, 100); // Small delay to ensure backend has processed the title update
                 }
-                
+
                 return { ...m, content: { steps }, metadata: { message_type: 'complete' } };
               }
               if (evt.type === 'direct_answer') {
@@ -453,11 +474,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           }
         )
       } else {
-        const response = await apiService.sendSessionMessage(activeSessionId, content, { 
-          composeSubAnswers, 
-          decompose: enableDecompose, 
-          aiRerank: enableAiRerank, 
-          contextExpand: enableContextExpand, 
+        const response = await apiService.sendSessionMessage(activeSessionId, content, {
+          composeSubAnswers,
+          decompose: enableDecompose,
+          aiRerank: enableAiRerank,
+          contextExpand: enableContextExpand,
           verify: enableVerify,
           model: selectedModel,
           // ✨ NEW RETRIEVAL PARAMETERS
@@ -468,21 +489,21 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           forceRag: forceDocs,
           provencePrune,
         })
-      
+
       const aiMessage: ChatMessage = {
         id: response.ai_message_id || generateUUID(),
         content: response.response,
         sender: 'assistant',
         timestamp: new Date().toISOString(),
-          metadata: { 
+          metadata: {
             message_type: 'sub_answer',
-            source_documents: (response as any).source_documents || [] 
+            source_documents: response.source_documents || []
           }
       }
       setMessages(prev => [...prev, aiMessage])
-      
-        if ((response as any).session) {
-          const sess = (response as any).session as ChatSession
+
+        if (response.session) {
+          const sess = response.session
           setCurrentSession(sess)
           if (onSessionChange) onSessionChange(sess)
         }
@@ -513,6 +534,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
       setMessages(prev => [...prev, indexMessage]);
       setIsIndexed(true);
       setUploadedFiles([]); // Clear uploaded files after indexing
+      setCurrentIndexId(result.index_id);
+      setCurrentIndexName(result.index.name);
 
     } catch (error) {
       console.error('❌ Failed to index documents:', error);
@@ -532,9 +555,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
     currentSession
   }))
 
-  const handleAction = async (action: string, messageId: string, messageContent: string | Record<string, any>[] | { steps: Step[] }) => {
+  const handleAction = async (action: string, messageId: string, messageContent: ChatMessage['content']) => {
     console.log(`Action ${action} on message ${messageId}`)
-    
+
     switch (action) {
       case 'copy':
         await navigator.clipboard.writeText(typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent, null, 2))
@@ -566,7 +589,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           {error}
         </div>
       )}
-      
+
       {showEmptyState ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-6 min-h-0">
           <div className="text-center text-2xl font-semibold text-gray-300 select-none">What can I help you find today?</div>
@@ -593,7 +616,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         </div>
       ) : (
         <>
-          <ConversationPage 
+          <ConversationPage
             messages={messages}
             isLoading={isLoading}
             onAction={handleAction}
@@ -640,16 +663,16 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'toggle', label:'Compose sub-answers', checked: composeSubAnswers, setter: setComposeSubAnswers},
             {type: 'toggle', label:'Verify answer', checked: enableVerify, setter: setEnableVerify},
             {type: 'toggle', label:'Stream phases', checked: enableStream, setter: setEnableStream},
-            
+
             // Retrieval Settings
             {type: 'dropdown', label:'LLM model', value: selectedModel, setter: setSelectedModel, options: generationModels.map(m=>({value:m,label:m}))},
             {type: 'dropdown', label:'Search type', value: searchType, setter: setSearchType, options: [
               {value: 'hybrid', label: 'Hybrid (Vector + FTS)'},
-              {value: 'vector_only', label: 'Vector Only'},
-              {value: 'bm25_only', label: 'FTS Only'}
+              {value: 'dense', label: 'Vector Only'},
+              {value: 'lexical', label: 'FTS Only'}
             ]},
             {type: 'slider', label:'Retrieval chunks', value: retrievalK, setter: setRetrievalK, min: 5, max: 50, unit: ' chunks'},
-            
+
             // Reranking & Context
             {type: 'toggle', label:'AI reranker', checked: enableAiRerank, setter: setEnableAiRerank},
             {type: 'slider', label:'Reranker top chunks', value: rerankerTopK, setter: setRerankerTopK, min: 3, max: 20, unit: ' chunks'},
@@ -680,4 +703,4 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   )
 })
 
-SessionChat.displayName = "SessionChat"  
+SessionChat.displayName = "SessionChat"

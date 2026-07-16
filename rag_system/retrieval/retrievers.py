@@ -1,13 +1,6 @@
-import lancedb
-import pickle
 import json
 from typing import List, Dict, Any
-import numpy as np
 import networkx as nx
-import os
-from PIL import Image
-from transformers import CLIPProcessor, CLIPModel
-import torch
 import logging
 import pandas as pd
 import math
@@ -16,8 +9,8 @@ from functools import lru_cache
 
 from rag_system.indexing.embedders import LanceDBManager
 from rag_system.indexing.representations import QwenEmbedder
-from rag_system.indexing.multimodal import LocalVisionModel
 from rag_system.utils.logging_utils import log_retrieval_results
+from rag_system.retrieval.fusion import fuse_ranked_results
 
 # BM25Retriever is no longer needed.
 # class BM25Retriever: ...
@@ -56,7 +49,7 @@ class MultiVectorRetriever:
     """
     Performs hybrid (vector + FTS) or vector-only retrieval.
     """
-    def __init__(self, db_manager: LanceDBManager, text_embedder: QwenEmbedder, vision_model: LocalVisionModel = None, *, fusion_config: Dict[str, Any] | None = None):
+    def __init__(self, db_manager: LanceDBManager, text_embedder: QwenEmbedder, vision_model: Any = None, *, fusion_config: Dict[str, Any] | None = None):
         self.db_manager = db_manager
         self.text_embedder = text_embedder
         self.vision_model = vision_model
@@ -69,7 +62,15 @@ class MultiVectorRetriever:
 
         self._embed_single = _embed_single
 
-    def retrieve(self, text_query: str, table_name: str, k: int, reranker=None) -> List[Dict[str, Any]]:
+    def retrieve(
+        self,
+        text_query: str,
+        table_name: str,
+        k: int,
+        reranker=None,
+        search_type: str = "hybrid",
+        dense_weight: float = 0.7,
+    ) -> List[Dict[str, Any]]:
         """
         Performs a search on a single LanceDB table.
         If a reranker is provided, it performs a hybrid search.
@@ -82,111 +83,108 @@ class MultiVectorRetriever:
                 table_name = "default_text_table"
             tbl = self.db_manager.get_table(table_name)
             
-            # Create / fetch cached text embedding for the query
-            text_query_embedding = self._embed_single(text_query)
-            
             logger = logging.getLogger(__name__)
-
-            # Always perform hybrid lexical + vector search
-            logger.debug(
-                "Running hybrid search on table '%s' (k=%s, have_reranker=%s)",
-                table_name,
-                k,
-                bool(reranker),
-            )
-
-            if reranker:
-                logger.debug("Hybrid + reranker path not yet implemented with manual fusion; proceeding without extra reranker.")
-
-            # Manual two-leg hybrid: take half from each modality
-            fts_k = k // 2
-            vec_k = k - fts_k
-
-            # Run FTS and vector search in parallel to cut latency
-            def _run_fts():
-                # Very short queries often underperform → add fuzzy wildcard
-                fts_query = text_query
-                if len(text_query.split()) == 1:
-                    fts_query = f"{text_query}* OR {text_query}~"
-                return (
-                     tbl.search(query=fts_query, query_type="fts")
-                        .limit(fts_k)
-                        .to_df()
-                 )
-
-            def _run_vec():
-                if vec_k == 0:
-                    return None
-                return (
-                    tbl.search(text_query_embedding)
-                       .limit(vec_k * 2)  # fetch extra to allow for dedup
-                       .to_df()
+            normalized_search_type = str(search_type or "hybrid").lower()
+            aliases = {
+                "dense": "vector",
+                "vector_only": "vector",
+                "semantic": "vector",
+                "fts": "lexical",
+                "bm25": "lexical",
+                "bm25_only": "lexical",
+            }
+            normalized_search_type = aliases.get(normalized_search_type, normalized_search_type)
+            if normalized_search_type not in {"hybrid", "vector", "lexical"}:
+                raise ValueError(
+                    "search_type must be one of hybrid, vector/dense, or lexical/fts/bm25"
                 )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                fts_future = executor.submit(_run_fts)
-                vec_future = executor.submit(_run_vec)
-                fts_df = fts_future.result()
-                vec_df = vec_future.result()
+            def _run_fts():
+                return (
+                    tbl.search(query=text_query, query_type="fts")
+                    .limit(max(k * 2, k))
+                    .to_df()
+                )
 
-            if vec_df is not None:
-                combined = pd.concat([fts_df, vec_df])
+            def _run_vec():
+                embedding = self._embed_single(text_query)
+                return tbl.search(embedding).limit(max(k * 2, k)).to_df()
+
+            fts_df = pd.DataFrame()
+            vec_df = pd.DataFrame()
+            if normalized_search_type == "hybrid":
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    fts_future = executor.submit(_run_fts)
+                    vec_future = executor.submit(_run_vec)
+                    try:
+                        fts_df = fts_future.result()
+                    except Exception as exc:
+                        logger.warning("Lexical search failed; using dense results: %s", exc)
+                    try:
+                        vec_df = vec_future.result()
+                    except Exception as exc:
+                        logger.warning("Dense search failed; using lexical results: %s", exc)
+            elif normalized_search_type == "lexical":
+                fts_df = _run_fts()
             else:
-                combined = fts_df
+                vec_df = _run_vec()
 
-            # Remove duplicates preserving first occurrence, then trim to k
-            dedup_subset = ["_rowid"] if "_rowid" in combined.columns else (["chunk_id"] if "chunk_id" in combined.columns else None)
-            if dedup_subset:
-                combined = combined.drop_duplicates(subset=dedup_subset, keep="first")
-            combined = combined.head(k)
+            def _records(frame):
+                return [] if frame is None or frame.empty else frame.to_dict("records")
 
-            results_df = combined
-            logger.debug(
-                "Hybrid (fts=%s, vec=%s) → %s unique chunks",
-                len(fts_df),
-                0 if vec_df is None else len(vec_df),
-                len(results_df),
-            )
-            
+            lexical_rows = _records(fts_df)
+            dense_rows = _records(vec_df)
+            if normalized_search_type == "hybrid":
+                rows = fuse_ranked_results(
+                    lexical_rows,
+                    dense_rows,
+                    k=k,
+                    dense_weight=dense_weight,
+                )
+            else:
+                rows = (lexical_rows or dense_rows)[:k]
+
             retrieved_docs = []
-            for _, row in results_df.iterrows():
-                metadata = json.loads(row.get('metadata', '{}'))
+            for row in rows:
+                raw_metadata = row.get('metadata', '{}')
+                try:
+                    metadata = json.loads(raw_metadata) if isinstance(raw_metadata, str) else dict(raw_metadata or {})
+                except (TypeError, json.JSONDecodeError):
+                    metadata = {}
+                # Read records produced by older versions, which serialized the
+                # whole chunk into the metadata column.
+                if isinstance(metadata.get("metadata"), dict):
+                    nested = metadata["metadata"]
+                    nested.setdefault("original_text", metadata.get("text"))
+                    metadata = nested
                 # Add top-level fields back into metadata for consistency if they don't exist
                 metadata.setdefault('document_id', row.get('document_id'))
                 metadata.setdefault('chunk_index', row.get('chunk_index'))
                 
                 # Determine score (vector distance or FTS). Replace NaN with 0.0
-                raw_score = row.get('_distance') if '_distance' in row else row.get('score')
+                raw_score = row.get('score')
+                if raw_score is None and row.get('_distance') is not None:
+                    raw_score = 1.0 / (1.0 + float(row['_distance']))
+                if raw_score is None:
+                    raw_score = row.get('_score', 0.0)
                 try:
                     if raw_score is None or (isinstance(raw_score, float) and math.isnan(raw_score)):
                         raw_score = 0.0
                 except Exception:
                     raw_score = 0.0
 
-                combined_score = raw_score
-                # Optional linear-weight fusion if both FTS & vector scores exist
-                if '_distance' in row and 'score' in row:
-                    try:
-                        bm25 = row.get('score', 0.0)
-                        vec_sim = 1.0 / (1.0 + row.get('_distance', 1.0))  # convert distance to similarity
-                        w_bm25 = float(self.fusion_config.get('bm25_weight', 0.5))
-                        w_vec = float(self.fusion_config.get('vec_weight', 0.5))
-                        combined_score = w_bm25 * bm25 + w_vec * vec_sim
-                    except Exception:
-                        pass
-
                 retrieved_docs.append({
                     'chunk_id': row.get('chunk_id'),
                     'text': metadata.get('original_text', row.get('text')),
-                    'score': combined_score,
-                    'bm25': row.get('score'),
+                    'score': raw_score,
+                    'bm25': row.get('_score'),
                     '_distance': row.get('_distance'),
                     'document_id': row.get('document_id'),
                     'chunk_index': row.get('chunk_index'),
                     'metadata': metadata
                 })
 
-            logger.debug("Hybrid search returned %s results", len(retrieved_docs))
+            logger.debug("%s search returned %s results", normalized_search_type, len(retrieved_docs))
             log_retrieval_results(retrieved_docs, k)
             print(f"Retrieved {len(retrieved_docs)} documents.")
             return retrieved_docs

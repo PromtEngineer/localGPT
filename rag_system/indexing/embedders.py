@@ -27,12 +27,14 @@ class VectorIndexer:
     def __init__(self, db_manager: LanceDBManager):
         self.db_manager = db_manager
 
-    def index(self, table_name: str, chunks: List[Dict[str, Any]], embeddings: np.ndarray):
+    def index(self, table_name: str, chunks: List[Dict[str, Any]], embeddings: np.ndarray, *, mode: str = "replace") -> int:
         if len(chunks) != len(embeddings):
             raise ValueError("The number of chunks and embeddings must be the same.")
         if not chunks:
             print("No chunks to index.")
-            return
+            return 0
+        if mode not in {"replace", "append"}:
+            raise ValueError("mode must be 'replace' or 'append'")
 
         vector_dim = embeddings[0].shape[0]
         
@@ -82,7 +84,7 @@ class VectorIndexer:
                 "chunk_id": chunk['chunk_id'],
                 "document_id": doc_id,
                 "chunk_index": chunk_idx,
-                "metadata": json.dumps(chunk)
+                "metadata": json.dumps(chunk["metadata"])
             })
 
         if skipped_count > 0:
@@ -90,17 +92,18 @@ class VectorIndexer:
         
         if not data:
             print("❌ No valid embeddings to index after filtering out NaN/infinite values")
-            return
+            return 0
 
         # Incremental indexing: append to existing table if present, otherwise create it
         db = self.db_manager.db  # underlying LanceDB connection
 
-        if hasattr(db, "table_names") and table_name in db.table_names():
+        table_exists = hasattr(db, "table_names") and table_name in db.table_names()
+        if mode == "append" and table_exists:
             tbl = self.db_manager.get_table(table_name)
             print(f"Appending {len(data)} vectors to existing table '{table_name}'.")
         else:
-            print(f"Creating table '{table_name}' (new) and adding {len(data)} vectors...")
-            tbl = self.db_manager.create_table(table_name, schema=schema, mode="create")
+            print(f"Replacing table '{table_name}' with {len(data)} vectors...")
+            tbl = self.db_manager.create_table(table_name, schema=schema, mode="overwrite")
 
         # Add data with NaN handling configuration
         try:
@@ -116,6 +119,7 @@ class VectorIndexer:
             except Exception as e2:
                 print(f"❌ Failed to add data even with NaN fill: {e2}")
                 raise
+        return len(data)
 
 # BM25Indexer is no longer needed as we are moving to LanceDB's native FTS.
 # class BM25Indexer:

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Late Chunking encoder.
 
 This helper feeds the *entire* document to the embedding model, collects
@@ -11,12 +9,15 @@ issues of vanilla chunking.
 We purposefully keep this class lightweight and free of LanceDB/Chunking
 logic so it can be re-used elsewhere (e.g. notebook experiments).
 """
+from __future__ import annotations
+
 
 from typing import List, Tuple
 
 import torch
 from transformers import AutoModel, AutoTokenizer
 import numpy as np
+from localgpt_runtime import trust_remote_code_enabled
 
 class LateChunkEncoder:
     """Generate late-chunked embeddings given character-offset spans."""
@@ -34,8 +35,13 @@ class LateChunkEncoder:
             }
             repo_id = alias_map.get(model_name.lower(), model_name)
 
-        self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
-        self.model = AutoModel.from_pretrained(repo_id, trust_remote_code=True)
+        trust_remote_code = trust_remote_code_enabled()
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            repo_id, trust_remote_code=trust_remote_code
+        )
+        self.model = AutoModel.from_pretrained(
+            repo_id, trust_remote_code=trust_remote_code
+        )
         self.model.to(self.device)
         self.model.eval()
 
@@ -76,13 +82,13 @@ class LateChunkEncoder:
                 # Fallback: if tokenizer lost the span (e.g. due to trimming) just average CLS + SEP
                 token_indices = [0]
             chunk_vec = last_hidden[token_indices].mean(dim=0).numpy().astype("float32")
-            
+
             # Check for NaN or infinite values
             if np.isnan(chunk_vec).any() or np.isinf(chunk_vec).any():
                 print(f"⚠️ Warning: Invalid values detected in late chunk embedding for span ({start_char}, {end_char})")
                 # Replace invalid values with zeros
                 chunk_vec = np.nan_to_num(chunk_vec, nan=0.0, posinf=0.0, neginf=0.0)
-                print(f"🔄 Replaced invalid values with zeros")
-            
+                print("🔄 Replaced invalid values with zeros")
+
             vectors.append(chunk_vec)
-        return vectors 
+        return vectors

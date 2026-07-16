@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Docling-aware chunker (simplified).
 
 For now we proxy the old MarkdownRecursiveChunker but add:
@@ -9,25 +7,30 @@ For now we proxy the old MarkdownRecursiveChunker but add:
 In a follow-up we can replace the internals with true Docling element-tree
 walking once the PDFConverter returns structured nodes.
 """
-from typing import List, Dict, Any, Tuple
-import math
+from __future__ import annotations
+
+from typing import List, Dict, Any
 import re
-from itertools import islice
 from rag_system.ingestion.chunking import MarkdownRecursiveChunker
 from transformers import AutoTokenizer
+from rag_system.ingestion.overlap import add_chunk_overlap
+from localgpt_runtime import trust_remote_code_enabled
 
 class DoclingChunker:
-    def __init__(self, *, max_tokens: int = 512, overlap: int = 1, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
+    def __init__(self, *, max_tokens: int = 512, overlap: int = 0, overlap_tokens: int | None = None, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
         self.max_tokens = max_tokens
-        self.overlap = overlap  # sentences of overlap
+        self.overlap = overlap
+        self.overlap_tokens = overlap if overlap_tokens is None else overlap_tokens
         repo_id = tokenizer_model
         if "/" not in tokenizer_model and not tokenizer_model.startswith("Qwen/"):
             repo_id = {
                 "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
             }.get(tokenizer_model.lower(), tokenizer_model)
-        
+
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                repo_id, trust_remote_code=trust_remote_code_enabled()
+            )
         except Exception as e:
             print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
             print("Falling back to character-based approximation (4 chars ≈ 1 token)")
@@ -35,6 +38,28 @@ class DoclingChunker:
         # Fallback simple sentence splitter (period, question, exclamation, newline)
         self._sent_re = re.compile(r"(?<=[\.\!\?])\s+|\n+")
         self.legacy = MarkdownRecursiveChunker(max_chunk_size=10_000, min_chunk_size=100)
+
+    def _apply_overlap(self, chunks: List[Dict[str, Any]], document_id: str) -> List[Dict[str, Any]]:
+        if not chunks or not self.overlap_tokens:
+            return chunks
+        texts = add_chunk_overlap(
+            [chunk["text"] for chunk in chunks],
+            overlap_tokens=self.overlap_tokens,
+            max_tokens=self.max_tokens,
+        )
+        result = []
+        for index, text in enumerate(texts):
+            source = chunks[min(index, len(chunks) - 1)]
+            metadata = dict(source["metadata"])
+            metadata["chunk_index"] = index
+            result.append(
+                {
+                    "chunk_id": f"{document_id}_{index}",
+                    "text": text,
+                    "metadata": metadata,
+                }
+            )
+        return result
 
     # ------------------------------------------------------------------
     def _token_len(self, text: str) -> int:
@@ -80,7 +105,7 @@ class DoclingChunker:
                     back = window[-self.overlap:] if self.overlap <= len(window) else window[:]
                     sentences = back + sentences
                 window = []
-        return new_chunks
+        return self._apply_overlap(new_chunks, document_id)
 
     # ------------------------------------------------------------------
     # Element-tree based chunking (true Docling path)
@@ -243,8 +268,8 @@ class DoclingChunker:
 
         flush_paragraph_buffer()
 
-        return consolidated
+        return self._apply_overlap(consolidated, document_id)
 
     # Public API expected by IndexingPipeline --------------------------------
     def chunk(self, text: str, document_id: str, document_metadata: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
-        return self.split_markdown(text, document_id=document_id, metadata=document_metadata or {})    
+        return self.split_markdown(text, document_id=document_id, metadata=document_metadata or {})

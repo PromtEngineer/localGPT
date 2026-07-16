@@ -6,22 +6,31 @@ services:
       dockerfile: Dockerfile.rag-api
     container_name: rag-api
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     environment:
       - OLLAMA_HOST=http://host.docker.internal:11434
+      - LOCALGPT_RAG_HOST=0.0.0.0
+      - LOCALGPT_DB_PATH=/app/data/chat_data.db
+      - LOCALGPT_UPLOAD_DIR=/app/shared_uploads
+      - LOCALGPT_OVERVIEW_DIR=/app/index_store/overviews
+      - LANCEDB_PATH=/app/lancedb
+      - LOCALGPT_API_TOKEN=${LOCALGPT_API_TOKEN:-}
       - NODE_ENV=production
     volumes:
       - ./lancedb:/app/lancedb
       - ./index_store:/app/index_store
       - ./shared_uploads:/app/shared_uploads
+      - ./data:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/models"]
+      test: ["CMD-SHELL", "curl -fsS -H 'Authorization: Bearer $${LOCALGPT_API_TOKEN}' http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     restart: unless-stopped
     networks:
       - rag-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # Backend API server
   backend:
@@ -30,24 +39,31 @@ services:
       dockerfile: Dockerfile.backend
     container_name: rag-backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - NODE_ENV=production
       - RAG_API_URL=http://rag-api:8001
+      - LOCALGPT_BACKEND_HOST=0.0.0.0
+      - LOCALGPT_DB_PATH=/app/data/chat_data.db
+      - LOCALGPT_UPLOAD_DIR=/app/shared_uploads
+      - LOCALGPT_API_TOKEN=${LOCALGPT_API_TOKEN:-}
+      - OLLAMA_HOST=http://host.docker.internal:11434
     volumes:
-      - ./backend/chat_data.db:/app/backend/chat_data.db
       - ./shared_uploads:/app/shared_uploads
+      - ./data:/app/data
     depends_on:
       rag-api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -fsS -H 'Authorization: Bearer $${LOCALGPT_API_TOKEN}' http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     restart: unless-stopped
     networks:
       - rag-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # Frontend Next.js application
   frontend:
@@ -56,10 +72,11 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: rag-frontend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - BACKEND_INTERNAL_URL=http://backend:8000
+      - LOCALGPT_API_TOKEN=${LOCALGPT_API_TOKEN:-}
     depends_on:
       backend:
         condition: service_healthy
@@ -74,4 +91,4 @@ services:
 
 networks:
   rag-network:
-    driver: bridge 
+    driver: bridge

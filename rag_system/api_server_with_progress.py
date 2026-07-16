@@ -423,7 +423,7 @@ def start_enhanced_server(port=8000):
         print(f"✨ Indexing endpoint: http://localhost:{port}/index")
         print(f"📊 Progress endpoint: http://localhost:{port}/progress")
         print(f"🌊 Progress stream: http://localhost:{port}/stream")
-        print(f"📈 Real-time progress tracking enabled via Server-Sent Events!")
+        print("📈 Real-time progress tracking enabled via Server-Sent Events!")
         httpd.serve_forever()
 
 if __name__ == '__main__':

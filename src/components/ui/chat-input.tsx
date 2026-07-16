@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useState, useRef } from "react"
-import { ArrowUp, Settings as SettingsIcon, Plus, X, FileText } from "lucide-react"
+import { ArrowUp, Database, Paperclip, Settings as SettingsIcon, X, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AttachedFile } from "@/lib/types"
 
@@ -16,8 +16,8 @@ interface ChatInputProps {
   leftExtras?: React.ReactNode
 }
 
-export function ChatInput({ 
-  onSendMessage, 
+export function ChatInput({
+  onSendMessage,
   disabled = false,
   placeholder = "Message localGPT...",
   className = "",
@@ -62,7 +62,7 @@ export function ChatInput({
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value)
-    
+
     // Auto-resize textarea
     const textarea = textareaRef.current
     if (textarea) {
@@ -88,16 +88,14 @@ export function ChatInput({
         type: file.type,
         lastModified: file.lastModified
       });
-      
-      if (file.type === 'application/pdf' || 
+
+      if (file.type === 'application/pdf' ||
           file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-          file.type === 'application/msword' ||
           file.type === 'text/html' ||
           file.type === 'text/markdown' ||
           file.type === 'text/plain' ||
           file.name.toLowerCase().endsWith('.pdf') ||
           file.name.toLowerCase().endsWith('.docx') ||
-          file.name.toLowerCase().endsWith('.doc') ||
           file.name.toLowerCase().endsWith('.html') ||
           file.name.toLowerCase().endsWith('.htm') ||
           file.name.toLowerCase().endsWith('.md') ||
@@ -115,7 +113,7 @@ export function ChatInput({
     }
 
     setAttachedFiles(prev => [...prev, ...newFiles])
-    
+
     // Reset the input
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
@@ -163,8 +161,7 @@ export function ChatInput({
         )}
 
         <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl px-5 pt-4 pb-3 space-y-2">
-          {/* Hidden file input (kept for future use) */}
-          <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.html,.htm,.md,.txt" multiple onChange={handleFileChange} className="hidden" />
+          <input ref={fileInputRef} type="file" accept=".pdf,.docx,.html,.htm,.md,.txt" multiple onChange={handleFileChange} className="hidden" />
 
           {/* Textarea */}
           <textarea
@@ -182,6 +179,28 @@ export function ChatInput({
           {/* Action row */}
           <div className="mt-1 flex items-center justify-between">
             <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={handleFileAttach}
+                disabled={disabled || isLoading}
+                className="flex items-center gap-1 p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Attach documents"
+              >
+                <Paperclip className="w-5 h-5" />
+                <span className="text-xs hidden sm:inline">Attach</span>
+              </button>
+              {onAddIndex && (
+                <button
+                  type="button"
+                  onClick={onAddIndex}
+                  disabled={disabled || isLoading}
+                  className="flex items-center gap-1 p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Create or link an index"
+                >
+                  <Database className="w-5 h-5" />
+                  <span className="text-xs hidden sm:inline">Index</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={()=>onOpenSettings && onOpenSettings()}
@@ -211,4 +230,4 @@ export function ChatInput({
       </form>
     </div>
   )
-}    
+}

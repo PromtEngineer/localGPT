@@ -1,5 +1,40 @@
 import { useEffect, useState } from 'react';
-import { chatAPI, ChatSession } from '@/lib/api';
+import { chatAPI } from '@/lib/api';
+
+interface IndexMetadata {
+  metadata_source?: string;
+  status?: string;
+  issue?: string;
+  chunk_size?: number;
+  chunk_overlap?: number;
+  retrieval_mode?: string;
+  embedding_model?: string;
+  embedding_model_inferred?: string;
+  retrieval_mode_inferred?: string;
+  chunk_size_inferred?: string;
+  vector_dimensions?: number;
+  total_chunks?: number;
+  window_size?: number;
+  enable_enrich?: boolean;
+  has_contextual_enrichment?: boolean;
+  latechunk?: boolean;
+  docling_chunk?: boolean;
+  has_fts_index?: boolean;
+  has_document_structure?: boolean;
+  enrich_model?: string;
+  overview_model?: string;
+  batch_size_embed?: number;
+  batch_size_enrich?: number;
+  inspection_limitation?: string;
+  metadata_inferred_at?: string;
+  sample_chunk_length?: number;
+  documents_count?: number;
+  created_at?: string;
+  vector_table_name?: string;
+  note?: string;
+  available_tables?: string[];
+  vector_table_expected?: string;
+}
 
 interface Props {
   sessionId: string;
@@ -8,8 +43,8 @@ interface Props {
 
 export default function SessionIndexInfo({ sessionId, onClose }: Props) {
   const [files, setFiles] = useState<string[]>([]);
-  const [indexMeta, setIndexMeta] = useState<any | null>(null);
-  const [session, setSession] = useState<ChatSession | null>(null);
+  const [indexMeta, setIndexMeta] = useState<IndexMetadata | null>(null);
+  const [indexName, setIndexName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,13 +54,15 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         const data = await chatAPI.getSessionIndexes(sessionId);
         const first = data.indexes[0];
         if(first){
-          setSession(first.session??{...first, title:first.name, model_used:first.model_used||''});
-          setFiles(first.documents?.map((d:any)=>d.filename) || []);
-          setIndexMeta(first.metadata || {});
+          setIndexName(first.name);
+          setFiles(first.documents?.map((document) => document.filename) || []);
+          setIndexMeta((first.metadata || {}) as IndexMetadata);
         } else {
           setError('No indexes linked to this chat');
         }
-      } catch (e:any){ setError(e.message||'Failed to load'); }
+      } catch (error: unknown){
+        setError(error instanceof Error ? error.message : 'Failed to load');
+      }
       finally{ setLoading(false);}
     })();
   }, [sessionId]);
@@ -42,7 +79,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: 'This index was created before metadata tracking was implemented. Configuration details are not available.'
       };
     }
-    
+
     if (indexStatus === 'incomplete') {
       return {
         type: 'error',
@@ -50,7 +87,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: indexMeta.issue || 'The index appears to be incomplete or was never properly built.'
       };
     }
-    
+
     if (indexStatus === 'empty') {
       return {
         type: 'error',
@@ -58,7 +95,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: 'The vector table exists but contains no data. The index may need to be rebuilt.'
       };
     }
-    
+
     if (indexStatus === 'legacy') {
       return {
         type: 'warning',
@@ -66,7 +103,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: indexMeta.issue || 'This index was created before metadata tracking was implemented. Configuration details are not available.'
       };
     }
-    
+
     if (isInferredMetadata) {
       return {
         type: 'info',
@@ -74,14 +111,14 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
         message: 'This metadata was inferred from the vector database structure. Some configuration details may be incomplete.'
       };
     }
-    
+
     if (indexStatus === 'functional') {
       // Check if we have complete configuration metadata
-      const hasCompleteConfig = indexMeta.chunk_size && 
+      const hasCompleteConfig = indexMeta.chunk_size &&
                                indexMeta.chunk_overlap !== undefined &&
                                indexMeta.retrieval_mode &&
                                indexMeta.embedding_model;
-      
+
       // Only show limited message if we truly have limited data
       if (indexMeta.inspection_limitation && !hasCompleteConfig) {
         return {
@@ -90,11 +127,11 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
           message: 'This index is functional but detailed configuration inspection requires direct RAG system access. Basic information is shown below.'
         };
       }
-      
+
       // Don't show any status message for functional indexes with complete metadata
       return null;
     }
-    
+
     return null;
   };
 
@@ -112,7 +149,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
           <>
             <div>
               <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Name</span>
-              <p className="text-sm">{session?.title}</p>
+              <p className="text-sm">{indexName}</p>
             </div>
 
             {statusMessage && (
@@ -328,7 +365,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                     </div>
                   )}
                 </div>
-                
+
                 {indexMeta.note && (
                   <div className="border-t border-white/10 pt-4">
                     <h3 className="text-sm font-medium text-gray-300 mb-3">Technical Note</h3>
@@ -339,7 +376,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
             )}
 
             {/* Debug info for incomplete indexes */}
-            {indexStatus === 'incomplete' && indexMeta.available_tables && (
+            {indexStatus === 'incomplete' && indexMeta?.available_tables && (
               <div className="border-t border-white/10 pt-4">
                 <h3 className="text-sm font-medium text-gray-300 mb-3">Debug Information</h3>
                 <div className="text-xs text-gray-400 space-y-1">
@@ -366,4 +403,4 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
       </div>
     </div>
   );
-} 
+}

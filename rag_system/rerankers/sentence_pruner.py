@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Sentence-level context pruning using the Provence model (ICLR 2025).
 
 This lightweight helper wraps the HuggingFace model hosted at
@@ -12,9 +10,12 @@ The module fails gracefully – if the model weights cannot be downloaded
 original documents unchanged so the upstream pipeline continues
 unaffected.
 """
+from __future__ import annotations
+
 
 from threading import Lock
 from typing import List, Dict, Any
+from localgpt_runtime import trust_remote_code_enabled
 
 
 class SentencePruner:
@@ -44,7 +45,7 @@ class SentencePruner:
                 print("🔧 Loading Provence sentence-pruning model …")
                 SentencePruner._model = AutoModel.from_pretrained(
                     self.model_name,
-                    trust_remote_code=True,
+                    trust_remote_code=trust_remote_code_enabled(),
                 )
                 print("✅ Provence model loaded successfully.")
             except Exception as e:
@@ -109,4 +110,4 @@ class SentencePruner:
                     print(f"⚠️ Provence pruning failed for chunk {doc.get('chunk_id')}: {err}")
                     pruned.append(doc)
 
-        return pruned 
+        return pruned

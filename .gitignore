@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -75,4 +76,3 @@ rag_system/documents/
 # Ensure docker.env remains tracked
 !docker.env
 !backend/chat_data.db
-

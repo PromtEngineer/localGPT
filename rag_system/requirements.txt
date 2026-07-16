@@ -1,17 +1,2 @@
-colpali-engine
-PyMuPDF
-Pillow
-transformers==4.51.0
-torch==2.4.1
-torchvision==0.19.1
-lancedb
-rank_bm25
-fuzzywuzzy
-python-Levenshtein
-torchaudio
-transformers
-sentencepiece
-accelerate
-docling
-ocrmac
-ibm-watsonx-ai>=1.3.39
+-r ../requirements-docker.txt
+ocrmac; sys_platform == "darwin"

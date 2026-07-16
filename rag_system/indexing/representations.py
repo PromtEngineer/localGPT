@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Protocol
 import numpy as np
+from localgpt_runtime import trust_remote_code_enabled
 from transformers import AutoModel, AutoTokenizer
 import torch
 import os
@@ -29,10 +30,13 @@ class QwenEmbedder(EmbeddingModel):
         # Use model-specific cache
         if model_name not in _MODEL_CACHE:
             print(f"Initializing HF Embedder with model '{model_name}' on device '{self.device}'. (first load)")
-            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, padding_side="left")
+            trust_remote_code = trust_remote_code_enabled()
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_name, trust_remote_code=trust_remote_code, padding_side="left"
+            )
             model = AutoModel.from_pretrained(
                 model_name,
-                trust_remote_code=True,
+                trust_remote_code=trust_remote_code,
                 torch_dtype=torch.float16 if self.device != "cpu" else None,
             ).to(self.device).eval()
             _MODEL_CACHE[model_name] = (tokenizer, model)
@@ -61,13 +65,13 @@ class QwenEmbedder(EmbeddingModel):
             print(f"⚠️ Warning: NaN values detected in embeddings from {self.model_name}")
             # Replace NaN values with zeros
             embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
-            print(f"🔄 Replaced NaN values with zeros")
+            print("🔄 Replaced NaN values with zeros")
         
         if np.isinf(embeddings_np).any():
             print(f"⚠️ Warning: Infinite values detected in embeddings from {self.model_name}")
             # Replace infinite values with zeros
             embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
-            print(f"🔄 Replaced infinite values with zeros")
+            print("🔄 Replaced infinite values with zeros")
         
         return embeddings_np
 
@@ -111,7 +115,8 @@ class OllamaEmbedder(EmbeddingModel):
         self.timeout = timeout
 
     def _embed_single(self, text: str):
-        import requests, numpy as np, json
+        import requests
+        import numpy as np
         payload = {"model": self.model_name, "prompt": text}
         r = requests.post(f"{self.host}/api/embeddings", json=payload, timeout=self.timeout)
         r.raise_for_status()
@@ -132,13 +137,13 @@ class OllamaEmbedder(EmbeddingModel):
             print(f"⚠️ Warning: NaN values detected in Ollama embeddings from {self.model_name}")
             # Replace NaN values with zeros
             embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
-            print(f"🔄 Replaced NaN values with zeros")
+            print("🔄 Replaced NaN values with zeros")
         
         if np.isinf(embeddings_np).any():
             print(f"⚠️ Warning: Infinite values detected in Ollama embeddings from {self.model_name}")
             # Replace infinite values with zeros
             embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
-            print(f"🔄 Replaced infinite values with zeros")
+            print("🔄 Replaced infinite values with zeros")
         
         return embeddings_np
 

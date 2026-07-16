@@ -1,60 +1,21 @@
-# 🔀 Triage / Routing System
+# Triage and Routing
 
-_Maps to `rag_system/agent/loop.Agent._should_use_rag`, `_route_using_overviews`, and the fast-path router in `backend/server.py`._
+Routing has one owner: `rag_system/agent/loop.py`. The backend no longer runs a separate regex/LLM router; it delegates every session query to the RAG agent so Ollama and WatsonX follow the same path.
 
-## Purpose
-Determine, for every incoming query, whether it should be answered by:
-1. **Direct LLM Generation** (no retrieval) — faster, cheaper.
-2. **Retrieval-Augmented Generation (RAG)** — when the answer likely requires document context.
+## Decisions
 
-## Decision Signals
-| Signal | Source | Notes |
-|--------|--------|-------|
-| Keyword/regex check | `backend/server.py` (fast path) | Hard-coded quick wins (`what time`, `define`, etc.). |
-| Index presence | SQLite (session → indexes) | If no indexes linked, direct LLM. |
-| Overview routing | `_route_using_overviews()` | Uses document overviews and enrichment model to predict relevance. |
-| LLM router prompt | `agent/loop.py` lines 648-665 | Final arbitrator (Ollama call, JSON output). |
+- `direct_answer`: greetings, conversational follow-ups, and general-knowledge questions that do not need private documents.
+- `rag_query`: questions related to linked document overviews or explicit document operations such as summarize, extract, compare, or find.
+- `graph_query`: only available when graph retrieval is explicitly configured; disabled by default.
 
-## High-level Flow
-```mermaid
-flowchart TD
-    Q["Incoming Query"] --> S1{Session\nHas Indexes?}
-    S1 -- no --> LLM["Direct LLM Generation"]
-    S1 -- yes --> S2{Fast Regex\nHeuristics}
-    S2 -- match--> LLM
-    S2 -- no --> S3{Overview\nRelevance > τ?}
-    S3 -- low --> LLM
-    S3 -- high --> S4[LLM Router\n(prompt @648)]
-    S4 -- "route: RAG" --> RAG["Retrieval Pipeline"]
-    S4 -- "route: DIRECT" --> LLM
-```
+## Signals and fallback
 
-## Detailed Sequence (Code-level)
-1. **backend/server.py**
-   * `handle_session_chat()` builds `router_prompt` (line ~435) and makes a **first pass** decision before calling the heavy agent code.
-2. **agent.loop._should_use_rag()**
-   * Re-evaluates using richer features (e.g., token count, query type).
-3. **Overviews Phase** (`_route_using_overviews()`)
-   * Loads JSONL overviews file per index.
-   * Calls enrichment model (`qwen3:0.6b`) with prompt: _"Does this overview mention … ? "_ → returns yes/no.
-4. **LLM Router** (prompt lines 648-665)
-   * JSON-only response `{ "route": "RAG" | "DIRECT" }`.
+1. Persisted user/assistant history is restored into the agent for each backend request.
+2. Overviews from every linked index are loaded.
+3. `_route_via_overviews()` sends the actual overview text and query to the configured generation provider.
+4. The broader triage prompt considers query semantics and history.
+5. Router parse failures and ambiguous document-related queries default to RAG, which avoids answering a private-document question from general model knowledge.
 
-## Interfaces & Dependencies
-| Component | Calls / Data |
-|-----------|--------------|
-| SQLite `chat_sessions` | Reads `indexes` column to know linked index IDs. |
-| LanceDB Overviews | Reads `index_store/overviews/<idx>.jsonl`. |
-| `OllamaClient` | Generates LLM router decision. |
+The old hard-coded “Invoices, DeepSeek-V3 research papers” prompt, backend fast router, `PIPELINE_CONFIGS.triage.enabled`, and `TRIAGE_OVERVIEW_THRESHOLD` are not part of the active implementation.
 
-## Config Flags
-* `PIPELINE_CONFIGS.triage.enabled` – global toggle.
-* Env var `TRIAGE_OVERVIEW_THRESHOLD` – min similarity score to prefer RAG (default 0.35).
-
-## Failure / Fallback Modes
-1. If overview file missing → skip to LLM router.
-2. If LLM router errors → default to RAG (safer) but log warning.
-
----
-
-_Keep this document updated whenever routing heuristics, thresholds, or prompt wording change._ 
+Routing results are returned as the `route` field and drive the backend's `used_rag` response field.

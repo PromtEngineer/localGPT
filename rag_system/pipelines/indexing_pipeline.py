@@ -17,7 +17,7 @@ class IndexingPipeline:
         self.ollama_config = ollama_config
         self.document_converter = DocumentConverter()
         # Chunker selection: docling (token-based) or legacy (character-based)
-        chunker_mode = config.get("chunker_mode", "docling")
+        chunker_mode = config.get("chunker_mode", "legacy")
         
         # 🔧 Get chunking configuration from frontend parameters
         chunking_config = config.get("chunking", {})
@@ -31,25 +31,26 @@ class IndexingPipeline:
                 from rag_system.ingestion.docling_chunker import DoclingChunker
                 self.chunker = DoclingChunker(
                     max_tokens=config.get("max_tokens", chunk_size),
-                    overlap=config.get("overlap_sentences", 1),
+                    overlap_tokens=chunk_overlap,
                     tokenizer_model=config.get("embedding_model_name", "qwen3-embedding-0.6b"),
                 )
                 print("🪄 Using DoclingChunker for high-recall sentence packing.")
             except Exception as e:
-                print(f"⚠️  Failed to initialise DoclingChunker: {e}. Falling back to legacy chunker.")
-                self.chunker = MarkdownRecursiveChunker(
-                    max_chunk_size=chunk_size,
-                    min_chunk_size=min(chunk_overlap, chunk_size // 4),  # Sensible minimum
-                    tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B")
-                )
+                raise RuntimeError(
+                    f"Docling chunking was requested but could not initialize: {e}"
+                ) from e
         else:
             self.chunker = MarkdownRecursiveChunker(
                 max_chunk_size=chunk_size,
                 min_chunk_size=min(chunk_overlap, chunk_size // 4),  # Sensible minimum
+                overlap_tokens=chunk_overlap,
                 tokenizer_model=config.get("embedding_model_name", "Qwen/Qwen3-Embedding-0.6B")
             )
 
-        retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})
+        retriever_configs = {
+            **self.config.get("retrievers", {}),
+            **self.config.get("retrieval", {}),
+        }
         storage_config = self.config["storage"]
         
         # Get batch processing configuration
@@ -57,6 +58,9 @@ class IndexingPipeline:
         self.embedding_batch_size = indexing_config.get("embedding_batch_size", 50)
         self.enrichment_batch_size = indexing_config.get("enrichment_batch_size", 10)
         self.enable_progress_tracking = indexing_config.get("enable_progress_tracking", True)
+        self.contextual_chunks_enriched = 0
+        self.contextual_enrichment_failures = 0
+        self.overview_failures = 0
 
         # Treat dense retrieval as enabled by default unless explicitly disabled
         dense_cfg = retriever_configs.setdefault("dense", {})
@@ -118,15 +122,22 @@ class IndexingPipeline:
         # ------------------------------------------------------------------
         # Late-Chunk encoder initialisation (optional)
         # ------------------------------------------------------------------
-        self.latechunk_enabled = retriever_configs.get("latechunk", {}).get("enabled", False)
+        self.latechunk_cfg = (
+            retriever_configs.get("latechunk")
+            or retriever_configs.get("late_chunking")
+            or {}
+        )
+        self.latechunk_enabled = self.latechunk_cfg.get("enabled", False)
+        self.latechunk_vector_count = 0
+        self.latechunk_file_failures = 0
         if self.latechunk_enabled:
             try:
                 from rag_system.indexing.latechunk import LateChunkEncoder
-                self.latechunk_cfg = retriever_configs["latechunk"]
                 self.latechunk_encoder = LateChunkEncoder(model_name=self.config.get("embedding_model_name", "qwen3-embedding-0.6b"))
             except Exception as e:
-                print(f"⚠️  Failed to initialise LateChunkEncoder: {e}. Disabling latechunk retrieval.")
-                self.latechunk_enabled = False
+                raise RuntimeError(
+                    f"Late chunking was requested but could not initialize: {e}"
+                ) from e
 
     def run(self, file_paths: List[str] | None = None, *, documents: List[str] | None = None):
         """
@@ -141,6 +152,7 @@ class IndexingPipeline:
             raise TypeError("IndexingPipeline.run() expects 'file_paths' (or alias 'documents') argument")
 
         print(f"--- Starting indexing process for {len(file_paths)} files. ---")
+        self.overview_builder.reset()
         
         # Import progress tracking utilities
         from rag_system.utils.batch_processor import timer, ProgressTracker, estimate_memory_usage
@@ -180,9 +192,11 @@ class IndexingPipeline:
                         
                         # Build and persist document overview (non-blocking errors)
                         try:
-                            self.overview_builder.build_and_store(document_id, file_chunks)
+                            if not self.overview_builder.build_and_store(document_id, file_chunks):
+                                self.overview_failures += 1
                         except Exception as e:
                             print(f"  ⚠️  Failed to create overview for {document_id}: {e}")
+                            self.overview_failures += 1
                         
                         all_chunks.extend(file_chunks)
                         doc_chunks_map[document_id] = file_chunks  # save for late-chunk step
@@ -198,19 +212,29 @@ class IndexingPipeline:
 
             if not all_chunks:
                 print("No text chunks were generated. Skipping indexing.")
-                return
+                return {
+                    "status": "empty",
+                    "files_processed": 0,
+                    "chunks_indexed": 0,
+                    "latechunk": False,
+                    "latechunk_vectors": 0,
+                    "latechunk_files_failed": len(file_paths),
+                }
 
             print(f"\n✅ Generated {len(all_chunks)} text chunks total.")
             memory_mb = estimate_memory_usage(all_chunks)
             print(f"📊 Estimated memory usage: {memory_mb:.1f}MB")
 
-            retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})
+            retriever_configs = {
+                **self.config.get("retrievers", {}),
+                **self.config.get("retrieval", {}),
+            }
 
             # Step 3: Optional Contextual Enrichment (before indexing for consistency)
             enricher_config = self.config.get("contextual_enricher", {})
             enricher_enabled = enricher_config.get("enabled", False)
             
-            print(f"\n🔍 CONTEXTUAL ENRICHMENT DEBUG:")
+            print("\n🔍 CONTEXTUAL ENRICHMENT DEBUG:")
             print(f"   Config present: {bool(enricher_config)}")
             print(f"   Enabled: {enricher_enabled}")
             print(f"   Has enricher object: {hasattr(self, 'contextual_enricher')}")
@@ -218,7 +242,7 @@ class IndexingPipeline:
             if hasattr(self, 'contextual_enricher') and enricher_enabled:
                 with timer("Contextual Enrichment"):
                     window_size = enricher_config.get("window_size", 1)
-                    print(f"\n🚀 CONTEXTUAL ENRICHMENT ACTIVE!")
+                    print("\n🚀 CONTEXTUAL ENRICHMENT ACTIVE!")
                     print(f"   Window size: {window_size}")
                     print(f"   Model: {self.contextual_enricher.llm_model}")
                     print(f"   Batch size: {self.contextual_enricher.batch_size}")
@@ -228,20 +252,37 @@ class IndexingPipeline:
                     if all_chunks:
                         print(f"   Example BEFORE: '{all_chunks[0]['text'][:100]}...'")
                     
-                    # This modifies the 'text' field in each chunk dictionary
-                    all_chunks = self.contextual_enricher.enrich_chunks(all_chunks, window_size=window_size)
+                    # Enrich within each document boundary so neighboring chunks
+                    # can never leak context from another uploaded file.
+                    enriched_chunks = []
+                    for document_id, document_chunks in doc_chunks_map.items():
+                        enriched = self.contextual_enricher.enrich_chunks(
+                            document_chunks, window_size=window_size
+                        )
+                        doc_chunks_map[document_id] = enriched
+                        enriched_chunks.extend(enriched)
+                    all_chunks = enriched_chunks
+                    self.contextual_chunks_enriched = sum(
+                        1
+                        for chunk in all_chunks
+                        if (chunk.get("metadata") or {}).get("contextual_summary")
+                        not in {None, "", "N/A"}
+                    )
+                    self.contextual_enrichment_failures = (
+                        len(all_chunks) - self.contextual_chunks_enriched
+                    )
                     
                     if all_chunks:
                         print(f"   Example AFTER: '{all_chunks[0]['text'][:100]}...'")
                     
                     print(f"✅ Enriched {len(all_chunks)} chunks with context for indexing.")
             else:
-                print(f"⚠️  CONTEXTUAL ENRICHMENT SKIPPED:")
+                print("⚠️  CONTEXTUAL ENRICHMENT SKIPPED:")
                 if not hasattr(self, 'contextual_enricher'):
                     print(f"   Reason: No enricher object (config enabled={enricher_enabled})")
                 elif not enricher_enabled:
-                    print(f"   Reason: Disabled in config")
-                print(f"   Chunks will be indexed without contextual enrichment.")
+                    print("   Reason: Disabled in config")
+                print("   Chunks will be indexed without contextual enrichment.")
 
             # Step 4: Create BM25 Index from enriched chunks (for consistency with vector index)
             if hasattr(self, 'vector_indexer') and hasattr(self, 'embedding_generator'):
@@ -252,7 +293,7 @@ class IndexingPipeline:
                     embeddings = self.embedding_generator.generate(all_chunks)
                     
                     print(f"\n--- Indexing {len(embeddings)} vectors into LanceDB table: {table_name} ---")
-                    self.vector_indexer.index(table_name, all_chunks, embeddings)
+                    self.vector_indexer.index(table_name, all_chunks, embeddings, mode="replace")
                     print("✅ Vector embeddings indexed successfully")
 
                     # Create FTS index on the 'text' field after adding data
@@ -285,6 +326,9 @@ class IndexingPipeline:
                             lc_table_name = self.latechunk_cfg.get("lancedb_table_name", f"{table_name}_lc")
                             print(f"\n--- Generating late-chunk embeddings (table={lc_table_name}) ---")
 
+                            if lc_table_name in self.lancedb_manager.db.table_names():
+                                self.lancedb_manager.db.drop_table(lc_table_name)
+
                             total_lc_vecs = 0
                             for doc_id, doc_chunks in doc_chunks_map.items():
                                 # Build full text and span list
@@ -304,6 +348,7 @@ class IndexingPipeline:
                                     lc_vecs = self.latechunk_encoder.encode(full_doc, spans)
                                 except Exception as e:
                                     print(f"⚠️  LateChunk encode failed for {doc_id}: {e}")
+                                    self.latechunk_file_failures += 1
                                     continue
 
                                 if len(doc_chunks) == 0 or len(lc_vecs) == 0:
@@ -311,11 +356,18 @@ class IndexingPipeline:
                                     continue
                                 if len(lc_vecs) != len(doc_chunks):
                                     print(f"⚠️  Mismatch LC vecs ({len(lc_vecs)}) vs chunks ({len(doc_chunks)}) for {doc_id}. Skipping.")
+                                    self.latechunk_file_failures += 1
                                     continue
 
-                                self.vector_indexer.index(lc_table_name, doc_chunks, lc_vecs)
+                                self.vector_indexer.index(
+                                    lc_table_name,
+                                    doc_chunks,
+                                    lc_vecs,
+                                    mode="replace" if total_lc_vecs == 0 else "append",
+                                )
                                 total_lc_vecs += len(lc_vecs)
 
+                            self.latechunk_vector_count = total_lc_vecs
                             print(f"✅ Late-chunk vectors indexed: {total_lc_vecs}")
                 
             # Step 6: Knowledge Graph Extraction (Optional)
@@ -333,14 +385,33 @@ class IndexingPipeline:
                     
                     os.makedirs(os.path.dirname(graph_path), exist_ok=True)
                     nx.write_gml(G, graph_path)
-                    print(f"✅ Knowledge graph saved successfully.")
+                    print("✅ Knowledge graph saved successfully.")
                     
         print("\n--- ✅ Indexing Complete ---")
-        self._print_final_statistics(len(file_paths), len(all_chunks))
+        self._print_final_statistics(len(doc_chunks_map), len(all_chunks))
+        partial = (
+            len(doc_chunks_map) != len(file_paths)
+            or self.latechunk_file_failures > 0
+            or self.contextual_enrichment_failures > 0
+            or self.overview_failures > 0
+        )
+        return {
+            "status": "partial" if partial else "complete",
+            "files_processed": len(doc_chunks_map),
+            "files_requested": len(file_paths),
+            "chunks_indexed": len(all_chunks),
+            "table_name": self.config["storage"].get("text_table_name"),
+            "latechunk": self.latechunk_enabled,
+            "latechunk_vectors": self.latechunk_vector_count,
+            "latechunk_files_failed": self.latechunk_file_failures,
+            "contextual_chunks_enriched": self.contextual_chunks_enriched,
+            "contextual_enrichment_failures": self.contextual_enrichment_failures,
+            "overview_failures": self.overview_failures,
+        }
     
     def _print_final_statistics(self, num_files: int, num_chunks: int):
         """Print final indexing statistics"""
-        print(f"\n📈 Final Statistics:")
+        print("\n📈 Final Statistics:")
         print(f"  Files processed: {num_files}")
         print(f"  Chunks generated: {num_chunks}")
         print(f"  Average chunks per file: {num_chunks/num_files:.1f}")

@@ -1,6 +1,6 @@
 import time
 import logging
-from typing import List, Dict, Any, Callable, Optional, Iterator
+from typing import List, Dict, Any, Callable, Iterator
 from contextlib import contextmanager
 import gc
 

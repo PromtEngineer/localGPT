@@ -1,6 +1,4 @@
-import pymupdf
-from typing import List, Dict, Any, Tuple, Optional
-from PIL import Image
+from typing import List, Dict, Any, Optional
 import concurrent.futures
 import time
 import json
@@ -12,15 +10,11 @@ from threading import Lock
 
 from rag_system.utils.ollama_client import OllamaClient
 from rag_system.retrieval.retrievers import MultiVectorRetriever, GraphRetriever
-from rag_system.indexing.multimodal import LocalVisionModel
-from rag_system.indexing.representations import select_embedder
 from rag_system.indexing.embedders import LanceDBManager
 from rag_system.rerankers.reranker import QwenReranker
 from rag_system.rerankers.sentence_pruner import SentencePruner
 # from rag_system.indexing.chunk_store import ChunkStore
 
-import os
-from PIL import Image
 
 # ---------------------------------------------------------------------------
 # Thread-safety helpers
@@ -42,22 +36,29 @@ _sentence_pruner_lock: Lock = Lock()
 
 class RetrievalPipeline:
     """
-    Orchestrates the state-of-the-art multimodal RAG pipeline.
+    Orchestrates text, vector, lexical, reranking, and synthesis stages.
     """
     def __init__(self, config: Dict[str, Any], ollama_client: OllamaClient, ollama_config: Dict[str, Any]):
         self.config = config
         self.ollama_config = ollama_config
         self.ollama_client = ollama_client
         
-        # Support both legacy "retrievers" key and newer "retrieval" key
-        self.retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})
+        # Merge legacy and canonical retrieval sections instead of silently
+        # ignoring one when both are present.
+        self.retriever_configs = {
+            **self.config.get("retrievers", {}),
+            **self.config.get("retrieval", {}),
+        }
+        if "latechunk" not in self.retriever_configs:
+            self.retriever_configs["latechunk"] = self.retriever_configs.get(
+                "late_chunking", {}
+            )
         self.storage_config = self.config["storage"]
         
         # Defer initialization to just-in-time methods
         self.db_manager = None
         self.text_embedder = None
         self.dense_retriever = None
-        self.bm25_retriever = None
         # Use a private attribute to avoid clashing with the public property
         self._graph_retriever = None
         self.reranker = None
@@ -102,20 +103,6 @@ class RetrievalPipeline:
                 print(f"❌ Failed to initialise dense retriever: {e}")
                 self.dense_retriever = None
         return self.dense_retriever
-
-    def _get_bm25_retriever(self):
-        if self.bm25_retriever is None and self.retriever_configs.get("bm25", {}).get("enabled"):
-            try:
-                print(f"🔧 Lazily initializing BM25 retriever...")
-                self.bm25_retriever = BM25Retriever(
-                    index_path=self.storage_config["bm25_path"],
-                    index_name=self.retriever_configs["bm25"]["index_name"]
-                )
-                print("✅ BM25 retriever initialized successfully")
-            except Exception as e:
-                print(f"❌ Failed to initialize BM25 retriever on demand: {e}")
-                # Keep it None so we don't try again
-        return self.bm25_retriever
 
     def _get_graph_retriever(self):
         if self._graph_retriever is None and self.retriever_configs.get("graph", {}).get("enabled"):
@@ -183,7 +170,7 @@ class RetrievalPipeline:
         if document_id is None or chunk_index is None or chunk_index == -1:
             return [chunk]
 
-        table_name = self.config["storage"]["text_table_name"]
+        table_name = chunk.get("_table_name") or self.config["storage"]["text_table_name"]
         try:
             tbl = db_manager.get_table(table_name)
         except Exception:
@@ -195,7 +182,8 @@ class RetrievalPipeline:
         end_index = chunk_index + window_size
         
         # Construct the SQL filter for an efficient metadata-based search
-        sql_filter = f"document_id = '{document_id}' AND chunk_index >= {start_index} AND chunk_index <= {end_index}"
+        safe_document_id = str(document_id).replace("'", "''")
+        sql_filter = f"document_id = '{safe_document_id}' AND chunk_index >= {start_index} AND chunk_index <= {end_index}"
         
         try:
             # Execute a filter-only search, which is very fast on indexed metadata
@@ -256,16 +244,16 @@ ORIGINAL QUESTION: "{query}"
 
         return "".join(answer_parts)
 
-    def run(self, query: str, table_name: str = None, window_size_override: Optional[int] = None, event_callback=None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: str | List[str] = None, window_size_override: Optional[int] = None, event_callback=None) -> Dict[str, Any]:
         start_time = time.time()
         retrieval_k = self.config.get("retrieval_k", 10)
 
         logger = logging.getLogger(__name__)
         logger.debug("--- Running Hybrid Search for query '%s' (table=%s) ---", query, table_name or self.storage_config.get("text_table_name"))
         
-        # If a custom table_name is provided, propagate it to storage config so helper methods use it
-        if table_name:
-            self.storage_config["text_table_name"] = table_name
+        configured_table = self.storage_config["text_table_name"]
+        table_names = table_name if isinstance(table_name, list) else [table_name or configured_table]
+        table_names = [name for name in table_names if name]
 
         if event_callback:
             event_callback("retrieval_started", {})
@@ -274,28 +262,59 @@ ORIGINAL QUESTION: "{query}"
         # Get the LanceDB reranker for initial score fusion
         lancedb_reranker = self._get_reranker()
         
+        retrieval_cfg = self.config.get("retrieval", self.retriever_configs)
+        search_type = retrieval_cfg.get("search_type", "hybrid")
+        dense_weight = retrieval_cfg.get("dense", {}).get("weight", 0.7)
         retrieved_docs = []
         if dense_retriever:
-            retrieved_docs = dense_retriever.retrieve(
-                text_query=query,
-                table_name=table_name or self.storage_config["text_table_name"],
-                k=retrieval_k,
-                reranker=lancedb_reranker # Pass the reranker to enable hybrid search
-            )
+            for current_table in table_names:
+                table_docs = dense_retriever.retrieve(
+                    text_query=query,
+                    table_name=current_table,
+                    k=retrieval_k,
+                    reranker=lancedb_reranker,
+                    search_type=search_type,
+                    dense_weight=dense_weight,
+                )
+                for document in table_docs:
+                    document["_table_name"] = current_table
+                retrieved_docs.extend(table_docs)
+
+            # Each linked index contributes candidates, then the best unique
+            # chunks are selected globally rather than silently using one index.
+            retrieved_docs.sort(key=lambda document: float(document.get("score") or 0), reverse=True)
+            seen = set()
+            retrieved_docs = [
+                document
+                for document in retrieved_docs
+                if not (
+                    (identity := (document.get("_table_name"), document.get("chunk_id"))) in seen
+                    or seen.add(identity)
+                )
+            ][:retrieval_k]
 
         # ---------------------------------------------------------------
         # Late-Chunk retrieval (optional)
         # ---------------------------------------------------------------
         if self.retriever_configs.get("latechunk", {}).get("enabled"):
-            lc_table = self.retriever_configs["latechunk"].get("lancedb_table_name")
-            if lc_table:
+            configured_lc_table = self.retriever_configs["latechunk"].get("lancedb_table_name")
+            latechunk_tables = (
+                [configured_lc_table]
+                if configured_lc_table
+                else [f"{name}_lc" for name in table_names]
+            )
+            for lc_table in latechunk_tables:
                 try:
                     lc_docs = dense_retriever.retrieve(
                         text_query=query,
                         table_name=lc_table,
                         k=retrieval_k,
                         reranker=lancedb_reranker,
+                        search_type="vector",
+                        dense_weight=1.0,
                     )
+                    for document in lc_docs:
+                        document["_table_name"] = lc_table
                     retrieved_docs.extend(lc_docs)
                 except Exception as e:
                     print(f"⚠️  Late-chunk retrieval failed: {e}")

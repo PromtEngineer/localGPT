@@ -4,9 +4,6 @@ import sys
 import argparse
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
-
 # The sys.path manipulation has been removed to prevent import conflicts.
 # This script should be run as a module from the project root, e.g.:
 # python -m rag_system.main api
@@ -14,6 +11,9 @@ load_dotenv()
 from rag_system.agent.loop import Agent
 from rag_system.utils.ollama_client import OllamaClient
 # Configuration is now defined in this file - no import needed
+
+# Load environment variables before constructing module-level configuration.
+load_dotenv()
 
 # Advanced RAG System Configuration
 # ==================================
@@ -31,8 +31,8 @@ LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama")
 # Ollama Models Configuration (for inference via Ollama)
 OLLAMA_CONFIG = {
     "host": os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-    "generation_model": "qwen3:8b",  # Main text generation model
-    "enrichment_model": "qwen3:0.6b",  # Lightweight model for routing/enrichment
+    "generation_model": os.getenv("OLLAMA_GENERATION_MODEL", "qwen3:8b"),
+    "enrichment_model": os.getenv("OLLAMA_ENRICHMENT_MODEL", "qwen3:0.6b"),
 }
 
 WATSONX_CONFIG = {
@@ -47,7 +47,6 @@ WATSONX_CONFIG = {
 EXTERNAL_MODELS = {
     "embedding_model": "Qwen/Qwen3-Embedding-0.6B",  # HuggingFace embedding model (1024 dims - fresh start)
     "reranker_model": "answerdotai/answerai-colbert-small-v1",  # ColBERT reranker
-    "vision_model": "Qwen/Qwen-VL-Chat",  # Vision model for multimodal
     "fallback_reranker": "BAAI/bge-reranker-base",  # Backup reranker
 }
 
@@ -57,11 +56,10 @@ EXTERNAL_MODELS = {
 
 PIPELINE_CONFIGS = {
     "default": {
-        "description": "Production-ready pipeline with hybrid search, AI reranking, and verification",
+        "description": "Full pipeline with hybrid search, AI reranking, and verification",
         "storage": {
-            "lancedb_uri": "./lancedb",
+            "lancedb_uri": os.getenv("LANCEDB_PATH", "./lancedb"),
             "text_table_name": "text_pages_v3", 
-            "image_table_name": "image_pages_v3",
             "bm25_path": "./index_store/bm25",
             "graph_path": "./index_store/graph/knowledge_graph.gml"
         },
@@ -70,7 +68,7 @@ PIPELINE_CONFIGS = {
             "search_type": "hybrid",
             "late_chunking": {
                 "enabled": True,
-                "table_suffix": "_lc_v3"
+                "table_suffix": "_lc"
         },
             "dense": { 
                 "enabled": True,
@@ -87,8 +85,6 @@ PIPELINE_CONFIGS = {
         },
         # 🎯 EMBEDDING MODEL: Uses HuggingFace Qwen model directly
         "embedding_model_name": EXTERNAL_MODELS["embedding_model"],
-        # 🎯 VISION MODEL: For multimodal capabilities  
-        "vision_model_name": EXTERNAL_MODELS["vision_model"],
         # 🎯 RERANKER: AI-powered reranking with ColBERT
         "reranker": {
             "enabled": True, 
@@ -106,7 +102,7 @@ PIPELINE_CONFIGS = {
         "retrieval_k": 20,
         "context_window_size": 0,
         "semantic_cache_threshold": 0.98,
-        "cache_scope": "global",
+        "cache_scope": "session",
         # 🔧 Contextual enrichment configuration
         "contextual_enricher": {
             "enabled": True,
@@ -122,9 +118,8 @@ PIPELINE_CONFIGS = {
     "fast": {
         "description": "Speed-optimized pipeline with minimal overhead",
         "storage": {
-            "lancedb_uri": "./lancedb",
+            "lancedb_uri": os.getenv("LANCEDB_PATH", "./lancedb"),
             "text_table_name": "text_pages_v3",
-            "image_table_name": "image_pages_v3", 
             "bm25_path": "./index_store/bm25"
         },
         "retrieval": {
@@ -192,11 +187,11 @@ def get_agent(mode: str = "default") -> Agent:
             url=WATSONX_CONFIG["url"]
         )
         llm_config = WATSONX_CONFIG
-        print(f"🔧 Using Watson X backend with granite models")
+        print("🔧 Using Watson X backend with granite models")
     else:
         llm_client = OllamaClient(host=OLLAMA_CONFIG["host"])
         llm_config = OLLAMA_CONFIG
-        print(f"🔧 Using Ollama backend")
+        print("🔧 Using Ollama backend")
     
     # Get the configuration for the specified mode
     config = PIPELINE_CONFIGS.get(mode, PIPELINE_CONFIGS['default'])
@@ -307,7 +302,7 @@ def show_graph():
         plt.title("Knowledge Graph Visualization")
         plt.show()
     except Exception as e:
-        print(f"\nCould not visualize the graph. Matplotlib might not be installed or configured for your environment.")
+        print("\nCould not visualize the graph. Matplotlib might not be installed or configured for your environment.")
         print(f"Error: {e}")
 
 def run_api_server():

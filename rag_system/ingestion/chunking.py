@@ -1,6 +1,8 @@
 from typing import List, Dict, Any, Optional
 import re
 from transformers import AutoTokenizer
+from rag_system.ingestion.overlap import add_chunk_overlap
+from localgpt_runtime import trust_remote_code_enabled
 
 class MarkdownRecursiveChunker:
     """
@@ -8,9 +10,10 @@ class MarkdownRecursiveChunker:
     and embeds document-level metadata into each chunk.
     """
 
-    def __init__(self, max_chunk_size: int = 1500, min_chunk_size: int = 200, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
+    def __init__(self, max_chunk_size: int = 1500, min_chunk_size: int = 200, overlap_tokens: int = 0, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
         self.max_chunk_size = max_chunk_size
         self.min_chunk_size = min_chunk_size
+        self.overlap_tokens = overlap_tokens
         self.split_priority = ["\n## ", "\n### ", "\n#### ", "```", "\n\n"]
         
         repo_id = tokenizer_model
@@ -20,7 +23,9 @@ class MarkdownRecursiveChunker:
             }.get(tokenizer_model.lower(), tokenizer_model)
         
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                repo_id, trust_remote_code=trust_remote_code_enabled()
+            )
         except Exception as e:
             print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
             print("Falling back to character-based approximation (4 chars ≈ 1 token)")
@@ -34,7 +39,6 @@ class MarkdownRecursiveChunker:
             return max(1, len(text) // 4)
     
     def _split_text(self, text: str, separators: List[str]) -> List[str]:
-        final_chunks = []
         chunks_to_process = [text]
         
         for sep in separators:
@@ -107,6 +111,12 @@ class MarkdownRecursiveChunker:
                 current_chunk = chunk_text
         if current_chunk:
             merged_chunks_text.append(current_chunk)
+
+        merged_chunks_text = add_chunk_overlap(
+            merged_chunks_text,
+            overlap_tokens=self.overlap_tokens,
+            max_tokens=self.max_chunk_size,
+        )
 
         final_chunks = []
         for i, chunk_text in enumerate(merged_chunks_text):

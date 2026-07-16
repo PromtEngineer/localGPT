@@ -22,10 +22,6 @@ export function ModelSelect({ value, onChange, type, className, placeholder }: P
         if (!mounted) return;
         const list = type === 'generation' ? res.generation_models : res.embedding_models;
         setModels(list);
-        // Auto-select default qwen3:0.6b if available and not chosen yet
-        if(!value && list.includes('qwen3:0.6b')){
-          onChange('qwen3:0.6b');
-        }
         setLoading(false);
       })
       .catch((e) => {
@@ -37,6 +33,12 @@ export function ModelSelect({ value, onChange, type, className, placeholder }: P
       mounted = false;
     };
   }, [type]);
+
+  useEffect(() => {
+    if (!value && models.length > 0) {
+      onChange(models.includes('qwen3:0.6b') ? 'qwen3:0.6b' : models[0]);
+    }
+  }, [models, onChange, value]);
 
   if (loading) {
     return (
@@ -69,4 +71,4 @@ export function ModelSelect({ value, onChange, type, className, placeholder }: P
       ))}
     </select>
   );
-} 
+}

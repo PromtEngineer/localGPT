@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { chatAPI } from '@/lib/api';
+import { chatAPI, LocalGPTIndex } from '@/lib/api';
 
 interface Props {
   onSelect: (indexId: string) => void;
@@ -7,7 +7,7 @@ interface Props {
 }
 
 export default function IndexPicker({ onSelect, onClose }: Props) {
-  const [indexes, setIndexes] = useState<any[]>([]);
+  const [indexes, setIndexes] = useState<LocalGPTIndex[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -19,8 +19,8 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       try {
         const data = await chatAPI.listIndexes();
         setIndexes(data.indexes);
-      } catch (e: any) {
-        setError(e.message || 'Failed to load indexes');
+      } catch (error: unknown) {
+        setError(error instanceof Error ? error.message : 'Failed to load indexes');
       } finally {
         setLoading(false);
       }
@@ -35,8 +35,8 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       await chatAPI.deleteIndex(idxId);
       setIndexes(prev => prev.filter(i => i.id!==idxId));
       setMenuOpenId(null);
-    } catch (e:any){
-      alert(e.message || 'Failed to delete index');
+    } catch (error: unknown){
+      alert(error instanceof Error ? error.message : 'Failed to delete index');
     }
   }
 
@@ -91,4 +91,4 @@ export default function IndexPicker({ onSelect, onClose }: Props) {
       </div>
     </div>
   );
-} 
+}

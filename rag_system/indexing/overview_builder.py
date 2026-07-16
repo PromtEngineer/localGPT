@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-import os, json, logging, re
+import os
+import json
+import logging
+import re
 from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -30,7 +33,7 @@ class OverviewBuilder:
 
     def build_and_store(self, doc_id: str, chunks: List[Dict[str, Any]]):
         if not chunks:
-            return
+            return False
         head_text = "\n".join(c["text"] for c in chunks[: self.first_n] if c.get("text"))
         prompt = self.DEFAULT_PROMPT.format(text=head_text[:5000])  # safety cap
         try:
@@ -39,9 +42,19 @@ class OverviewBuilder:
             # Remove any lingering <think>...</think> blocks just in case
             summary = re.sub(r'<think[^>]*>.*?</think>', '', summary_raw, flags=re.IGNORECASE | re.DOTALL).strip()
         except Exception as e:
-            summary = f"Failed to generate overview: {e}"
+            logger.warning("Overview generation failed for %s: %s", doc_id, e)
+            return False
+        if not summary:
+            logger.warning("Overview generation returned no text for %s", doc_id)
+            return False
         record = {"doc_id": doc_id, "overview": summary.strip()}
         with open(self.out_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-        logger.info(f"📄 Overview generated for {doc_id} (stored in {self.out_path})") 
+        logger.info(f"📄 Overview generated for {doc_id} (stored in {self.out_path})")
+        return True
+
+    def reset(self) -> None:
+        """Start a fresh overview manifest for an idempotent index rebuild."""
+        with open(self.out_path, "w", encoding="utf-8"):
+            pass

@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 import json
-import time, asyncio, os
+import time
+import asyncio
 import numpy as np
 import concurrent.futures
 from cachetools import TTLCache, LRUCache
@@ -9,6 +10,7 @@ from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
 from rag_system.agent.verifier import Verifier
 from rag_system.retrieval.query_transformer import QueryDecomposer, GraphQueryTranslator
 from rag_system.retrieval.retrievers import GraphRetriever
+from localgpt_runtime import env_path
 
 class Agent:
     """
@@ -31,9 +33,10 @@ class Agent:
         self._cache_max_size = 100  # fallback size limit for manual eviction helper
         self._query_cache: TTLCache = TTLCache(maxsize=self._cache_max_size, ttl=300)
         self.semantic_cache_threshold = self.pipeline_configs.get("semantic_cache_threshold", 0.98)
-        # If set to "session", semantic-cache hits will be restricted to the same chat session.
-        # Otherwise (default "global") answers can be reused across sessions.
-        self.cache_scope = self.pipeline_configs.get("cache_scope", "global")  # 'global' or 'session'
+        # Cache entries are always namespaced by session and index selection.
+        # This prevents a semantically similar query from returning another
+        # user's private document answer.
+        self.cache_scope = self.pipeline_configs.get("cache_scope", "session")
         
         # 🚀 NEW: In-memory store for conversational history per session
         self.chat_histories: LRUCache = LRUCache(maxsize=100) # Stores history for 100 recent sessions
@@ -47,37 +50,17 @@ class Agent:
             print("Agent initialized (GraphRAG disabled).")
 
         # ---- Load document overviews for fast routing ----
-        self._global_overview_path = os.path.join("index_store", "overviews", "overviews.jsonl")
+        self.overview_dir = env_path("LOCALGPT_OVERVIEW_DIR", "index_store/overviews")
         self.doc_overviews: list[str] = []
         self._current_overview_session: str | None = None  # cache key to avoid rereading on every query
-        self._load_overviews(self._global_overview_path)
-
-    def _load_overviews(self, path: str):
-        """Helper to load overviews from a .jsonl file into self.doc_overviews."""
-        import json, os
-        self.doc_overviews.clear()
-        if not os.path.exists(path):
-            return
-        try:
-            with open(path, encoding="utf-8") as fh:
-                for line in fh:
-                    try:
-                        rec = json.loads(line)
-                        if isinstance(rec, dict) and rec.get("overview"):
-                            self.doc_overviews.append(rec["overview"].strip())
-                    except Exception:
-                        continue
-            print(f"📖 Loaded {len(self.doc_overviews)} overviews from {path}")
-        except Exception as e:
-            print(f"⚠️  Failed to load document overviews from {path}: {e}")
 
     def load_overviews_for_indexes(self, idx_ids: list[str]):
         """Aggregate overviews for the given indexes or fall back to global file."""
-        import os, json
+        import json
         aggregated: list[str] = []
         for idx in idx_ids:
-            path = os.path.join("index_store", "overviews", f"{idx}.jsonl")
-            if os.path.exists(path):
+            path = self.overview_dir / f"{idx}.jsonl"
+            if path.exists():
                 try:
                     with open(path, encoding="utf-8") as fh:
                         for line in fh:
@@ -97,14 +80,16 @@ class Agent:
             self._current_overview_session = "|".join(idx_ids)  # cache composite key so no overwrite
             print(f"📖 Loaded {len(aggregated)} overviews for indexes {[i[:8] for i in idx_ids]}")
         else:
-            print(f"⚠️  No per-index overviews found for {idx_ids}. Using global overview file.")
-            self._load_overviews(self._global_overview_path)
-            self._current_overview_session = "GLOBAL"
+            self.doc_overviews = []
+            self._current_overview_session = "|".join(idx_ids) or "NO_INDEXES"
+            print(f"⚠️  No scoped overviews found for indexes {idx_ids}.")
 
     def _cosine_similarity(self, v1: np.ndarray, v2: np.ndarray) -> float:
         """Computes cosine similarity between two vectors."""
-        if not isinstance(v1, np.ndarray): v1 = np.array(v1)
-        if not isinstance(v2, np.ndarray): v2 = np.array(v2)
+        if not isinstance(v1, np.ndarray):
+            v1 = np.array(v1)
+        if not isinstance(v2, np.ndarray):
+            v2 = np.array(v2)
         
         if v1.shape != v2.shape:
             raise ValueError("Vectors must have the same shape for cosine similarity.")
@@ -122,7 +107,7 @@ class Agent:
         
         return dot_product / (norm_v1 * norm_v2)
 
-    def _find_in_semantic_cache(self, query_embedding: np.ndarray, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def _find_in_semantic_cache(self, query_embedding: np.ndarray, namespace: str) -> Optional[Dict[str, Any]]:
         """Finds a semantically similar query in the cache."""
         if not self._query_cache or query_embedding is None:
             return None
@@ -132,10 +117,8 @@ class Agent:
             if cached_embedding is None:
                 continue
 
-            # Respect cache scoping: if scope is session-level, skip results from other sessions
-            if self.cache_scope == "session" and session_id is not None:
-                if cached_item.get("session_id") != session_id:
-                    continue
+            if cached_item.get("namespace") != namespace:
+                continue
 
             try:
                 similarity = self._cosine_similarity(query_embedding, cached_embedding)
@@ -173,22 +156,22 @@ Latest User Query: "{query}"
         print(f"🔍 ROUTING DEBUG: Starting triage for query: '{query[:100]}...'")
         
         # 1️⃣ Fast routing using precomputed overviews (if available)
-        print(f"📖 ROUTING DEBUG: Attempting overview-based routing...")
+        print("📖 ROUTING DEBUG: Attempting overview-based routing...")
         routed = self._route_via_overviews(query)
         if routed:
             print(f"✅ ROUTING DEBUG: Overview routing decided: '{routed}'")
             return routed
         else:
-            print(f"❌ ROUTING DEBUG: Overview routing returned None, falling back to LLM triage")
+            print("❌ ROUTING DEBUG: Overview routing returned None, falling back to LLM triage")
 
         if history:
             # If there's history, the query is likely a follow-up, so we default to RAG.
             # A more advanced implementation could use an LLM to see if the new query
             # changes the topic entirely.
-            print(f"📜 ROUTING DEBUG: History exists, defaulting to 'rag_query'")
+            print("📜 ROUTING DEBUG: History exists, defaulting to 'rag_query'")
             return "rag_query"
 
-        print(f"🤖 ROUTING DEBUG: No history, using LLM fallback triage...")
+        print("🤖 ROUTING DEBUG: No history, using LLM fallback triage...")
         prompt = f"""
 You are a query routing expert. Analyze the user's question and decide which backend should handle it.
 
@@ -215,7 +198,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
             print(f"🤖 ROUTING DEBUG: LLM fallback triage decided: '{decision}'")
             return decision
         except json.JSONDecodeError:
-            print(f"❌ ROUTING DEBUG: LLM fallback triage JSON parsing failed, defaulting to 'rag_query'")
+            print("❌ ROUTING DEBUG: LLM fallback triage JSON parsing failed, defaulting to 'rag_query'")
             return "rag_query"
 
     def _run_graph_query(self, query: str, history: list) -> Dict[str, Any]:
@@ -248,7 +231,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
         }
 
     # ---------------- Public sync API (kept for backwards compatibility) --------------
-    def run(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: str | list[str] = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
 
@@ -257,7 +240,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
         return asyncio.run(self._run_async(query, table_name, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback))
 
     # ---------------- Main async implementation --------------------------------------
-    async def _run_async(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_async(self, query: str, table_name: str | list[str] = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         start_time = time.time()
         
         # Emit analyze event at the start
@@ -266,18 +249,6 @@ Respond with JSON: {{"category": "<your_choice>"}}
         
         # 🚀 NEW: Get conversation history
         history = self.chat_histories.get(session_id, []) if session_id else []
-        
-        # 🔄 Refresh overviews for this session if available
-        # if session_id and session_id != getattr(self, "_current_overview_session", None):
-        #     candidate_path = os.path.join("index_store", "overviews", f"{session_id}.jsonl")
-        #     if os.path.exists(candidate_path):
-        #         self._load_overviews(candidate_path)
-        #         self._current_overview_session = session_id
-        #     else:
-        #         # Fall back to global overviews if per-session file not found
-        #         if self._current_overview_session != "GLOBAL":
-        #             self._load_overviews(self._global_overview_path)
-        #             self._current_overview_session = "GLOBAL"
         
         query_type = await self._triage_query_async(query, history)
         print(f"🎯 ROUTING DEBUG: Final triage decision: '{query_type}'")
@@ -338,7 +309,17 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     # Some embedders return a list – convert if necessary
                     query_embedding = np.array(query_embedding_list[0])
 
-                cached_result = self._find_in_semantic_cache(query_embedding, session_id)
+                tables = table_name if isinstance(table_name, list) else [table_name]
+                cache_namespace = json.dumps(
+                    {
+                        "session": session_id or "anonymous",
+                        "tables": sorted(name for name in tables if name),
+                        "search_type": search_type or "hybrid",
+                        "dense_weight": dense_weight,
+                    },
+                    sort_keys=True,
+                )
+                cached_result = self._find_in_semantic_cache(query_embedding, cache_namespace)
 
                 if cached_result:
                     # Update history even on cache hit
@@ -348,7 +329,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     return cached_result
 
         if query_type == "direct_answer":
-            print(f"✅ ROUTING DEBUG: Executing DIRECT_ANSWER path")
+            print("✅ ROUTING DEBUG: Executing DIRECT_ANSWER path")
             if event_callback:
                 event_callback("direct_answer", {})
 
@@ -378,7 +359,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
             result = {"answer": final_answer, "source_documents": []}
         
         elif query_type == "graph_query" and hasattr(self, 'graph_retriever'):
-            print(f"✅ ROUTING DEBUG: Executing GRAPH_QUERY path")
+            print("✅ ROUTING DEBUG: Executing GRAPH_QUERY path")
             result = self._run_graph_query(query, history)
 
         # --- RAG Query Processing with Optional Query Decomposition ---
@@ -390,7 +371,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 decomp_enabled = query_decompose
 
             if decomp_enabled:
-                print(f"\n--- Query Decomposition Enabled ---")
+                print("\n--- Query Decomposition Enabled ---")
                 # Use the raw user query (without conversation history) for decomposition to avoid leakage of prior context
                 # Pass the last 5 conversation turns for context resolution within the decomposer
                 recent_history = history[-5:] if history else []
@@ -615,6 +596,8 @@ FINAL ANSWER:
                 print("⚠️  Verifier returned 0 confidence – likely JSON parse error; omitting tags.")
         else:
             print("🚀 Skipping verification for speed or lack of sources")
+
+        result["route"] = query_type
         
         # 🚀 NEW: Update history
         if session_id:
@@ -627,7 +610,7 @@ FINAL ANSWER:
             self._query_cache[cache_key] = {
                 "embedding": query_embedding,
                 "result": result,
-                "session_id": session_id,
+                "namespace": cache_namespace,
             }
         
         total_time = time.time() - start_time
@@ -640,7 +623,7 @@ FINAL ANSWER:
         """Use document overviews and a small model to decide routing.
         Returns 'rag_query', 'direct_answer', or None if unsure/disabled."""
         if not self.doc_overviews:
-            print(f"📖 ROUTING DEBUG: No document overviews available, returning None")
+            print("📖 ROUTING DEBUG: No document overviews available, returning None")
             return None
         
         print(f"📖 ROUTING DEBUG: Found {len(self.doc_overviews)} document overviews, using LLM routing...")
@@ -649,16 +632,17 @@ FINAL ANSWER:
         overviews_snip = self.doc_overviews[:40]
         overviews_block = "\n".join(f"[{i+1}] {ov}" for i, ov in enumerate(overviews_snip))
 
-        router_prompt = f"""Task: Route query to correct system.
+        router_prompt = f"""Task: Route query to the correct system.
 
-Documents available: Invoices, DeepSeek-V3 research papers
+Document overviews:
+{overviews_block}
 
 Query: "{query}"
 
 Is this query asking about:
 A) Greetings/social: "Hi", "Hello", "Thanks", "What's up", "How are you"
 B) General knowledge: "CEO of Tesla", "capital of France", "what is 2+2"  
-C) Document content: invoice amounts, DeepSeek-V3 details, companies mentioned
+C) Content related to any document overview above
 
 If A or B → {{"category": "direct_answer"}}
 If C → {{"category": "rag_query"}}

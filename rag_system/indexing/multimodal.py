@@ -2,7 +2,6 @@ import fitz  # PyMuPDF
 from PIL import Image
 import torch
 import os
-from typing import List, Dict, Any
 
 from rag_system.indexing.embedders import LanceDBManager, VectorIndexer
 from rag_system.indexing.representations import QwenEmbedder

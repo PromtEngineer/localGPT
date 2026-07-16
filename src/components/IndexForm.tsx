@@ -21,9 +21,8 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const [enableEnrich, setEnableEnrich] = useState(true);
   const [retrievalMode, setRetrievalMode] = useState<'hybrid' | 'vector' | 'fts'>('hybrid');
   const [embeddingModel, setEmbeddingModel] = useState<string>();
-  const DEFAULT_LLM = 'qwen3:0.6b';
-  const [enrichModel, setEnrichModel] = useState<string>(DEFAULT_LLM);
-  const [overviewModel, setOverviewModel] = useState<string>(DEFAULT_LLM);
+  const [enrichModel, setEnrichModel] = useState<string>();
+  const [overviewModel, setOverviewModel] = useState<string>();
   const [batchSizeEmbed, setBatchSizeEmbed] = useState(64);
   const [batchSizeEnrich, setBatchSizeEnrich] = useState(64);
   const [loading, setLoading] = useState(false);
@@ -33,16 +32,18 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const handleSubmit = async () => {
     if (!files) return;
     setLoading(true);
+    let createdIndexId: string | undefined;
     try {
       // 1. create index record
       const { index_id } = await chatAPI.createIndex(indexName);
+      createdIndexId = index_id;
 
       // 2. upload files to index
       await chatAPI.uploadFilesToIndex(index_id, Array.from(files));
 
       // 3. build index (run pipeline) with ALL OPTIONS
-      await chatAPI.buildIndex(index_id, { 
-        latechunk: enableLateChunk, 
+      const buildResult = await chatAPI.buildIndex(index_id, {
+        latechunk: enableLateChunk,
         doclingChunk: enableDoclingChunk,
         chunkSize: chunkSize,
         chunkOverlap: chunkOverlap,
@@ -60,10 +61,21 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       const session = await chatAPI.createSession(indexName);
       await chatAPI.linkIndexToSession(session.id, index_id);
 
+      if (buildResult.status === 'partial') {
+        alert('The index is usable, but one or more documents or optional processing stages failed. Review the index metadata for details.');
+      }
+
       // 5. callback
       if (onIndexed) onIndexed(session);
     } catch (e) {
       console.error('Indexing failed', e);
+      if (createdIndexId) {
+        try {
+          await chatAPI.deleteIndex(createdIndexId);
+        } catch (cleanupError) {
+          console.error('Failed to clean up incomplete index', cleanupError);
+        }
+      }
       setLoading(false);
       alert('Indexing failed. See console for details.');
     }
@@ -90,7 +102,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       {/* Upload & defaults */}
       <div className="space-y-4">
         <div>
-          <label className="block text-xs uppercase tracking-wide text-gray-300 mb-1">PDF files</label>
+          <label className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Documents</label>
           <label
             htmlFor="file-upload"
             className="flex flex-col items-center justify-center w-full h-32 border border-dashed border-white/20 rounded cursor-pointer hover:border-white/40 transition"
@@ -99,7 +111,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
           >
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-2 text-white/80"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="16"/></svg>
             <span className="text-xs text-gray-400">Drag & Drop documents here or click to browse</span>
-            <input id="file-upload" type="file" accept="application/pdf,.docx,.doc,.html,.htm,.md,.txt" multiple className="hidden" onChange={(e)=>setFiles(e.target.files)} />
+            <input id="file-upload" type="file" accept=".pdf,.docx,.html,.htm,.md,.txt" multiple className="hidden" onChange={(e)=>setFiles(e.target.files)} />
           </label>
           {files && <p className="mt-1 text-xs text-green-400">{files.length} file(s) selected</p>}
         </div>
@@ -141,8 +153,8 @@ export function IndexForm({ onClose, onIndexed }: Props) {
           <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
               <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Embedding model <InfoTooltip text="Model used to generate dense vectors stored in the index." size={12} /></label>
-              <ModelSelect 
-                value={embeddingModel} 
+              <ModelSelect
+                value={embeddingModel}
                 onChange={setEmbeddingModel}
                 type="embedding"
                 placeholder="Select embedding model"
@@ -150,7 +162,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
             </div>
             <div>
               <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Overview LLM <InfoTooltip text="LLM that writes the short overview paragraph per document." size={12} /></label>
-              <ModelSelect 
+              <ModelSelect
                 value={overviewModel}
                 onChange={setOverviewModel}
                 type="generation"
@@ -173,7 +185,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
             </div>
             <div>
               <label className="block text-xs mb-1 text-gray-400">Retrieval LLM</label>
-              <ModelSelect 
+              <ModelSelect
                 value={enrichModel}
                 onChange={setEnrichModel}
                 type="generation"
@@ -220,4 +232,4 @@ export function IndexForm({ onClose, onIndexed }: Props) {
       </div>
     </div>
   );
-}                        
+}

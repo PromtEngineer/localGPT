@@ -1,5 +1,7 @@
 FROM node:18-alpine
 
+RUN apk add --no-cache curl
+
 # Set working directory
 WORKDIR /app
 
@@ -16,8 +18,7 @@ COPY tailwind.config.js ./
 COPY postcss.config.mjs ./
 COPY eslint.config.mjs ./
 
-# Build the application (skip linting for Docker)
-ENV NEXT_LINT=false
+# Build the application, including lint and type validation.
 RUN npm run build
 
 # Expose port
@@ -28,4 +29,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3000 || exit 1
 
 # Start the application
-CMD ["npm", "start"] 
+CMD ["npm", "start"]

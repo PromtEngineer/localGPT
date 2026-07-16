@@ -1,12 +1,14 @@
 {
-  "name": "multimodal_rag",
+  "name": "localgpt",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
@@ -18,7 +20,7 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.16.0",
     "lucide-react": "^0.513.0",
-    "next": "15.3.3",
+    "next": "^15.5.20",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
@@ -32,9 +34,14 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "15.3.3",
+    "eslint-config-next": "15.5.20",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
+  },
+  "overrides": {
+    "brace-expansion@1.1.11": "1.1.13",
+    "postcss@8.4.31": "8.5.10"
   }
 }

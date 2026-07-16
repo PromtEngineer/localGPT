@@ -1,87 +1,35 @@
-# RAG System – Improvement Road-map
+# Remaining improvement plan
 
-_Revision: 2025-07-05_
+This file records limitations that still exist after the implementation/documentation alignment pass. It is a roadmap, not a list of current capabilities.
 
-This document captures high-impact enhancements identified during the July 2025 code-review.  Items are grouped by theme and include a short rationale plus suggested implementation notes.  **No code has been changed – this file is planning only.**
+## High priority
 
----
+1. Add a true model-backed end-to-end test fixture that builds a small index, restarts both services, queries it through the backend SSE endpoint, checks citations, and deletes it. Current automated tests cover contracts and core logic without downloading multi-gigabyte weights.
+2. Replace the shared bearer token with real user identity and per-session/index authorization before any multi-user or public deployment.
+3. Add structured schema migrations for SQLite and versioned migrations for LanceDB artifacts. Startup currently performs only backward-compatible schema/index cleanup.
+4. Add upload content inspection: MIME sniffing, decompression/document complexity limits, malware scanning hooks, and OCR execution limits. Extension and byte limits alone do not make untrusted documents safe.
+5. Introduce cancellation, job persistence, and resumability for long index builds. An interrupted process currently leaves the database build status recoverable only by retrying the rebuild.
 
-## 1. Retrieval Accuracy & Speed
+## Architecture and scale
 
-| ID | Item | Rationale | Notes |
-|----|------|-----------|-------|
-| 1.1 | Late-chunk result merging | Returned snippets can be single late-chunks → fragmented. | After retrieval, gather sibling chunks (±1) and concatenate before reranking / display. |
-| 1.2 | Tiered retrieval (ANN pre-filter) | Large indexes → LanceDB full scan can be slow. | Use in-memory FAISS/HNSW to narrow to top-N, then exact LanceDB search. |
-| 1.3 | Dynamic fusion weights | Different corpora favour dense vs BM25 differently. | Learn weight on small validation set; store in index `metadata`. |
-| 1.4 | Query expansion via KG | Use extracted entities to enrich queries. | Requires Graph-RAG path clean-up first. |
+1. Replace process-global mutable agent/index configuration and the protective serialization locks with request-scoped immutable pipelines or a keyed worker pool.
+2. Move indexing to a durable job queue with progress persistence rather than holding an HTTP request for the whole build.
+3. Add an artifact transaction strategy so SQLite metadata, LanceDB tables, overviews, and original uploads commit or roll back as one logical build.
+4. Add storage quotas, lifecycle/garbage collection, and reconciliation for orphaned uploads/vector tables.
+5. Add observability: structured logs with request IDs, latency histograms by pipeline stage, model/cache metrics, and redaction rules.
 
-## 2. Routing / Triage
+## Retrieval quality
 
-| ID | Item | Rationale |
-|----|------|-----------|
-| 2.1 | Embed + cache document overviews | LLM router costs tokens; cosine-similarity pre-check is cheaper. |
-| 2.2 | Session-level routing memo | Avoid repeated LLM triage for follow-up queries. |
-| 2.3 | Remove legacy pattern rules | Simplifies maintenance once overview & ML routing mature. |
+1. Calibrate weighted RRF and reranking on a maintained evaluation set rather than relying on universal defaults.
+2. Add citation entailment checks that bind answer spans to exact source rows; retrieval references alone do not prove every claim is supported.
+3. Add language-aware tokenization for lexical search and chunk sizing. Current overlap is a deterministic word-token window.
+4. Evaluate semantic-cache false positives on a maintained query set; rebuilds already invalidate the process-wide query cache.
+5. Complete graph extraction/retrieval or remove the dormant graph configuration surface.
 
-## 3. Indexing Pipeline
+## Product and code quality
 
-| ID | Item | Rationale |
-|----|------|-----------|
-| 3.1 | Parallel document conversion | PDF→MD + chunking is serial today; speed gains possible. |
-| 3.2 | Incremental indexing | Re-embedding whole corpus wastes time. |
-| 3.3 | Auto GPU dtype selection | Use FP16 on CUDA / MPS for memory and speed. |
-| 3.4 | Post-build health check | Catch broken indexes (dim mismatch etc.) early. |
-
-## 4. Embedding Model Management
-
-* **Registry file** mapping tag → dims/source/license.  UI & backend validate against it.
-* **Embedder pool** caches loaded HF/Ollama weights per model to save RAM.
-
-## 5. Database & Storage
-
-* LanceDB table GC for orphaned tables.
-* Scheduled SQLite `VACUUM` when fragmentation > X %.
-
-## 6. Observability & Ops
-
-* JSON structured logging.
-* `/metrics` endpoint for Prometheus.
-* Deep health-probe (`/health/deep`) exercising end-to-end query.
-
-## 7. Front-end UX
-
-* SSE-driven progress bar for indexing.
-* Matched-term highlighting in retrieved snippets.
-* Preset buttons (Fast / Balanced / High-Recall) for retrieval settings.
-
-## 8. Testing & CI
-
-* Replace deleted BM25 tests with LanceDB hybrid tests.
-* Integration test: build → query → assert ≥1 doc.
-* GitHub Action that spins up Ollama, pulls small embedding model, runs smoke test.
-
-## 9. Codebase Hygiene
-
-* Graph-RAG integration (currently disabled, can be implemented if needed).
-* Consolidate duplicate config keys (`embedding_model_name`, etc.).
-* Run `mypy --strict`, pylint, and black in CI.
-
----
-
-### 🧹 System Cleanup (Priority: **HIGH**)
-Reduce complexity and improve maintainability.
-
-* **✅ COMPLETED**: Remove experimental DSPy integration and unused modules (35+ files removed)  
-* **✅ COMPLETED**: Clean up duplicate or obsolete documentation files
-* **✅ COMPLETED**: Remove unused import statements and dependencies  
-* **✅ COMPLETED**: Consolidate similar configuration files
-* **✅ COMPLETED**: Remove broken or non-functional ReAct agent implementation
-
-### Priority Matrix (suggested order)
-
-1.  **Critical reliability**: 3.4, 5.1, 9.2
-2.  **User-visible wins**: 1.1, 7.1, 7.2
-3.  **Performance**: 1.2, 3.1, 3.3
-4.  **Long-term maintainability**: 2.3, 9.1, 9.3
-
-Feel free to rearrange based on team objectives and resource availability. 
+1. Generate the existing TypeScript streaming/citation types and Python request validation from one versioned API schema so the two implementations cannot drift.
+2. Replace ad-hoc `http.server` handlers with a framework that provides request schemas, multipart streaming, cancellation, OpenAPI generation, and middleware.
+3. Add accessibility and browser-flow tests for index creation, linking, upload failures, streaming reconnection, and keyboard navigation.
+4. Decide whether full page-image/VLM retrieval is a product requirement. If so, integrate it end to end with storage, retrieval fusion, citations, resource limits, UI, and tests; otherwise delete the experimental scaffold.
+5. Pin or digest-lock Docker base images and add dependency/container vulnerability scanning in CI.
