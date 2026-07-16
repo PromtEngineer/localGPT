@@ -1,18 +1,16 @@
-# LocalGPT Backend
+# LocalGPT backend
 
-The backend on port 8000 is the browser-facing API and the sole owner of SQLite chat persistence. It provides health/model discovery, sessions, messages, SSE streaming, uploads, index lifecycle, and session-to-index links. It delegates retrieval/indexing to the internal RAG API configured by `RAG_API_URL`.
-
-Start it from the repository root:
+The browser-facing service is a typed FastAPI application on port 8000. It owns sessions, messages, index metadata, durable runs/events/checkpoints, artifacts, skills, tool policy, and OpenAPI. Retrieval and vector indexing are delegated to the internal RAG worker configured by `RAG_API_URL`.
 
 ```bash
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 python -m backend.server
 ```
 
-The default bind address is `127.0.0.1:8000`. Configure it with `LOCALGPT_BACKEND_HOST` and `LOCALGPT_BACKEND_PORT`.
+The default bind is `127.0.0.1:8000`; use `LOCALGPT_BACKEND_HOST` and `LOCALGPT_BACKEND_PORT`. Interactive API docs are at `/docs`. Regenerate the checked-in schema and client types with `npm run api:types`.
 
-The Next.js frontend calls its same-origin `/api/backend/*` proxy. In Docker, that proxy uses `BACKEND_INTERNAL_URL=http://backend:8000`. If `LOCALGPT_API_TOKEN` is set, the proxy injects the bearer token server-side.
+The agent runtime supports Ollama and OpenAI-compatible generation providers, explicit schema-validated tools, configured MCP/read-only database connectors, safe public-web tools, content-addressed artifacts, immutable skills, and optional Docker-isolated Python. Request permissions only narrow `LOCALGPT_AGENT_PERMISSIONS`; they cannot grant new server authority. Side-effecting tools require explicit approval.
 
-Uploads are stored under `LOCALGPT_UPLOAD_DIR`, restricted to supported document extensions, and limited by `LOCALGPT_MAX_UPLOAD_BYTES`. Session and index uploads both pass through the same validator.
+Uploads are bounded, inspected for obvious signature/type mismatches and pathological Office archives, stored beneath `LOCALGPT_UPLOAD_DIR`, and recorded as artifacts with provenance. This preflight is not malware scanning; public deployments should add a scanner at the upload boundary.
 
-See [`../Documentation/api_reference.md`](../Documentation/api_reference.md) for routes and payloads, and [`../Documentation/system_overview.md`](../Documentation/system_overview.md) for ownership and storage boundaries.
+See [the API reference](../Documentation/api_reference.md) and [architecture overview](../Documentation/architecture_overview.md).

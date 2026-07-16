@@ -2,7 +2,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from localgpt_runtime import UploadRejected, safe_upload_path, validate_index_file_paths
+from localgpt_runtime import (
+    UploadRejected,
+    inspect_upload_content,
+    safe_upload_path,
+    validate_index_file_paths,
+)
 
 
 class SafeUploadPathTests(unittest.TestCase):
@@ -17,6 +22,14 @@ class SafeUploadPathTests(unittest.TestCase):
         ) as outside:
             with self.assertRaises(UploadRejected):
                 validate_index_file_paths([outside.name], Path(upload_dir))
+
+    def test_rejects_executable_content_disguised_as_text(self):
+        with self.assertRaises(UploadRejected):
+            inspect_upload_content("notes.txt", b"MZ\x00\x00binary")
+
+    def test_rejects_invalid_pdf_signature(self):
+        with self.assertRaises(UploadRejected):
+            inspect_upload_content("paper.pdf", b"not a pdf")
 
 
 if __name__ == "__main__":

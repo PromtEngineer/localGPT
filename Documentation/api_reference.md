@@ -1,6 +1,6 @@
 # LocalGPT API Reference
 
-This reference matches the current handlers. The browser calls the same-origin Next.js `/api/backend/*` proxy, which forwards to the backend on `http://127.0.0.1:8000`. Port `8001` is an internal RAG service.
+This reference matches the FastAPI/OpenAPI implementation. The browser calls the same-origin Next.js `/api/backend/*` proxy, which forwards to the backend on `http://127.0.0.1:8000`. Port `8001` is an internal RAG worker. Interactive docs are at `/docs`; the checked-in contract is `Documentation/openapi.json`.
 
 ## Security and runtime boundaries
 
@@ -8,7 +8,7 @@ This reference matches the current handlers. The browser calls the same-origin N
 - CORS accepts the comma-separated `LOCALGPT_ALLOWED_ORIGINS` list. The default allows the frontend on `localhost:3000` and `127.0.0.1:3000`.
 - If `LOCALGPT_API_TOKEN` is set, direct API clients send `Authorization: Bearer <token>`. The Next.js proxy injects this server-side, so the token is never bundled into browser JavaScript.
 - The token-injecting proxy rejects cross-origin mutation requests by comparing the request `Origin` with the application host.
-- Uploads are restricted to PDF, DOCX, HTML, Markdown, and text files, default to 50 MiB maximum, and are stored beneath `LOCALGPT_UPLOAD_DIR`.
+- Uploads support PDF, DOCX, PPTX, XLSX, HTML, Markdown, text, CSV, JSON, and EML. They default to 50 MiB maximum, are checked for obvious signature/type mismatches and pathological Office archives, and are stored beneath `LOCALGPT_UPLOAD_DIR`.
 - The RAG `/index` endpoint accepts only existing paths beneath that upload directory. It is not a general server-side file reader.
 
 ## Backend API
@@ -34,6 +34,40 @@ Base URL: `http://127.0.0.1:8000`
 | POST | `/indexes/{id}/build` | Build or replace an index |
 | GET | `/models` | List generation and embedding models |
 
+## Durable v1 API
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST/GET | `/v1/runs` | Submit or list durable message runs |
+| GET/DELETE | `/v1/runs/{id}` | Read or delete a terminal run |
+| GET | `/v1/runs/{id}/events` | Replay/follow SSE events; resume with `Last-Event-ID` |
+| POST | `/v1/runs/{id}/cancel` | Request cooperative cancellation |
+| POST | `/v1/runs/{id}/retry` | Create a new run from a failed/cancelled/complete request |
+| POST | `/v1/index-jobs` | Submit a durable index build without holding the request open |
+| GET | `/v1/models` | Provider-neutral capability discovery |
+| POST | `/v1/embeddings` | Ollama-compatible batch embedding |
+| GET | `/v1/tools` | List registered JSON-schema tool contracts |
+| POST | `/v1/tools/{name}/execute` | Execute a tool under explicit permissions/approval |
+| GET/POST | `/v1/skills` | List or create immutable skill definitions |
+| POST | `/v1/skills/{id}/versions` | Add an immutable version |
+| GET | `/v1/artifacts` | List session- or index-scoped artifacts |
+| GET | `/v1/artifacts/{id}` | Download with matching `session_id` or `index_id` scope |
+| GET | `/v1/connectors` | List configured connector metadata (never secrets) |
+
+`POST /v1/runs` accepts `message` or a provider-neutral `messages` array, model settings, bounded iteration/tool/time budgets, an allowlist of tools, skill IDs, requested permissions, explicitly approved tools, and retrieval overrides. Server permissions always cap request permissions.
+
+Events are append-only and use normal SSE fields:
+
+```text
+id: 41
+event: tool.completed
+data: {"tool":"search_knowledge","result":{...}}
+
+id: 42
+event: run.completed
+data: {"status":"completed"}
+```
+
 ### Session chat
 
 ```json
@@ -57,7 +91,7 @@ Base URL: `http://127.0.0.1:8000`
 
 The non-streaming response contains `response`, `source_documents`, `route`, `used_rag`, `user_message_id`, `ai_message_id`, and the updated `session`.
 
-The streaming endpoint accepts `query` instead of `message`. Events have the form:
+The legacy streaming endpoint accepts either `query` or `message`. Events have the form:
 
 ```text
 data: {"type":"token","data":{"text":"..."}}
@@ -112,7 +146,7 @@ The canonical `/index` body uses snake_case:
 ```json
 {
   "file_paths": ["/absolute/path/beneath/LOCALGPT_UPLOAD_DIR/document.pdf"],
-  "session_id": "index-id",
+  "index_id": "index-id",
   "table_name": "text_pages_index-id",
   "chunk_size": 512,
   "chunk_overlap": 64,

@@ -1,5 +1,12 @@
 requests
 python-dotenv
+fastapi>=0.129,<1
+uvicorn[standard]>=0.40,<1
+python-multipart>=0.0.20,<1
+jsonschema>=4.23,<5
+PyYAML>=6,<7
+mcp>=1.27,<2
+SQLAlchemy>=2,<3
 PyPDF2
 PyMuPDF
 Pillow

@@ -1,8 +1,6 @@
 from typing import List, Dict, Any, Protocol
 import numpy as np
 from localgpt_runtime import trust_remote_code_enabled
-from transformers import AutoModel, AutoTokenizer
-import torch
 import os
 
 # We keep the protocol to ensure a consistent interface
@@ -18,6 +16,15 @@ class QwenEmbedder(EmbeddingModel):
     An embedding model that uses a local Hugging Face transformer model.
     """
     def __init__(self, model_name: str = "Qwen/Qwen3-Embedding-0.6B"):
+        try:
+            import torch
+            from transformers import AutoModel, AutoTokenizer
+        except ImportError as exc:
+            raise RuntimeError(
+                "Hugging Face embedding models require torch and transformers; "
+                "use an Ollama model tag for the dependency-light local path"
+            ) from exc
+        self.torch = torch
         self.model_name = model_name
         # Auto-select the best available device: CUDA > MPS > CPU
         if torch.cuda.is_available():
@@ -47,6 +54,7 @@ class QwenEmbedder(EmbeddingModel):
         self.tokenizer, self.model = _MODEL_CACHE[model_name]
 
     def create_embeddings(self, texts: List[str]) -> np.ndarray:
+        torch = self.torch
         print(f"Generating {len(texts)} embeddings with {self.model_name} model...")
         inputs = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt").to(self.device)
         with torch.no_grad():

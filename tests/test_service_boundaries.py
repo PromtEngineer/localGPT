@@ -18,21 +18,23 @@ class ServiceBoundaryTests(unittest.TestCase):
         self.assertEqual([], message_writes)
 
     def test_index_deletion_is_delegated_to_rag_artifact_owner(self):
-        backend_source = Path("backend/server.py").read_text(encoding="utf-8")
+        backend_source = Path("backend/api.py").read_text(encoding="utf-8")
         rag_source = Path("rag_system/api_server.py").read_text(encoding="utf-8")
 
         self.assertIn(
-            'requests.delete(f"{RAG_API_URL}/indexes/{index_id}"', backend_source
+            'requests.delete(', backend_source
         )
+        self.assertIn('/indexes/{index_id}', backend_source)
         self.assertIn("def handle_delete_index_artifacts", rag_source)
         self.assertIn('f"{table_name}_lc"', rag_source)
 
     def test_browser_facing_chat_is_session_owned(self):
-        backend_source = Path("backend/server.py").read_text(encoding="utf-8")
+        backend_source = Path("backend/api.py").read_text(encoding="utf-8")
 
         self.assertNotIn("if parsed_path.path == '/chat':", backend_source)
-        self.assertIn('"model": (str, "model")', backend_source)
-        self.assertIn('"force_rag": (bool, "force_rag")', backend_source)
+        self.assertIn("class LegacyMessage", backend_source)
+        self.assertIn("model: str | None", backend_source)
+        self.assertIn("force_rag: bool", backend_source)
 
 
 if __name__ == "__main__":

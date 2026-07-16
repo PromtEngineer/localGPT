@@ -1,5 +1,3 @@
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-import torch
 from typing import List, Dict, Any
 
 class QwenReranker:
@@ -7,6 +5,14 @@ class QwenReranker:
     A reranker that uses a local Hugging Face transformer model.
     """
     def __init__(self, model_name: str = "BAAI/bge-reranker-base"):
+        try:
+            import torch
+            from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        except ImportError as exc:
+            raise RuntimeError(
+                "AI reranking requires the optional torch and transformers dependencies"
+            ) from exc
+        self.torch = torch
         # Auto-select the best available device: CUDA > MPS > CPU
         if torch.cuda.is_available():
             self.device = "cuda"
@@ -44,7 +50,7 @@ class QwenReranker:
 
         scored_pairs: List[tuple[float, Dict[str, Any]]] = []
 
-        with torch.no_grad():
+        with self.torch.no_grad():
             for start in range(0, len(docs_sorted), batch_size):
                 batch_docs = docs_sorted[start : start + batch_size]
                 batch_pairs = [[query, d['text']] for d in batch_docs]

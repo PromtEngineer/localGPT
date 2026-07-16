@@ -10,13 +10,16 @@ LocalGPT is a local-first document chat system with persistent sessions and inde
 
 ## Implemented capabilities
 
-- PDF, DOCX, HTML/HTM, Markdown, and plain-text uploads, with a bounded upload size and PDF OCR fallback.
+- PDF, DOCX, PPTX, XLSX, HTML/HTM, Markdown, text, CSV, JSON, and email uploads. Textual formats use lightweight native parsers; Docling provides layout-aware PDF/Office conversion and PDF OCR fallback.
 - Legacy recursive or Docling structural chunking, deterministic overlap, optional document-local contextual enrichment, and per-index overview generation.
 - Dedicated LanceDB tables per index, FTS plus dense-vector retrieval, weighted reciprocal-rank hybrid fusion, optional late-chunk tables, and cross-index deduplication.
 - Agent routing between direct generation and document RAG using only the overviews linked to the session.
 - Optional query decomposition, ColBERT reranking, neighbor expansion, Provence sentence pruning, sub-answer composition, and answer verification.
 - SQLite-backed sessions, messages, index metadata, many-index session links, and conversation restoration after restart.
-- Non-streaming and SSE session chat through one browser-facing backend; the backend is the sole message-persistence owner.
+- A typed FastAPI gateway with OpenAPI, provider/model discovery, generation and embedding endpoints, durable message/index runs, cancellation/retry, checkpoints, and replayable SSE events.
+- A bounded provider-neutral tool agent with schema validation, permissions, approvals, time/output/tool/iteration budgets, retrieval and artifact tools, safe public-web access, read-only database tools, tabular profiling, configured MCP connectors, and Docker-isolated Python execution.
+- Content-addressed artifacts with provenance, session/index ownership, local or optional S3-compatible storage, immutable versioned skills, structured redacted logs, and a grounded-answer evaluation harness.
+- Non-streaming and SSE session chat through one browser-facing backend; the backend is the sole message-persistence owner. The legacy UI routes remain compatible with the durable runtime.
 - Same-origin Next.js backend proxy, strict configurable CORS, loopback defaults, optional bearer authentication, safe upload paths, and remote-model-code opt-in.
 - Native launcher plus Docker Compose deployment with shared persistent storage and host or containerized Ollama.
 
@@ -29,6 +32,8 @@ Document-RAG replies include retrieved source rows. Direct-model replies intenti
 - PDF OCR and table-to-Markdown preservation are active. Page-image embeddings and VLM answer synthesis are experimental scaffolding, not active multimodal RAG.
 - Graph extraction/retrieval is disabled by default.
 - The supplied deployment is intended for trusted single-user/single-host use. A shared bearer token is not multi-user authorization.
+- Code execution is disabled by default and never falls back to the host interpreter. Enabling it requires a running Docker daemon, an allowlisted image, the `code:execute` server permission, and per-run tool approval. Containers have no network, a read-only root, dropped capabilities, resource limits, and a non-root user.
+- Cancellation is cooperative. Queued work stops immediately, agent loops stop at tool/model boundaries, and index results are discarded when cancellation is observed; the internal synchronous model/index HTTP call cannot be preempted mid-request.
 
 ## Requirements
 
@@ -50,6 +55,7 @@ npm ci
 cp .env.example .env
 ollama pull qwen3:0.6b
 ollama pull qwen3:8b
+ollama pull nomic-embed-text
 python run_system.py
 ```
 
@@ -89,6 +95,7 @@ Or use the Compose profile:
 ./start-docker.sh container
 docker compose --profile with-ollama exec ollama ollama pull qwen3:0.6b
 docker compose --profile with-ollama exec ollama ollama pull qwen3:8b
+docker compose --profile with-ollama exec ollama ollama pull nomic-embed-text
 ```
 
 Ports are published only on host loopback. Application data persists in `data/`, `lancedb/`, `index_store/`, and `shared_uploads/`.
@@ -97,12 +104,13 @@ Ports are published only on host loopback. Application data persists in `data/`,
 
 Copy `.env.example` to `.env`. Primary settings:
 
-- `OLLAMA_HOST`, `OLLAMA_GENERATION_MODEL`, `OLLAMA_ENRICHMENT_MODEL`
+- `OLLAMA_HOST`, `OLLAMA_GENERATION_MODEL`, `OLLAMA_ENRICHMENT_MODEL`, `OLLAMA_EMBEDDING_MODEL`
 - `LOCALGPT_DB_PATH`, `LOCALGPT_UPLOAD_DIR`, `LOCALGPT_OVERVIEW_DIR`, `LANCEDB_PATH`
 - `LOCALGPT_MAX_UPLOAD_BYTES`, `LOCALGPT_ALLOWED_ORIGINS`, optional `LOCALGPT_API_TOKEN`
 - `LOCALGPT_BACKEND_HOST`, `LOCALGPT_BACKEND_PORT`, `LOCALGPT_RAG_HOST`, `RAG_API_URL`, `BACKEND_INTERNAL_URL`
 - `RAG_CONFIG_MODE=default|fast`
 - `LLM_BACKEND=watsonx` and WatsonX credentials/models for optional cloud generation
+- `LOCALGPT_STATE_DIR`, `LOCALGPT_AGENT_PERMISSIONS`, optional tool/connector/artifact-backend settings shown in `.env.example`
 
 Index-time model/chunking/enrichment/late-chunk/retrieval choices are API request fields. Retrieval-time search/fusion/decomposition/reranking/expansion/pruning/verification choices are session-message request fields.
 
@@ -133,6 +141,8 @@ curl -X POST http://127.0.0.1:8000/sessions/SESSION_ID/messages \
   -d '{"message":"What are the main findings?","search_type":"hybrid","dense_weight":0.7}'
 ```
 
+Durable clients submit `/v1/runs`, consume `/v1/runs/{id}/events` with `Last-Event-ID`, and use the cancel/retry endpoints. Interactive API documentation is available at `/docs`; the versioned schema is `Documentation/openapi.json`.
+
 The browser uses the same-origin `/api/backend` proxy instead of calling ports 8000 or 8001 directly.
 
 The same safe API flow is available for scripts:
@@ -152,8 +162,20 @@ npm test
 npm run typecheck
 npm run lint
 npm run build
+npm run api:types
 docker compose config
 ```
+
+With Ollama and both Python services running, the real model-backed workflow is:
+
+```bash
+python scripts/e2e_real_workflow.py \
+  --document /absolute/path/to/knowledge.txt \
+  --generation-model qwen3:0.6b \
+  --embedding-model nomic-embed-text
+```
+
+It uploads a real document, requests an Ollama embedding, builds a LanceDB index, links a session, performs a grounded query, checks citation text and SSE replay, and deletes the ephemeral resources.
 
 ## Documentation
 

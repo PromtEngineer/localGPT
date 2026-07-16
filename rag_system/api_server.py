@@ -567,7 +567,7 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             if options.get("overview_model"):
                 config["overview_model_name"] = options["overview_model"]
 
-            index_id = options.get("session_id")
+            index_id = options.get("index_id") or options.get("session_id")
             overview_dir = env_path(
                 "LOCALGPT_OVERVIEW_DIR", os.path.join(project_root, "index_store", "overviews")
             )
@@ -680,4 +680,4 @@ def start_server(port=8001):
 
 if __name__ == "__main__":
     # To run this server: python -m rag_system.api_server
-    start_server()
+    start_server(int(os.getenv("LOCALGPT_RAG_PORT", "8001")))

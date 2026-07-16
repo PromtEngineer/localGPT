@@ -1,0 +1,14 @@
+[
+  {
+    "question": "What is the calibration phrase for the Borealis instrument?",
+    "expected_terms": ["AURORA-17"],
+    "citation_terms": ["AURORA-17"],
+    "tags": ["exact-fact", "citation"]
+  },
+  {
+    "question": "Who is the designated custodian of the Borealis instrument?",
+    "expected_terms": ["Mira Chen"],
+    "citation_terms": ["Mira Chen"],
+    "tags": ["entity", "citation"]
+  }
+]

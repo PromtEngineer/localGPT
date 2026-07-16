@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import hmac
+import io
+import zipfile
 from pathlib import Path, PurePath
 from typing import Any, Mapping
 
@@ -20,7 +22,10 @@ class UploadRejected(ValueError):
     """Raised when an uploaded filename cannot be stored safely."""
 
 
-SUPPORTED_UPLOAD_EXTENSIONS = {".pdf", ".docx", ".html", ".htm", ".md", ".txt"}
+SUPPORTED_UPLOAD_EXTENSIONS = {
+    ".pdf", ".docx", ".pptx", ".xlsx", ".html", ".htm", ".md", ".txt",
+    ".csv", ".json", ".eml",
+}
 
 
 def env_path(name: str, default: Path | str) -> Path:
@@ -51,6 +56,42 @@ def safe_upload_path(upload_dir: Path | str, submitted_name: str) -> Path:
             f"Unsupported file type. Allowed: {', '.join(sorted(SUPPORTED_UPLOAD_EXTENSIONS))}"
         )
     return destination
+
+
+def inspect_upload_content(filename: str, content: bytes) -> None:
+    """Reject obvious type spoofing and pathological Office archives.
+
+    This is a bounded preflight check, not a replacement for malware scanning.
+    Deployments can run a scanner at the artifact boundary before indexing.
+    """
+    extension = Path(filename).suffix.lower()
+    if not content:
+        raise UploadRejected("Empty documents are not accepted")
+    executable_signatures = (b"MZ", b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf")
+    if content.startswith(executable_signatures):
+        raise UploadRejected("Executable content is not accepted")
+    if extension == ".pdf" and not content.startswith(b"%PDF-"):
+        raise UploadRejected("PDF content does not have a valid PDF signature")
+    if extension in {".docx", ".pptx", ".xlsx"}:
+        if not content.startswith(b"PK"):
+            raise UploadRejected("Office document does not have a valid ZIP signature")
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                entries = archive.infolist()
+                if len(entries) > int(os.getenv("LOCALGPT_MAX_ARCHIVE_ENTRIES", "5000")):
+                    raise UploadRejected("Office archive contains too many entries")
+                expanded = sum(item.file_size for item in entries)
+                max_expanded = int(os.getenv("LOCALGPT_MAX_EXPANDED_BYTES", str(250 * 1024 * 1024)))
+                if expanded > max_expanded:
+                    raise UploadRejected("Office archive expands beyond the configured limit")
+                compressed = max(1, sum(item.compress_size for item in entries))
+                if expanded / compressed > 200:
+                    raise UploadRejected("Office archive compression ratio is unsafe")
+        except zipfile.BadZipFile as exc:
+            raise UploadRejected("Office archive is corrupt") from exc
+    if extension in {".txt", ".md", ".csv", ".json", ".eml", ".html", ".htm"}:
+        if b"\x00" in content[:1_048_576]:
+            raise UploadRejected("Text document contains binary null bytes")
 
 
 def validate_index_file_paths(file_paths: list[str], upload_dir: Path | str) -> list[str]:

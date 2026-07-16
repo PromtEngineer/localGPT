@@ -1,134 +1,179 @@
-from typing import List, Tuple, Dict, Any
-from docling.document_converter import DocumentConverter as DoclingConverter, PdfFormatOption
-from docling.datamodel.pipeline_options import PdfPipelineOptions, OcrMacOptions
-from docling.datamodel.base_models import InputFormat
-import fitz  # PyMuPDF for quick text inspection
+"""Document conversion with dependency-light native parsers and optional Docling.
+
+Textual formats are deliberately handled without importing ML/OCR dependencies.
+Docling is loaded lazily for layout-oriented formats such as PDF and Office files.
+"""
+
+from __future__ import annotations
+
+import csv
+import html.parser
+import io
+import json
 import os
+from email import policy
+from email.parser import BytesParser
+from pathlib import Path
+from typing import Any, Callable
+
+
+ConvertedPage = tuple[str, dict[str, Any]]
+
+
+class _TextExtractor(html.parser.HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        value = data.strip()
+        if value:
+            self.parts.append(value)
+
 
 class DocumentConverter:
-    """
-    A class to convert various document formats to structured Markdown using the docling library.
-    Supports PDF, DOCX, HTML, and other formats.
-    """
-    
-    # Mapping of file extensions to InputFormat
+    """Convert supported documents to Markdown plus provenance metadata."""
+
     SUPPORTED_FORMATS = {
-        '.pdf': InputFormat.PDF,
-        '.docx': InputFormat.DOCX,
-        '.html': InputFormat.HTML,
-        '.htm': InputFormat.HTML,
-        '.md': InputFormat.MD,
-        '.txt': 'TXT',  # Special handling for plain text files
+        ".pdf",
+        ".docx",
+        ".pptx",
+        ".xlsx",
+        ".html",
+        ".htm",
+        ".md",
+        ".txt",
+        ".csv",
+        ".json",
+        ".eml",
     }
-    
-    def __init__(self):
-        """Initializes the docling document converter with forced OCR enabled for macOS."""
-        try:
-            # --- Converter WITHOUT OCR (fast path) ---
-            pipeline_no_ocr = PdfPipelineOptions()
-            pipeline_no_ocr.do_ocr = False
-            format_no_ocr = {
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_no_ocr)
-            }
-            self.converter_no_ocr = DoclingConverter(format_options=format_no_ocr)
 
-            # --- Converter WITH OCR (fallback) ---
-            pipeline_ocr = PdfPipelineOptions()
-            pipeline_ocr.do_ocr = True
-            ocr_options = OcrMacOptions(force_full_page_ocr=True)
-            pipeline_ocr.ocr_options = ocr_options
-            format_ocr = {
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_ocr)
-            }
-            self.converter_ocr = DoclingConverter(format_options=format_ocr)
-            
+    def __init__(self) -> None:
+        self.converter_no_ocr = None
+        self.converter_ocr = None
+        self.converter_general = None
+        self._input_format: Any = None
+        self._native: dict[str, Callable[[Path], list[ConvertedPage]]] = {
+            ".txt": self._convert_text,
+            ".md": self._convert_text,
+            ".html": self._convert_html,
+            ".htm": self._convert_html,
+            ".csv": self._convert_csv,
+            ".json": self._convert_json,
+            ".eml": self._convert_email,
+        }
+        self._initialize_docling()
+
+    def _initialize_docling(self) -> None:
+        try:
+            from docling.datamodel.base_models import InputFormat
+            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.document_converter import (
+                DocumentConverter as DoclingConverter,
+                PdfFormatOption,
+            )
+
+            self._input_format = InputFormat
+            no_ocr = PdfPipelineOptions()
+            no_ocr.do_ocr = False
+            self.converter_no_ocr = DoclingConverter(
+                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=no_ocr)}
+            )
+
+            ocr = PdfPipelineOptions()
+            ocr.do_ocr = True
+            if os.uname().sysname == "Darwin":
+                try:
+                    from docling.datamodel.pipeline_options import OcrMacOptions
+
+                    ocr.ocr_options = OcrMacOptions(force_full_page_ocr=True)
+                except ImportError:
+                    pass
+            self.converter_ocr = DoclingConverter(
+                format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=ocr)}
+            )
             self.converter_general = DoclingConverter()
+        except (ImportError, RuntimeError, ValueError) as exc:
+            # Native formats remain fully available in minimal installations.
+            self._docling_error = str(exc)
 
-            print("docling DocumentConverter(s) initialized (OCR + no-OCR + general).")
-        except Exception as e:
-            print(f"Error initializing docling DocumentConverter(s): {e}")
-            self.converter_no_ocr = None
-            self.converter_ocr = None
-            self.converter_general = None
+    def convert_to_markdown(self, file_path: str) -> list[ConvertedPage]:
+        path = Path(file_path)
+        extension = path.suffix.lower()
+        if extension not in self.SUPPORTED_FORMATS:
+            raise ValueError(f"Unsupported file format: {extension}")
+        native = self._native.get(extension)
+        if native is not None:
+            return native(path)
+        if self.converter_general is None or self._input_format is None:
+            raise RuntimeError(
+                f"{extension} conversion requires the optional docling dependencies"
+            )
+        if extension == ".pdf":
+            return self._convert_pdf(path)
+        return self._perform_docling(path, self.converter_general)
 
-    def convert_to_markdown(self, file_path: str) -> List[Tuple[str, Dict[str, Any]]]:
-        """
-        Converts a document to a single Markdown string, preserving layout and tables.
-        Supports PDF, DOCX, HTML, and other formats.
-        """
-        if not (self.converter_no_ocr and self.converter_ocr and self.converter_general):
-            print("docling converters not available. Skipping conversion.")
-            return []
-        
-        file_ext = os.path.splitext(file_path)[1].lower()
-        if file_ext not in self.SUPPORTED_FORMATS:
-            print(f"Unsupported file format: {file_ext}")
-            return []
-        
-        input_format = self.SUPPORTED_FORMATS[file_ext]
-        
-        if input_format == InputFormat.PDF:
-            return self._convert_pdf_to_markdown(file_path)
-        elif input_format == 'TXT':
-            return self._convert_txt_to_markdown(file_path)
-        else:
-            return self._convert_general_to_markdown(file_path, input_format)
-    
-    def _convert_pdf_to_markdown(self, pdf_path: str) -> List[Tuple[str, Dict[str, Any]]]:
-        """Convert PDF with OCR detection logic."""
-        # Quick heuristic: if the PDF already contains a text layer, skip OCR for speed
-        def _pdf_has_text(path: str) -> bool:
-            try:
-                doc = fitz.open(path)
-                for page in doc:
-                    if page.get_text("text").strip():
-                        return True
-            except Exception:
-                pass
-            return False
+    @staticmethod
+    def _metadata(path: Path, **extra: Any) -> dict[str, Any]:
+        return {"source": str(path), "filename": path.name, **extra}
 
-        use_ocr = not _pdf_has_text(pdf_path)
-        converter = self.converter_ocr if use_ocr else self.converter_no_ocr
-        ocr_msg = "(OCR enabled)" if use_ocr else "(no OCR)"
+    def _convert_text(self, path: Path) -> list[ConvertedPage]:
+        content = path.read_text(encoding="utf-8", errors="replace")
+        return [(content, self._metadata(path))]
 
-        print(f"Converting {pdf_path} to Markdown using docling {ocr_msg}...")
-        return self._perform_conversion(pdf_path, converter, ocr_msg)
-    
-    def _convert_txt_to_markdown(self, file_path: str) -> List[Tuple[str, Dict[str, Any]]]:
-        """Convert plain text files to markdown by reading content directly."""
-        print(f"Converting {file_path} (TXT) to Markdown...")
+    def _convert_html(self, path: Path) -> list[ConvertedPage]:
+        parser = _TextExtractor()
+        parser.feed(path.read_text(encoding="utf-8", errors="replace"))
+        return [("\n\n".join(parser.parts), self._metadata(path))]
+
+    def _convert_csv(self, path: Path) -> list[ConvertedPage]:
+        content = path.read_text(encoding="utf-8-sig", errors="replace")
+        rows = list(csv.reader(io.StringIO(content)))
+        if not rows:
+            return [("", self._metadata(path, rows=0))]
+        width = max(len(row) for row in rows)
+        normalized = [row + [""] * (width - len(row)) for row in rows]
+        header = normalized[0]
+        separator = ["---"] * width
+        markdown = "\n".join(
+            "| " + " | ".join(cell.replace("|", "\\|") for cell in row) + " |"
+            for row in [header, separator, *normalized[1:]]
+        )
+        return [(markdown, self._metadata(path, rows=max(0, len(rows) - 1)))]
+
+    def _convert_json(self, path: Path) -> list[ConvertedPage]:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return [(f"```json\n{json.dumps(value, indent=2, ensure_ascii=False)}\n```", self._metadata(path))]
+
+    def _convert_email(self, path: Path) -> list[ConvertedPage]:
+        message = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
+        body = message.get_body(preferencelist=("plain", "html")) if message.is_multipart() else message
+        content = body.get_content() if body is not None else ""
+        if body is not None and body.get_content_type() == "text/html":
+            parser = _TextExtractor()
+            parser.feed(str(content))
+            content = "\n\n".join(parser.parts)
+        markdown = (
+            f"# {message.get('subject', '(no subject)')}\n\n"
+            f"From: {message.get('from', '')}\n\n"
+            f"To: {message.get('to', '')}\n\n{content}"
+        )
+        return [(markdown, self._metadata(path, message_id=message.get("message-id")))]
+
+    def _convert_pdf(self, path: Path) -> list[ConvertedPage]:
+        has_text = False
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            markdown_content = f"```\n{content}\n```"
-            metadata = {"source": file_path}
-            
-            print(f"Successfully converted {file_path} (TXT) to Markdown.")
-            return [(markdown_content, metadata)]
-        except Exception as e:
-            print(f"Error processing TXT file {file_path}: {e}")
-            return []
-    
-    def _convert_general_to_markdown(self, file_path: str, input_format: InputFormat) -> List[Tuple[str, Dict[str, Any]]]:
-        """Convert non-PDF formats using general converter."""
-        print(f"Converting {file_path} ({input_format.name}) to Markdown using docling...")
-        return self._perform_conversion(file_path, self.converter_general, f"({input_format.name})")
-    
-    def _perform_conversion(self, file_path: str, converter, format_msg: str) -> List[Tuple[str, Dict[str, Any]]]:
-        """Perform the actual conversion using the specified converter."""
-        pages_data = []
-        try:
-            result = converter.convert(file_path)
-            markdown_content = result.document.export_to_markdown()
-            
-            metadata = {"source": file_path}
-            # Return the *DoclingDocument* object as third tuple element so downstream
-            # chunkers that understand the element tree can use it.  Legacy callers that
-            # expect only (markdown, metadata) can simply ignore the extra value.
-            pages_data.append((markdown_content, metadata, result.document))
-            print(f"Successfully converted {file_path} with docling {format_msg}.")
-            return pages_data
-        except Exception as e:
-            print(f"Error processing {file_path} with docling: {e}")
-            return []
+            import fitz
+
+            with fitz.open(path) as document:
+                has_text = any(page.get_text("text").strip() for page in document)
+        except ImportError:
+            pass
+        converter = self.converter_no_ocr if has_text else self.converter_ocr
+        return self._perform_docling(path, converter or self.converter_general)
+
+    def _perform_docling(self, path: Path, converter: Any) -> list[ConvertedPage]:
+        result = converter.convert(str(path))
+        markdown = result.document.export_to_markdown()
+        # The optional third item is retained for the structure-aware chunker.
+        return [(markdown, self._metadata(path), result.document)]  # type: ignore[list-item]

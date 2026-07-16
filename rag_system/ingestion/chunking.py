@@ -1,6 +1,5 @@
 from typing import List, Dict, Any, Optional
 import re
-from transformers import AutoTokenizer
 from rag_system.ingestion.overlap import add_chunk_overlap
 from localgpt_runtime import trust_remote_code_enabled
 
@@ -23,6 +22,8 @@ class MarkdownRecursiveChunker:
             }.get(tokenizer_model.lower(), tokenizer_model)
         
         try:
+            from transformers import AutoTokenizer
+
             self.tokenizer = AutoTokenizer.from_pretrained(
                 repo_id, trust_remote_code=trust_remote_code_enabled()
             )

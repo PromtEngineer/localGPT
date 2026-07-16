@@ -1,4 +1,5 @@
 import { apiHeaders, getApiBaseUrl } from './runtime';
+import { DurableEvent, parseSseFrames } from './sse';
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -112,7 +113,98 @@ export interface SessionChatResponse {
   ai_message_id: string;
 }
 
+export type RunStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled';
+
+export interface AgentRun {
+  id: string;
+  session_id: string | null;
+  kind: 'message' | 'index' | string;
+  status: RunStatus;
+  request: Record<string, unknown>;
+  result: { content?: string; citations?: SourceDocument[]; [key: string]: unknown } | null;
+  error: string | null;
+  cancel_requested: boolean;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
 class ChatAPI {
+  async submitRun(request: {
+    session_id?: string;
+    message?: string;
+    messages?: Array<Record<string, unknown>>;
+    model?: string;
+    force_rag?: boolean;
+    allowed_tools?: string[];
+    approved_tools?: string[];
+    permissions?: string[];
+    skill_ids?: string[];
+  }): Promise<AgentRun> {
+    const response = await apiFetch(`${API_BASE_URL}/v1/runs`, {
+      method: 'POST',
+      headers: apiHeaders(true),
+      body: JSON.stringify(request),
+    });
+    if (!response.ok) throw new Error(`Run submission failed: ${response.status}`);
+    return response.json();
+  }
+
+  async getRun(runId: string): Promise<AgentRun> {
+    const response = await apiFetch(`${API_BASE_URL}/v1/runs/${runId}`);
+    if (!response.ok) throw new Error(`Run lookup failed: ${response.status}`);
+    return response.json();
+  }
+
+  async cancelRun(runId: string): Promise<{ cancel_requested: boolean }> {
+    const response = await apiFetch(`${API_BASE_URL}/v1/runs/${runId}/cancel`, { method: 'POST' });
+    if (!response.ok) throw new Error(`Run cancellation failed: ${response.status}`);
+    return response.json();
+  }
+
+  async retryRun(runId: string): Promise<AgentRun> {
+    const response = await apiFetch(`${API_BASE_URL}/v1/runs/${runId}/retry`, { method: 'POST' });
+    if (!response.ok) throw new Error(`Run retry failed: ${response.status}`);
+    return response.json();
+  }
+
+  async streamRunEvents(
+    runId: string,
+    onEvent: (event: DurableEvent) => void,
+    options: { afterId?: number; signal?: AbortSignal; maxReconnects?: number } = {},
+  ): Promise<void> {
+    let cursor = options.afterId ?? 0;
+    const maxReconnects = options.maxReconnects ?? 3;
+    for (let attempt = 0; attempt <= maxReconnects; attempt += 1) {
+      const response = await apiFetch(`${API_BASE_URL}/v1/runs/${runId}/events`, {
+        headers: { 'Last-Event-ID': String(cursor) },
+        signal: options.signal,
+      });
+      if (!response.ok || !response.body) throw new Error(`Run stream failed: ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          buffer += decoder.decode(value, { stream: !done });
+          const parsed = parseSseFrames(buffer);
+          buffer = parsed.remainder;
+          for (const event of parsed.events) {
+            cursor = event.id;
+            onEvent(event);
+            if (['run.completed', 'run.failed', 'run.cancelled'].includes(event.type)) return;
+          }
+          if (done) break;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      if (options.signal?.aborted) return;
+    }
+    throw new Error(`Run stream disconnected after ${maxReconnects + 1} attempts`);
+  }
+
   async checkHealth(): Promise<HealthResponse> {
     try {
       const response = await apiFetch(`${API_BASE_URL}/health`);

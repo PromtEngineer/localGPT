@@ -237,7 +237,11 @@ class ServiceManager:
         """Ensure required Ollama models are available."""
         self.logger.info("📥 Checking required models...")
 
-        required_models = ['qwen3:8b', 'qwen3:0.6b']
+        required_models = list(dict.fromkeys([
+            os.getenv('OLLAMA_GENERATION_MODEL', 'qwen3:8b'),
+            os.getenv('OLLAMA_ENRICHMENT_MODEL', 'qwen3:0.6b'),
+            os.getenv('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text'),
+        ]))
 
         try:
             # Get list of installed models

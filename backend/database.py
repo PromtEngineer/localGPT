@@ -203,6 +203,46 @@ class ChatDatabase:
 
         return message_id
 
+    def add_exchange(
+        self,
+        session_id: str,
+        user_content: str,
+        assistant_content: str,
+        assistant_metadata: Dict | None = None,
+    ) -> tuple[str, str]:
+        """Persist one user/assistant exchange atomically."""
+        user_id = str(uuid.uuid4())
+        assistant_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        conn = self._connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                "INSERT INTO messages (id, session_id, content, sender, timestamp, metadata) VALUES (?, ?, ?, 'user', ?, '{}')",
+                (user_id, session_id, user_content, now),
+            )
+            conn.execute(
+                "INSERT INTO messages (id, session_id, content, sender, timestamp, metadata) VALUES (?, ?, ?, 'assistant', ?, ?)",
+                (
+                    assistant_id,
+                    session_id,
+                    assistant_content,
+                    now,
+                    json.dumps(assistant_metadata or {}),
+                ),
+            )
+            conn.execute(
+                "UPDATE sessions SET updated_at = ?, message_count = message_count + 2 WHERE id = ?",
+                (now, session_id),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return user_id, assistant_id
+
     def get_messages(self, session_id: str, limit: int = 100) -> List[Dict]:
         """Get all messages for a session"""
         conn = self._connect()
@@ -675,12 +715,10 @@ def generate_session_title(first_message: str, max_length: int = 50) -> str:
 
     return title
 
-# Global database instance
-db = ChatDatabase()
-
 if __name__ == "__main__":
     # Test the database
     print("🧪 Testing database...")
+    db = ChatDatabase()
 
     # Create a test session
     session_id = db.create_session("Test Chat", "llama3.2:latest")

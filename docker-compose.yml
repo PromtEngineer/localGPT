@@ -35,6 +35,7 @@ services:
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - LOCALGPT_RAG_HOST=0.0.0.0
       - LOCALGPT_DB_PATH=/app/data/chat_data.db
+      - LOCALGPT_STATE_DIR=/app/data/runtime
       - LOCALGPT_UPLOAD_DIR=/app/shared_uploads
       - LOCALGPT_OVERVIEW_DIR=/app/index_store/overviews
       - LANCEDB_PATH=/app/lancedb
@@ -74,6 +75,8 @@ services:
       - LOCALGPT_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       - LOCALGPT_API_TOKEN=${LOCALGPT_API_TOKEN:-}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_EMBEDDING_MODEL=${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}
+      - LOCALGPT_AGENT_PERMISSIONS=${LOCALGPT_AGENT_PERMISSIONS:-knowledge:read,artifact:read}
     volumes:
       - ./shared_uploads:/app/shared_uploads
       - ./data:/app/data
