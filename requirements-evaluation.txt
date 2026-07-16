@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Reproducible parser-harness version researched and validated on 2026-07-15.
+liteparse==2.6.0

@@ -188,6 +188,25 @@ python scripts/e2e_multi_document_workflow.py \
   --embedding-model qwen3-embedding:0.6b
 ```
 
+For multimodal evaluation, generate image-only scans, a topology diagram, a
+chart, and a cross-document text companion, then evaluate parser extraction and
+the complete parser/embedding/vision-model matrix:
+
+```bash
+python scripts/evaluate_multimodal.py \
+  --mode all \
+  --embedding-model qwen3-embedding:0.6b \
+  --vision-model qwen2.5vl:3b \
+  --parser-backend docling \
+  --strict \
+  --output data/evals/multimodal.json
+```
+
+Visual cases require page-level visual provenance; OCR text alone cannot pass.
+The active retrieval pipeline does not yet index or retrieve page images, so a
+strict end-to-end run currently exposes that gap instead of reporting a false
+success. See the parser research and target architecture below.
+
 ## Documentation
 
 - [System overview](Documentation/system_overview.md)
@@ -200,6 +219,7 @@ python scripts/e2e_multi_document_workflow.py \
 - [Docker usage](Documentation/docker_usage.md)
 - [Deployment and security](Documentation/deployment_guide.md)
 - [Remaining improvement plan](Documentation/improvement_plan.md)
+- [Multimodal parser research and harness](Documentation/multimodal_parser_research.md)
 
 ## License
 

@@ -47,6 +47,7 @@ __pycache__/
 
 # Local Data
 /index_store
+/localgpt_state
 /shared_uploads
 chat_history.db
 *.pkl

@@ -260,11 +260,14 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             _restore_conversation_history(session_id, data.get("conversation_history"))
 
             # Allow explicit table_name override
-            table_name = (
-                _get_table_names_for_session(session_id)
-                if session_id
-                else data.get('table_names') or data.get('table_name')
-            )
+            if 'table_names' in data:
+                table_name = data['table_names']
+            elif 'table_name' in data:
+                table_name = data['table_name']
+            elif session_id:
+                table_name = _get_table_names_for_session(session_id)
+            else:
+                table_name = None
 
             # Decide execution path
             print(f"🔧 Force RAG flag: {force_rag}")
@@ -396,11 +399,14 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             _restore_conversation_history(session_id, data.get("conversation_history"))
 
             # Allow explicit table_name override
-            table_name = (
-                _get_table_names_for_session(session_id)
-                if session_id
-                else data.get('table_names') or data.get('table_name')
-            )
+            if 'table_names' in data:
+                table_name = data['table_names']
+            elif 'table_name' in data:
+                table_name = data['table_name']
+            elif session_id:
+                table_name = _get_table_names_for_session(session_id)
+            else:
+                table_name = None
 
             # Prepare response headers for SSE
             self.send_response(200)

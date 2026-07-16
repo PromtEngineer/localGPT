@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "description": "Adversarial parser and retrieval cases requiring OCR, visual relationships, charts, and multi-document synthesis.",
+  "index_documents": [
+    "born_digital",
+    "scanned_notice",
+    "visual_topology",
+    "visual_chart",
+    "component_registry"
+  ],
+  "parser_checks": [
+    {
+      "name": "born_digital_text_layer",
+      "fixture": "born_digital",
+      "expected_tokens": ["AURORA-17"]
+    },
+    {
+      "name": "scanned_page_ocr",
+      "fixture": "scanned_notice",
+      "expected_tokens": ["EMBER-73"]
+    },
+    {
+      "name": "visual_page_spatial_output",
+      "fixture": "visual_topology",
+      "expected_tokens": ["Intake", "Archive", "Synthesis", "Review"],
+      "requires_screenshot": true,
+      "requires_bounding_boxes": true
+    },
+    {
+      "name": "chart_labels_and_values",
+      "fixture": "visual_chart",
+      "expected_tokens": ["North", "South", "74"]
+    }
+  ],
+  "retrieval_cases": [
+    {
+      "name": "born_digital_text_retrieval",
+      "question": "What is the born-digital validation phrase?",
+      "expected_terms": ["AURORA-17"],
+      "expected_sources": ["born_digital"]
+    },
+    {
+      "name": "scanned_document_ocr_retrieval",
+      "question": "What incident key appears in the scanned notice?",
+      "expected_terms": ["EMBER-73"],
+      "expected_sources": ["scanned_notice"],
+      "requires_visual_evidence": true
+    },
+    {
+      "name": "diagram_relationship_retrieval",
+      "question": "Which component receives arrows from both Intake and Archive?",
+      "expected_terms": ["Synthesis"],
+      "expected_sources": ["visual_topology"],
+      "requires_visual_evidence": true
+    },
+    {
+      "name": "chart_reasoning_retrieval",
+      "question": "Which region has the highest throughput in the chart, and what is its value?",
+      "expected_terms": ["South", "74"],
+      "expected_sources": ["visual_chart"],
+      "requires_visual_evidence": true
+    },
+    {
+      "name": "cross_document_visual_text_synthesis",
+      "question": "What operational codename belongs to the component that receives arrows from both Intake and Archive?",
+      "expected_terms": ["KESTREL-42"],
+      "expected_sources": ["visual_topology", "component_registry"],
+      "requires_visual_evidence": true,
+      "query_decompose": true,
+      "retrieval_k": 10
+    }
+  ]
+}

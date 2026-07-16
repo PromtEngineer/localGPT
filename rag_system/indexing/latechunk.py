@@ -32,6 +32,11 @@ class LateChunkEncoder:
             # map common alias to official repo
             alias_map = {
                 "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
+                "qwen3-embedding:0.6b": "Qwen/Qwen3-Embedding-0.6B",
+                "bge-m3": "BAAI/bge-m3",
+                "bge-m3:latest": "BAAI/bge-m3",
+                "mxbai-embed-large": "mixedbread-ai/mxbai-embed-large-v1",
+                "mxbai-embed-large:latest": "mixedbread-ai/mxbai-embed-large-v1",
             }
             repo_id = alias_map.get(model_name.lower(), model_name)
 

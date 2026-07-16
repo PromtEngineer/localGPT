@@ -10,7 +10,7 @@ import csv
 import html.parser
 import io
 import json
-import os
+import sys
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -82,8 +82,14 @@ class DocumentConverter:
 
             ocr = PdfPipelineOptions()
             ocr.do_ocr = True
-            if os.uname().sysname == "Darwin":
+            # Full-page OCR is required for scans and image-only diagrams. Use
+            # OCRMac only when its runtime is actually installed; importing the
+            # Docling option class alone does not prove the engine is available.
+            ocr.ocr_options.force_full_page_ocr = True
+            if sys.platform == "darwin":
                 try:
+                    import ocrmac  # noqa: F401
+
                     from docling.datamodel.pipeline_options import OcrMacOptions
 
                     ocr.ocr_options = OcrMacOptions(force_full_page_ocr=True)

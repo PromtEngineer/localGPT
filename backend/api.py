@@ -185,7 +185,7 @@ def build_runtime() -> Runtime:
     register_core_tools(
         tools,
         artifacts=artifacts,
-        retrieval=RagRetrievalClient(rag_api_url),
+        retrieval=RagRetrievalClient(rag_api_url, database=database),
     )
     register_data_tools(
         tools,

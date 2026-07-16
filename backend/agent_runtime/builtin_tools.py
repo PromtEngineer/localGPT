@@ -106,9 +106,25 @@ def fetch_public_url(
 
 
 class RagRetrievalClient:
-    def __init__(self, base_url: str | None = None, token: str | None = None) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        token: str | None = None,
+        database: Any = None,
+    ) -> None:
         self.base_url = (base_url or os.getenv("RAG_API_URL", "http://127.0.0.1:8001")).rstrip("/")
         self.token = token if token is not None else os.getenv("LOCALGPT_API_TOKEN")
+        self.database = database
+
+    def _table_names(self, session_id: str) -> list[str]:
+        if self.database is None:
+            return []
+        table_names = []
+        for index_id in self.database.get_indexes_for_session(session_id):
+            index = self.database.get_index(index_id)
+            if index and index.get("vector_table_name"):
+                table_names.append(str(index["vector_table_name"]))
+        return table_names
 
     async def search(
         self,
@@ -124,16 +140,18 @@ class RagRetrievalClient:
             headers["Authorization"] = f"Bearer {self.token}"
 
         def request() -> dict[str, Any]:
+            table_names = self._table_names(session_id)
             response = requests.post(
                 f"{self.base_url}/chat",
                 headers=headers,
                 json={
+                    **(options or {}),
                     "query": query,
                     "session_id": session_id,
                     "force_rag": True,
                     "retrieval_k": retrieval_k,
                     "search_type": search_type,
-                    **(options or {}),
+                    "table_names": table_names,
                 },
                 timeout=300,
             )

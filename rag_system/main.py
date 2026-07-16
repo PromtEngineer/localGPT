@@ -67,7 +67,7 @@ PIPELINE_CONFIGS = {
             "retriever": "multivector",
             "search_type": "hybrid",
             "late_chunking": {
-                "enabled": True,
+                "enabled": False,
                 "table_suffix": "_lc"
         },
             "dense": { 
