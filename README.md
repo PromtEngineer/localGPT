@@ -177,6 +177,17 @@ python scripts/e2e_real_workflow.py \
 
 It uploads a real document, requests an Ollama embedding, builds a LanceDB index, links a session, performs a grounded query, checks citation text and SSE replay, and deletes the ephemeral resources.
 
+For a meaningful retrieval-quality smoke test, run the heterogeneous 12-document
+corpus. It includes an authoritative/archived conflict, similarly named
+instruments, unrelated distractors, six file formats, and lexical, dense,
+hybrid, and multi-document synthesis cases:
+
+```bash
+python scripts/e2e_multi_document_workflow.py \
+  --generation-model qwen3:0.6b \
+  --embedding-model qwen3-embedding:0.6b
+```
+
 ## Documentation
 
 - [System overview](Documentation/system_overview.md)

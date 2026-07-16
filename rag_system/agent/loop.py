@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional
 import json
+import re
 import time
 import asyncio
 import numpy as np
@@ -10,6 +11,7 @@ from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
 from rag_system.agent.verifier import Verifier
 from rag_system.retrieval.query_transformer import QueryDecomposer, GraphQueryTranslator
 from rag_system.retrieval.retrievers import GraphRetriever
+from rag_system.retrieval.scope_filter import query_entities
 from localgpt_runtime import env_path
 
 class Agent:
@@ -150,6 +152,34 @@ Latest User Query: "{query}"
 """
         return prompt
 
+    @staticmethod
+    def _query_needs_history(query: str) -> bool:
+        """Return whether a query contains an unresolved conversational reference."""
+        normalized = query.strip().lower()
+        if re.search(r"^(and\s+)?(what|how) about\b", normalized):
+            return True
+
+        pronoun = re.search(
+            r"\b(it|its|itself|they|their|theirs|them|this|that|these|those)\b",
+            normalized,
+        )
+        if pronoun:
+            entity_positions = [
+                normalized.find(entity)
+                for entity in query_entities(query)
+                if normalized.find(entity) >= 0
+            ]
+            # An earlier explicit subject resolves a later pronoun within the
+            # same sentence (for example, "Borealis ... its custodian").
+            if entity_positions and min(entity_positions) < pronoun.start():
+                return False
+            return True
+
+        referential_patterns = (
+            r"\b(the former|the latter|the same|above|previous(?:ly)?)\b",
+        )
+        return any(re.search(pattern, normalized) for pattern in referential_patterns)
+
     # ---------------- Asynchronous triage using Ollama ----------------
     async def _triage_query_async(self, query: str, history: list) -> str:
         
@@ -202,7 +232,11 @@ Respond with JSON: {{"category": "<your_choice>"}}
             return "rag_query"
 
     def _run_graph_query(self, query: str, history: list) -> Dict[str, Any]:
-        contextual_query = self._format_query_with_history(query, history)
+        contextual_query = (
+            self._format_query_with_history(query, history)
+            if history and self._query_needs_history(query)
+            else query
+        )
         structured_query = self.graph_query_translator.translate(contextual_query)
         if not structured_query.get("start_node"):
             return self.retrieval_pipeline.run(contextual_query, window_size_override=0)
@@ -231,16 +265,16 @@ Respond with JSON: {{"category": "<your_choice>"}}
         }
 
     # ---------------- Public sync API (kept for backwards compatibility) --------------
-    def run(self, query: str, table_name: str | list[str] = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: str | list[str] = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None, force_rag: bool = False) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
 
             event_callback(phase:str, payload:Any)
         """
-        return asyncio.run(self._run_async(query, table_name, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback))
+        return asyncio.run(self._run_async(query, table_name, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback, force_rag))
 
     # ---------------- Main async implementation --------------------------------------
-    async def _run_async(self, query: str, table_name: str | list[str] = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_async(self, query: str, table_name: str | list[str] = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None, force_rag: bool = False) -> Dict[str, Any]:
         start_time = time.time()
         
         # Emit analyze event at the start
@@ -250,12 +284,22 @@ Respond with JSON: {{"category": "<your_choice>"}}
         # 🚀 NEW: Get conversation history
         history = self.chat_histories.get(session_id, []) if session_id else []
         
-        query_type = await self._triage_query_async(query, history)
+        query_type = (
+            "rag_query"
+            if force_rag
+            else await self._triage_query_async(query, history)
+        )
         print(f"🎯 ROUTING DEBUG: Final triage decision: '{query_type}'")
         print(f"Agent Triage Decision: '{query_type}'")
         
-        # Create a contextual query that includes history for most operations
-        contextual_query = self._format_query_with_history(query, history)
+        # Include history only for queries with an unresolved conversational
+        # reference. Injecting it into a standalone question changes retrieval
+        # scope and can leak facts from an earlier subject.
+        contextual_query = (
+            self._format_query_with_history(query, history)
+            if history and self._query_needs_history(query)
+            else query
+        )
         raw_query = query.strip()
         
         # --- Apply runtime AI reranker override (must happen before any retrieval calls) ---
@@ -554,17 +598,6 @@ FINAL ANSWER:
                                 event_callback("final_answer", result)
             else:
                 # Standard retrieval (single-query)
-                retrieved_docs = (self.retrieval_pipeline.retriever.retrieve(
-                    text_query=contextual_query,
-                    table_name=table_name or self.retrieval_pipeline.storage_config["text_table_name"],
-                    k=self.retrieval_pipeline.config.get("retrieval_k", 10),
-                ) if hasattr(self.retrieval_pipeline, "retriever") and self.retrieval_pipeline.retriever else [])
-
-                print("\n=== DEBUG: Original retrieval order ===")
-                for i, d in enumerate(retrieved_docs[:10]):
-                    snippet = (d.get('text','') or '')[:200].replace('\n',' ')
-                    print(f"Orig[{i}] id={d.get('chunk_id')} dist={d.get('_distance','') or d.get('score','')}  {snippet}")
-
                 result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback)
 
                 # After run, result['source_documents'] is reranked list

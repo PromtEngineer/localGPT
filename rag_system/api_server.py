@@ -291,11 +291,23 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     idx_ids = db.get_indexes_for_session(session_id)
                     _apply_index_embedding_model(idx_ids)
 
-                # Directly invoke retrieval pipeline to bypass triage
-                result = RAG_AGENT.retrieval_pipeline.run(
+                # Bypass triage, but retain decomposition, verification,
+                # reranking, and every other agent-level RAG capability.
+                result = RAG_AGENT.run(
                     query,
                     table_name=table_name,
-                    window_size_override=context_window_size,
+                    session_id=session_id,
+                    compose_sub_answers=compose_flag,
+                    query_decompose=decomp_flag,
+                    ai_rerank=ai_rerank_flag,
+                    context_expand=ctx_expand_flag,
+                    verify=verify_flag,
+                    retrieval_k=retrieval_k,
+                    context_window_size=context_window_size,
+                    reranker_top_k=reranker_top_k,
+                    search_type=search_type,
+                    dense_weight=dense_weight,
+                    force_rag=True,
                 )
             else:
                 # Use full agent with smart routing
@@ -439,12 +451,23 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
                     if session_id:
                         rp_cfg["overview_path"] = f"index_store/overviews/{session_id}.jsonl"
 
-                    # Straight retrieval pipeline with streaming events
-                    final_result = RAG_AGENT.retrieval_pipeline.run(
+                    # Skip triage while retaining the full RAG feature path.
+                    final_result = RAG_AGENT.run(
                         query,
                         table_name=table_name,
-                        window_size_override=context_window_size,
+                        session_id=session_id,
+                        compose_sub_answers=compose_flag,
+                        query_decompose=decomp_flag,
+                        ai_rerank=ai_rerank_flag,
+                        context_expand=ctx_expand_flag,
+                        verify=verify_flag,
+                        retrieval_k=retrieval_k,
+                        context_window_size=context_window_size,
+                        reranker_top_k=reranker_top_k,
+                        search_type=search_type,
+                        dense_weight=dense_weight,
                         event_callback=emit,
+                        force_rag=True,
                     )
                 else:
                     # Provence overrides

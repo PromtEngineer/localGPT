@@ -10,6 +10,7 @@ from threading import Lock
 
 from rag_system.utils.ollama_client import OllamaClient
 from rag_system.retrieval.retrievers import MultiVectorRetriever, GraphRetriever
+from rag_system.retrieval.scope_filter import filter_by_entity_scope
 from rag_system.indexing.embedders import LanceDBManager
 from rag_system.rerankers.reranker import QwenReranker
 from rag_system.rerankers.sentence_pruner import SentencePruner
@@ -215,12 +216,13 @@ Context you receive
 
 Instructions
 1. Evaluate each snippet for relevance to the ORIGINAL QUESTION; ignore those that do not help answer it.  
-2. Synthesise an answer **using only information from the relevant snippets**.  
-3. If snippets contradict one another, mention the contradiction explicitly.  
-4. If the snippets do not contain the needed information, reply exactly with:  
+2. Do not mention an irrelevant snippet merely to explain that it is unrelated. A snippet about a differently named entity is irrelevant unless the question asks for a comparison.
+3. Synthesise an answer **using only information from the relevant snippets**.
+4. If relevant snippets contradict one another, mention the contradiction explicitly.
+5. If the snippets do not contain the needed information, reply exactly with:
    "I could not find that information in the provided documents."  
-5. Provide a thorough, well-structured answer. Use paragraphs or bullet points where helpful, and include any relevant numbers/names exactly as they appear. There is **no strict sentence limit**, but aim for clarity over brevity.  
-6. Do **not** introduce external knowledge unless step 4 applies; in that case you may add a clearly-labelled "General knowledge" sentence after the required statement.
+6. Provide a direct, well-structured answer. Include relevant numbers and names exactly as they appear, but omit facts the question did not request.
+7. Do **not** introduce external knowledge unless step 5 applies; in that case you may add a clearly-labelled "General knowledge" sentence after the required statement.
 
 Output format
 Answer:
@@ -411,6 +413,16 @@ ORIGINAL QUESTION: "{query}"
         else:
             # If no AI reranker, proceed with the initially retrieved docs
             reranked_docs = retrieved_docs
+
+        scope_cfg = self.config.get("entity_scope_filter", {})
+        if scope_cfg.get("enabled", True) and reranked_docs:
+            before_scope_count = len(reranked_docs)
+            reranked_docs = filter_by_entity_scope(query, reranked_docs)
+            if event_callback and len(reranked_docs) != before_scope_count:
+                event_callback(
+                    "scope_filter_done",
+                    {"before": before_scope_count, "after": len(reranked_docs)},
+                )
 
         window_size = self.config.get("context_window_size", 1)
         if window_size_override is not None:
