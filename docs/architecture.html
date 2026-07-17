@@ -1,0 +1,427 @@
+<title>marag — system architecture</title>
+<style>
+  :root{
+    --paper:#F4F6F5;--surface:#FFFFFF;--surface-2:#ECEFEE;--ink:#12181B;--ink-2:#566468;--ink-3:#8A9699;
+    --line:#DCE2E1;--line-2:#C6CFCE;--accent:#C97A1F;--accent-soft:rgba(201,122,31,.10);
+    --ok:#2E7D5B;--bad:#B24430;--ch-d:#4C7DB8;--ch-b:#3E8C86;--ch-v:#8A6BB5;
+    --shadow:0 1px 2px rgba(18,24,27,.05),0 8px 24px rgba(18,24,27,.04);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#0F1416;--surface:#151C1F;--surface-2:#1B2427;--ink:#E7EDEC;--ink-2:#93A1A3;--ink-3:#6A797C;
+    --line:#232E31;--line-2:#31403F;--accent:#E9A94D;--accent-soft:rgba(233,169,77,.12);
+    --ok:#55A883;--bad:#D6705C;--ch-d:#6E9DD4;--ch-b:#57A9A2;--ch-v:#A388CE;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.3);}}
+  :root[data-theme="dark"]{
+    --paper:#0F1416;--surface:#151C1F;--surface-2:#1B2427;--ink:#E7EDEC;--ink-2:#93A1A3;--ink-3:#6A797C;
+    --line:#232E31;--line-2:#31403F;--accent:#E9A94D;--accent-soft:rgba(233,169,77,.12);
+    --ok:#55A883;--bad:#D6705C;--ch-d:#6E9DD4;--ch-b:#57A9A2;--ch-v:#A388CE;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.3);}
+  :root[data-theme="light"]{
+    --paper:#F4F6F5;--surface:#FFFFFF;--surface-2:#ECEFEE;--ink:#12181B;--ink-2:#566468;--ink-3:#8A9699;
+    --line:#DCE2E1;--line-2:#C6CFCE;--accent:#C97A1F;--accent-soft:rgba(201,122,31,.10);
+    --ok:#2E7D5B;--bad:#B24430;--ch-d:#4C7DB8;--ch-b:#3E8C86;--ch-v:#8A6BB5;
+    --shadow:0 1px 2px rgba(18,24,27,.05),0 8px 24px rgba(18,24,27,.04);}
+
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-size:14.5px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1080px;margin:0 auto;padding:40px 22px 80px;}
+  .label{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+  .mono{font-family:var(--mono);}
+  code{font-family:var(--mono);font-size:.86em;background:var(--surface-2);border:1px solid var(--line);
+    border-radius:2px;padding:0 4px;}
+
+  header.hero{margin-bottom:34px;}
+  .hero h1{font-family:var(--mono);font-size:clamp(22px,3.4vw,30px);font-weight:600;margin:6px 0 10px;
+    letter-spacing:-.01em;text-wrap:balance;}
+  .hero p{max-width:68ch;color:var(--ink-2);margin:0 0 14px;}
+  .statrow{display:flex;flex-wrap:wrap;gap:8px;}
+  .stat{border:1px solid var(--line);background:var(--surface);border-radius:3px;padding:7px 11px;
+    font-family:var(--mono);font-size:11px;color:var(--ink-2);}
+  .stat b{color:var(--ink);font-variant-numeric:tabular-nums;}
+
+  section{margin-top:46px;}
+  h2{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink);margin:0 0 6px;display:flex;align-items:center;gap:10px;}
+  h2::after{content:"";flex:1;height:1px;background:var(--line);}
+  .sub{color:var(--ink-2);max-width:76ch;margin:0 0 18px;font-size:13.5px;}
+
+  /* planes */
+  .plane{border:1px solid var(--line);background:var(--surface);border-radius:4px;box-shadow:var(--shadow);
+    padding:14px 16px 16px;position:relative;}
+  .plane + .flow{margin:0;}
+  .plane-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;}
+  .plane-name{font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.05em;}
+  .plane-note{font-family:var(--mono);font-size:10px;color:var(--ink-3);}
+  .row{display:grid;gap:10px;}
+  .node{border:1px solid var(--line-2);border-radius:3px;background:var(--paper);padding:9px 11px;min-width:0;}
+  .node h4{margin:0 0 3px;font-family:var(--mono);font-size:11.5px;font-weight:600;}
+  .node p{margin:0;font-size:11.5px;color:var(--ink-2);line-height:1.45;}
+  .node.amber{border-color:var(--accent);background:var(--accent-soft);}
+  .node.opt{border-style:dashed;}
+  .tag{display:inline-block;font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;border:1px solid var(--line-2);
+    border-radius:2px;padding:0 4px;color:var(--ink-3);vertical-align:2px;margin-left:6px;}
+  .tag.on{color:var(--accent);border-color:var(--accent);}
+  .flow{display:flex;justify-content:center;padding:6px 0;}
+  .flow span{font-family:var(--mono);font-size:12px;color:var(--accent);}
+  .cd{color:var(--ch-d);} .cb{color:var(--ch-b);} .cv{color:var(--ch-v);}
+
+  /* two-col overview */
+  .overview{display:grid;grid-template-columns:minmax(0,1fr) 268px;gap:14px;align-items:start;}
+  @media (max-width:900px){.overview{grid-template-columns:1fr;}}
+  .siderail{display:flex;flex-direction:column;gap:14px;position:sticky;top:16px;}
+
+  /* tool grid */
+  .tools{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  @media (max-width:760px){.tools{grid-template-columns:repeat(2,1fr);}}
+  .tool{border:1px solid var(--line-2);border-radius:3px;background:var(--paper);padding:7px 9px;}
+  .tool h5{margin:0;font-family:var(--mono);font-size:11px;font-weight:600;}
+  .tool p{margin:2px 0 0;font-size:10.5px;color:var(--ink-3);line-height:1.4;}
+  .tool.vis h5{color:var(--accent);} .tool.sql h5{color:var(--ch-b);}
+
+  /* loop diagram */
+  .loop{display:grid;grid-template-columns:170px minmax(0,1fr);gap:14px;align-items:stretch;}
+  @media (max-width:760px){.loop{grid-template-columns:1fr;}}
+  .loopbox{border:1.5px solid var(--accent);border-radius:4px;background:var(--surface);padding:12px 14px;position:relative;}
+  .loopbox::before{content:"⟲ agentic loop · ≤20 tool calls";position:absolute;top:-9px;left:12px;background:var(--surface);
+    padding:0 6px;font-family:var(--mono);font-size:9.5px;color:var(--accent);letter-spacing:.05em;}
+  .guards{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .guard{font-family:var(--mono);font-size:9.5px;border:1px solid var(--line-2);border-radius:2px;
+    padding:2px 6px;color:var(--ink-2);background:var(--paper);}
+  .guard.opt{border-style:dashed;color:var(--ink-3);}
+
+  /* retrieval channels */
+  .channels{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  @media (max-width:760px){.channels{grid-template-columns:1fr;}}
+  .chan{border-top:2.5px solid;border-radius:3px;background:var(--surface);border-left:1px solid var(--line);
+    border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 12px;}
+  .chan h4{margin:0 0 3px;font-family:var(--mono);font-size:11.5px;}
+  .chan p{margin:0;font-size:11px;color:var(--ink-2);line-height:1.45;}
+  .bar{border:1px solid var(--line-2);background:var(--paper);border-radius:3px;text-align:center;
+    padding:8px;font-family:var(--mono);font-size:11.5px;}
+  .multiwrap{border:1px dashed var(--line-2);border-radius:4px;padding:12px;position:relative;margin-top:4px;}
+  .multiwrap::before{content:"search_multi — repeated per source in scope, fused into ONE pool";position:absolute;
+    top:-9px;left:12px;background:var(--paper);padding:0 6px;font-family:var(--mono);font-size:9.5px;color:var(--ink-3);}
+
+  /* view_page */
+  .vp{display:grid;grid-template-columns:150px minmax(0,1fr);gap:18px;align-items:start;}
+  @media (max-width:700px){.vp{grid-template-columns:1fr;}}
+  .pageviz{aspect-ratio:8.5/11;border:1px solid var(--line-2);background:var(--surface);position:relative;
+    box-shadow:var(--shadow);border-radius:2px;overflow:hidden;}
+  .pv-grid{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr 1fr;}
+  .pv-cell{border:1px dashed var(--line-2);margin:-.5px;position:relative;}
+  .pv-cell.hot{background:var(--accent-soft);border:1.5px solid var(--accent);}
+  .pv-cell.hot::before,.pv-cell.hot::after{content:"";position:absolute;width:7px;height:7px;border:0 solid var(--accent);}
+  .pv-cell.hot::before{top:-1px;left:-1px;border-width:2px 0 0 2px;}
+  .pv-cell.hot::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0;}
+  .pv-label{position:absolute;bottom:2px;left:4px;font-family:var(--mono);font-size:7px;color:var(--accent);}
+  .steps{display:flex;flex-direction:column;gap:0;}
+  .stp{display:grid;grid-template-columns:14px 1fr;gap:10px;padding:8px 0;}
+  .stp + .stp{border-top:1px dashed var(--line);}
+  .stp i{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--ink-3);margin-top:5px;background:var(--surface);}
+  .stp.amber i{border-color:var(--accent);background:var(--accent);}
+  .stp b{font-family:var(--mono);font-size:11.5px;display:block;}
+  .stp span{font-size:11.5px;color:var(--ink-2);}
+
+  /* models table */
+  .tbl{width:100%;border-collapse:collapse;font-size:12px;}
+  .tbl th{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+    text-align:left;padding:6px 10px;border-bottom:1px solid var(--line-2);}
+  .tbl td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top;}
+  .tbl td:first-child{font-family:var(--mono);font-size:11.5px;white-space:nowrap;}
+  .tbl .num{font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:11.5px;}
+  .tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:4px;background:var(--surface);}
+
+  /* results */
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  @media (max-width:820px){.tiles{grid-template-columns:repeat(2,1fr);}}
+  .tile{border:1px solid var(--line);border-radius:4px;background:var(--surface);padding:12px 14px;box-shadow:var(--shadow);}
+  .tile .v{font-family:var(--mono);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;}
+  .tile .k{font-family:var(--mono);font-size:10px;color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin-top:2px;}
+  .tile .d{font-size:11px;color:var(--ink-2);margin-top:6px;line-height:1.45;}
+  .foot{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);font-family:var(--mono);
+    font-size:10.5px;color:var(--ink-3);line-height:1.7;}
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <div class="label">marag · localGPT branch multimodal-agentic-rag · as built, July 17 2026</div>
+  <h1>Local multimodal agentic RAG — system architecture</h1>
+  <p>Everything below runs on one machine (M2 Max, 96&nbsp;GB) with no cloud calls. The design is
+  hardware-agnostic: every model is an OpenAI-compatible endpoint plus a name in
+  <code>configs/default.yaml</code>. Every number on this page comes from the running system.</p>
+  <div class="statrow">
+    <div class="stat"><b>4</b> sources</div>
+    <div class="stat"><b>98</b> docs</div>
+    <div class="stat"><b>7,078</b> pages</div>
+    <div class="stat"><b>10,343</b> chunks</div>
+    <div class="stat"><b>1,612</b> SQL tables</div>
+    <div class="stat"><b>60</b> verified benchmark questions</div>
+  </div>
+</header>
+
+<!-- ================= OVERVIEW ================= -->
+<section>
+  <h2>1 · The five planes</h2>
+  <p class="sub">Documents flow down the left; the serving rail on the right powers every stage.
+  The retrieval harness is the interface boundary — the agent, the evals, and the workbench UI
+  all drive the same tools.</p>
+
+  <div class="overview">
+    <div>
+      <div class="plane">
+        <div class="plane-head"><span class="plane-name">INGESTION</span>
+          <span class="plane-note">dispatch by file type · idempotent</span></div>
+        <div class="row" style="grid-template-columns:repeat(3,1fr)">
+          <div class="node">
+            <h4>PDF</h4>
+            <p>pymupdf text + 150-dpi page PNGs · <b>Docling TableFormer</b> tables → Parquet ·
+            scanned pages flagged <code>visual-primary</code></p>
+          </div>
+          <div class="node">
+            <h4>DOCX · PPTX · HTML · MD</h4>
+            <p>Docling → markdown, split into ~800-token pseudo-pages · tables → Parquet · no visual channel (no fixed layout)</p>
+          </div>
+          <div class="node">
+            <h4>CSV · XLSX · Parquet</h4>
+            <p>full sheets → <span class="cb">DuckDB views</span> + one searchable <b>profile card</b> per sheet
+            (schema, ranges, sample rows, view name)</p>
+          </div>
+        </div>
+        <div class="row" style="grid-template-columns:1fr;margin-top:10px">
+          <div class="node"><h4>chunking</h4>
+            <p>layout-aware, page-attributed, 512–800 tokens, contextual headers
+            (<code>title · section · page</code>) — the unit every index and citation shares</p></div>
+        </div>
+      </div>
+
+      <div class="flow"><span>▼</span></div>
+
+      <div class="plane">
+        <div class="plane-head"><span class="plane-name">INDEX</span>
+          <span class="plane-note">per source · all local files</span></div>
+        <div class="row" style="grid-template-columns:repeat(4,1fr)">
+          <div class="node"><h4 class="cd">LanceDB · dense</h4><p>Qwen3-Embedding-0.6B, 1024-d, MPS in-process</p></div>
+          <div class="node"><h4 class="cb">LanceDB · FTS</h4><p>native BM25 full-text over the same chunks</p></div>
+          <div class="node"><h4 class="cv">visual · npz</h4><p>ColModernVBERT 250M late-interaction page multivectors</p></div>
+          <div class="node"><h4 class="cb">DuckDB</h4><p>every extracted table + spreadsheet sheet as SQL views</p></div>
+        </div>
+      </div>
+
+      <div class="flow"><span>▼</span></div>
+
+      <div class="plane">
+        <div class="plane-head"><span class="plane-name">RETRIEVAL HARNESS</span>
+          <span class="plane-note">ToolBox — multi-granularity, multi-source</span></div>
+        <div class="tools">
+          <div class="tool"><h5>hybrid_search</h5><p>3 channels · RRF · rerank; fused across every source in scope</p></div>
+          <div class="tool"><h5>grep</h5><p>regex over raw page text, all sources</p></div>
+          <div class="tool"><h5>read_doc</h5><p>exact pages, ≤6 per call, auto-resolves source</p></div>
+          <div class="tool"><h5>list_docs</h5><p>corpus maps of the scope</p></div>
+          <div class="tool sql"><h5>list_tables · sql</h5><p>ONE flat DuckDB namespace across sources — cross-source joins work</p></div>
+          <div class="tool"><h5>summarize_doc</h5><p>whole-doc map-reduce, cached — the primitive top-k can't give</p></div>
+          <div class="tool vis"><h5>view_page</h5><p>VLM reads the rendered page; region zoom re-rasterizes at 500 dpi</p></div>
+          <div class="tool"><h5>evidence tracking</h5><p>every (doc, page) touched → grounding + stop signals</p></div>
+        </div>
+      </div>
+
+      <div class="flow"><span>▼</span></div>
+
+      <div class="plane">
+        <div class="plane-head"><span class="plane-name">AGENT</span>
+          <span class="plane-note">§3 below</span></div>
+        <div class="row" style="grid-template-columns:repeat(3,1fr)">
+          <div class="node"><h4>router</h4><p>qwen3.5:9b, thinking off — single-shot vs agentic per query</p></div>
+          <div class="node amber"><h4>agentic loop</h4><p>ReAct over the harness, hard budgets, grounded verification</p></div>
+          <div class="node"><h4>judge / evals</h4><p>binary rubric, temp 0 · 60-question benchmark, tool traces persisted</p></div>
+        </div>
+      </div>
+
+      <div class="flow"><span>▼</span></div>
+
+      <div class="plane">
+        <div class="plane-head"><span class="plane-name">WORKBENCH</span>
+          <span class="plane-note">marag serve · REST + SSE</span></div>
+        <div class="row" style="grid-template-columns:repeat(3,1fr)">
+          <div class="node"><h4>sessions</h4><p>SQLite-persisted chats, scope + mode restored per session</p></div>
+          <div class="node"><h4>streamed trace</h4><p>every tool call streams to the UI as the agent works</p></div>
+          <div class="node"><h4>evidence panel</h4><p>citation → real page image + its tables + the 2×3 zoom grid</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="siderail">
+      <div class="plane">
+        <div class="plane-head"><span class="plane-name">SERVING</span></div>
+        <div class="row" style="grid-template-columns:1fr">
+          <div class="node"><h4>Ollama :11435</h4>
+            <p>dedicated server, <b>64K ctx</b> (the app default of 16K silently truncates agent loops)</p></div>
+          <div class="node"><h4>in-process · MPS</h4>
+            <p>embedder + reranker + visual retriever, loaded once; GPU-heavy jobs serialized</p></div>
+          <div class="node"><h4>hardware-agnostic</h4>
+            <p>swap the base_url for vLLM/llama.cpp; no code changes</p></div>
+        </div>
+      </div>
+      <div class="plane">
+        <div class="plane-head"><span class="plane-name">MODELS</span></div>
+        <div class="row" style="grid-template-columns:1fr">
+          <div class="node"><h4>qwen3.6:35b-a3b</h4><p>agent loop + generation + vision · MoE, 3B active, Q4 ≈ 23 GB</p></div>
+          <div class="node"><h4>qwen3.5:9b</h4><p>router · graders · judge</p></div>
+          <div class="node"><h4>Qwen3-Embedding-0.6B</h4><p>dense channel <span class="tag">MPS</span></p></div>
+          <div class="node"><h4>Qwen3-Reranker-0.6B</h4><p>cross-encoder, top-25 <span class="tag">MPS</span></p></div>
+          <div class="node"><h4>ColModernVBERT 250M</h4><p>visual retriever <span class="tag">MPS</span></p></div>
+          <div class="node opt"><h4>gemma4:31b <span class="tag on">OPT-IN</span></h4>
+            <p>dense vision reader for charts — measured +1 question on the chart-heavy domain at ~1.5× latency</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= RETRIEVAL ================= -->
+<section>
+  <h2>2 · Hybrid retrieval — three channels, one pool</h2>
+  <p class="sub">Each channel sees the corpus differently; RRF fusion means no channel has to be
+  right alone. With several sources in scope the whole block repeats per source and the pools
+  merge before reranking, so chunks compete across sources.</p>
+
+  <div class="multiwrap">
+    <div class="channels">
+      <div class="chan" style="border-top-color:var(--ch-d)">
+        <h4 class="cd">dense</h4>
+        <p>Qwen3-Embedding-0.6B · 1024-d cosine over chunks with contextual headers. Catches paraphrase and fuzzy intent.</p>
+      </div>
+      <div class="chan" style="border-top-color:var(--ch-b)">
+        <h4 class="cb">bm25 / fts</h4>
+        <p>LanceDB native full-text. Catches exact names, IDs, rare tokens embeddings blur.</p>
+      </div>
+      <div class="chan" style="border-top-color:var(--ch-v)">
+        <h4 class="cv">visual · late-interaction</h4>
+        <p>ColModernVBERT multivector MaxSim over page images. Catches chart/table/scan pages whose text layer is weak —
+        on FDA labels it beat every text configuration.</p>
+      </div>
+    </div>
+    <div class="flow"><span>▼ &nbsp;top-30 per channel</span></div>
+    <div class="bar">RRF fusion · k=60 — rank-based, no score calibration needed</div>
+    <div class="flow"><span>▼ &nbsp;top-25</span></div>
+    <div class="bar">Qwen3-Reranker-0.6B cross-encoder → final top-8 with <code>[doc_id pN]</code> provenance</div>
+  </div>
+</section>
+
+<!-- ================= AGENT LOOP ================= -->
+<section>
+  <h2>3 · The agent — routed, budgeted, verified</h2>
+  <p class="sub">Iterative retrieval costs 3–4× a single pass, so a cheap router decides per query.
+  Everything that must hold is enforced <em>mechanically</em> — in tools, budgets and guards — because
+  asking nicely in the prompt measurably fails.</p>
+
+  <div class="loop">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="node"><h4>question</h4><p>from CLI, API or UI, with a source scope</p></div>
+      <div class="flow" style="padding:0"><span>▼</span></div>
+      <div class="node"><h4>router · qwen3.5:9b</h4><p>thinking off, structured output</p></div>
+      <div class="flow" style="padding:0"><span>▼</span></div>
+      <div class="node"><h4>single-shot</h4><p>~60-70% of real queries: retrieve → generate with citations</p></div>
+      <div class="flow" style="padding:0"><span>▼ hard ones</span></div>
+    </div>
+
+    <div class="loopbox">
+      <div class="steps">
+        <div class="stp"><i></i><span><b>decompose</b><span>what distinct evidence does the answer need?</span></span></div>
+        <div class="stp"><i></i><span><b>search → narrow → confirm</b><span>hybrid_search per piece, grep exact strings, read_doc the wording before citing</span></span></div>
+        <div class="stp"><i></i><span><b class="cb">numbers via sql</b><span>arithmetic over tables runs in DuckDB, never in the model's head; spreadsheet questions hit their sheet's view</span></span></div>
+        <div class="stp amber"><i></i><span><b style="color:var(--accent)">charts via view_page</b><span>text bar-labels lose their visual association — any chart-referenced value must be confirmed by vision</span></span></div>
+        <div class="stp"><i></i><span><b>step back</b><span>evidence not surfacing → reformulate, switch granularity, widen scope — never answer from a failed retrieval</span></span></div>
+        <div class="stp"><i></i><span><b>final answer</b><span>claim-by-claim citations <code>[doc pN]</code>; grounding fraction computed from the evidence the loop actually touched</span></span></div>
+      </div>
+      <div class="guards">
+        <span class="guard">budget ≤20 calls (production median ~24)</span>
+        <span class="guard">marginal-utility stop: 2 rounds, no new evidence → finalize</span>
+        <span class="guard">empty final → no-think retry (thinking starvation)</span>
+        <span class="guard">temp 0 · stable prompts per role</span>
+        <span class="guard opt">numbers_via_sql verifier · opt-in, A/B running</span>
+        <span class="guard opt">gemma4 vision + auto-zoom · opt-in</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= VIEW_PAGE ================= -->
+<section>
+  <h2>4 · view_page — how the agent reads what text can't</h2>
+  <p class="sub">The multimodal answer path. Images never enter the agent's context — the page goes
+  to the vision model in a separate sub-call and only the text reading returns. The 2×3 region grid
+  is the same one exposed interactively in the workbench evidence panel.</p>
+
+  <div class="vp">
+    <div>
+      <div class="pageviz" role="img" aria-label="Page with 2×3 zoom region grid, top-left active">
+        <div class="pv-grid">
+          <div class="pv-cell hot"><span class="pv-label">top-left</span></div><div class="pv-cell"></div>
+          <div class="pv-cell"></div><div class="pv-cell"></div>
+          <div class="pv-cell"></div><div class="pv-cell"></div>
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:9.5px;color:var(--ink-3);margin-top:6px;text-align:center">
+        region grid · corners render ≈500 dpi</div>
+    </div>
+    <div class="steps">
+      <div class="stp"><i></i><span><b>default (validated)</b>
+        <span>stored 150-dpi page PNG + a focused question → reading with <code>[caption quoted]</code>.
+        Reliable for labeled values: bars, pie slices, table cells, patent drawings — this is what took legal to 100%.</span></span></div>
+      <div class="stp amber"><i></i><span><b style="color:var(--accent)">region zoom</b>
+        <span>a named region is re-rasterized from the source PDF at 500 dpi — resolution that only exists in the vector source, not in an upscaled PNG.</span></span></div>
+      <div class="stp"><i></i><span><b>opt-in: dense reader + locate→zoom + thinking</b>
+        <span>gemma4:31b (dense beats the 3B-active MoE on series discrimination): a cheap locate pass names the smallest region → corner crop → thinking read ("halfway between the 0.6 and 0.8 tick marks"). Same-session A/B: health 80%→86.7%, recovering the epidemic-curve question; ~1.5× latency.</span></span></div>
+      <div class="stp"><i></i><span><b>the honest ceiling</b>
+        <span>interpolated values off dense multi-series line charts remain approximate (±0.1 band run to run) — when a value must be exact, the design prefers the underlying table via <code>sql</code> or states the uncertainty.</span></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MEASURED ================= -->
+<section>
+  <h2>5 · Measured, not hoped</h2>
+  <p class="sub">Every layer is scored against 60 verified multi-hop multimodal questions across four
+  domains — one of them (public health) added after the system was built, with zero code changes.
+  Comparisons follow the variance protocol: same-session A/B only; ≤2-question deltas at n=15 are noise.</p>
+  <div class="tiles">
+    <div class="tile"><div class="v">84–97%</div><div class="k">retrieval hop recall @10</div>
+      <div class="d">tri-hybrid + rerank per domain; the visual channel adds up to +13&nbsp;pp on chart-heavy corpora</div></div>
+    <div class="tile"><div class="v">88.3%</div><div class="k">agentic answers · 4 domains</div>
+      <div class="d">53/60 single-session baseline (legal 100%); single-shot baseline: 13–47%</div></div>
+    <div class="tile"><div class="v">100%</div><div class="k">gold table hops in SQL</div>
+      <div class="d">Docling TableFormer — up from 41–67% with the previous extractor</div></div>
+    <div class="tile"><div class="v">1.0</div><div class="k">citation grounding</div>
+      <div class="d">every cited page verified against evidence the loop actually touched</div></div>
+  </div>
+</section>
+
+<!-- ================= MODEL TABLE ================= -->
+<section>
+  <h2>6 · Model roles</h2>
+  <div class="tblwrap">
+    <table class="tbl">
+      <thead><tr><th>model</th><th>role</th><th class="num">footprint</th><th>where</th></tr></thead>
+      <tbody>
+        <tr><td>qwen3.6:35b-a3b</td><td>agent loop · generation · default vision reader</td><td class="num">≈23 GB Q4</td><td>Ollama :11435 · 64K ctx</td></tr>
+        <tr><td>qwen3.5:9b</td><td>router · retrieval graders · LLM judge</td><td class="num">≈6.6 GB</td><td>Ollama :11435</td></tr>
+        <tr><td>Qwen3-Embedding-0.6B</td><td>dense channel (1024-d, contextual-header chunks)</td><td class="num">≈1.2 GB</td><td>in-process · MPS</td></tr>
+        <tr><td>Qwen3-Reranker-0.6B</td><td>cross-encoder rerank of the fused top-25</td><td class="num">≈1.2 GB</td><td>in-process · MPS</td></tr>
+        <tr><td>ColModernVBERT 250M</td><td>late-interaction page-image retriever</td><td class="num">≈1 GB</td><td>in-process · MPS</td></tr>
+        <tr><td>gemma4:31b</td><td>opt-in dense vision reader (charts)</td><td class="num">≈19 GB Q4</td><td>Ollama :11435 · <code>models.vision</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="foot">
+  source: PromtEngineer/localGPT · branch multimodal-agentic-rag — DESIGN.md (researched architecture) ·
+  RESULTS.md (all measurements, bug postmortems, variance protocol) · STATUS.md (ops runbook).<br>
+  hard-won ops rules baked in: one GPU-heavy process at a time on MPS · reasoning models starve on small
+  token budgets (empty output ≠ model failure) · verify the served context window (<code>ollama ps</code>) ·
+  tool descriptions are executable contracts — revert behavior and contract together.
+</div>
+</div>
