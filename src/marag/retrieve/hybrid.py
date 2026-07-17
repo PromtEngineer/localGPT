@@ -137,5 +137,77 @@ class Retriever:
         for cid in ordered[:k_final]:
             h = dict(by_id[cid])
             h["rrf_score"] = fused[cid]
+            h.setdefault("dataset", dataset)
+            out.append(h)
+        return out
+
+    def search_multi(
+        self,
+        query: str,
+        datasets: list[str],
+        k_final: int | None = None,
+        channels: tuple[str, ...] = ("dense", "fts"),
+        use_rerank: bool | None = None,
+    ) -> list[dict]:
+        """Retrieve across several indices at once: pool each source's candidates, RRF-fuse
+        the lot, then rerank the combined pool so results compete across sources."""
+        datasets = [d for d in dict.fromkeys(datasets)]  # dedupe, keep order
+        if len(datasets) == 1:
+            return self.search(query, datasets[0], k_final, channels, use_rerank)
+
+        cfg = self.cfg.retrieval
+        k_final = k_final or cfg.final_k
+        n = cfg.candidates_per_channel
+        by_id: dict[str, dict] = {}
+        rank_lists: list[list[str]] = []
+        qv = self.embedder.embed_query(query) if "dense" in channels else None
+
+        for ds in datasets:
+            if "dense" in channels:
+                hits = self._rows_to_hits(self.store.dense(ds, qv, n), "dense")
+                rank_lists.append([h["id"] for h in hits])
+                for h in hits:
+                    h["dataset"] = ds
+                    by_id.setdefault(h["id"], h)
+            if "fts" in channels:
+                df = self.store.fts(ds, query, n)
+                if len(df):
+                    hits = self._rows_to_hits(df, "fts")
+                    rank_lists.append([h["id"] for h in hits])
+                    for h in hits:
+                        h["dataset"] = ds
+                        by_id.setdefault(h["id"], h)
+            if "visual" in channels:
+                vi = self._visual_index()
+                if vi.exists(ds):
+                    vhits = []
+                    for v in vi.search(query, ds, k=n):
+                        txt = _page_text(self.cfg, ds, v["doc_id"], v["page"])
+                        vhits.append({
+                            "id": f"vis::{ds}::{v['doc_id']}::p{v['page']}", "doc_id": v["doc_id"],
+                            "page": v["page"], "section": "(page-image match)", "text": txt,
+                            "raw_text": txt, "source": "visual", "dataset": ds,
+                        })
+                    rank_lists.append([h["id"] for h in vhits])
+                    for h in vhits:
+                        by_id.setdefault(h["id"], h)
+
+        fused = rrf_fuse(rank_lists, k=cfg.rrf_k)
+        ordered = sorted(fused, key=fused.get, reverse=True)
+        use_rerank = cfg.rerank if use_rerank is None else use_rerank
+        if use_rerank and self.reranker and not self._rerank_broken and len(ordered) > 1:
+            cand = ordered[: cfg.rerank_candidates]
+            try:
+                scores = self.reranker.score(query, [by_id[c]["raw_text"] for c in cand])
+                cand = [c for _, c in sorted(zip(scores, cand), key=lambda t: -t[0])]
+                ordered = cand + [c for c in ordered if c not in set(cand)]
+            except Exception as e:
+                self._rerank_broken = True
+                warnings.warn(f"reranker disabled after error: {e}")
+
+        out = []
+        for cid in ordered[:k_final]:
+            h = dict(by_id[cid])
+            h["rrf_score"] = fused[cid]
             out.append(h)
         return out

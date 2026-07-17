@@ -332,9 +332,12 @@ function renderAnswer(text,meta){
       <span>${meta.tool_calls||0} tool calls</span>${meta.mode?`<span>mode: ${meta.mode}</span>`:""}</div>`;
   $("#messages").append(wrap);wireCites(wrap);wireTrace(wrap);scrollDown();
 }
-function findDataset(doc){return DS_PREFIX[doc.slice(0,3)]||[...scope][0]||(sources[0]&&sources[0].id);}
+async function resolveDataset(doc){
+  try{const r=await(await api("/api/resolve/"+doc)).json();return r.dataset;}
+  catch(e){return DS_PREFIX[doc.slice(0,3)]||[...scope][0]||(sources[0]&&sources[0].id);}
+}
 async function loadEvidence(doc,page,region){
-  const dataset=findDataset(doc);
+  const dataset=await resolveDataset(doc);
   $("#app").dataset.ev="open";$("#evSrc").textContent=dataset;
   $("#evScroll").innerHTML=`<div class="empty" style="font-size:11px">loading ${doc} p${page}…</div>`;
   try{

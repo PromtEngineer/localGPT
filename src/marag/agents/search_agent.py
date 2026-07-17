@@ -45,7 +45,7 @@ def _serialize_tool_calls(tool_calls) -> list[dict]:
 
 
 def answer_agentic(
-    question: str, dataset: str, cfg: Config, retriever: Retriever, on_event=None
+    question: str, dataset: str | list[str], cfg: Config, retriever: Retriever, on_event=None
 ) -> dict:
     """on_event(kind, payload): optional callback for live streaming — fired as
     {"tool": name, "args": {...}} per tool call and {"answer": text} at the end."""

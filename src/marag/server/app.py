@@ -128,7 +128,16 @@ def create_app(cfg: Config | None = None) -> FastAPI:
 
     @app.get("/api/evidence/{dataset}/{doc_id}/{page}")
     def evidence(dataset: str, doc_id: str, page: int):
+        if dataset == "_":  # resolve which source owns this doc
+            dataset = catalog.dataset_of(cfg, doc_id) or dataset
         return catalog.page_evidence(cfg, dataset, doc_id, page)
+
+    @app.get("/api/resolve/{doc_id}")
+    def resolve(doc_id: str):
+        ds = catalog.dataset_of(cfg, doc_id)
+        if not ds:
+            raise HTTPException(404, "unknown doc")
+        return {"doc_id": doc_id, "dataset": ds}
 
     # ---------- upload + ingest ----------
     @app.post("/api/upload")
@@ -172,7 +181,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     def ask(body: AskIn):
         if not body.scope:
             raise HTTPException(400, "pick at least one source")
-        dataset = body.scope[0]  # multi-source scope hits the first; index-merge is future work
+        scope = body.scope  # every in-scope index is searched (search_multi fuses across them)
         sid = body.session_id or store.create_session(body.question[:60], body.scope, body.mode)["id"]
         store.add_message(sid, "user", body.question, {"scope": body.scope})
 
@@ -188,14 +197,14 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 r = _retriever(cfg)
                 mode = body.mode
                 if mode == "auto":
-                    mode = route(body.question, cfg)
+                    mode = "single" if route(body.question, cfg) == "single_shot" else "agentic"
                     q.put(("route", {"mode": mode}))
                 try:
                     if mode == "single":
-                        res = answer_single_shot(body.question, dataset, cfg, r)
+                        res = answer_single_shot(body.question, scope, cfg, r)
                     else:
                         res = answer_agentic(
-                            body.question, dataset, cfg, r,
+                            body.question, scope, cfg, r,
                             on_event=lambda kind, p: q.put((kind, p)),
                         )
                     result.update(res)

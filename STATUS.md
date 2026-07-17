@@ -62,8 +62,16 @@ answer stream). `src/marag/server/`; static reference design in `ui/mock.html`.
   model maps section notes, orchestrator reduces). This is the document-level primitive top-k
   retrieval can't provide. `marag summarize <ds> <doc>` / exposed as an agent tool; the router
   sends "summarize/overview" requests to the agentic path.
-- **Not yet**: true multi-index scope merge (API queries the first source in scope);
-  spreadsheet formulas/merged-cell headers rely on pandas' read (fine for clean data files).
+- **Multi-index retrieval (now real)**: with several sources in scope the agent searches ALL
+  of them — `search_multi` pools each index's candidates and reranks across the combined set;
+  grep/read/summarize/view_page resolve each doc to its owning source; `sql` exposes every
+  in-scope source's tables in one flat namespace (globally-unique view names), so a single
+  query can join a financial table and a health table. Verified: `hlt=33, fin=18` from one
+  cross-source query. The API `/api/ask` passes the full scope; `/api/resolve/{doc}` maps a
+  citation to its source so evidence opens correctly from any index.
+- **Still fuzzy**: spreadsheet merged-cell headers rely on pandas' read (fine for clean data
+  files); list_tables caps at 120 rows so a giant source can crowd out others in the unfiltered
+  listing (per-doc list_tables is unaffected).
 
 ## Opt-in capabilities (off by default; default path byte-identical to validated)
 

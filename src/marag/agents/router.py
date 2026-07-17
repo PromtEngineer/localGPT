@@ -29,7 +29,7 @@ def route(question: str, cfg: Config) -> str:
         return "iterative"  # fail toward the more capable path
 
 
-def answer_auto(question: str, dataset: str, cfg: Config, retriever) -> dict:
+def answer_auto(question: str, dataset: str | list[str], cfg: Config, retriever) -> dict:
     from .search_agent import answer_agentic
     from .single_shot import answer_single_shot
 

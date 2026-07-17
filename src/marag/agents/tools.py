@@ -53,25 +53,49 @@ _REGIONS: dict[str, tuple[float, float, float, float]] = {
 class ToolBox:
     """Multi-granularity corpus access for the search agent: search → grep → read → sql."""
 
-    def __init__(self, cfg: Config, dataset: str, retriever: Retriever):
+    def __init__(self, cfg: Config, dataset: str | list[str], retriever: Retriever):
         self.cfg = cfg
-        self.dataset = dataset
         self.retriever = retriever
-        self.processed = cfg.path("processed", create=False) / dataset
+        self.datasets = [dataset] if isinstance(dataset, str) else list(dict.fromkeys(dataset))
+        self.dataset = self.datasets[0]
+        self.multi = len(self.datasets) > 1
+        self._proc = cfg.path("processed", create=False)
+        self.processed = self._proc / self.dataset  # primary dataset (single-dataset back-compat)
+        # doc_id -> owning dataset, so every tool resolves a doc to the right source
+        self.doc2ds: dict[str, str] = {}
+        for ds in self.datasets:
+            root = self._proc / ds
+            if root.exists():
+                for meta in root.glob("*/meta.json"):
+                    self.doc2ds[meta.parent.name] = ds
         self._vlm: LLM | None = None  # lazy; shares the orchestrator's server
         self._pdfs: dict[str, object] = {}  # doc_id -> open fitz doc, for high-DPI renders
         # evidence tracking for marginal-utility stop
         self.evidence_seen: set[tuple[str, int]] = set()
         self.new_evidence_last_call = 0
 
+    def _docdir(self, doc_id: str):
+        return self._proc / self.doc2ds.get(doc_id, self.dataset) / doc_id
+
+    def _all_doc_dirs(self) -> list:
+        dirs = []
+        for ds in self.datasets:
+            root = self._proc / ds
+            if root.exists():
+                dirs += [d for d in sorted(root.iterdir()) if (d / "meta.json").exists()]
+        return dirs
+
     # ---------- tool implementations ----------
 
     def hybrid_search(self, query: str, top_k: int = 8) -> str:
-        hits = self.retriever.search(query, self.dataset, k_final=min(int(top_k), 15))
+        k = min(int(top_k), 15)
+        hits = (self.retriever.search_multi(query, self.datasets, k_final=k)
+                if self.multi else self.retriever.search(query, self.dataset, k_final=k))
         self._track([(h["doc_id"], h["page"]) for h in hits])
         out = []
         for h in hits:
-            out.append(f"[{h['doc_id']} p{h['page']}] ({h['section']}) {h['raw_text'][:400]}")
+            tag = f" · {h['dataset']}" if self.multi and h.get("dataset") else ""
+            out.append(f"[{h['doc_id']} p{h['page']}]{tag} ({h['section']}) {h['raw_text'][:400]}")
         return _cap("\n---\n".join(out) or "no results")
 
     def grep(self, pattern: str, doc_id: str = "") -> str:
@@ -80,7 +104,7 @@ class ToolBox:
         except re.error as e:
             return f"invalid regex: {e}"
         matches: list[str] = []
-        docs = [self.processed / doc_id] if doc_id else sorted(self.processed.iterdir())
+        docs = [self._docdir(doc_id)] if doc_id else self._all_doc_dirs()
         for doc_dir in docs:
             pages = doc_dir / "pages.jsonl"
             if not pages.exists():
@@ -100,7 +124,7 @@ class ToolBox:
     def read_doc(self, doc_id: str, page_start: int, page_end: int) -> str:
         page_start, page_end = int(page_start), int(page_end)
         page_end = min(page_end, page_start + 5)  # cap window
-        pages_file = self.processed / doc_id / "pages.jsonl"
+        pages_file = self._docdir(doc_id) / "pages.jsonl"
         if not pages_file.exists():
             return f"unknown doc_id: {doc_id}"
         parts = []
@@ -113,8 +137,12 @@ class ToolBox:
         return _cap("\n".join(parts) or f"no pages in range {page_start}-{page_end}")
 
     def list_docs(self) -> str:
-        cm = self.processed / "corpus_map.md"
-        return _cap(cm.read_text() if cm.exists() else "corpus map missing")
+        parts = []
+        for ds in self.datasets:
+            cm = self._proc / ds / "corpus_map.md"
+            if cm.exists():
+                parts.append(cm.read_text())
+        return _cap("\n\n".join(parts) or "corpus map missing")
 
     def summarize_doc(self, doc_id: str) -> str:
         """Whole-document summary via map-reduce over every chunk; cached to disk.
@@ -122,7 +150,7 @@ class ToolBox:
         This is the document-level primitive retrieval can't provide: top-k search assumes
         the answer lives in a few chunks, a summary needs all of them.
         """
-        doc_dir = self.processed / doc_id
+        doc_dir = self._docdir(doc_id)
         cache = doc_dir / "summary.md"
         meta_f = doc_dir / "meta.json"
         if not meta_f.exists():
@@ -171,11 +199,42 @@ class ToolBox:
         self._track([(doc_id, p) for p in range(1, meta.get("n_pages", 1) + 1)])
         return _cap(f"[summary of {doc_id} · {title} · {len(batches)} sections mapped]\n{summary}")
 
+    def _tables_con(self):
+        """A DuckDB connection exposing every in-scope table under one flat view namespace.
+        Single dataset → the file db (unchanged). Multi → in-memory with all sources attached;
+        view names embed the globally-unique doc_id, so bare `SELECT ... FROM t_<doc>_...` works."""
+        if not self.multi:
+            db = self.processed / "tables.duckdb"
+            return duckdb.connect(str(db), read_only=True) if db.exists() else None
+        con = duckdb.connect(":memory:")
+        cat: list = []
+        for i, ds in enumerate(self.datasets):
+            db = self._proc / ds / "tables.duckdb"
+            if not db.exists():
+                continue
+            alias = f"src{i}"
+            con.execute(f"ATTACH '{db}' AS {alias} (READ_ONLY)")
+            try:
+                rows = con.execute(
+                    f"SELECT doc_id,page,view_name,n_rows,n_cols,headers FROM {alias}._catalog"
+                ).fetchall()
+            except Exception:
+                rows = []
+            for r in rows:
+                try:
+                    con.execute(f'CREATE VIEW "{r[2]}" AS SELECT * FROM {alias}."{r[2]}"')
+                    cat.append(r)
+                except Exception:
+                    pass
+        con.execute("CREATE TABLE _catalog (doc_id VARCHAR, page INT, view_name VARCHAR, n_rows INT, n_cols INT, headers VARCHAR)")
+        if cat:
+            con.executemany("INSERT INTO _catalog VALUES (?,?,?,?,?,?)", cat)
+        return con
+
     def has_tables(self) -> bool:
-        db = self.processed / "tables.duckdb"
-        if not db.exists():
+        con = self._tables_con()
+        if con is None:
             return False
-        con = duckdb.connect(str(db), read_only=True)
         try:
             return con.execute("SELECT count(*) FROM _catalog").fetchone()[0] > 0
         except Exception:
@@ -184,22 +243,22 @@ class ToolBox:
             con.close()
 
     def list_tables(self, doc_id: str = "") -> str:
-        db = self.processed / "tables.duckdb"
-        if not db.exists():
+        con = self._tables_con()
+        if con is None:
             return "no tables database"
-        con = duckdb.connect(str(db), read_only=True)
         q = "SELECT doc_id, page, view_name, n_rows, n_cols, headers FROM _catalog"
         if doc_id:
             q += f" WHERE doc_id = '{doc_id}'"
-        rows = con.execute(q + " LIMIT 80").fetchall()
+        rows = con.execute(q + " LIMIT 120").fetchall()
         con.close()
         return _cap("\n".join(f"{r[2]} ({r[0]} p{r[1]}, {r[3]}x{r[4]}) cols={r[5]}" for r in rows) or "no tables")
 
     def sql(self, query: str) -> str:
         if re.search(r"\b(insert|update|delete|drop|create|alter|attach|copy)\b", query, re.I):
             return "read-only: SELECT queries only"
-        db = self.processed / "tables.duckdb"
-        con = duckdb.connect(str(db), read_only=True)
+        con = self._tables_con()
+        if con is None:
+            return "no tables database"
         try:
             df = con.execute(query).fetchdf()
             return _cap(df.head(50).to_markdown(index=False))
@@ -219,11 +278,11 @@ class ToolBox:
         import fitz
 
         if region == "full":
-            png = self.processed / doc_id / "pages" / f"p{page:04d}.png"
+            png = self._docdir(doc_id) / "pages" / f"p{page:04d}.png"
             if png.exists():
                 return png.read_bytes()
 
-        meta_f = self.processed / doc_id / "meta.json"
+        meta_f = self._docdir(doc_id) / "meta.json"
         if not meta_f.exists():
             return f"unknown doc_id: {doc_id}"
         pdf_path = json.loads(meta_f.read_text()).get("source_pdf")

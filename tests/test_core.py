@@ -100,6 +100,44 @@ def test_parse_data_file_xlsx_multisheet(tmp_path):
     assert "t_mix002_p1_0" in pages[0]["text"] and "t_mix002_p2_1" in pages[1]["text"]
 
 
+def test_multi_index_toolbox(tmp_path):
+    """Two sources in one ToolBox: doc resolution + cross-source sql in one flat namespace."""
+    import pandas as pd
+
+    from marag.config import Config, ModelsCfg, PathsCfg
+    from marag.ingest.formats import parse_data_file
+    from marag.ingest.pipeline import _build_duckdb
+
+    # absolute paths: Config.path() does root / paths.X, and Path/abs == abs
+    cfg = Config(
+        models=ModelsCfg(orchestrator="x", utility="x", embedder="x", reranker="x"),
+        paths=PathsCfg(processed=str(tmp_path / "processed"), index=str(tmp_path / "index")),
+    )
+
+    def make(ds, doc_id, df):
+        csv = tmp_path / f"{doc_id}.csv"
+        df.to_csv(csv, index=False)
+        out = cfg.path("processed") / ds / doc_id
+        meta = parse_data_file(csv, out, cfg, doc_id)
+        (out / "meta.json").write_text(json.dumps({**meta, "doc_id": doc_id, "title": doc_id}))
+
+    make("src_a", "aaa001", pd.DataFrame({"region": ["E", "A"], "rev": [10, 20]}))
+    make("src_b", "bbb001", pd.DataFrame({"item": ["x", "y", "z"], "qty": [1, 2, 3]}))
+    for ds in ("src_a", "src_b"):
+        _build_duckdb(ds, cfg)
+
+    from marag.agents.tools import ToolBox
+
+    tb = ToolBox(cfg, ["src_a", "src_b"], retriever=None)
+    assert tb.multi and tb.doc2ds == {"aaa001": "src_a", "bbb001": "src_b"}
+    assert tb.has_tables()
+    # one query spanning views from BOTH sources — globally-unique view names in one namespace
+    out = tb.sql("SELECT (SELECT sum(rev) FROM t_aaa001_p1_0) a, (SELECT sum(qty) FROM t_bbb001_p1_0) b")
+    assert "30" in out and "6" in out
+    # read_doc resolves each doc to its owning source
+    assert "aaa001" in tb.read_doc("aaa001", 1, 1)
+
+
 def test_pseudo_page_split():
     from marag.ingest.formats import PSEUDO_PAGE_CHARS
 

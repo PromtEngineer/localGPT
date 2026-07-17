@@ -13,9 +13,11 @@ Rules:
 
 
 def answer_single_shot(
-    question: str, dataset: str, cfg: Config, retriever: Retriever, llm: LLM | None = None
+    question: str, dataset: str | list[str], cfg: Config, retriever: Retriever, llm: LLM | None = None
 ) -> dict:
-    hits = retriever.search(question, dataset)
+    datasets = [dataset] if isinstance(dataset, str) else list(dict.fromkeys(dataset))
+    hits = (retriever.search_multi(question, datasets) if len(datasets) > 1
+            else retriever.search(question, datasets[0]))
     ctx = "\n\n".join(f"[{h['doc_id']} p{h['page']}] {h['raw_text'][:1500]}" for h in hits)
     llm = llm or LLM("orchestrator", cfg)
     answer = llm.text(

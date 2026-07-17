@@ -44,6 +44,17 @@ def list_sources(cfg: Config) -> list[dict]:
     return out
 
 
+def dataset_of(cfg: Config, doc_id: str) -> str | None:
+    """Which ingested source owns this doc_id — resolves citations regardless of source."""
+    processed = cfg.path("processed", create=False)
+    if not processed.exists():
+        return None
+    for ds_dir in sorted(processed.iterdir()):
+        if (ds_dir / doc_id / "meta.json").exists():
+            return ds_dir.name
+    return None
+
+
 def list_docs(cfg: Config, dataset: str) -> list[dict]:
     ds_dir = cfg.path("processed", create=False) / dataset
     docs = []
