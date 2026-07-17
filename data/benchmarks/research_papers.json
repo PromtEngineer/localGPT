@@ -1,0 +1,189 @@
+{
+  "dataset": "research_papers",
+  "created": "2026-07-16",
+  "questions": [
+    {
+      "id": "rp_q01",
+      "question": "Both the NV-Embed paper and the Gecko paper report average scores over the 56 MTEB benchmark datasets. By how many points does NV-Embed-v2's MTEB average (NV-Embed paper, Table 1) exceed gecko-1b-768's MTEB average (Gecko paper, Table 1), and what are the two averages?",
+      "answer": "6.00 points: NV-Embed-v2 scores 72.31 and gecko-1b-768 scores 66.31 (average over 56 MTEB datasets).",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "rp015", "pages": [2], "modality": "table", "evidence": "Table 1 'Top MTEB leaderboard models': NV-Embed-v2 row, Avg. (56) column = 72.31"},
+        {"doc_id": "rp017", "pages": [7], "modality": "table", "evidence": "Table 1 'Results on MTEB': gecko-1b-768 row, Avg. column = 66.31 (768 dim, 1.2B params)"}
+      ]
+    },
+    {
+      "id": "rp_q02",
+      "question": "ColPali is evaluated in its own paper on the ViDoRe benchmark and is also retrained as a baseline in the VisRAG paper. What average nDCG@5 does ColPali achieve on ViDoRe (ColPali paper, Table 2), what average MRR@10 does ColPali achieve on VisRAG's retrieval benchmark (VisRAG paper, Table 2), and does ColPali beat VisRAG-Ret on the latter?",
+      "answer": "ColPali scores 81.3 average nDCG@5 on ViDoRe and 76.54 average MRR@10 on VisRAG's benchmark; no, VisRAG-Ret is higher with 77.91 average MRR@10.",
+      "answer_type": "list",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "rp001", "pages": [7], "modality": "table", "evidence": "Table 2 (ViDoRe nDCG@5): ColPali (+Late Inter.) row, Avg. = 81.3"},
+        {"doc_id": "rp002", "pages": [7], "modality": "table", "evidence": "Table 2 (MRR@10, in-domain block): ColPali 2.92B params, Average = 76.54; VisRAG-Ret 3.43B, Average = 77.91"}
+      ]
+    },
+    {
+      "id": "rp_q03",
+      "question": "The Self-RAG paper (Table 2) reports Self-RAG 7B's accuracy on PopQA, and the CRAG paper (Table 1) reports Self-CRAG's accuracy on PopQA when built on SelfRAG-LLaMA2-7b. By how many accuracy points does Self-CRAG improve over Self-RAG 7B on PopQA, and what are the two accuracies?",
+      "answer": "6.9 points: Self-CRAG scores 61.8 accuracy vs Self-RAG 7B's 54.9 accuracy on PopQA.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "rp004", "pages": [8], "modality": "table", "evidence": "Table 2: 'Our SELF-RAG 7B' row, PopQA (acc) = 54.9"},
+        {"doc_id": "rp005", "pages": [7], "modality": "table", "evidence": "Table 1, SelfRAG-LLaMA2-7b block: Self-RAG PopQA = 54.9, Self-CRAG PopQA = 61.8 (bold)"},
+        {"doc_id": "rp005", "pages": [8], "modality": "text", "evidence": "Body text states Self-CRAG outperforms Self-RAG 'by margins of 6.9% accuracy on PopQA' when based on SelfRAG-LLaMA2-7b"}
+      ]
+    },
+    {
+      "id": "rp_q04",
+      "question": "Comparing the flagship 72B vision-language models: what DocVQA test score does Qwen2-VL-72B report in the Qwen2-VL paper (Table 2), what DocVQA test score does Qwen2.5-VL-72B report in the Qwen2.5-VL Technical Report (Table 5), and which of the two is higher?",
+      "answer": "Qwen2-VL-72B reports 96.5 and Qwen2.5-VL-72B reports 96.4 on DocVQA test; Qwen2-VL-72B's reported score is higher by 0.1 points.",
+      "answer_type": "comparison",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "rp022", "pages": [9], "modality": "table", "evidence": "Table 2 'Performance Comparison of Qwen2-VL Models and State-of-the-art': DocVQA_test row, Qwen2-VL-72B = 96.5"},
+        {"doc_id": "rp023", "pages": [13], "modality": "table", "evidence": "Table 5 (OCR, chart, and document understanding benchmarks): DocVQA_test row, Qwen2.5-VL-72B = 96.4"}
+      ]
+    },
+    {
+      "id": "rp_q05",
+      "question": "Compare the vision encoders of InternVL and Qwen2-VL: how many parameters does InternViT-6B have according to the InternVL paper's architecture details table (Table 1), how many parameters does Qwen2-VL's ViT have according to the Qwen2-VL paper (Table 1), and roughly how many times larger is InternViT-6B?",
+      "answer": "InternViT-6B has 5903M (~5.9B) parameters; Qwen2-VL uses a 675M-parameter ViT across all model sizes; InternViT-6B is roughly 8.7x larger.",
+      "answer_type": "list",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "rp024", "pages": [4], "modality": "table", "evidence": "Table 1 'Architecture details of the InternViT-6B model': width 3200, depth 48, MLP 12800, #heads 25, #param(M) 5903"},
+        {"doc_id": "rp022", "pages": [3], "modality": "table", "evidence": "Table 1 'Model descriptions of Qwen2-VL': Vision Encoder = 675M for Qwen2-VL-2B/7B/72B; text: 'employs a 675M parameter ViT across various-sized LLMs'"}
+      ]
+    },
+    {
+      "id": "rp_q06",
+      "question": "DSE (Document Screenshot Embedding) and ColPali both retrieve documents by directly encoding page screenshots. What nDCG@10 does DSE report on SlideVQA-open in the supervised setting (DSE paper, Table 1), and what average nDCG@5 does ColPali report on ViDoRe (ColPali paper, Table 2)?",
+      "answer": "DSE reports 75.3 nDCG@10 on SlideVQA-open; ColPali reports 81.3 average nDCG@5 on ViDoRe.",
+      "answer_type": "list",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "rp003", "pages": [6], "modality": "table", "evidence": "Table 1 'Supervised retrieval effectiveness comparison': DSE (Screenshot) row, SlideVQA-open nDCG@10 = 75.3, Recall@10 = 84.6"},
+        {"doc_id": "rp001", "pages": [7], "modality": "table", "evidence": "Table 2 (ViDoRe nDCG@5): ColPali (+Late Inter.) row, Avg. = 81.3"}
+      ]
+    },
+    {
+      "id": "rp_q07",
+      "question": "The BGE-M3 embedding model appears in two papers: as a text baseline with OCR in the ColPali paper's ViDoRe evaluation (Table 2, 'Unstructured + OCR' block), and in its own M3-Embedding paper on the MIRACL multilingual benchmark (Table 1). What average nDCG@5 does BGE-M3 with OCR achieve on ViDoRe, and what average nDCG@10 does M3-Embedding's Dense retrieval achieve on the MIRACL dev set?",
+      "answer": "BGE-M3 (Unstructured + OCR) averages 66.1 nDCG@5 on ViDoRe; M3-Embedding Dense averages 69.2 nDCG@10 on MIRACL.",
+      "answer_type": "list",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "rp001", "pages": [7], "modality": "table", "evidence": "Table 2, 'Unstructured + OCR' block: BGE-M3 row, Avg. = 66.1"},
+        {"doc_id": "rp016", "pages": [6], "modality": "table", "evidence": "Table 1 'Multi-lingual retrieval performance on the MIRACL dev set (nDCG@10)': M3-Embedding Dense row, Avg = 69.2"}
+      ]
+    },
+    {
+      "id": "rp_q08",
+      "question": "According to the VisRAG paper, how much storage does ColPali require to represent one document page and across how many vectors, how much does VisRAG-Ret use instead, and which of the two achieves the higher in-domain average MRR@10 in VisRAG's Table 2?",
+      "answer": "ColPali uses 256KB per page distributed across 1030 128-dimensional vectors; VisRAG-Ret uses just 4.5KB in a single 2304-dimensional vector; VisRAG-Ret also achieves the higher in-domain average MRR@10 (77.91 vs ColPali's 76.54).",
+      "answer_type": "list",
+      "difficulty": "hard",
+      "hop_type": "cross_section",
+      "hops": [
+        {"doc_id": "rp002", "pages": [8], "modality": "text", "evidence": "'ColPali represents a page with 256KB of data distributed across 1030 128-dim vectors..., whereas VisRAG-Ret uses just 4.5KB in a single 2304-dimensional vector'"},
+        {"doc_id": "rp002", "pages": [7], "modality": "table", "evidence": "Table 2, in-domain block: ColPali Average MRR@10 = 76.54; VisRAG-Ret Average MRR@10 = 77.91"}
+      ]
+    },
+    {
+      "id": "rp_q09",
+      "question": "The Ragas paper defines three quality dimensions for RAG evaluation in Section 3 (faithfulness, answer relevance, context relevance). According to its Table 1 reporting agreement with human annotators on the WikiEval dataset, which of the three dimensions does the Ragas metric predict most accurately, and what is that accuracy?",
+      "answer": "Faithfulness, with 0.95 accuracy (vs 0.78 for answer relevance and 0.70 for context relevance).",
+      "answer_type": "span",
+      "difficulty": "medium",
+      "hop_type": "cross_section",
+      "hops": [
+        {"doc_id": "rp006", "pages": [3], "modality": "text", "evidence": "Section 3 defines Faithfulness, Answer Relevance, and Context Relevance with LLM-prompt-based estimation for each"},
+        {"doc_id": "rp006", "pages": [5], "modality": "table", "evidence": "Table 1 'Agreement with human annotators... using the WikEval dataset (accuracy)': Ragas row = Faith. 0.95, Ans. Rel. 0.78, Cont. Rel. 0.70"}
+      ]
+    },
+    {
+      "id": "rp_q10",
+      "question": "In the RAPTOR paper's controlled comparison of F-1 scores on the QASPER dataset (Table 3), by how many F-1 points does RAPTOR outperform DPR when GPT-4 is used as the language model, and what are the two scores?",
+      "answer": "2.7 F-1 points: RAPTOR scores 55.7 vs DPR's 53.0 (GPT-4 F-1 Match on QASPER).",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "rp007", "pages": [8], "modality": "table", "evidence": "Table 3 (QASPER F-1, controlled comparison): DPR GPT-4 F-1 Match = 53.0; RAPTOR GPT-4 F-1 Match = 55.7"},
+        {"doc_id": "rp007", "pages": [7], "modality": "text", "evidence": "'RAPTOR's F-1 Match scores are 53.1%, 55.7%, and 36.6% when using GPT-3, GPT-4, and UnifiedQA... These scores surpass DPR by margins of 1.8, 2.7, and 4.5 points'"}
+      ]
+    },
+    {
+      "id": "rp_q11",
+      "question": "In the 'Lost in the Middle' paper, what closed-book accuracy does GPT-3.5-Turbo achieve on the multi-document QA task (Table 1), and according to the 20-document panel of Figure 5, does gpt-3.5-turbo-0613's open-book accuracy at middle answer positions fall below that closed-book accuracy?",
+      "answer": "Closed-book accuracy is 56.1%; yes - in the 20-document setting gpt-3.5-turbo-0613 dips to roughly 53-55% at middle positions, below the 56.1% closed-book level (peak is about 75-76% at position 1).",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "rp012", "pages": [5], "modality": "table", "evidence": "Table 1 'Closed-book and oracle accuracy': GPT-3.5-Turbo closed-book = 56.1%, oracle = 88.3%"},
+        {"doc_id": "rp012", "pages": [5], "modality": "figure", "evidence": "Figure 5, middle panel (20 Total Retrieved Documents): gpt-3.5-turbo-0613 U-shaped curve, ~75-76 at 1st position, dipping to mid-50s at middle positions"},
+        {"doc_id": "rp012", "pages": [2], "modality": "text", "evidence": "'performance... is lower than its performance when predicting without any documents (i.e., the closed-book setting; 56.1%)'"}
+      ]
+    },
+    {
+      "id": "rp_q12",
+      "question": "In Figure 3 (left) of the ColPali paper, which shows relative nDCG@5 as a function of token pool factor on ViDoRe datasets, which dataset degrades most severely as the pool factor increases, and according to the paper's token pooling discussion, what percentage of the original performance is maintained on average at a pool factor of 3?",
+      "answer": "Shift degrades most severely (dropping to roughly 86-88% relative nDCG@5, while other datasets stay near 96-100%); at pool factor 3, 97.8% of original performance is maintained on average (with 66.7% fewer vectors).",
+      "answer_type": "span",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "rp001", "pages": [9], "modality": "figure", "evidence": "Figure 3 (left, Token Pooling): line chart of Relative NDCG@5 (%) vs Pool Factor 1-7; the Shift line falls far below all others to ~86-88%, dashed Average line ends near 96%"},
+        {"doc_id": "rp001", "pages": [8], "modality": "text", "evidence": "'With a pool factor of 3, the total number of vectors is reduced by 66.7% while 97.8% of the original performance is maintained... the Shift dataset... is a clear outlier'"}
+      ]
+    },
+    {
+      "id": "rp_q13",
+      "question": "The DeepSeek-R1 paper's Figure 1 shows DeepSeek-R1-Zero during RL training: pass@1 on AIME 2024 rises from 15.6% to 77.9%. According to Figure 1(b), what happens to R1-Zero's average response length over the same training run, and per the paper's main results comparison table (Table 8), what AIME 2024 pass@1 does the final DeepSeek-R1 achieve versus OpenAI-o1-1217?",
+      "answer": "The average response length grows steadily during RL training, from under ~1,000 tokens to roughly 15,000-20,000 tokens per response; final DeepSeek-R1 scores 79.8 pass@1 on AIME 2024 vs 79.2 for OpenAI-o1-1217.",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "rp025", "pages": [4], "modality": "figure", "evidence": "Figure 1(a): AIME accuracy line chart climbing from ~0.15 to ~0.78 over ~10K steps (with human-participants dashed baseline ~0.4); Figure 1(b): average response length curve growing to ~15K-20K tokens"},
+        {"doc_id": "rp025", "pages": [4], "modality": "text", "evidence": "'the average pass@1 score on AIME 2024 shows a significant increase, jumping from an initial 15.6% to 77.9%'"},
+        {"doc_id": "rp025", "pages": [41], "modality": "table", "evidence": "Table 8 'Comparison between DeepSeek-R1 and other representative models': AIME 2024 (Pass@1) row - OpenAI o1-1217 = 79.2, DeepSeek-R1 = 79.8"}
+      ]
+    },
+    {
+      "id": "rp_q14",
+      "question": "The Reflexion paper's abstract claims 91% pass@1 on HumanEval, surpassing previous state-of-the-art GPT-4 at 80%. Using the exact values in Reflexion's Table 1 for HumanEval (PY), by how many percentage points does Reflexion's Pass@1 exceed the GPT-4 SOTA baseline?",
+      "answer": "10.9 percentage points: Reflexion Pass@1 = 91.0 vs GPT-4 SOTA Pass@1 = 80.1 on HumanEval (PY).",
+      "answer_type": "numeric",
+      "difficulty": "medium",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "rp019", "pages": [7], "modality": "table", "evidence": "Table 1 'Pass@1 accuracy': HumanEval (PY) row - SOTA Pass@1 = 80.1 (GPT-4), Reflexion Pass@1 = 91.0"},
+        {"doc_id": "rp019", "pages": [1], "modality": "text", "evidence": "Abstract: 'Reflexion achieves a 91% pass@1 accuracy on the HumanEval coding benchmark, surpassing the previous state-of-the-art GPT-4 that achieves 80%'"}
+      ]
+    },
+    {
+      "id": "rp_q15",
+      "question": "NV-Embed-v2 appears both in its own paper and as an OCR-pipeline text-retrieval baseline in the VisRAG paper. What average MRR@10 does NV-Embed-v2 (OCR) achieve on VisRAG's retrieval benchmark (VisRAG Table 2), and what 56-dataset MTEB average does NV-Embed-v2 report in the NV-Embed paper (Table 1)?",
+      "answer": "75.24 average MRR@10 on VisRAG's benchmark (as a 7.85B-parameter OCR baseline) and 72.31 average on the 56 MTEB datasets.",
+      "answer_type": "list",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "rp002", "pages": [7], "modality": "table", "evidence": "Table 2, off-the-shelf block: NV-Embed-v2 (OCR) row, # Para. 7.85B, Average MRR@10 = 75.24"},
+        {"doc_id": "rp015", "pages": [2], "modality": "table", "evidence": "Table 1: NV-Embed-v2 row, Avg. (56) = 72.31"}
+      ]
+    }
+  ]
+}

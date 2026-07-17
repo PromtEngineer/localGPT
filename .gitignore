@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+data/processed/
+data/index/
+data/raw/**/*.pdf
+*.lance
+.DS_Store
+runs/

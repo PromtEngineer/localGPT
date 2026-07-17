@@ -1,0 +1,186 @@
+{
+  "dataset": "financial_docs",
+  "created": "2026-07-16",
+  "questions": [
+    {
+      "id": "fin_q01",
+      "question": "Comparing NVIDIA's FY2025 Form 10-K (fiscal year ended January 26, 2025) with AMD's FY2024 Form 10-K (fiscal year ended December 28, 2024): which company grew its Data Center revenue faster year over year, and what were each company's Data Center revenues for that fiscal year and the prior fiscal year?",
+      "answer": "NVIDIA grew faster. NVIDIA Data Center revenue rose 142% to $115,186M in FY2025 from $47,525M in FY2024; AMD Data Center segment revenue rose 94% to $12,579M in FY2024 from $6,496M in FY2023.",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "fin002", "pages": [80], "modality": "table", "evidence": "Revenue by End Market table in segment note: Data Center $115,186M (FY2025) vs $47,525M (FY2024)"},
+        {"doc_id": "fin003", "pages": [50], "modality": "table", "evidence": "MD&A segment table: Data Center net revenue $12,579M (2024) vs $6,496M (2023), with text 'increased by 94%'"}
+      ]
+    },
+    {
+      "id": "fin_q02",
+      "question": "Using NVIDIA's FY2025 Form 10-K (fiscal year ended January 26, 2025): by what percentage did total revenue grow in FY2025 versus FY2024 (state both revenue figures), and what percentage of FY2025 total revenue came from the Data Center end market?",
+      "answer": "Total revenue grew about 114% ($130,497M in FY2025 vs $60,922M in FY2024). Data Center revenue of $115,186M was about 88% of the $130,497M total.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "fin002", "pages": [52], "modality": "table", "evidence": "Consolidated Statements of Income: revenue $130,497M (FY2025) vs $60,922M (FY2024)"},
+        {"doc_id": "fin002", "pages": [80], "modality": "table", "evidence": "Revenue by End Market table: Data Center $115,186M of $130,497M total revenue"}
+      ]
+    },
+    {
+      "id": "fin_q03",
+      "question": "Across Tesla's Q4 2024 and Q1 2025 quarterly update decks, how did Tesla's total vehicle deliveries change from Q4 2024 to Q1 2025? Give both quarterly delivery figures and the absolute decline.",
+      "answer": "Deliveries fell from 495,570 in Q4 2024 to 336,681 in Q1 2025, a decline of 158,889 vehicles (about 32% lower quarter over quarter).",
+      "answer_type": "numeric",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "fin004", "pages": [7], "modality": "table", "evidence": "Operational Summary table: total deliveries 495,570 in Q4-2024"},
+        {"doc_id": "fin014", "pages": [6], "modality": "table", "evidence": "Operational Summary table: total deliveries 336,681 in Q1-2025"}
+      ]
+    },
+    {
+      "id": "fin_q04",
+      "question": "How many GWh of energy storage did Tesla deploy in full-year 2024 according to the annual operational summary in its Q4 2024 update deck (including the YoY growth shown), and what FY2024 revenue and YoY growth did Tesla's FY2024 Form 10-K report for the Energy generation and storage segment?",
+      "answer": "Tesla deployed 31.4 GWh of energy storage in 2024, up 114% from 14.7 GWh in 2023. The FY2024 10-K reports Energy generation and storage segment revenue of $10,086M, up 67% from $6,035M in 2023.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "fin004", "pages": [8], "modality": "table", "evidence": "Annual Operational Summary table: storage deployed 31.4 GWh in 2024 vs 14.7 GWh in 2023, +114% YoY"},
+        {"doc_id": "fin018", "pages": [40], "modality": "table", "evidence": "MD&A Revenues table: Energy generation and storage segment revenue $10,086M (2024) vs $6,035M (2023), +67%"}
+      ]
+    },
+    {
+      "id": "fin_q05",
+      "question": "According to the bar charts in Uber's Q4 2024 earnings supplemental deck: what were Uber's Q4 2024 Gross Bookings (in $M) with the as-reported YoY growth rate, and how many monthly active platform consumers (MAPCs, in millions) did Uber have in Q4 2024 with their YoY growth rate?",
+      "answer": "Q4 2024 Gross Bookings were $44,197M, up 18% YoY as reported (21% in constant currency); MAPCs were 171 million, up 14% YoY.",
+      "answer_type": "numeric",
+      "difficulty": "medium",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "fin013", "pages": [14], "modality": "figure", "evidence": "Gross Bookings bar chart: Q4 2024 = $44,197M, +18% YoY, +21% constant currency"},
+        {"doc_id": "fin013", "pages": [13], "modality": "figure", "evidence": "Operating Metrics bar charts: MAPCs 171M in Q4 2024, +14% YoY"}
+      ]
+    },
+    {
+      "id": "fin_q06",
+      "question": "At the end of Q4 2024, which service had more paying subscribers: Spotify Premium (per Spotify's Q4 2024 shareholder deck) or Netflix's global streaming paid memberships (per Netflix's Q4 2024 shareholder letter)? Give both subscriber counts.",
+      "answer": "Netflix was larger: 301.63 million global streaming paid memberships vs Spotify's 263 million Premium Subscribers (a gap of roughly 39 million).",
+      "answer_type": "comparison",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "fin020", "pages": [5], "modality": "table", "evidence": "Key Highlights: Actuals vs Guidance table: Premium Subscribers 263M in Q4 2024 (guidance 260M)"},
+        {"doc_id": "fin012", "pages": [1], "modality": "table", "evidence": "Summary results table: Global Streaming Paid Memberships 301.63M in Q4'24"}
+      ]
+    },
+    {
+      "id": "fin_q07",
+      "question": "Using the Regional Breakdown table in Netflix's Q4 2024 shareholder letter, sum the Q4 2024 paid net additions across the four regions (UCAN, EMEA, LATAM, APAC). What is the total, which single region added the most members, and does the total match the roughly 19M paid net adds cited on the letter's first page?",
+      "answer": "Total Q4 2024 paid net additions were 18.91 million (UCAN 4.82M + EMEA 5.00M + LATAM 4.15M + APAC 4.94M). EMEA added the most (5.00M). Yes, this matches the ~19M paid net adds (18.91M) cited on page 1.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "fin012", "pages": [8], "modality": "table", "evidence": "Regional Breakdown table: Q4'24 paid net additions UCAN 4.82, EMEA 5.00, LATAM 4.15, APAC 4.94 (millions)"},
+        {"doc_id": "fin012", "pages": [1], "modality": "text", "evidence": "Letter text: 'helped by 19M paid net adds'; summary table shows Global Streaming Paid Net Additions 18.91M"}
+      ]
+    },
+    {
+      "id": "fin_q08",
+      "question": "In Intel's FY2024 Form 10-K (fiscal year ended December 28, 2024): what was the combined FY2024 operating income of the Intel Products business (CCG + DCAI + NEX) per the Intel Products Financial Performance table, what operating loss did the Intel Foundry Financial Performance table show for FY2024, and by how much did the Foundry loss exceed the Intel Products operating income?",
+      "answer": "Intel Products earned combined operating income of $13,189M in 2024 (CCG $10,920M + DCAI $1,338M + NEX $931M), while Intel Foundry posted an operating loss of $13,408M on revenue of $17,543M. The Foundry loss exceeded Intel Products' operating income by $219M.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "fin011", "pages": [19], "modality": "table", "evidence": "Intel Products Financial Performance table: 2024 operating income CCG $10,920M, DCAI $1,338M, NEX $931M, total $13,189M"},
+        {"doc_id": "fin011", "pages": [22], "modality": "table", "evidence": "Intel Foundry Financial Performance table: 2024 revenue $17,543M, operating loss $(13,408)M"}
+      ]
+    },
+    {
+      "id": "fin_q09",
+      "question": "Based on their FY2024 (calendar 2024) annual filings, which cloud business grew revenue faster in 2024: Google Cloud (per Alphabet's FY2024 10-K) or AWS (per Amazon's 2024 Annual Report/10-K)? Give both 2024 and 2023 revenue figures and the computed growth rates.",
+      "answer": "Google Cloud grew faster: revenue rose about 31% to $43,229M in 2024 from $33,088M in 2023, while AWS net sales rose about 19% to $107,556M in 2024 from $90,757M in 2023 (AWS remains much larger in absolute terms).",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "fin007", "pages": [37], "modality": "table", "evidence": "Revenues-by-type table in MD&A: Google Cloud $33,088M (2023) vs $43,229M (2024)"},
+        {"doc_id": "fin009", "pages": [36], "modality": "table", "evidence": "Net Sales table in Results of Operations: AWS $90,757M (2023) vs $107,556M (2024), 19% YoY growth"}
+      ]
+    },
+    {
+      "id": "fin_q10",
+      "question": "Which company reported higher total annual revenue in its FY2024 annual filing: Apple (Form 10-K for fiscal year ended September 28, 2024) or Alphabet (Form 10-K for fiscal year ended December 31, 2024)? Give both totals and the dollar difference.",
+      "answer": "Apple: total net sales of $391,035M vs Alphabet's total revenues of $350,018M - Apple was higher by about $41.0B ($41,017M).",
+      "answer_type": "comparison",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "fin008", "pages": [32], "modality": "table", "evidence": "Consolidated Statements of Operations: total net sales $391,035M for FY2024 (Products $294,866M + Services $96,169M)"},
+        {"doc_id": "fin007", "pages": [37], "modality": "table", "evidence": "Revenues-by-type table: Alphabet total revenues $350,018M for 2024"}
+      ]
+    },
+    {
+      "id": "fin_q11",
+      "question": "In Meta Platforms' FY2024 Form 10-K: Meta's risk factors say investments in Reality Labs reduced 2024 overall operating profit by approximately how much, and per the MD&A segment profitability table, what were the exact FY2024 Reality Labs operating loss, Family of Apps operating income, and total income from operations?",
+      "answer": "The risk factors cite approximately $17.73 billion. The segment profitability table shows Reality Labs operating loss of $(17,729)M, Family of Apps operating income of $87,109M, and total income from operations of $69,380M for 2024.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "cross_section",
+      "hops": [
+        {"doc_id": "fin010", "pages": [29], "modality": "text", "evidence": "Risk factor text: 'our investments in Reality Labs reduced our 2024 overall operating profit by approximately $17.73 billion'"},
+        {"doc_id": "fin010", "pages": [75], "modality": "table", "evidence": "Segment profitability table: FoA $87,109M, Reality Labs $(17,729)M, total income from operations $69,380M (2024)"}
+      ]
+    },
+    {
+      "id": "fin_q12",
+      "question": "For 2025 US real GDP growth: what does the World Bank's June 2025 Global Economic Prospects forecast in Table 1.1, and what is the FOMC's June 2025 median projection in Table 1 (Summary of Economic Projections) of the Fed's June 2025 Monetary Policy Report? Do the two point estimates agree?",
+      "answer": "Both are 1.4%. The World Bank forecasts US real GDP growth of 1.4% for 2025 (year-over-year), and the FOMC June 2025 median projection for 2025 change in real GDP is 1.4% (Q4-over-Q4), so the point estimates agree.",
+      "answer_type": "comparison",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "fin017", "pages": [26], "modality": "table", "evidence": "Table 1.1 Real GDP: United States 2025f = 1.4 (revised down 0.9pp from January 2025 projections)"},
+        {"doc_id": "fin001", "pages": [57], "modality": "table", "evidence": "SEP Table 1: median 2025 change in real GDP = 1.4 (March projection was 1.7)"}
+      ]
+    },
+    {
+      "id": "fin_q13",
+      "question": "In the Fed's June 2025 Monetary Policy Report: what was the US civilian unemployment rate as of May 2025 shown alongside Figure 10 (civilian unemployment rate chart), what is the FOMC's June 2025 median SEP projection for the unemployment rate at the end of 2025, and how large an increase does that projection imply from the May level?",
+      "answer": "The unemployment rate was 4.2% in May 2025 (Figure 10); the June 2025 SEP median projection for 2025 is 4.5%, implying an increase of about 0.3 percentage point from the May level.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "fin001", "pages": [20], "modality": "figure", "evidence": "Figure 10 'Civilian unemployment rate' chart with accompanying text: 'The unemployment rate, at 4.2 percent in May'"},
+        {"doc_id": "fin001", "pages": [57], "modality": "table", "evidence": "SEP Table 1: median 2025 unemployment rate projection = 4.5"}
+      ]
+    },
+    {
+      "id": "fin_q14",
+      "question": "The BIS Quarterly Review of March 2025 says equity markets turned jittery in late January 2025 on risk-off sentiment related to what technology, and, per the Revenue by End Market table in NVIDIA's FY2025 Form 10-K (fiscal year ended January 26, 2025), what full-year Data Center revenue did NVIDIA - one of the 'Magnificent 7' stocks tracked in the BIS report's Graph 4.C - report for that fiscal year?",
+      "answer": "Artificial intelligence (AI): the BIS notes markets were jittery in late January on risk-off sentiment related to AI. NVIDIA reported FY2025 Data Center revenue of $115,186M (about $115.2B), up 142% year over year.",
+      "answer_type": "span",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "fin023", "pages": [17], "modality": "figure", "evidence": "Graph 4.C 'Earnings in US technology...' with Magnificent 7 EPS line (footnote lists Nvidia) and adjacent text on late-January AI-related risk-off jitters"},
+        {"doc_id": "fin002", "pages": [80], "modality": "table", "evidence": "Revenue by End Market table: Data Center $115,186M for FY2025"}
+      ]
+    },
+    {
+      "id": "fin_q15",
+      "question": "What year-over-year change in total vehicle deliveries did Tesla report for Q1 2025 in the operational summary of its Q1 2025 update deck (give the percentage and both quarters' figures), and what 2025 global real GDP growth does the World Bank's June 2025 Global Economic Prospects project in Table 1.1, including the size of the downward revision from its January 2025 forecast?",
+      "answer": "Tesla's Q1 2025 total deliveries fell 13% YoY to 336,681 from 386,810 in Q1 2024. The World Bank projects global real GDP growth of 2.3% for 2025, a downward revision of 0.4 percentage point from its January 2025 projection.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "fin014", "pages": [6], "modality": "table", "evidence": "Operational Summary table: total deliveries 336,681 in Q1-2025 vs 386,810 in Q1-2024, -13% YoY"},
+        {"doc_id": "fin017", "pages": [26], "modality": "table", "evidence": "Table 1.1 Real GDP: World 2025f = 2.3, with -0.4pp difference from January 2025 projections"}
+      ]
+    }
+  ]
+}

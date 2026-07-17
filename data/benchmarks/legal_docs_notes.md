@@ -1,0 +1,9 @@
+# legal_docs benchmark notes
+
+- Methodology: every hop was verified by rendering the actual PDF page with the Read tool (not text extraction alone); chart/table values (e.g., DOJ Figures 6-8, EU Android Figure 8 and Table 3, Microsoft Tables 5/11, FTC Amazon Figure 13) were read directly off the rendered page. pdftotext was used only to *locate* candidate pages, never as evidence.
+- All "pages" fields are ABSOLUTE PDF page numbers (first PDF page = 1). Printed page numbers often differ: leg011 offset +4 (PDF 17 = printed 13), leg013 offset +4, leg019 offset +6, leg024 offset +1, leg017/leg016 offset +1, leg020 offset +8, leg018 offset +12, leg025 offset +9.
+- Manifest caveat: multimodal_evidence page hints for leg018 (infographics), leg020 (Rose Enigma figure), and leg025 (Figure 5) use PRINTED page numbers, not PDF pages (e.g., leg020's figure is printed p.23 = PDF p.31; leg018's "Ways Advertisers Target Users" is printed p.41 = PDF p.53).
+- Unreliable/avoided: leg022 (EU AdSense) market-share tables are redacted to bracketed ranges like [70-80%], so no precise numeric answers were drawn from them; leg017's comparison-shopping ranking tables (PDF pp.100-103) are also partially redacted ([...]). leg023's manifest hint of a "table p.106" is actually dense text, not a table.
+- Mix: 15 questions; 8 cross_doc (53%), 4 figure_read, 2 table_math, 1 cross_section; 10/15 (67%) require a table or figure hop; 5 medium / 10 hard.
+- Cross-links exploited: Google search shares (leg014 figures vs leg011 findings vs leg017 Table 1), Google monopoly findings across two courts (leg011 vs leg023), Apple App Store economics (leg019 vs leg012), and patent front-matter comparisons (leg001/leg002/leg006/leg007/leg009/leg010).
+- Ratio answers accept tolerance: leg_q03 expects ~4.2x (2156/518 = 4.16); graders should accept 4.1-4.2.

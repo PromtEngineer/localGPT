@@ -1,0 +1,49 @@
+# Hardware-agnostic configuration: every model is an endpoint + name, every path relative to repo root.
+# Swap endpoints (ollama / vllm / mlx / llama.cpp) without touching code.
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  index: data/index
+  benchmarks: data/benchmarks
+  runs: runs
+
+serving:
+  # Any OpenAI-compatible endpoint works. Ollama shown; vLLM would be http://host:8000/v1.
+  # NOTE: we run a dedicated `OLLAMA_HOST=127.0.0.1:11435 OLLAMA_CONTEXT_LENGTH=65536 ollama serve`
+  # because the Ollama.app server defaults to 16K context, which silently truncates agent loops.
+  base_url: http://localhost:11435/v1
+  api_key: ollama  # dummy for local servers
+  timeout_s: 300
+
+models:
+  orchestrator: qwen3.6:35b-a3b   # planning, generation, agent loop
+  utility: qwen3.5:9b             # router, graders, judge (overridden at runtime if unavailable)
+  embedder: Qwen/Qwen3-Embedding-0.6B   # in-process via sentence-transformers
+  reranker: Qwen/Qwen3-Reranker-0.6B    # in-process, optional
+  visual_retriever: ModernVBERT/colmodernvbert  # late-interaction page-image model (optional channel)
+
+embedding:
+  dim: 1024
+  batch_size: 16
+  device: auto        # mps on Apple Silicon, cuda if available, else cpu
+  query_instruction: "Instruct: Given a search query, retrieve relevant passages from documents\nQuery: "
+
+ingest:
+  page_image_dpi: 150
+  chunk_max_tokens: 800
+  chunk_min_tokens: 120
+  contextual_headers: true
+
+retrieval:
+  candidates_per_channel: 30
+  rrf_k: 60
+  final_k: 8
+  rerank: true
+  rerank_candidates: 25
+
+agent:
+  max_tool_calls: 20   # production agentic retrieval medians ~24 search calls (Hornet, May 2026); 12 starved hard multi-hop questions
+  max_correction_loops: 2
+  distillate_max_tokens: 2000
+  no_new_info_stop: 2   # consecutive rounds with no new evidence -> stop

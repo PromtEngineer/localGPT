@@ -1,0 +1,188 @@
+{
+  "dataset": "legal_docs",
+  "created": "2026-07-16",
+  "questions": [
+    {
+      "id": "leg_q01",
+      "question": "Google's dominance of U.S. mobile search appears in both the DOJ's October 2020 search complaint (United States v. Google, No. 1:20-cv-03010) and Judge Mehta's August 2024 liability opinion in the same case. What Google share of U.S. mobile search does the complaint's Figure 7 pie chart (September 2020) show, and what share of search queries on mobile devices in 2020 does the Mehta opinion state?",
+      "answer": "Figure 7 of the DOJ complaint shows Google with 94% of U.S. mobile search (September 2020); the Mehta opinion states Google's share of search queries on mobile devices was 94.9% in 2020.",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "leg014", "pages": [31], "modality": "figure", "evidence": "Figure 7 pie chart 'Mobile Search Engine U.S. Market Share (September 2020)': Google 94%, Yahoo! 2%, Bing 2%, DuckDuckGo 2%"},
+        {"doc_id": "leg011", "pages": [18], "modality": "text", "evidence": "Finding of Fact para 24: Google's share of search queries on mobile devices was 94.9% in 2020"}
+      ]
+    },
+    {
+      "id": "leg_q02",
+      "question": "Compare Bing's position across the two key filings in United States v. Google (search): what Bing share does Figure 8 of the DOJ's October 2020 complaint (the pie chart of U.S. computer/desktop search, September 2020) show, and what share of all search queries does Judge Mehta's 2024 liability opinion say Bing receives?",
+      "answer": "Figure 8 of the complaint shows Bing with 12% of U.S. computer (desktop/laptop) search; the Mehta opinion states Bing receives roughly 6% of all search queries (5.5%), and notes Bing's market share has never risen above 12%.",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "leg014", "pages": [31], "modality": "figure", "evidence": "Figure 8 pie chart 'Computer Search Engine U.S. Market Share (September 2020)': Google 82%, Bing 12%, Yahoo! 4%, DuckDuckGo 2%"},
+        {"doc_id": "leg011", "pages": [18], "modality": "text", "evidence": "Finding of Fact para 25: Bing (5.5%), Yahoo (2.2%), DDG (2.1%); Bing's market share has never risen above 12%"}
+      ]
+    },
+    {
+      "id": "leg_q03",
+      "question": "According to Figure 8 ('Smartphone OS worldwide by installed base in 2015-2016') of the European Commission's 2018 Google Android decision (Case AT.40099), how many times larger was the worldwide Android smartphone installed base than the iOS installed base in July 2016?",
+      "answer": "About 4.2 times larger: 2,156 million Android smartphones versus 518 million iOS smartphones in July 2016 (2156/518 = 4.16).",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "leg016", "pages": [95], "modality": "figure", "evidence": "Figure 8 stacked bar chart with July 2016 legend: Android 2,156M, iOS 518M, Windows 24M, Other 22M"},
+        {"doc_id": "leg016", "pages": [94], "modality": "text", "evidence": "Recital 448: in July 2016 there were 2.156 billion Google Android smartphones worldwide, compared with 24 million Windows Mobile smartphones"}
+      ]
+    },
+    {
+      "id": "leg_q04",
+      "question": "Table 3 of the European Commission's 2018 Google Android decision (Case AT.40099) reports worldwide (excluding China) market shares for licensable smart mobile device operating systems by volume. For the year 2016, what is the gap in percentage points between Google Android's share and Windows' share?",
+      "answer": "94.5 percentage points: Google Android held 96.4% in 2016 and Windows held 1.9% (96.4 - 1.9 = 94.5).",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "leg016", "pages": [93], "modality": "table", "evidence": "Table 3 (first part): Google Android row shows 72.0% (2011) rising to 96.4% (2016)"},
+        {"doc_id": "leg016", "pages": [94], "modality": "table", "evidence": "Table 3 (continuation): Windows row shows 1.9% for 2016; Symbian 0.1%, Fire OS 1.3%"}
+      ]
+    },
+    {
+      "id": "leg_q05",
+      "question": "The PageRank patent US 6,285,999 ('Method for node ranking in a linked database') and the Overture/GoTo.com pay-per-click patent US 6,269,361 ('System and method for influencing a position on a search result list') were both issued in 2001. Which application was filed first, and how many more claims does the Overture patent contain than the PageRank patent?",
+      "answer": "The PageRank patent was filed first (January 9, 1998 versus May 28, 1999 for Overture). The Overture patent has 38 more claims: 67 claims versus 29 claims.",
+      "answer_type": "comparison",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "leg001", "pages": [1], "modality": "text", "evidence": "Front page of US 6,285,999 B1: Filed Jan. 9, 1998; '29 Claims, 3 Drawing Sheets'; issued Sep. 4, 2001"},
+        {"doc_id": "leg010", "pages": [1], "modality": "text", "evidence": "Front page of US 6,269,361 B1: Filed May 28, 1999; '67 Claims, 9 Drawing Sheets'; assignee GoTo.com; issued Jul. 31, 2001"}
+      ]
+    },
+    {
+      "id": "leg_q06",
+      "question": "In FIG. 2 of the PageRank patent US 6,285,999 ('Method for node ranking in a linked database'), two of the three linked documents share the highest displayed rank value. Which documents are they and what is that value, and who is the patent's sole named inventor?",
+      "answer": "Documents A and C each carry the highest rank of 0.4 (document B has 0.2). The sole named inventor is Lawrence Page.",
+      "answer_type": "span",
+      "difficulty": "medium",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "leg001", "pages": [4], "modality": "figure", "evidence": "FIG. 2 (Sheet 2 of 3): documents A (0.4), B (0.2), C (0.4) connected by weighted links of 0.2 and 0.4"},
+        {"doc_id": "leg001", "pages": [1], "modality": "text", "evidence": "Front page: Inventor Lawrence Page, Stanford, CA; assignee Board of Trustees of the Leland Stanford Junior University"}
+      ]
+    },
+    {
+      "id": "leg_q07",
+      "question": "Compare the two Amazon patents in this collection: the 1-Click purchase patent US 5,960,411 ('Method and system for placing a purchase order via a communications network') and the item-to-item collaborative recommendations patent US 6,266,649. How many inventors are named on each patent, and which of the two names Jeffrey P. Bezos?",
+      "answer": "The 1-Click patent US 5,960,411 names four inventors (Peri Hartman, Jeffrey P. Bezos, Shel Kaphan, Joel Spiegel) and is the one naming Bezos; the recommendations patent US 6,266,649 names three inventors (Gregory D. Linden, Jennifer A. Jacobi, Eric A. Benson).",
+      "answer_type": "comparison",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "leg002", "pages": [1], "modality": "text", "evidence": "Front page of US 5,960,411: Inventors Peri Hartman, Jeffrey P. Bezos, Shel Kaphan, Joel Spiegel; assignee Amazon.com; filed Sep. 12, 1997"},
+        {"doc_id": "leg007", "pages": [1], "modality": "text", "evidence": "Front page of US 6,266,649 B1: Inventors Gregory D. Linden, Jennifer A. Jacobi, Eric A. Benson; assignee Amazon.Com; filed Sep. 18, 1998"}
+      ]
+    },
+    {
+      "id": "leg_q08",
+      "question": "Of the three patents tied to Google's technology history in this corpus - the PageRank patent US 6,285,999, the MapReduce patent US 7,650,331 ('System and method for efficient large-scale data processing'), and the dropout neural-network patent US 9,406,017 ('System and method for addressing overfitting in a neural network') - which one is NOT assigned to Google Inc., and who is its assignee?",
+      "answer": "The PageRank patent US 6,285,999 is not assigned to Google; its assignee is The Board of Trustees of the Leland Stanford Junior University. The MapReduce and dropout patents are both assigned to Google Inc., Mountain View, CA.",
+      "answer_type": "span",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "leg001", "pages": [1], "modality": "text", "evidence": "Front page: assignee The Board of Trustees of the Leland Stanford Junior University, Stanford, CA"},
+        {"doc_id": "leg006", "pages": [1], "modality": "text", "evidence": "Front page of US 7,650,331 B1 (Dean & Ghemawat): assignee Google Inc., Mountain View, CA"},
+        {"doc_id": "leg009", "pages": [1], "modality": "text", "evidence": "Front page of US 9,406,017 B2 (Hinton, Krizhevsky, Sutskever, Srivastava): applicant and assignee Google Inc., Mountain View, CA"}
+      ]
+    },
+    {
+      "id": "leg_q09",
+      "question": "In the European Commission's 2004 Microsoft decision (Case COMP/C-3/37.792): according to Table 11, by how many percentage points did the share of 'multiple' users saying Windows Media Player was the player they used most rise between October 1999 and August 2003, and according to Table 5, what unit-based share of the client PC operating system market did Windows hold in 2002?",
+      "answer": "WMP's 'most used' share rose 23 percentage points, from 22% (Oct-99) to 45% (Aug-03). Windows held 93.8% of the client PC operating system market in 2002 measured in units (96.1% by revenues).",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "leg024", "pages": [253], "modality": "table", "evidence": "Table 11 'Percentage of users that say that WMP, RealPlayer and QuickTime is the player that they use most': WMP 22% Oct-99 to 45% Aug-03; RealPlayer 50% to 19%"},
+        {"doc_id": "leg024", "pages": [121], "modality": "table", "evidence": "Table 5 'Client PC operating system market shares since 2000 (%)': Windows 2002 units 93.8, revenues 96.1; Apple Mac OS 2.9 units"}
+      ]
+    },
+    {
+      "id": "leg_q10",
+      "question": "The U.S. Copyright Office's January 2025 report 'Copyright and Artificial Intelligence, Part 2: Copyrightability' contains a Prompt/Input/Output figure showing a hand-drawn illustration used as input and the AI-generated image produced from it. What is the title and registration number of that registered work, and what does the report's Analysis section conclude about whether prompts alone can make AI users authors?",
+      "answer": "The work is 'Rose Enigma', registration VAu001528922 (March 21, 2023, by artist Kris Kashtanova). The Analysis section concludes that, given current generally available technology, prompts alone do not provide sufficient human control to make users of an AI system the authors of the output.",
+      "answer_type": "span",
+      "difficulty": "medium",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "leg020", "pages": [31], "modality": "figure", "evidence": "Prompt/Input/Output figure: prompt 'a young cyborg woman (((roses)))...', hand-drawn face-mask sketch as input, photorealistic cyborg-woman image as output; footnote 123 identifies Rose Enigma, VAu001528922 (Mar. 21, 2023), Kris Kashtanova"},
+        {"doc_id": "leg020", "pages": [26], "modality": "text", "evidence": "Section 2 'Analysis': the Office concludes that prompts alone do not provide sufficient human control to make users of an AI system the authors of the output"}
+      ]
+    },
+    {
+      "id": "leg_q11",
+      "question": "In the FTC's September 2022 staff report 'Bringing Dark Patterns to Light', Figure 2 reproduces rate-comparison table screenshots from the loan-comparison website LendEDU. Which three student-loan refinancing companies appear in those screenshots, and what did the FTC allege exclusively determined companies' numerical rankings and positions on LendEDU's rate tables?",
+      "answer": "SoFi, Earnest, and LendKey appear in the Figure 2 screenshots. The FTC alleged LendEDU boosted companies' rankings and positions based exclusively on how much the companies paid LendEDU.",
+      "answer_type": "list",
+      "difficulty": "medium",
+      "hop_type": "cross_section",
+      "hops": [
+        {"doc_id": "leg021", "pages": [6], "modality": "figure", "evidence": "Figure 2 'LendEDU Rate Comparison Tables': screenshots listing SoFi, Earnest, LendKey as top student-loan refinance companies"},
+        {"doc_id": "leg021", "pages": [5], "modality": "text", "evidence": "Text introducing the FTC's action against LendEDU.com: rankings used to sort companies in rate comparison tables"},
+        {"doc_id": "leg021", "pages": [6], "modality": "text", "evidence": "Text below Figure 2: rankings were based exclusively on how much companies paid LendEDU; rankings falsely represented as objective and unbiased"}
+      ]
+    },
+    {
+      "id": "leg_q12",
+      "question": "Combining two documents on Apple's App Store economics: per the 2020 House Judiciary 'Investigation of Competition in Digital Markets' report, what commission does Apple charge on paid apps and what does the subscription commission drop to after the first year; and per the Epic Games v. Apple Rule 52 order (2021), what App Store operating margin did plaintiff's expert Ned Barnes calculate for fiscal years 2018 and 2019?",
+      "answer": "The House report states Apple charges a 30 percent commission on paid apps and in-app purchases, with subscriptions dropping to 15 percent after the first year. The Epic v. Apple order found Barnes calculated App Store operating margins of over 75% for both fiscal years 2018 and 2019.",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "leg019", "pages": [291], "modality": "text", "evidence": "Commissions and In-App Purchases section: 30 percent commission on paid apps and IAP; 30 percent first year, 15 percent subsequent years for subscriptions"},
+        {"doc_id": "leg012", "pages": [42], "modality": "text", "evidence": "Section '5. App Store Operating Margins': Ned Barnes calculated operating margins to be over 75% for fiscal years 2018 and 2019"}
+      ]
+    },
+    {
+      "id": "leg_q13",
+      "question": "Compare Google's desktop search share in two antitrust documents: Table 1 of the European Commission's 2017 Google Shopping decision (Case AT.39740), giving global average monthly market shares for February 2017, and Figure 8 of the DOJ's October 2020 search complaint, giving U.S. computer (desktop and laptop) search share for September 2020. What Google desktop share does each source give?",
+      "answer": "EU Shopping decision Table 1: Google 80.47% of global desktop search (February 2017; Bing 7.15%, Baidu 5.59%, Yahoo 5.55%). DOJ complaint Figure 8: Google 82% of U.S. computer search (September 2020).",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "leg017", "pages": [36], "modality": "table", "evidence": "Table 1 'Top 7 search engines (global average monthly market shares in February 2017)': Google desktop 80.47%, mobile 94.87%; Bing 7.15%/0.89%"},
+        {"doc_id": "leg014", "pages": [31], "modality": "figure", "evidence": "Figure 8 pie chart: Google 82% of U.S. computer search engine market share, September 2020"}
+      ]
+    },
+    {
+      "id": "leg_q14",
+      "question": "Two U.S. federal opinions found Google to be a monopolist in different markets: Judge Mehta's August 2024 opinion in the search case (United States v. Google, D.D.C.) and Judge Brinkema's April 2025 opinion in the ad-tech case (United States v. Google, E.D. Va.). What Google market share does each opinion cite - the share of U.S. general search queries in 2020, and the 2022 share of the worldwide publisher ad server market for open-web display advertising?",
+      "answer": "Mehta opinion: Google's share of general search queries reached 89.2% by 2020. Brinkema opinion: Google's publisher ad server DFP had a 91% share of the worldwide publisher ad server market for open-web display advertising in 2022 (holding steady between 91.0% and 93.5% from 2018 through 2022).",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "leg011", "pages": [17], "modality": "text", "evidence": "Finding of Fact para 23: Google's share of general search queries increased from 80% to 89.2% by 2020"},
+        {"doc_id": "leg023", "pages": [73], "modality": "text", "evidence": "Publisher Ad Server section: in 2022 Google had a 91% market share of the worldwide publisher ad server market; 91.0%-93.5% from 2018-2022; U.S. 86.5%-92.3%"}
+      ]
+    },
+    {
+      "id": "leg_q15",
+      "question": "The FTC's 2023 complaint against Amazon.com includes Figure 13, a Bank of America Global Research chart of U.S. eCommerce GMV market share among the top-4 general merchandise platforms (Amazon, eBay, Walmart, Target). What was Amazon's share in 2015 and its estimated share for 2021, and which competitor's share fell from 21% to 8% over that span?",
+      "answer": "Amazon's share rose from 69% in 2015 to an estimated 77% in 2021 (an 8-point gain). eBay's share fell from 21% to 8%. (Walmart rose from 8% to 13%; Target stayed at 2%.)",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "leg013", "pages": [58], "modality": "figure", "evidence": "Figure 13 (BofA Global Research stacked bar chart 'US eCommerce GMV Market Share % among top-4 GM platforms'): AMZN 69/73/74/74/75/76/77%, EBAY 21% down to 8%, WMT 8% up to 13%, TGT 2% for 2015-2021E"},
+        {"doc_id": "leg013", "pages": [57], "modality": "text", "evidence": "Para 170: across the 'top-4 general merchandise platforms' (vs Walmart, Target, eBay), Amazon has maintained more than 69% of GMV since 2015, with the share growing over time"}
+      ]
+    }
+  ]
+}

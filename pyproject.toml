@@ -1,0 +1,45 @@
+[project]
+name = "marag"
+version = "0.1.0"
+description = "Local-first multimodal agentic RAG"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "docling>=2.0",
+    "pymupdf>=1.24",
+    "pymupdf4llm>=0.0.17",
+    "lancedb>=0.15",
+    "pyarrow>=17.0",
+    "duckdb>=1.0",
+    "sentence-transformers>=3.0",
+    "torch>=2.3",
+    "transformers>=4.45",
+    "openai>=1.40",
+    "httpx>=0.27",
+    "typer>=0.12",
+    "rich>=13.0",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "orjson>=3.10",
+    "pandas>=2.2",
+    "colpali-engine>=0.3.17",
+    "pillow>=12.3.0",
+    "liteparse>=2.6.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/marag"]
+
+[project.scripts]
+marag = "marag.cli:app"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
