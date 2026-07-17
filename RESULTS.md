@@ -216,12 +216,12 @@ a *corner* region — halves hit the pixel cap at ~305 dpi and read wrong.
 2. *The locate step must be biased toward the tightest region*, or it names a half and loses
    the resolution it just went to get.
 
-**End-to-end: INCONCLUSIVE — do not cite this as a verdict.** The comparison ran across server
-sessions (53/60 with gemma4 vs 55/60 with the default), which the variance work above showed is
-worth ~1 question per domain of drift on its own. The measured difference never exceeded the
-measurement error. It was not adopted, on the weaker but sufficient grounds that it costs 50%
-more latency (~110s → ~168s/question) for no *demonstrated* gain — not because it was shown
-worse. A same-session A/B on a chart-heavy corpus would settle it.
+**End-to-end (first pass): INCONCLUSIVE — superseded below.** The original comparison ran
+across server sessions (53/60 with gemma4 vs 55/60 with the default), which the variance work
+above showed is worth ~1 question per domain of drift on its own. The measured difference never
+exceeded the measurement error. **A proper same-session A/B (July 17) settled it — see
+"Settled by same-session A/Bs" below: the gemma4 vision arm recovers hlt_q10 (health
+80.0%→86.7%) with financial identical, at ~1.5× latency.**
 
 Two things that are solid regardless:
 - Chart readings still fluctuate ±0.1 between calls even when correct (the black curve read
@@ -274,6 +274,43 @@ today's ceiling for the multimodal path, and the honest next moves are (a) treat
 as approximate and surface uncertainty rather than assert a number, or (b) retrieve the
 underlying data table when one exists, not more pixels.
 
+## Settled by same-session A/Bs (July 17)
+
+Both open opt-ins were settled the only way the variance protocol allows: back-to-back runs
+in one Ollama session, judge pinned (temp 0, reasoning none), verdicts from run pairs sorted
+by mtime.
+
+### Dense-vision view_page (configs/gemma4_vision.yaml) — ADOPTED as the vision opt-in
+
+| arm | financial_docs | health_docs |
+|---|---|---|
+| A — default (qwen3.6 does vision) | 93.3% (fails: fin_q01) | 80.0% (fails: hlt_q10, q14, q15) |
+| B — gemma4 vision + auto-zoom + thinking | 93.3% (fails: fin_q01) | **86.7%** (fails: hlt_q14, q15) |
+
+The gemma4 arm **recovers hlt_q10** — the dense multi-series epidemic curve that drove the
+entire chart-reading investigation — exactly as the isolated-read experiments predicted, and
+degrades nothing. +1 question at n=15 is inside the formal noise band, but it is the *specific*
+question the mechanism targets, recovered with the failure mode the mechanism fixes, at zero
+cost elsewhere. Cost: ~1.5× per-question latency when `view_page` fires. Verdict: the earlier
+cross-session "worse end-to-end" reading was variance, as suspected. The recipe works; it stays
+opt-in only because of the latency price.
+
+### numbers_via_sql verifier (configs/numbers_sql.yaml) — NOT ADOPTED (honest negative)
+
+| arm | financial_docs | sql calls | avg tools/q |
+|---|---|---|---|
+| A — default | 93.3% (fails: fin_q01) | 6 | 7.1 |
+| B — numbers_via_sql | 93.3% (fails: fin_q01) | 41 | 10.0 |
+
+The verifier *fired* exactly as designed — sql usage went 6→41 calls — and fin_q01 **still
+fails**: the agent queries the tables and pulls **$47,405M from the Compute & Networking
+segment row** instead of $47,525M from the Data Center market-platform row. The error was
+never a grounding problem (reading numbers from prose/pixels); it is a **disambiguation
+problem** (two near-identical revenue concepts in the same 10-K, $120M apart). Forcing the
+sql path cannot fix a wrong-row choice, and it costs +41% tool calls. Grounding enforcement
+and semantic disambiguation are different failures needing different mechanisms — a candidate
+for the DESIGN §8.5 claim-level verifier, not for path enforcement.
+
 ## Bugs found by validation (all fixed)
 
 | bug | symptom | fix |
@@ -283,7 +320,7 @@ underlying data table when one exists, not more pixels.
 | Judge ran at temperature 0.2 | a stochastic grader would have added silent noise (it happened not to flip any verdict, but the exposure was real) | judge pinned to temperature 0.0 |
 | Two PyTorch-MPS processes deadlock | index job frozen at 0% CPU in Metal dispatch | serialize GPU jobs; `MARAG_DEVICE` override |
 | Thinking-token starvation | reasoning models return EMPTY content when max_tokens ≤ thinking length; zeroed an entire eval round | budgets ≥3-4K for generation; `reasoning_effort:"none"` for router/judge; `LLM.chat(reasoning=…)` |
-| Ollama app serves 16K context (model supports 262K) | long agent loops silently truncated → empty answers on high-tool-call questions | dedicated `OLLAMA_CONTEXT_LENGTH=65536 ollama serve` on :11435 (see configs/default.yaml) |
+| Ollama app serves 16K context (model supports 262K) | long agent loops silently truncated → empty answers on high-tool-call questions | dedicated `OLLAMA_CONTEXT_LENGTH=262144 ollama serve` on :11435 — serve at the model's max, not Ollama's default; all three LLMs fit 100% GPU at 262K (see configs/default.yaml) |
 | HF Hub outage hangs model loads | eval stuck on stalled SSL read | local-snapshot-first loading; `HF_HUB_OFFLINE=1` compatible |
 
 ## Next steps (ranked by expected gain)
@@ -292,12 +329,15 @@ underlying data table when one exists, not more pixels.
 2. ~~High-DPI figure crops~~ **TRIED, REVERTED** — negative result, see postmortem above.
    The replacement idea: when a chart read is uncertain, prefer the underlying data table
    (`sql`) or surface the uncertainty; don't assert an interpolated number.
-3. ~~Docling parsing upgrade~~ **DONE** — next: hard-enforce the numbers-rule (answers with
-   numbers must cite a `sql` result) now that coverage is 100% (would catch fin_q01).
+3. ~~Docling parsing upgrade~~ **DONE** — ~~next: hard-enforce the numbers-rule~~ **TRIED,
+   NOT ADOPTED**: the same-session A/B showed fin_q01 is a wrong-row disambiguation error,
+   not a grounding error; sql enforcement fired (6→41 calls) and didn't fix it. See
+   "Settled by same-session A/Bs".
 4. **Rerank tuning** — depth/threshold so easy-recall corpora aren't hurt.
-5. ~~Bigger/denser VLM for chart reads~~ **TRIED (Gemma 4 31B dense), NOT ADOPTED** — see the
-   chart-reading experiment above: better on the isolated read, worse end-to-end (53/60 vs
-   55/60), kept as an opt-in. Untested remainder: Qwen3.5-122B-A10B 4-bit as the vision model.
+5. ~~Bigger/denser VLM for chart reads~~ **VALIDATED (Gemma 4 31B dense), opt-in** — the
+   same-session A/B recovered hlt_q10 (health 80.0→86.7%) with nothing degraded; stays
+   opt-in for the ~1.5× latency. The earlier cross-session "worse end-to-end" was variance.
+   Untested remainder: Qwen3.5-122B-A10B 4-bit as the vision model.
 6. **Wire the mock UI to the backend** — `ui/mock.html` mocks sessions, multi-source scope,
    upload/ingest stages, the tool trace and page evidence against real corpus numbers.
 4. Router-based auto mode end-to-end eval (route simple→single-shot, hard→agentic) to get

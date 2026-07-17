@@ -37,6 +37,7 @@ class ModelsCfg(BaseModel):
     reranker: str
     visual_retriever: str | None = None
     vision: str | None = None  # opt-in view_page reader; None -> orchestrator does vision
+    judge: str | None = None  # eval-only: pin the judge independent of utility; None -> utility
 
 
 class EmbeddingCfg(BaseModel):

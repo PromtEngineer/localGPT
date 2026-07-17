@@ -22,8 +22,8 @@
 ## How to run
 
 ```bash
-# serving (dedicated server — the Ollama app caps context at 16K):
-OLLAMA_HOST=127.0.0.1:11435 OLLAMA_CONTEXT_LENGTH=65536 ollama serve &
+# serving (dedicated server at the models' max context — the Ollama app caps at 16K):
+OLLAMA_HOST=127.0.0.1:11435 OLLAMA_CONTEXT_LENGTH=262144 OLLAMA_FLASH_ATTENTION=1 ollama serve &
 
 uv run marag status
 uv run marag agent "Which grew data-center revenue faster, NVIDIA or AMD?" financial_docs
@@ -78,12 +78,16 @@ answer stream). `src/marag/server/`; static reference design in `ui/mock.html`.
 - **Dense vision reader** — `models.vision` + `agent.view_page_auto_zoom` + `view_page_thinking`
   route `view_page` to a dense VLM (e.g. gemma4:31b) that locates a figure, re-renders that
   region at 500 dpi, and reads it with thinking. Config: `configs/gemma4_vision.yaml`.
-- **numbers_via_sql verifier** — when a table-quantitative answer never queried the tables, one
-  correction loop makes the agent read each figure from its exact row via sql (targets the
-  fin_q01 segment-vs-category confusion). Config: `configs/numbers_sql.yaml`.
-
-Both are being settled by same-session A/Bs (runs/vision_ab.log, runs/numbers_ab.log); verdicts
-land in RESULTS.md.
+  **Settled (same-session A/B): recovers hlt_q10, health 80.0→86.7%, nothing degraded, ~1.5×
+  latency — validated, opt-in for the latency price.**
+- **numbers_via_sql verifier** — `configs/numbers_sql.yaml`. **Settled (same-session A/B):
+  NOT adopted — fired as designed (sql calls 6→41) but fin_q01 is a wrong-row disambiguation
+  error, not a grounding error; no gain, +41% tool calls.**
+- **Single-LLM system** — `configs/gemma4_only.yaml`: gemma4:31b for every LLM role (agent
+  loop, generation, routing, grading, vision) at its full 262K context; eval judge pinned
+  separately via the new `models.judge` role so scores stay comparable. Smoke-validated
+  (native tool calling ✓, router JSON ✓, end-to-end agentic ✓); full 4-domain same-session
+  A/B vs the qwen stack in flight (runs/single_llm_ab.log).
 
 ## Immediate next steps
 

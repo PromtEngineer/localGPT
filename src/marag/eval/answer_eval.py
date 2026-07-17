@@ -46,7 +46,9 @@ def eval_answers(
     bench = load_benchmark(dataset, cfg)
     questions = bench["questions"][:limit] if limit else bench["questions"]
     retriever = Retriever(cfg)
-    judge = LLM("utility", cfg)
+    # judge is the measuring instrument — pin it via models.judge so scores stay
+    # comparable when the system's utility model changes (e.g. single-LLM configs)
+    judge = LLM("judge" if cfg.models.judge else "utility", cfg)
     gen = answer_single_shot if mode == "single_shot" else answer_agentic
 
     rows: list[dict] = []

@@ -10,8 +10,11 @@ paths:
 
 serving:
   # Any OpenAI-compatible endpoint works. Ollama shown; vLLM would be http://host:8000/v1.
-  # NOTE: we run a dedicated `OLLAMA_HOST=127.0.0.1:11435 OLLAMA_CONTEXT_LENGTH=65536 ollama serve`
-  # because the Ollama.app server defaults to 16K context, which silently truncates agent loops.
+  # NOTE: we run a dedicated server at the MODELS' max context, not Ollama's default —
+  # the Ollama.app server defaults to 16K, which silently truncates agent loops:
+  #   OLLAMA_HOST=127.0.0.1:11435 OLLAMA_CONTEXT_LENGTH=262144 OLLAMA_FLASH_ATTENTION=1 ollama serve
+  # Measured at 262144 (all models here allow it): gemma4:31b 20 GB, qwen3.6:35b-a3b 29 GB,
+  # qwen3.5:9b 15 GB — every one 100% GPU on 96 GB. Verify with `ollama ps` CONTEXT column.
   base_url: http://localhost:11435/v1
   api_key: ollama  # dummy for local servers
   timeout_s: 300

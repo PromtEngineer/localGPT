@@ -1,0 +1,60 @@
+# Single-LLM configuration: gemma4:31b (dense, Apache-2.0) for EVERY LLM role —
+# agent loop, generation, routing, grading, judging, and vision. One resident model.
+#
+# Serve at the model's own max context, not Ollama's default:
+#   OLLAMA_HOST=127.0.0.1:11435 OLLAMA_CONTEXT_LENGTH=262144 OLLAMA_FLASH_ATTENTION=1 ollama serve
+# Measured: 262144 ctx loads at 20 GB total / 100% GPU (interleaved sliding-window
+# attention keeps the full-length KV cache to ~1 GB over the 19 GB weights).
+# Verify with `ollama ps` — the CONTEXT column must read 262144.
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  index: data/index
+  benchmarks: data/benchmarks
+  runs: runs
+
+serving:
+  base_url: http://localhost:11435/v1
+  api_key: ollama
+  timeout_s: 600   # dense 31B: agent turns are slower than the MoE default
+
+models:
+  orchestrator: gemma4:31b        # planning, generation, agent loop
+  utility: gemma4:31b             # router, graders, judge
+  vision: gemma4:31b              # view_page reader (same weights — no extra residency)
+  judge: qwen3.5:9b               # EVAL HARNESS ONLY — fixed measuring instrument across all
+                                  # published numbers; not part of the serving system
+  embedder: Qwen/Qwen3-Embedding-0.6B
+  reranker: Qwen/Qwen3-Reranker-0.6B
+  visual_retriever: ModernVBERT/colmodernvbert
+
+embedding:
+  dim: 1024
+  batch_size: 16
+  device: auto
+  query_instruction: "Instruct: Given a search query, retrieve relevant passages from documents\nQuery: "
+
+ingest:
+  page_image_dpi: 150
+  chunk_max_tokens: 800
+  chunk_min_tokens: 120
+  contextual_headers: true
+
+retrieval:
+  candidates_per_channel: 30
+  rrf_k: 60
+  final_k: 8
+  rerank: true
+  rerank_candidates: 25
+
+agent:
+  max_tool_calls: 20
+  view_page_dpi: 220
+  view_page_zoom_dpi: 500
+  view_page_max_px: 2600
+  view_page_auto_zoom: true    # dense VLM validated for locate->zoom->read (vision A/B)
+  view_page_thinking: true
+  max_correction_loops: 2
+  distillate_max_tokens: 2000
+  no_new_info_stop: 2
