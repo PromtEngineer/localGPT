@@ -18,7 +18,23 @@ Rules:
 - Read values EXACTLY as printed (axis labels, legends, bar/segment values, table cells, units).
 - For charts: identify the relevant series/bar/segment by its legend color or label before reading its value; if a value must be estimated from axis position, say "approx" and give the tick marks you used.
 - Quote the exact figure/table caption you are reading from.
+- If the detail is too small to read confidently, say so explicitly and name the region of the
+  page it sits in (e.g. "bottom-right") so it can be re-rendered zoomed.
 - If the question cannot be answered from this page, say exactly what IS on the page instead."""
+
+# Overlapping bands: a figure straddling the midline is never sliced in half.
+_REGIONS: dict[str, tuple[float, float, float, float]] = {
+    "full": (0.0, 0.0, 1.0, 1.0),
+    "top": (0.0, 0.0, 1.0, 0.55),
+    "bottom": (0.0, 0.45, 1.0, 1.0),
+    "left": (0.0, 0.0, 0.55, 1.0),
+    "right": (0.45, 0.0, 1.0, 1.0),
+    "top-left": (0.0, 0.0, 0.58, 0.58),
+    "top-right": (0.42, 0.0, 1.0, 0.58),
+    "bottom-left": (0.0, 0.42, 0.58, 1.0),
+    "bottom-right": (0.42, 0.42, 1.0, 1.0),
+    "center": (0.15, 0.15, 0.85, 0.85),
+}
 
 
 class ToolBox:
@@ -30,6 +46,7 @@ class ToolBox:
         self.retriever = retriever
         self.processed = cfg.path("processed", create=False) / dataset
         self._vlm: LLM | None = None  # lazy; shares the orchestrator's server
+        self._pdfs: dict[str, object] = {}  # doc_id -> open fitz doc, for high-DPI renders
         # evidence tracking for marginal-utility stop
         self.evidence_seen: set[tuple[str, int]] = set()
         self.new_evidence_last_call = 0
@@ -111,15 +128,63 @@ class ToolBox:
         finally:
             con.close()
 
-    def view_page(self, doc_id: str, page: int, question: str) -> str:
+    def _render(self, doc_id: str, page: int, region: str) -> bytes | str:
+        """Full page → the stored 150-dpi PNG; a region → re-rasterized from the source PDF.
+
+        Measured (health_docs, 15 q): re-rendering the FULL page at 220 dpi instead of using
+        the stored PNG scored WORSE (73.3% vs 80.0%), so the validated path is kept as the
+        default. Zoom stays available because it costs nothing unused — but note it did not
+        fix chart reading either (see RESULTS.md "high-DPI" postmortem).
+        """
+        import fitz
+
+        if region == "full":
+            png = self.processed / doc_id / "pages" / f"p{page:04d}.png"
+            if png.exists():
+                return png.read_bytes()
+
+        meta_f = self.processed / doc_id / "meta.json"
+        if not meta_f.exists():
+            return f"unknown doc_id: {doc_id}"
+        pdf_path = json.loads(meta_f.read_text()).get("source_pdf")
+        if not pdf_path or not Path(pdf_path).exists():
+            return f"source PDF unavailable for {doc_id}"
+        if doc_id not in self._pdfs:
+            self._pdfs[doc_id] = fitz.open(pdf_path)
+        doc = self._pdfs[doc_id]
+        if not 1 <= page <= len(doc):
+            return f"{doc_id} has {len(doc)} pages; p{page} is out of range"
+
+        pg = doc[page - 1]
+        rect = pg.rect
+        fx0, fy0, fx1, fy1 = _REGIONS.get(region, _REGIONS["full"])
+        clip = fitz.Rect(
+            rect.x0 + fx0 * rect.width,
+            rect.y0 + fy0 * rect.height,
+            rect.x0 + fx1 * rect.width,
+            rect.y0 + fy1 * rect.height,
+        )
+        dpi = self.cfg.agent.view_page_dpi if region == "full" else self.cfg.agent.view_page_zoom_dpi
+        pix = pg.get_pixmap(dpi=dpi, clip=clip)
+        cap = self.cfg.agent.view_page_max_px  # bound vision latency
+        if max(pix.width, pix.height) > cap:
+            dpi = max(72, int(dpi * cap / max(pix.width, pix.height)))
+            pix = pg.get_pixmap(dpi=dpi, clip=clip)
+        return pix.tobytes("png")
+
+    def view_page(self, doc_id: str, page: int, question: str, region: str = "full") -> str:
         """Render-and-read: send the page image + a focused question to the VLM."""
         page = int(page)
-        img = self.processed / doc_id / "pages" / f"p{page:04d}.png"
-        if not img.exists():
-            return f"no page image for {doc_id} p{page}"
+        region = region if region in _REGIONS else "full"
+        png = self._render(doc_id, page, region)
+        if isinstance(png, str):
+            return png
         if self._vlm is None:
             self._vlm = LLM("orchestrator", self.cfg)
-        b64 = base64.b64encode(img.read_bytes()).decode()
+        b64 = base64.b64encode(png).decode()
+        where = f"Page {page} of {doc_id}" + (
+            f", {region} region (zoomed in)" if region != "full" else ""
+        )
         try:
             reading = self._vlm.text(
                 [
@@ -127,7 +192,7 @@ class ToolBox:
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": f"Page {page} of {doc_id}. QUESTION: {question}"},
+                            {"type": "text", "text": f"{where}. QUESTION: {question}"},
                             {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
                         ],
                     },
@@ -138,7 +203,7 @@ class ToolBox:
         except Exception as e:
             return f"view_page failed: {e}"
         self._track([(doc_id, page)])
-        return _cap(f"[VLM reading of {doc_id} p{page}]\n{reading}")
+        return _cap(f"[VLM reading of {doc_id} p{page}, region={region}]\n{reading}")
 
     # ---------- plumbing ----------
 
@@ -253,13 +318,18 @@ TOOL_SPECS = [
         "type": "function",
         "function": {
             "name": "view_page",
-            "description": "Look at the rendered page image with vision and answer a focused question about it. USE THIS when the evidence is in a chart, figure, diagram, or drawing whose values are not in the page text — text search cannot see chart bars, pie slices, or axis values.",
+            "description": "Look at the rendered page image with vision and answer a focused question about it. USE THIS when the evidence is in a chart, figure, diagram, or drawing whose values are not in the page text — text search cannot see chart bars, pie slices, or axis values. If a value is small or hard to read, call again with a region to zoom in at high resolution.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "doc_id": {"type": "string"},
                     "page": {"type": "integer"},
                     "question": {"type": "string", "description": "the specific thing to read off this page, e.g. 'What value does the 2019 bar show for Google in Figure 6?'"},
+                    "region": {
+                        "type": "string",
+                        "enum": ["full", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right", "center"],
+                        "description": "part of the page to zoom into, rendered at high resolution. Default 'full'. Use a region whenever you must read a precise value off a chart — a zoomed quadrant resolves tick marks and small labels that are unreadable in the full page.",
+                    },
                 },
                 "required": ["doc_id", "page", "question"],
             },

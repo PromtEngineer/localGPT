@@ -44,6 +44,9 @@ retrieval:
 
 agent:
   max_tool_calls: 20   # production agentic retrieval medians ~24 search calls (Hornet, May 2026); 12 starved hard multi-hop questions
+  view_page_dpi: 220        # full-page render for view_page (stored page PNGs are 150dpi — too coarse for chart detail)
+  view_page_zoom_dpi: 500   # region crops: matches the DPI a human needed to read these epidemic curves
+  view_page_max_px: 2600    # cap longest edge; bounds vision latency
   max_correction_loops: 2
   distillate_max_tokens: 2000
   no_new_info_stop: 2   # consecutive rounds with no new evidence -> stop

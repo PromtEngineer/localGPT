@@ -146,10 +146,43 @@ wrong at normal render and needed 400–500 dpi crops. Our page images are rende
 150 dpi, which is very likely the binding constraint.
 
 **Verdict: the system generalizes.** Retrieval, parsing, and the agent loop transfer
-cleanly to an unseen domain; the gap is a known, addressable limit in fine-grained chart
-reading, not a domain-fit problem. Next step for it: render/crop pages at higher DPI for
-`view_page` (region crop around the figure), which is a tool-level change, not an
-architecture change.
+cleanly to an unseen domain; the gap is confined to fine-grained chart reading (see the
+next section — it is a model limit, not a domain-fit problem).
+
+### Postmortem: the high-DPI hypothesis was wrong (negative result)
+
+Hypothesis: the health failures were a *resolution* problem — page images render at 150 dpi
+while the benchmark author needed 400–500 dpi crops to read the same figures. Test case
+hlt_q10: FIGURE 1 of hlt014 p5, peak of the 2024–25 RSV curve for infants 0–7 months
+(gold ≈0.75/1,000; the pooled 2018–20 curve peaks ≈1.33).
+
+Built `view_page(..., region=)` — re-rasterizes the page or a region from the source PDF at
+up to 500 dpi (upscaling the stored PNG adds no information). Then measured:
+
+| test | blue 2024-25 peak | black 2018-20 peak |
+|---|---|---|
+| **ground truth** (read off the axis by hand) | **~0.72–0.75** | **~1.33** |
+| qwen3.6, stored 150-dpi full page | 0.95 ✗ | 1.3 ✓ |
+| qwen3.6, ~305-dpi region zoom | 0.9 ✗ | 1.3 ✓ |
+| qwen3.6, **tight 500-dpi panel crop, series named in the prompt** | 0.9 ✗ | 1.3 ✓ |
+| MiniCPM-V 8B (dedicated doc-VLM), same 500-dpi crop | **1.6 ✗✗** | 1.3 ✓ |
+
+Resolution is not the binding constraint: every VLM reads the *black* line correctly and
+misreads the *thick blue* one at every DPI, because the panel carries four similar blue-ish
+elements (solid series, dashed CI, dotted CI, shaded band). It is a **series-discrimination
+limit**, and it is general — a dedicated document-VLM did worse than the generalist.
+
+End-to-end effect: **80.0% → 73.3%** on health_docs (worse; hlt_q10 degraded from
+"wrong value" to "curves swapped"). The change was reverted: full-page `view_page` again
+uses the validated stored-PNG path; the `region` zoom remains available as opt-in (it costs
+nothing unused) but is **not** credited with any measured gain.
+
+**What this means for the design:** local VLMs reliably read *discrete, labeled* visual
+values (bar labels, pie percentages, table cells, patent drawings — the wins that took
+legal 66.7%→100%), but not *interpolated* values off dense multi-series line charts. That is
+today's ceiling for the multimodal path, and the honest next moves are (a) treat such reads
+as approximate and surface uncertainty rather than assert a number, or (b) retrieve the
+underlying data table when one exists, not more pixels.
 
 ## Bugs found by validation (all fixed)
 
@@ -163,12 +196,15 @@ architecture change.
 ## Next steps (ranked by expected gain)
 
 1. ~~`view_page` VLM tool~~ **DONE** — legal 66.7%→100%, aggregate 95.6%.
-2. **High-DPI figure crops for `view_page`** — the generalization test's only failure class
-   is fine-grained chart reading at 150 dpi; re-render the requested page (or a crop around
-   the figure) at 400–500 dpi on demand. Tool-level change, biggest remaining win.
+2. ~~High-DPI figure crops~~ **TRIED, REVERTED** — negative result, see postmortem above.
+   The replacement idea: when a chart read is uncertain, prefer the underlying data table
+   (`sql`) or surface the uncertainty; don't assert an interpolated number.
 3. ~~Docling parsing upgrade~~ **DONE** — next: hard-enforce the numbers-rule (answers with
    numbers must cite a `sql` result) now that coverage is 100% (would catch fin_q01).
 4. **Rerank tuning** — depth/threshold so easy-recall corpora aren't hurt.
+5. **Bigger VLM for chart reads** — the only untested lever on the chart ceiling: route
+   `view_page` to a larger vision model (Qwen3.5-122B-A10B 4-bit fits this 96GB box) and
+   re-measure hlt_q10/q14 before believing it.
 4. Router-based auto mode end-to-end eval (route simple→single-shot, hard→agentic) to get
    the cost/quality frontier.
 5. Verifier pass (claim→span NLI + ≤2 correction loops) per DESIGN.md §8.5.

@@ -65,6 +65,9 @@ class AgentCfg(BaseModel):
     max_correction_loops: int = 2
     distillate_max_tokens: int = 2000
     no_new_info_stop: int = 2
+    view_page_dpi: int = 220
+    view_page_zoom_dpi: int = 500
+    view_page_max_px: int = 2600
 
 
 class Config(BaseModel):

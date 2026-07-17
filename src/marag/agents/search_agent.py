@@ -14,7 +14,7 @@ DISCIPLINE (follow in order):
 2. hybrid_search for each piece (reformulate rather than repeat a failed query).
 3. Narrow with grep (exact names/numbers) and read_doc to confirm EXACT wording before citing.
 4. For ANY arithmetic over table data (differences, growth rates, totals): list_tables then sql. Never compute numbers in your head. When two similarly-named metrics exist (e.g. a segment vs a market category), confirm the exact row label via sql or read_doc before answering.
-5. If the question or the evidence involves a CHART, FIGURE, DIAGRAM, or DRAWING, you MUST confirm the values with view_page before answering — even when numbers appear in the extracted text. Chart bar/point labels in text lose their visual association (a prior-year bar's label looks identical to the current one); only vision can attribute a value to the right bar, series, or period.
+5. If the question or the evidence involves a CHART, FIGURE, DIAGRAM, or DRAWING, you MUST confirm the values with view_page before answering — even when numbers appear in the extracted text. Chart bar/point labels in text lose their visual association (a prior-year bar's label looks identical to the current one); only vision can attribute a value to the right bar, series, or period. Name the series/line you need by its style and label. If a detail is too small to read, you may re-call view_page with a `region` to zoom, but do NOT re-read the same chart repeatedly — if two readings disagree, report the value as approximate and say which series you read.
 6. If evidence is not surfacing: step back — reformulate, try grep with different terms, check list_docs for the right document, then search again.
 
 RULES:
