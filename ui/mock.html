@@ -1,0 +1,919 @@
+<title>marag — local document workbench</title>
+
+<style>
+  :root {
+    --paper: #F4F6F5;
+    --surface: #FFFFFF;
+    --surface-2: #ECEFEE;
+    --ink: #12181B;
+    --ink-2: #566468;
+    --ink-3: #8A9699;
+    --line: #DCE2E1;
+    --line-2: #C6CFCE;
+    --accent: #C97A1F;
+    --accent-soft: rgba(201, 122, 31, 0.12);
+    --accent-line: rgba(201, 122, 31, 0.42);
+    --ok: #2E7D5B;
+    --bad: #B24430;
+    --ch-d: #4C7DB8;
+    --ch-b: #3E8C86;
+    --ch-v: #8A6BB5;
+    --shadow: 0 1px 2px rgba(18, 24, 27, .06), 0 8px 24px rgba(18, 24, 27, .05);
+
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --rail: 268px;
+    --evidence: 372px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0F1416;
+      --surface: #151C1F;
+      --surface-2: #1B2427;
+      --ink: #E7EDEC;
+      --ink-2: #93A1A3;
+      --ink-3: #6A797C;
+      --line: #232E31;
+      --line-2: #31403F;
+      --accent: #E9A94D;
+      --accent-soft: rgba(233, 169, 77, 0.14);
+      --accent-line: rgba(233, 169, 77, 0.5);
+      --ok: #55A883;
+      --bad: #D6705C;
+      --ch-d: #6E9DD4;
+      --ch-b: #57A9A2;
+      --ch-v: #A388CE;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px rgba(0, 0, 0, .35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0F1416; --surface: #151C1F; --surface-2: #1B2427;
+    --ink: #E7EDEC; --ink-2: #93A1A3; --ink-3: #6A797C;
+    --line: #232E31; --line-2: #31403F;
+    --accent: #E9A94D; --accent-soft: rgba(233, 169, 77, 0.14); --accent-line: rgba(233, 169, 77, 0.5);
+    --ok: #55A883; --bad: #D6705C;
+    --ch-d: #6E9DD4; --ch-b: #57A9A2; --ch-v: #A388CE;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"] {
+    --paper: #F4F6F5; --surface: #FFFFFF; --surface-2: #ECEFEE;
+    --ink: #12181B; --ink-2: #566468; --ink-3: #8A9699;
+    --line: #DCE2E1; --line-2: #C6CFCE;
+    --accent: #C97A1F; --accent-soft: rgba(201,122,31,.12); --accent-line: rgba(201,122,31,.42);
+    --ok: #2E7D5B; --bad: #B24430;
+    --ch-d: #4C7DB8; --ch-b: #3E8C86; --ch-v: #8A6BB5;
+    --shadow: 0 1px 2px rgba(18,24,27,.06), 0 8px 24px rgba(18,24,27,.05);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--font-sans); font-size: 14.5px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+  .mono { font-family: var(--font-mono); }
+  .label {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---------- app shell ---------- */
+  .app {
+    height: 100vh; display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr) var(--evidence);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "top top top" "rail thread evidence";
+  }
+  .app[data-evidence="closed"] { grid-template-columns: var(--rail) minmax(0, 1fr) 0; }
+
+  /* ---------- top bar ---------- */
+  .top {
+    grid-area: top; display: flex; align-items: center; gap: 18px;
+    padding: 0 16px; height: 52px; border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .wordmark {
+    font-family: var(--font-mono); font-size: 14px; font-weight: 600;
+    letter-spacing: .02em; display: flex; align-items: baseline; gap: 8px;
+  }
+  .wordmark span { color: var(--ink-3); font-weight: 400; font-size: 11px; letter-spacing: .06em; }
+  .pill {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    border: 1px solid var(--line-2); border-radius: 2px; padding: 3px 7px; color: var(--ink-2);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .residents { display: flex; gap: 6px; }
+  .chipm {
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-2);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 2px;
+    padding: 3px 6px; white-space: nowrap;
+  }
+  .chipm b { color: var(--ink); font-weight: 600; }
+  .mem { display: flex; align-items: center; gap: 7px; }
+  .mem-bar { width: 74px; height: 5px; background: var(--surface-2); border: 1px solid var(--line); }
+  .mem-fill { height: 100%; width: 51%; background: var(--ink-2); }
+  .icon-btn {
+    width: 28px; height: 28px; display: grid; place-items: center;
+    border: 1px solid var(--line); border-radius: 2px; color: var(--ink-2);
+  }
+  .icon-btn:hover { background: var(--surface-2); color: var(--ink); }
+
+  /* ---------- left rail ---------- */
+  .rail {
+    grid-area: rail; border-right: 1px solid var(--line); background: var(--surface);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .rail-scroll { overflow-y: auto; flex: 1; min-height: 0; }
+  .rail-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px 8px;
+  }
+  .btn-new {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    margin: 0 14px 12px; padding: 8px; width: calc(100% - 28px);
+    border: 1px solid var(--line-2); border-radius: 3px;
+    font-family: var(--font-mono); font-size: 12px; color: var(--ink);
+    background: var(--surface-2);
+  }
+  .btn-new:hover { border-color: var(--accent); color: var(--accent); }
+
+  .sessions { display: flex; flex-direction: column; gap: 1px; padding: 0 8px; }
+  .session {
+    text-align: left; width: 100%; padding: 8px 8px 9px; border-radius: 3px;
+    border-left: 2px solid transparent; display: block;
+  }
+  .session:hover { background: var(--surface-2); }
+  .session[aria-current="true"] {
+    background: var(--accent-soft); border-left-color: var(--accent);
+  }
+  .session-title {
+    font-size: 12.5px; line-height: 1.35; color: var(--ink);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .session-meta {
+    margin-top: 4px; display: flex; gap: 6px; align-items: center;
+    font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-3);
+  }
+  .scope-tag {
+    border: 1px solid var(--line-2); border-radius: 2px; padding: 0 4px;
+    color: var(--ink-2);
+  }
+  .rail-section { padding: 16px 14px 6px; display: flex; align-items: center; justify-content: space-between; }
+  .link-btn { font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); }
+  .link-btn:hover { text-decoration: underline; }
+
+  .sources { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 16px; }
+  .source {
+    display: grid; grid-template-columns: 14px 1fr auto; gap: 9px; align-items: start;
+    padding: 8px; border-radius: 3px; text-align: left; width: 100%;
+  }
+  .source:hover { background: var(--surface-2); }
+  .checkbox {
+    width: 13px; height: 13px; border: 1px solid var(--line-2); border-radius: 2px;
+    margin-top: 2px; display: grid; place-items: center; flex: none;
+  }
+  .source[aria-pressed="true"] .checkbox { background: var(--accent); border-color: var(--accent); }
+  .source[aria-pressed="true"] .checkbox::after {
+    content: ""; width: 6px; height: 3px; border-left: 1.5px solid var(--surface);
+    border-bottom: 1.5px solid var(--surface); transform: rotate(-45deg) translate(0, -1px);
+  }
+  .source-name { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
+  .source-stats { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-3); margin-top: 2px; }
+  .channels { display: flex; gap: 3px; }
+  .ch {
+    width: 15px; height: 15px; display: grid; place-items: center;
+    font-family: var(--font-mono); font-size: 8.5px; font-weight: 600;
+    border: 1px solid currentColor; border-radius: 2px; opacity: .85;
+  }
+  .ch-d { color: var(--ch-d); } .ch-b { color: var(--ch-b); } .ch-v { color: var(--ch-v); }
+  .ch.off { color: var(--ink-3); opacity: .35; }
+
+  .rail-foot { border-top: 1px solid var(--line); padding: 10px 14px; }
+
+  /* ---------- thread ---------- */
+  .thread { grid-area: thread; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .thread-head {
+    padding: 14px 24px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 12px; background: var(--surface);
+  }
+  .thread-title { font-size: 14px; font-weight: 550; }
+  .thread-scope { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+
+  .messages { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 22px; }
+  .msg { max-width: 74ch; }
+  .msg-q {
+    align-self: flex-end; background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: 3px 3px 0 3px; padding: 10px 13px; font-size: 14px; max-width: 60ch;
+  }
+
+  /* trace */
+  .trace { border: 1px solid var(--line); border-radius: 3px; background: var(--surface); }
+  .trace-head {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px; width: 100%;
+    text-align: left; border-bottom: 1px solid transparent;
+  }
+  .trace[open] .trace-head { border-bottom-color: var(--line); }
+  .trace-head:hover { background: var(--surface-2); }
+  .caret { transition: transform .18s ease; color: var(--ink-3); display: grid; place-items: center; }
+  .trace[open] .caret { transform: rotate(90deg); }
+  .trace-summary { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-2); }
+  .trace-summary b { color: var(--ink); font-weight: 600; }
+  .trace-time { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+  .steps { padding: 6px 12px 12px 12px; display: none; }
+  .trace[open] .steps { display: block; }
+  .step {
+    display: grid; grid-template-columns: 18px 1fr; gap: 10px; padding: 7px 0;
+    position: relative;
+  }
+  .step + .step { border-top: 1px dashed var(--line); }
+  .step-rail { position: relative; display: grid; place-items: center; padding-top: 3px; }
+  .step-tick { width: 7px; height: 7px; border: 1px solid var(--ink-3); border-radius: 50%; background: var(--surface); }
+  .step.is-vision .step-tick { border-color: var(--accent); background: var(--accent); }
+  .step-tool { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink); }
+  .step.is-vision .step-tool { color: var(--accent); }
+  .step-args { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); word-break: break-word; }
+  .step-out { font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); margin-top: 3px; }
+  .step-out .hit { color: var(--ok); }
+
+  /* answer */
+  .answer { margin-top: 14px; }
+  .answer p { margin: 0 0 10px; }
+  .answer ul { margin: 0 0 10px; padding-left: 18px; }
+  .answer li { margin-bottom: 5px; }
+  .cite {
+    font-family: var(--font-mono); font-size: 11px; color: var(--accent);
+    border-bottom: 1px dotted var(--accent-line); padding: 0 1px; white-space: nowrap;
+  }
+  .cite:hover { background: var(--accent-soft); }
+  .cite[aria-pressed="true"] { background: var(--accent-soft); }
+  .answer-foot {
+    margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .verdict {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--ok);
+  }
+  .verdict .dot { background: var(--ok); }
+
+  /* composer */
+  .composer { border-top: 1px solid var(--line); background: var(--surface); padding: 12px 24px 14px; }
+  .composer-box {
+    border: 1px solid var(--line-2); border-radius: 3px; background: var(--paper);
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 9px;
+  }
+  .composer-box:focus-within { border-color: var(--accent); }
+  .composer-input {
+    font-family: var(--font-sans); font-size: 14px; color: var(--ink);
+    background: none; border: none; resize: none; outline: none; min-height: 22px;
+  }
+  .composer-input::placeholder { color: var(--ink-3); }
+  .composer-bar { display: flex; align-items: center; gap: 10px; }
+  .scope-line { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+  .scope-line b { color: var(--ink-2); font-weight: 600; }
+  .modes { display: flex; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+  .mode {
+    font-family: var(--font-mono); font-size: 10.5px; padding: 4px 8px; color: var(--ink-3);
+  }
+  .mode + .mode { border-left: 1px solid var(--line); }
+  .mode[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+  .btn-send {
+    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    background: var(--ink); color: var(--paper); border-radius: 2px; padding: 6px 12px;
+    font-family: var(--font-mono); font-size: 11.5px;
+  }
+  .btn-send:hover { background: var(--accent); color: #fff; }
+
+  /* ---------- evidence ---------- */
+  .evidence {
+    grid-area: evidence; border-left: 1px solid var(--line); background: var(--surface);
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  }
+  .app[data-evidence="closed"] .evidence { display: none; }
+  .ev-head {
+    padding: 12px 14px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .ev-scroll { overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 16px; }
+  .ev-doc { display: flex; flex-direction: column; gap: 3px; }
+  .ev-title { font-size: 13px; font-weight: 550; line-height: 1.35; }
+  .ev-meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+
+  /* page + region grid: the crop-mark motif */
+  .page-wrap { position: relative; }
+  .page {
+    position: relative; aspect-ratio: 8.5 / 11; background: #fff; border: 1px solid var(--line-2);
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  :root[data-theme="dark"] .page, @media (prefers-color-scheme: dark) { }
+  .grid {
+    position: absolute; inset: 0; display: grid;
+    grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, 1fr);
+  }
+  .cell {
+    border: 1px dashed rgba(90, 105, 110, .28); margin: -0.5px;
+    position: relative; transition: background .15s ease;
+  }
+  .cell:hover { background: rgba(201, 122, 31, .1); }
+  .cell[aria-pressed="true"] { background: var(--accent-soft); border: 1px solid var(--accent); }
+  .cell[aria-pressed="true"]::before, .cell[aria-pressed="true"]::after {
+    content: ""; position: absolute; width: 7px; height: 7px; border-color: var(--accent); border-style: solid;
+  }
+  .cell[aria-pressed="true"]::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+  .cell[aria-pressed="true"]::after { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+  .cell-label {
+    position: absolute; bottom: 2px; left: 3px; font-family: var(--font-mono); font-size: 7.5px;
+    color: var(--accent); opacity: 0; letter-spacing: .04em;
+  }
+  .cell:hover .cell-label, .cell[aria-pressed="true"] .cell-label { opacity: 1; }
+  .page-bar {
+    display: flex; align-items: center; gap: 8px; margin-top: 7px;
+    font-family: var(--font-mono); font-size: 10px; color: var(--ink-3);
+  }
+  .btn-zoom {
+    margin-left: auto; border: 1px solid var(--accent); color: var(--accent);
+    border-radius: 2px; padding: 3px 8px; font-family: var(--font-mono); font-size: 10.5px;
+  }
+  .btn-zoom:hover { background: var(--accent); color: #fff; }
+
+  .reading {
+    background: var(--surface-2); border: 1px solid var(--line); border-left: 2px solid var(--accent);
+    border-radius: 2px; padding: 9px 11px; font-size: 12.5px; color: var(--ink-2);
+  }
+  .reading .v { color: var(--ink); font-family: var(--font-mono); font-weight: 600; }
+  .reading-tag {
+    font-family: var(--font-mono); font-size: 9.5px; color: var(--accent);
+    letter-spacing: .06em; display: block; margin-top: 6px;
+  }
+
+  .tbl { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 10.5px; }
+  .tbl th, .tbl td { border: 1px solid var(--line); padding: 3px 6px; text-align: right; }
+  .tbl th { background: var(--surface-2); color: var(--ink-3); font-weight: 500; text-align: right; }
+  .tbl th:first-child, .tbl td:first-child { text-align: left; }
+  .tbl-wrap { overflow-x: auto; }
+  .tbl-cap { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-3); margin-bottom: 5px; }
+
+  .spans { display: flex; flex-direction: column; gap: 6px; }
+  .span-row {
+    display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start;
+    font-size: 12px; color: var(--ink-2); padding: 6px 0; border-top: 1px dashed var(--line);
+  }
+  .span-cite { font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); white-space: nowrap; }
+
+  /* ---------- upload modal ---------- */
+  .scrim {
+    position: fixed; inset: 0; background: rgba(9, 13, 15, .55); display: none;
+    place-items: center; padding: 24px; z-index: 20; backdrop-filter: blur(2px);
+  }
+  .scrim[data-open="true"] { display: grid; }
+  .modal {
+    width: min(620px, 100%); background: var(--surface); border: 1px solid var(--line-2);
+    border-radius: 4px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .modal-head {
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .drop {
+    border: 1.5px dashed var(--line-2); border-radius: 3px; padding: 26px; text-align: center;
+    background: var(--paper);
+  }
+  .drop:hover, .drop.hot { border-color: var(--accent); background: var(--accent-soft); }
+  .drop-title { font-family: var(--font-mono); font-size: 12.5px; }
+  .drop-sub { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); margin-top: 5px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .select {
+    border: 1px solid var(--line-2); border-radius: 2px; background: var(--paper);
+    padding: 7px 9px; font-family: var(--font-mono); font-size: 12px; color: var(--ink);
+  }
+  .queue { display: flex; flex-direction: column; gap: 8px; }
+  .qitem { border: 1px solid var(--line); border-radius: 3px; padding: 9px 11px; }
+  .qtop { display: flex; align-items: center; gap: 8px; }
+  .qname { font-family: var(--font-mono); font-size: 11.5px; }
+  .qsize { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+  .qstat { margin-left: auto; font-family: var(--font-mono); font-size: 10px; }
+  .qstat.done { color: var(--ok); } .qstat.run { color: var(--accent); } .qstat.wait { color: var(--ink-3); }
+  .stages { display: flex; gap: 3px; margin-top: 8px; }
+  .stage { flex: 1; }
+  .stage-bar { height: 3px; background: var(--surface-2); border: 1px solid var(--line); }
+  .stage-bar i { display: block; height: 100%; background: var(--ink-3); }
+  .stage.done .stage-bar i { background: var(--ok); width: 100% !important; }
+  .stage.run .stage-bar i { background: var(--accent); }
+  .stage-name {
+    font-family: var(--font-mono); font-size: 8px; color: var(--ink-3); margin-top: 4px;
+    letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .stage.done .stage-name { color: var(--ok); } .stage.run .stage-name { color: var(--accent); }
+  .modal-foot {
+    padding: 12px 16px; border-top: 1px solid var(--line); display: flex; gap: 10px; align-items: center;
+    background: var(--surface-2);
+  }
+  .modal-note { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+  .btn-ghost { border: 1px solid var(--line-2); border-radius: 2px; padding: 6px 11px; font-family: var(--font-mono); font-size: 11.5px; }
+  .btn-solid { background: var(--ink); color: var(--paper); border-radius: 2px; padding: 6px 12px; font-family: var(--font-mono); font-size: 11.5px; }
+  .btn-solid:hover { background: var(--accent); color: #fff; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  @media (max-width: 1180px) {
+    .app { grid-template-columns: var(--rail) minmax(0, 1fr) 0; }
+    .evidence { position: fixed; right: 0; top: 52px; bottom: 0; width: min(372px, 92vw); z-index: 10; }
+    .app[data-evidence="closed"] .evidence { display: none; }
+    .app:not([data-evidence="closed"]) .evidence { display: flex; }
+  }
+  @media (max-width: 820px) {
+    .app { grid-template-columns: 0 minmax(0, 1fr) 0; }
+    .rail { position: fixed; left: 0; top: 52px; bottom: 0; width: 268px; z-index: 12; display: none; }
+    .app[data-rail="open"] .rail { display: flex; }
+    .messages, .composer, .thread-head { padding-left: 14px; padding-right: 14px; }
+  }
+</style>
+
+<div class="app" id="app" data-evidence="open">
+
+  <!-- ================= top ================= -->
+  <header class="top">
+    <button class="icon-btn" id="railToggle" aria-label="Toggle sessions" style="display:none">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+        <path d="M2 4h12M2 8h12M2 12h12" /></svg>
+    </button>
+    <div class="wordmark">marag <span>LOCAL DOCUMENT WORKBENCH</span></div>
+    <div class="pill"><i class="dot"></i> offline</div>
+
+    <div class="top-right">
+      <div class="residents">
+        <div class="chipm" title="Agent loop — plans, searches, writes the answer"><b>qwen3.6</b>:35b-a3b · agent</div>
+        <div class="chipm" title="view_page reader — dense VLM, reads charts and figures"><b>gemma4</b>:31b · vision</div>
+        <div class="chipm" title="Router, graders and judge"><b>qwen3.5</b>:9b · utility</div>
+      </div>
+      <div class="mem" title="Unified memory in use by resident models">
+        <span class="label">MEM</span>
+        <div class="mem-bar"><div class="mem-fill"></div></div>
+        <span class="mono num" style="font-size:10.5px; color:var(--ink-2)">49.2/96 GB</span>
+      </div>
+      <button class="icon-btn" id="themeBtn" aria-label="Switch theme">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+          <circle cx="8" cy="8" r="3.2" /><path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2L3.1 3.1" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= rail ================= -->
+  <nav class="rail">
+    <div class="rail-scroll">
+      <div class="rail-head"><span class="label">Sessions</span></div>
+      <button class="btn-new">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v10M3 8h10" /></svg>
+        New session
+      </button>
+      <div class="sessions" id="sessions"></div>
+
+      <div class="rail-section">
+        <span class="label">Sources</span>
+        <button class="link-btn" id="newSourceBtn">+ New source</button>
+      </div>
+      <div class="sources" id="sources"></div>
+    </div>
+
+    <div class="rail-foot">
+      <button class="btn-new" style="margin:0; width:100%" id="uploadBtn">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M8 11V3M4.5 6.5L8 3l3.5 3.5M3 12.5h10" /></svg>
+        Upload documents
+      </button>
+    </div>
+  </nav>
+
+  <!-- ================= thread ================= -->
+  <main class="thread">
+    <div class="thread-head">
+      <div class="thread-title" id="threadTitle">Uber Q4 2024 — gross bookings &amp; MAPCs</div>
+      <div class="thread-scope">
+        <span class="pill" id="threadScope">financial_docs</span>
+        <button class="icon-btn" id="evToggle" aria-label="Toggle evidence panel">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+            <rect x="1.5" y="2.5" width="13" height="11" /><path d="M10 2.5v11" /></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="msg msg-q">
+        According to the bar charts in Uber's Q4 2024 earnings supplemental deck: what were Gross Bookings
+        with the as-reported YoY growth rate, and how many monthly active platform consumers (MAPCs)?
+      </div>
+
+      <div class="msg" style="width:100%">
+        <div class="trace" id="trace" open>
+          <button class="trace-head" id="traceHead" aria-expanded="true">
+            <span class="caret">
+              <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3l5 5-5 5" /></svg>
+            </span>
+            <span class="trace-summary"><b>7 tool calls</b> · 3 sources of evidence · agentic</span>
+            <span class="trace-time num">112s</span>
+          </button>
+          <div class="steps" id="steps"></div>
+        </div>
+
+        <div class="answer">
+          <p>Uber's Q4 2024 <b>Gross Bookings were $44,197M, up 18% year over year as reported</b>
+            (21% in constant currency), and it had <b>171 million monthly active platform consumers, up 14% YoY</b>.</p>
+          <ul>
+            <li>Gross Bookings bar chart reads $44,197M for Q4'24 against $37,575M for Q4'23
+              <button class="cite" data-doc="fin013" data-page="14" data-region="top-left" aria-pressed="true">[fin013 p14]</button></li>
+            <li>MAPC bar chart reads 171M for Q4'24 against 150M for Q4'23
+              <button class="cite" data-doc="fin013" data-page="13" data-region="top-right">[fin013 p13]</button></li>
+          </ul>
+          <p class="mono" style="font-size:11.5px; color:var(--ink-3)">
+            Note: the extracted text layer of p14 also contains "37,575" — the prior-year bar. The value was
+            confirmed visually against the chart before answering.</p>
+
+          <div class="answer-foot">
+            <span class="verdict"><i class="dot"></i> 2/2 citations grounded</span>
+            <span class="mono" style="font-size:10.5px; color:var(--ink-3)">channels: <span style="color:var(--ch-d)">dense</span> · <span style="color:var(--ch-b)">bm25</span> · <span style="color:var(--ch-v)">visual</span></span>
+            <span class="mono" style="font-size:10.5px; color:var(--ink-3)">7 calls · 112s</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer">
+      <div class="composer-box">
+        <textarea class="composer-input" rows="1" placeholder="Ask across the sources in scope…"></textarea>
+        <div class="composer-bar">
+          <span class="scope-line" id="scopeLine"></span>
+          <div class="modes" role="group" aria-label="Retrieval mode" id="modes">
+            <button class="mode" data-mode="auto" aria-pressed="true">auto</button>
+            <button class="mode" data-mode="single" aria-pressed="false">single-shot</button>
+            <button class="mode" data-mode="agentic" aria-pressed="false">agentic</button>
+          </div>
+          <button class="btn-send">
+            Ask
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ================= evidence ================= -->
+  <aside class="evidence">
+    <div class="ev-head">
+      <span class="label">Evidence</span>
+      <span class="mono" style="font-size:10px; color:var(--ink-3)" id="evSource">financial_docs</span>
+    </div>
+    <div class="ev-scroll">
+      <div class="ev-doc">
+        <div class="ev-title" id="evTitle">Uber Q4 2024 Earnings Supplemental Deck</div>
+        <div class="ev-meta" id="evMeta">fin013 · earnings_deck · page 14 of 27 · 41 tables extracted</div>
+      </div>
+
+      <div class="page-wrap">
+        <div class="page">
+          <!-- schematic of the cited page: a bar chart deck slide -->
+          <svg viewBox="0 0 170 220" width="100%" height="100%" role="img" aria-label="Page 14 schematic: Gross Bookings bar chart">
+            <rect width="170" height="220" fill="#ffffff" />
+            <text x="12" y="16" font-family="ui-monospace, monospace" font-size="6" fill="#12181B">Gross Bookings</text>
+            <text x="12" y="23" font-family="ui-monospace, monospace" font-size="3.6" fill="#8A9699">($ in millions, YoY growth)</text>
+            <g fill="#4C7DB8">
+              <rect x="16" y="72" width="12" height="26" opacity=".55" />
+              <rect x="34" y="66" width="12" height="32" opacity=".62" />
+              <rect x="52" y="60" width="12" height="38" opacity=".7" />
+              <rect x="70" y="54" width="12" height="44" opacity=".8" />
+              <rect x="88" y="44" width="12" height="54" />
+            </g>
+            <text x="88" y="41" font-family="ui-monospace, monospace" font-size="3.4" fill="#12181B">44,197</text>
+            <text x="15" y="69" font-family="ui-monospace, monospace" font-size="3.2" fill="#8A9699">37,575</text>
+            <text x="90" y="35" font-family="ui-monospace, monospace" font-size="3.4" fill="#2E7D5B">+18%</text>
+            <line x1="14" y1="98" x2="106" y2="98" stroke="#DCE2E1" stroke-width=".5" />
+            <g font-family="ui-monospace, monospace" font-size="2.8" fill="#8A9699">
+              <text x="16" y="103">Q4'23</text><text x="34" y="103">Q1'24</text><text x="52" y="103">Q2'24</text>
+              <text x="70" y="103">Q3'24</text><text x="88" y="103">Q4'24</text>
+            </g>
+            <g fill="#DCE2E1">
+              <rect x="112" y="30" width="46" height="1.6" /><rect x="112" y="35" width="46" height="1.6" />
+              <rect x="112" y="40" width="36" height="1.6" /><rect x="112" y="50" width="46" height="1.6" />
+              <rect x="112" y="55" width="40" height="1.6" />
+            </g>
+            <g fill="#ECEFEE">
+              <rect x="12" y="120" width="146" height="40" />
+            </g>
+            <g fill="#DCE2E1">
+              <rect x="16" y="126" width="60" height="1.4" /><rect x="16" y="132" width="138" height="1.4" />
+              <rect x="16" y="138" width="138" height="1.4" /><rect x="16" y="144" width="120" height="1.4" />
+              <rect x="16" y="150" width="138" height="1.4" />
+              <rect x="12" y="172" width="146" height="1.4" /><rect x="12" y="180" width="120" height="1.4" />
+              <rect x="12" y="188" width="140" height="1.4" /><rect x="12" y="196" width="90" height="1.4" />
+            </g>
+          </svg>
+
+          <div class="grid" id="grid" role="group" aria-label="Zoom region"></div>
+        </div>
+
+        <div class="page-bar">
+          <span>region</span>
+          <span class="mono" style="color:var(--accent)" id="regionName">top-left</span>
+          <span>·</span><span class="num" id="regionDpi">500 dpi</span>
+          <button class="btn-zoom" id="zoomBtn">Read region</button>
+        </div>
+      </div>
+
+      <div class="reading" id="reading">
+        The Q4 2024 bar reads <span class="v">$44,197M</span>; the growth badge above it reads
+        <span class="v">18%</span> as reported (21% constant currency). The adjacent bar labelled Q4'23 reads
+        <span class="v">$37,575M</span> — the value that appears first in the page's text layer.
+        <span class="reading-tag">gemma4:31b · region top-left · 500 dpi · thinking</span>
+      </div>
+
+      <div>
+        <div class="tbl-cap">t_fin013_p14_0 · docling tableformer</div>
+        <div class="tbl-wrap">
+          <table class="tbl">
+            <thead><tr><th>metric</th><th>Q4'23</th><th>Q4'24</th><th>YoY</th></tr></thead>
+            <tbody class="num">
+              <tr><td>Gross Bookings</td><td>37,575</td><td>44,197</td><td>18%</td></tr>
+              <tr><td>Trips</td><td>2,601</td><td>3,096</td><td>19%</td></tr>
+              <tr><td>MAPCs</td><td>150</td><td>171</td><td>14%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <div class="label" style="margin-bottom:6px">Cited spans</div>
+        <div class="spans">
+          <div class="span-row">
+            <span class="span-cite">fin013 p14</span>
+            <span>Gross Bookings — Q4'24 bar $44,197M, +18% YoY as reported</span>
+          </div>
+          <div class="span-row">
+            <span class="span-cite">fin013 p13</span>
+            <span>Monthly Active Platform Consumers — Q4'24 bar 171M, +14% YoY</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ================= upload modal ================= -->
+<div class="scrim" id="scrim" data-open="false">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="uploadTitle">
+    <div class="modal-head">
+      <span class="label" id="uploadTitle">Add documents</span>
+      <button class="icon-btn" id="closeModal" aria-label="Close">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <span class="label">Into source</span>
+        <select class="select" id="uploadTarget"></select>
+      </div>
+
+      <div class="drop" id="drop">
+        <div class="drop-title">Drop PDFs here</div>
+        <div class="drop-sub">or click to browse · PDF, DOCX, PPTX, PNG, WAV · stays on this machine</div>
+      </div>
+
+      <div>
+        <div class="label" style="margin-bottom:7px">Ingest queue</div>
+        <div class="queue" id="queue"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span class="modal-note">Pages render at 150 dpi · tables via Docling · re-rendered at 500 dpi on demand</span>
+      <button class="btn-ghost" id="cancelUpload" style="margin-left:auto">Cancel</button>
+      <button class="btn-solid" id="startIngest">Ingest 3 files</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ---- real corpus numbers from the running system ----
+  const SOURCES = [
+    { id: "financial_docs",  docs: 24, pages: 2310, chunks: 3933, tables: 912, channels: "dbv", on: true  },
+    { id: "research_papers", docs: 25, pages: 683,  chunks: 1311, tables: 243, channels: "dbv", on: false },
+    { id: "legal_docs",      docs: 25, pages: 3219, chunks: 3639, tables: 215, channels: "dbv", on: false },
+    { id: "health_docs",     docs: 24, pages: 866,  chunks: 1460, tables: 242, channels: "dbv", on: false },
+  ];
+
+  const SESSIONS = [
+    { t: "Uber Q4 2024 — gross bookings & MAPCs", scope: ["financial_docs"], when: "now", calls: 7 },
+    { t: "NV-Embed vs Gecko — MTEB average gap", scope: ["research_papers"], when: "2h", calls: 5 },
+    { t: "RSV hospitalization peaks: 2024-25 vs 2018-20", scope: ["health_docs"], when: "5h", calls: 9 },
+    { t: "Google search share — DOJ complaint vs EU decision", scope: ["legal_docs"], when: "yest", calls: 12 },
+    { t: "Late-interaction retrieval: papers & prior art", scope: ["research_papers", "legal_docs"], when: "yest", calls: 14 },
+    { t: "Tamiflu vs Xofluza — full treatment course", scope: ["health_docs"], when: "2d", calls: 6 },
+  ];
+
+  const STEPS = [
+    { tool: "list_docs", args: "", out: "24 documents · financial_docs" },
+    { tool: "hybrid_search", args: 'query: "Uber Q4 2024 gross bookings YoY growth"',
+      out: "8 chunks · <span class='hit'>fin013 p13-14</span>, fin013 p2, fin020 p5" },
+    { tool: "hybrid_search", args: 'query: "monthly active platform consumers Q4 2024"',
+      out: "8 chunks · <span class='hit'>fin013 p13</span>, fin013 p9" },
+    { tool: "read_doc", args: "fin013 · p13-14", out: "2 pages · text layer contains 37,575 and 44,197" },
+    { tool: "list_tables", args: "fin013", out: "41 tables · t_fin013_p14_0 (3×4)" },
+    { tool: "view_page", args: 'fin013 p14 · region: full', vision: true,
+      out: "locates the Gross Bookings chart · <span class='hit'>REGION: top-left</span>" },
+    { tool: "view_page", args: 'fin013 p14 · region: top-left · 500 dpi', vision: true,
+      out: "<span class='hit'>Q4'24 bar = $44,197M, badge +18%</span>; Q4'23 bar = $37,575M" },
+  ];
+
+  const QUEUE = [
+    { name: "fed-mpr-jun-2025.pdf", size: "5.2 MB", state: "done",
+      stages: [100, 100, 100, 100, 100, 100] },
+    { name: "nvidia-10k-fy2025.pdf", size: "11.4 MB", state: "run",
+      stages: [100, 100, 100, 64, 0, 0] },
+    { name: "boe-financial-stability.pdf", size: "3.8 MB", state: "wait",
+      stages: [0, 0, 0, 0, 0, 0] },
+  ];
+  const STAGE_NAMES = ["parse", "pages", "tables", "chunks", "dense", "visual"];
+
+  const $ = (s) => document.querySelector(s);
+  const fmt = (n) => n.toLocaleString("en-US");
+
+  // ---- sessions ----
+  function renderSessions() {
+    $("#sessions").innerHTML = SESSIONS.map((s, i) => `
+      <button class="session" aria-current="${i === 0}" data-i="${i}">
+        <div class="session-title">${s.t}</div>
+        <div class="session-meta">
+          <span class="scope-tag">${s.scope.length > 1 ? s.scope.length + " sources" : s.scope[0]}</span>
+          <span>${s.calls} calls</span><span>·</span><span>${s.when}</span>
+        </div>
+      </button>`).join("");
+    document.querySelectorAll(".session").forEach((el) => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll(".session").forEach((o) => o.setAttribute("aria-current", "false"));
+        el.setAttribute("aria-current", "true");
+        const s = SESSIONS[+el.dataset.i];
+        $("#threadTitle").textContent = s.t;
+        $("#threadScope").textContent = s.scope.length > 1 ? s.scope.length + " sources" : s.scope[0];
+        SOURCES.forEach((src) => (src.on = s.scope.includes(src.id)));
+        renderSources(); updateScope();
+      });
+    });
+  }
+
+  // ---- sources ----
+  function renderSources() {
+    $("#sources").innerHTML = SOURCES.map((s) => `
+      <button class="source" aria-pressed="${s.on}" data-id="${s.id}">
+        <span class="checkbox" aria-hidden="true"></span>
+        <span>
+          <span class="source-name">${s.id}</span>
+          <span class="source-stats num">${s.docs} docs · ${fmt(s.pages)} pages · ${fmt(s.tables)} tables</span>
+        </span>
+        <span class="channels">
+          <span class="ch ch-d ${s.channels.includes("d") ? "" : "off"}" title="dense embeddings">D</span>
+          <span class="ch ch-b ${s.channels.includes("b") ? "" : "off"}" title="bm25 full-text">B</span>
+          <span class="ch ch-v ${s.channels.includes("v") ? "" : "off"}" title="visual page index">V</span>
+        </span>
+      </button>`).join("");
+    document.querySelectorAll(".source").forEach((el) => {
+      el.addEventListener("click", () => {
+        const src = SOURCES.find((s) => s.id === el.dataset.id);
+        src.on = !src.on;
+        el.setAttribute("aria-pressed", src.on);
+        updateScope();
+      });
+    });
+    $("#uploadTarget").innerHTML =
+      SOURCES.map((s) => `<option>${s.id}</option>`).join("") + `<option>+ new source…</option>`;
+  }
+
+  function updateScope() {
+    const on = SOURCES.filter((s) => s.on);
+    const d = on.reduce((a, s) => a + s.docs, 0);
+    const p = on.reduce((a, s) => a + s.pages, 0);
+    const c = on.reduce((a, s) => a + s.chunks, 0);
+    $("#scopeLine").innerHTML = on.length
+      ? `searching <b>${on.length}</b> of 4 sources · <b class="num">${d}</b> docs · <b class="num">${fmt(p)}</b> pages · <b class="num">${fmt(c)}</b> chunks`
+      : `no sources in scope — pick at least one`;
+    $("#threadScope").textContent = on.length === 1 ? on[0].id : `${on.length} sources`;
+  }
+
+  // ---- trace ----
+  function renderSteps() {
+    $("#steps").innerHTML = STEPS.map((s) => `
+      <div class="step ${s.vision ? "is-vision" : ""}">
+        <span class="step-rail"><i class="step-tick"></i></span>
+        <span>
+          <span class="step-tool">${s.tool}(${s.args ? "" : ")"}</span>
+          ${s.args ? `<span class="step-args">${s.args})</span>` : ""}
+          <div class="step-out">→ ${s.out}</div>
+        </span>
+      </div>`).join("");
+  }
+  $("#traceHead").addEventListener("click", () => {
+    const t = $("#trace"); const open = t.hasAttribute("open");
+    open ? t.removeAttribute("open") : t.setAttribute("open", "");
+    $("#traceHead").setAttribute("aria-expanded", String(!open));
+  });
+
+  // ---- region grid (the view_page vocabulary) ----
+  const REGIONS = ["top-left", "top-right", "middle-left", "middle-right", "bottom-left", "bottom-right"];
+  function renderGrid() {
+    $("#grid").innerHTML = REGIONS.map((r) => `
+      <button class="cell" data-r="${r}" aria-pressed="${r === "top-left"}" aria-label="Zoom ${r}">
+        <span class="cell-label">${r}</span>
+      </button>`).join("");
+    document.querySelectorAll(".cell").forEach((c) => {
+      c.addEventListener("click", () => {
+        document.querySelectorAll(".cell").forEach((o) => o.setAttribute("aria-pressed", "false"));
+        c.setAttribute("aria-pressed", "true");
+        $("#regionName").textContent = c.dataset.r;
+        $("#regionDpi").textContent = "500 dpi";
+      });
+    });
+  }
+
+  // ---- citations drive the evidence panel ----
+  document.querySelectorAll(".cite").forEach((c) => {
+    c.addEventListener("click", () => {
+      document.querySelectorAll(".cite").forEach((o) => o.setAttribute("aria-pressed", "false"));
+      c.setAttribute("aria-pressed", "true");
+      const page = c.dataset.page, region = c.dataset.region;
+      $("#evMeta").textContent = `${c.dataset.doc} · earnings_deck · page ${page} of 27 · 41 tables extracted`;
+      $("#regionName").textContent = region;
+      document.querySelectorAll(".cell").forEach((o) =>
+        o.setAttribute("aria-pressed", String(o.dataset.r === region)));
+      if (page === "13") {
+        $("#reading").innerHTML = `The Q4 2024 bar reads <span class="v">171</span> million MAPCs with a
+          <span class="v">+14%</span> YoY badge; the Q4'23 bar reads <span class="v">150</span> million.
+          <span class="reading-tag">gemma4:31b · region ${region} · 500 dpi · thinking</span>`;
+      } else {
+        $("#reading").innerHTML = `The Q4 2024 bar reads <span class="v">$44,197M</span>; the growth badge above it
+          reads <span class="v">18%</span> as reported (21% constant currency). The adjacent bar labelled Q4'23 reads
+          <span class="v">$37,575M</span> — the value that appears first in the page's text layer.
+          <span class="reading-tag">gemma4:31b · region ${region} · 500 dpi · thinking</span>`;
+      }
+    });
+  });
+
+  // ---- upload ----
+  function renderQueue() {
+    $("#queue").innerHTML = QUEUE.map((f) => `
+      <div class="qitem">
+        <div class="qtop">
+          <span class="qname">${f.name}</span><span class="qsize">${f.size}</span>
+          <span class="qstat ${f.state}">${f.state === "done" ? "indexed" : f.state === "run" ? "chunking…" : "queued"}</span>
+        </div>
+        <div class="stages">
+          ${f.stages.map((v, i) => `
+            <div class="stage ${v === 100 ? "done" : v > 0 ? "run" : ""}">
+              <div class="stage-bar"><i style="width:${v}%"></i></div>
+              <div class="stage-name">${STAGE_NAMES[i]}</div>
+            </div>`).join("")}
+        </div>
+      </div>`).join("");
+  }
+  const openModal = () => { $("#scrim").dataset.open = "true"; };
+  const closeModal = () => { $("#scrim").dataset.open = "false"; };
+  $("#uploadBtn").addEventListener("click", openModal);
+  $("#newSourceBtn").addEventListener("click", openModal);
+  $("#closeModal").addEventListener("click", closeModal);
+  $("#cancelUpload").addEventListener("click", closeModal);
+  $("#scrim").addEventListener("click", (e) => { if (e.target === $("#scrim")) closeModal(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+  ["dragenter", "dragover"].forEach((ev) =>
+    $("#drop").addEventListener(ev, (e) => { e.preventDefault(); $("#drop").classList.add("hot"); }));
+  ["dragleave", "drop"].forEach((ev) =>
+    $("#drop").addEventListener(ev, (e) => { e.preventDefault(); $("#drop").classList.remove("hot"); }));
+
+  // ---- chrome ----
+  $("#evToggle").addEventListener("click", () => {
+    const a = $("#app");
+    a.dataset.evidence = a.dataset.evidence === "closed" ? "open" : "closed";
+  });
+  $("#themeBtn").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    const sysDark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const now = cur || (sysDark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", now === "dark" ? "light" : "dark");
+  });
+  $("#modes").addEventListener("click", (e) => {
+    const b = e.target.closest(".mode"); if (!b) return;
+    document.querySelectorAll(".mode").forEach((m) => m.setAttribute("aria-pressed", "false"));
+    b.setAttribute("aria-pressed", "true");
+  });
+  const railToggle = $("#railToggle");
+  const syncRailBtn = () => { railToggle.style.display = innerWidth <= 820 ? "grid" : "none"; };
+  railToggle.addEventListener("click", () => {
+    const a = $("#app"); a.dataset.rail = a.dataset.rail === "open" ? "closed" : "open";
+  });
+  addEventListener("resize", syncRailBtn);
+
+  renderSessions(); renderSources(); renderSteps(); renderGrid(); renderQueue(); updateScope(); syncRailBtn();
+</script>

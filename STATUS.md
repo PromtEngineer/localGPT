@@ -3,8 +3,13 @@
 ## What exists now
 
 - **DESIGN.md** — the researched system design (July 2026 landscape).
-- **RESULTS.md** — first full validation results. Headline: agentic 100%/80%/73.3% vs
-  single-shot 33.3%/46.7%/13.3%; tri-hybrid+rerank retrieval 97%/86.7%/84.4% hop recall.
+- **RESULTS.md** — full validation. Single-session headline: 53/60 = 88.3% agentic across
+  4 domains (research 93.3, financial 86.7, legal 100, health-unseen 73.3); tri-hybrid+rerank
+  retrieval 84–97% hop recall. Read its variance note before comparing any two scores:
+  determinism is per-session, cross-session drift is ~1 question/domain, so only same-session
+  A/B counts and differences ≤2 questions at n=15 are noise.
+- **ui/mock.html** — mock workbench UI (sessions, multi-source scope, upload/ingest, tool
+  trace, page evidence) on real corpus numbers.
 - **Three datasets** (`data/raw/`): research_papers (25), financial_docs (24), legal_docs (25)
   — all multimodal, manifest.json each, all publicly sourced.
 - **Three QA benchmarks** (`data/benchmarks/`): 15 verified multi-hop questions each with

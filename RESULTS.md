@@ -1,8 +1,43 @@
-# Validation Results — July 16, 2026
+# Validation Results — July 16-17, 2026
 
-**Headline: 95.6% agentic accuracy (43/45) on the three development domains, and 80% on a
-fourth unseen domain run with zero code changes — the system generalizes.** See the
-Generalization test section for the transfer evidence.
+**Headline: 88.3% agentic accuracy (53/60) across four domains of verified multi-hop
+multimodal questions — single-session, validated config — including a domain the system had
+never seen, run with zero code changes.**
+
+Single-session baseline (July 17, all four evals in one Ollama session, validated config):
+
+| dataset | agentic | failures |
+|---|---|---|
+| research_papers | 93.3% (14/15) | rp_q13 |
+| financial_docs | 86.7% (13/15) | fin_q01, fin_q05 |
+| legal_docs | 100% (15/15) | — |
+| health_docs (unseen) | 73.3% (11/15) | hlt_q08, hlt_q10, hlt_q14, hlt_q15 |
+| **aggregate** | **53/60 = 88.3%** | |
+
+Prior drafts quoted 95.6% on the three development domains; that figure was assembled across
+several sessions and is ~2 questions optimistic versus this single-session measurement. The
+remaining failures concentrate in chart/figure reads (the known VLM ceiling) plus one
+segment-vs-category confusion (fin_q01) that numbers-via-SQL enforcement should catch.
+
+## Read this before comparing any two numbers below
+
+Measured on July 17 after a config change appeared to move a score by 2 questions:
+
+- **Within one Ollama session the pipeline is deterministic.** Three consecutive runs of an
+  identical config on financial_docs returned byte-identical results (12/15, same three
+  failures, zero flaky questions). Both judges — at temperature 0.2 and 0.0 — regrade fixed
+  answers with zero verdict flips.
+- **Across sessions it drifts by ~1 question.** The same code scored financial_docs 93.3% in
+  one session and 86.7% in another; between them the server was restarted and two extra models
+  were pulled. Different resident-model state changes batching/KV-cache, and at temperature 0
+  a single flipped low-probability token cascades through a 10-20 step agent loop.
+
+**Therefore: only same-session A/B comparisons are evidence.** At n=15 per domain one question
+is 6.7%, so a 1-2 question difference measured across sessions means nothing. Historical
+numbers in this document were gathered across several sessions and carry ±1 question of
+uncertainty each; the four-domain table is a single-session baseline. Earlier claims that
+rested on cross-session 2-question deltas (notably the Gemma 4 vision verdict) are labelled
+as inconclusive rather than settled.
 
 First full validation of the marag pipeline on three purpose-built multimodal benchmarks
 (15 verified multi-hop questions each; gold evidence = doc + page + modality, answers read
@@ -149,7 +184,62 @@ wrong at normal render and needed 400–500 dpi crops. Our page images are rende
 cleanly to an unseen domain; the gap is confined to fine-grained chart reading (see the
 next section — it is a model limit, not a domain-fit problem).
 
-### Postmortem: the high-DPI hypothesis was wrong (negative result)
+### The chart-reading experiment (dense VLM, zoom, thinking) — capability up, score flat
+
+Round 2 of the chart investigation, after the DPI-only postmortem below. Hypothesis: the
+orchestrator qwen3.6:35b-a3b is a **MoE with only ~3B active parameters**, so its vision head
+runs on a fraction of the compute — try a **dense** reader. Gemma 4 31B (dense, vision+tools,
+Apache 2.0) was routed to `view_page` via a new `models.vision` slot while qwen3.6 kept driving
+the agent loop.
+
+**On the isolated failing read** (hlt014 p5 FIGURE 1; truth: blue ≈0.75, black ≈1.33) three
+factors proved *jointly* necessary — this is why the DPI-only test below looked like a dead end:
+
+| reader | render | thinking | blue peak | black peak |
+|---|---|---|---|---|
+| qwen3.6 (MoE) | any dpi, any crop | either | 0.9–0.95 ✗ | 1.3 ✓ |
+| gemma4 31B (dense) | 150-dpi full page | on | 1.1 ✗ | 1.4 ✗ |
+| gemma4 31B (dense) | 500-dpi corner crop | off | 0.9 ✗ | 1.3 ✓ |
+| **gemma4 31B (dense)** | **500-dpi corner crop** | **on** | **0.7–0.8 ✓** | **1.3 ✓** |
+
+Resolution only pays off in a model that can use it; thinking is what performs the
+tick-to-value interpolation ("halfway between the 0.6 and 0.8 tick marks"); and the crop must be
+a *corner* region — halves hit the pixel cap at ~305 dpi and read wrong.
+
+**Two harness lessons on the way:**
+1. *Prompting the agent to do the two-step didn't work.* Told the locate→zoom sequence was
+   mandatory, the agent still called `view_page` once at full page (hlt_q10) or zoomed to
+   `right`/`bottom-right` when the panel was `top-left`. Perfect vision, wrong window.
+   The fix was mechanical: `view_page` now runs locate→zoom *inside the tool* (cheap no-think
+   full-page pass → parse its `REGION:` hint → re-render that region at 500 dpi → read with
+   thinking). Same lesson as the numbers-via-SQL rule: **enforce the path, don't request it.**
+2. *The locate step must be biased toward the tightest region*, or it names a half and loses
+   the resolution it just went to get.
+
+**End-to-end: INCONCLUSIVE — do not cite this as a verdict.** The comparison ran across server
+sessions (53/60 with gemma4 vs 55/60 with the default), which the variance work above showed is
+worth ~1 question per domain of drift on its own. The measured difference never exceeded the
+measurement error. It was not adopted, on the weaker but sufficient grounds that it costs 50%
+more latency (~110s → ~168s/question) for no *demonstrated* gain — not because it was shown
+worse. A same-session A/B on a chart-heavy corpus would settle it.
+
+Two things that are solid regardless:
+- Chart readings still fluctuate ±0.1 between calls even when correct (the black curve read
+  1.2 / 1.3 / 1.4 on separate calls), so a strict binary judge cannot bank the capability.
+- Auto-zoom plausibly **crops away context** on reads that already worked — tables, patent
+  drawings, dense text — which is where legal's 100% came from. Plausible, not established.
+
+**Reverted to the validated default.** The recipe is documented here rather than shipped as
+dormant config: route `view_page` to a dense vision model, render a *corner* region at 500 dpi
+from the source PDF, read with thinking and a ≥6K token budget, and run locate→zoom inside the
+tool rather than asking the agent to do it.
+
+**The durable finding:** local VLM chart reading went from *systematically wrong* to
+*approximately right with noise*. Neither state supports asserting an exact interpolated value.
+The design's own rule already covers it — prefer the underlying table via `sql`, or surface the
+uncertainty. Precision on dense multi-series line charts remains the honest ceiling.
+
+### Postmortem: the DPI-only hypothesis was wrong (negative result)
 
 Hypothesis: the health failures were a *resolution* problem — page images render at 150 dpi
 while the benchmark author needed 400–500 dpi crops to read the same figures. Test case
@@ -188,6 +278,9 @@ underlying data table when one exists, not more pixels.
 
 | bug | symptom | fix |
 |---|---|---|
+| **Tool description contradicted the implementation** | after reverting auto-zoom, `view_page`'s description still advertised "it automatically finds the relevant part and re-reads it zoomed — one call is enough". The agent believed the description, stopped zooming, and financial_docs lost a question (80% → 86.7% when the honest description was restored, same session). **A tool description is an executable interface contract, not documentation** — reverting behavior without reverting the contract silently degrades the agent | restore description and implementation together; treat prompt/description edits as code changes |
+| Eval discarded the tool sequence | a wrong answer looked like a model failure; the transcript showed the agent had zoomed to `right` when the panel was `top-left` — a wrong *path*, not a wrong model. Cost a full diagnostic cycle | `runs/*.json` now persists each question's tool calls |
+| Judge ran at temperature 0.2 | a stochastic grader would have added silent noise (it happened not to flip any verdict, but the exposure was real) | judge pinned to temperature 0.0 |
 | Two PyTorch-MPS processes deadlock | index job frozen at 0% CPU in Metal dispatch | serialize GPU jobs; `MARAG_DEVICE` override |
 | Thinking-token starvation | reasoning models return EMPTY content when max_tokens ≤ thinking length; zeroed an entire eval round | budgets ≥3-4K for generation; `reasoning_effort:"none"` for router/judge; `LLM.chat(reasoning=…)` |
 | Ollama app serves 16K context (model supports 262K) | long agent loops silently truncated → empty answers on high-tool-call questions | dedicated `OLLAMA_CONTEXT_LENGTH=65536 ollama serve` on :11435 (see configs/default.yaml) |
@@ -202,9 +295,11 @@ underlying data table when one exists, not more pixels.
 3. ~~Docling parsing upgrade~~ **DONE** — next: hard-enforce the numbers-rule (answers with
    numbers must cite a `sql` result) now that coverage is 100% (would catch fin_q01).
 4. **Rerank tuning** — depth/threshold so easy-recall corpora aren't hurt.
-5. **Bigger VLM for chart reads** — the only untested lever on the chart ceiling: route
-   `view_page` to a larger vision model (Qwen3.5-122B-A10B 4-bit fits this 96GB box) and
-   re-measure hlt_q10/q14 before believing it.
+5. ~~Bigger/denser VLM for chart reads~~ **TRIED (Gemma 4 31B dense), NOT ADOPTED** — see the
+   chart-reading experiment above: better on the isolated read, worse end-to-end (53/60 vs
+   55/60), kept as an opt-in. Untested remainder: Qwen3.5-122B-A10B 4-bit as the vision model.
+6. **Wire the mock UI to the backend** — `ui/mock.html` mocks sessions, multi-source scope,
+   upload/ingest stages, the tool trace and page evidence against real corpus numbers.
 4. Router-based auto mode end-to-end eval (route simple→single-shot, hard→agentic) to get
    the cost/quality frontier.
 5. Verifier pass (claim→span NLI + ≤2 correction loops) per DESIGN.md §8.5.

@@ -57,7 +57,7 @@ class LLM:
     def __init__(self, role: str = "orchestrator", cfg: Config | None = None):
         self.cfg = cfg or load_config()
         self.role = role
-        self.model = getattr(self.cfg.models, role)
+        self.model = getattr(self.cfg.models, role, None) or self.cfg.models.orchestrator
         self.client = OpenAI(
             base_url=self.cfg.serving.base_url,
             api_key=self.cfg.serving.api_key,

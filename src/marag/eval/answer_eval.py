@@ -74,6 +74,7 @@ def eval_answers(
                     },
                 ],
                 max_tokens=600,
+                temperature=0.0,  # a stochastic judge silently adds ±1-2 questions of noise
                 reasoning="none",  # thinking judges starve their own JSON output; grading is simple
             )
             correct = bool(verdict.get("correct"))
@@ -92,6 +93,11 @@ def eval_answers(
                 "tool_calls": result.get("tool_calls", 0),
                 "citation_grounding": citation_grounding(result["answer"], result),
                 "seconds": elapsed,
+                # keep the tool sequence: failures are usually a wrong tool path, not a wrong model
+                "tools": [
+                    {"tool": t["tool"], **{k: v for k, v in t.get("args", {}).items() if k != "question"}}
+                    for t in result.get("transcript", [])
+                ],
             }
         )
         mark = "[green]✓[/]" if correct else "[red]✗[/]"
