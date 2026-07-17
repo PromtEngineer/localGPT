@@ -22,18 +22,31 @@ Rules:
   page it sits in (e.g. "bottom-right") so it can be re-rendered zoomed.
 - If the question cannot be answered from this page, say exactly what IS on the page instead."""
 
-# Overlapping bands: a figure straddling the midline is never sliced in half.
+# Appended only in auto-zoom LOCATE mode, so the default reading text stays unchanged.
+_VLM_LOCATE_SUFFIX = """
+- END with a final line `REGION: <name>` naming the SMALLEST region that fully contains the
+  content relevant to the question, so it can be re-rendered zoomed. Strongly prefer a corner
+  (top-left/top-right/middle-left/middle-right/bottom-left/bottom-right) — those get the highest
+  resolution. Use a half (top/bottom/left/right) only when content spans the full width/height,
+  `full` only when it covers the page, `none` if it is not on this page. A multi-panel figure's
+  first panel is usually top-left; name that panel's region, not the whole figure's."""
+
+_REGION_RE = re.compile(r"REGION:\s*([a-z-]+)", re.IGNORECASE)
+
+# Corners are ~thirds tall so a zoomed quadrant clears the pixel cap at full zoom dpi.
 _REGIONS: dict[str, tuple[float, float, float, float]] = {
     "full": (0.0, 0.0, 1.0, 1.0),
     "top": (0.0, 0.0, 1.0, 0.55),
     "bottom": (0.0, 0.45, 1.0, 1.0),
     "left": (0.0, 0.0, 0.55, 1.0),
     "right": (0.45, 0.0, 1.0, 1.0),
-    "top-left": (0.0, 0.0, 0.58, 0.58),
-    "top-right": (0.42, 0.0, 1.0, 0.58),
-    "bottom-left": (0.0, 0.42, 0.58, 1.0),
-    "bottom-right": (0.42, 0.42, 1.0, 1.0),
-    "center": (0.15, 0.15, 0.85, 0.85),
+    "top-left": (0.0, 0.0, 0.58, 0.42),
+    "top-right": (0.42, 0.0, 1.0, 0.42),
+    "middle-left": (0.0, 0.30, 0.58, 0.72),
+    "middle-right": (0.42, 0.30, 1.0, 0.72),
+    "bottom-left": (0.0, 0.58, 0.58, 1.0),
+    "bottom-right": (0.42, 0.58, 1.0, 1.0),
+    "center": (0.15, 0.28, 0.85, 0.74),
 }
 
 
@@ -102,6 +115,18 @@ class ToolBox:
     def list_docs(self) -> str:
         cm = self.processed / "corpus_map.md"
         return _cap(cm.read_text() if cm.exists() else "corpus map missing")
+
+    def has_tables(self) -> bool:
+        db = self.processed / "tables.duckdb"
+        if not db.exists():
+            return False
+        con = duckdb.connect(str(db), read_only=True)
+        try:
+            return con.execute("SELECT count(*) FROM _catalog").fetchone()[0] > 0
+        except Exception:
+            return False
+        finally:
+            con.close()
 
     def list_tables(self, doc_id: str = "") -> str:
         db = self.processed / "tables.duckdb"
@@ -172,38 +197,73 @@ class ToolBox:
             pix = pg.get_pixmap(dpi=dpi, clip=clip)
         return pix.tobytes("png")
 
-    def view_page(self, doc_id: str, page: int, question: str, region: str = "full") -> str:
-        """Render-and-read: send the page image + a focused question to the VLM."""
-        page = int(page)
-        region = region if region in _REGIONS else "full"
+    def _read(self, doc_id: str, page: int, question: str, region: str, think: bool, locate: bool) -> str:
+        """One VLM read of a page/region. Returns the reading text, or an error string."""
         png = self._render(doc_id, page, region)
         if isinstance(png, str):
             return png
         if self._vlm is None:
-            self._vlm = LLM("orchestrator", self.cfg)
+            self._vlm = LLM("vision", self.cfg)  # falls back to orchestrator when models.vision unset
         b64 = base64.b64encode(png).decode()
-        where = f"Page {page} of {doc_id}" + (
-            f", {region} region (zoomed in)" if region != "full" else ""
-        )
-        try:
-            reading = self._vlm.text(
-                [
-                    {"role": "system", "content": _VLM_READ_PROMPT},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"{where}. QUESTION: {question}"},
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
-                        ],
-                    },
+        where = f"Page {page} of {doc_id}" + (f", {region} region (zoomed in)" if region != "full" else "")
+        prompt = _VLM_READ_PROMPT + (_VLM_LOCATE_SUFFIX if locate else "")
+        msgs = [
+            {"role": "system", "content": prompt},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"{where}. QUESTION: {question}"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
                 ],
-                max_tokens=2048,
-                reasoning="none",  # vision+thinking starves even 3K budgets; no-think reads pages faster and fuller
+            },
+        ]
+        if not think:
+            return self._vlm.text(msgs, max_tokens=2048, reasoning="none")
+        # thinking lets a dense VLM interpolate axis ticks, but starves without a big budget
+        out = self._vlm.text(msgs, max_tokens=self.cfg.agent.view_page_max_tokens)
+        return out if out.strip() else self._vlm.text(msgs, max_tokens=2048, reasoning="none")
+
+    def view_page(self, doc_id: str, page: int, question: str, region: str = "") -> str:
+        """Read a page with vision to answer a focused question.
+
+        Default (validated): one full-page read, no thinking. Opt-in via agent.view_page_auto_zoom
+        + view_page_thinking + models.vision: a cheap full-page locate pass reads a REGION hint,
+        then that region is re-rendered at high dpi and read with thinking. See RESULTS.md.
+        """
+        page = int(page)
+        think = self.cfg.agent.view_page_thinking
+        err = ("unknown doc_id", "source PDF", f"{doc_id} has")
+        try:
+            if region in _REGIONS and region != "full":  # caller already knows where to look
+                reading = self._read(doc_id, page, question, region, think, locate=False)
+                if reading.startswith(err):
+                    return reading
+                self._track([(doc_id, page)])
+                return _cap(f"[VLM reading of {doc_id} p{page}, region={region}]\n{reading}")
+
+            if not self.cfg.agent.view_page_auto_zoom:  # validated single-read path
+                reading = self._read(doc_id, page, question, "full", think, locate=False)
+                if reading.startswith(err):
+                    return reading
+                self._track([(doc_id, page)])
+                return _cap(f"[VLM reading of {doc_id} p{page}, region=full]\n{reading}")
+
+            locate = self._read(doc_id, page, question, "full", think=False, locate=True)
+            if locate.startswith(err):
+                return locate
+            self._track([(doc_id, page)])
+            hint = _REGION_RE.search(locate)
+            target = hint.group(1).strip().lower() if hint else ""
+            if target not in _REGIONS or target == "full":
+                return _cap(f"[VLM reading of {doc_id} p{page}, region=full]\n{_REGION_RE.sub('', locate).strip()}")
+            zoom = self._read(doc_id, page, question, target, think=True, locate=False)
+            return _cap(
+                f"[VLM reading of {doc_id} p{page}] located the relevant content in the {target} "
+                f"region and re-read it zoomed.\nZOOMED READING (region={target}, authoritative — "
+                f"prefer these values over any full-page estimate):\n{zoom}"
             )
         except Exception as e:
             return f"view_page failed: {e}"
-        self._track([(doc_id, page)])
-        return _cap(f"[VLM reading of {doc_id} p{page}, region={region}]\n{reading}")
 
     # ---------- plumbing ----------
 
@@ -327,8 +387,8 @@ TOOL_SPECS = [
                     "question": {"type": "string", "description": "the specific thing to read off this page, e.g. 'What value does the 2019 bar show for Google in Figure 6?'"},
                     "region": {
                         "type": "string",
-                        "enum": ["full", "top", "bottom", "left", "right", "top-left", "top-right", "bottom-left", "bottom-right", "center"],
-                        "description": "part of the page to zoom into, rendered at high resolution. Default 'full'. Use a region whenever you must read a precise value off a chart — a zoomed quadrant resolves tick marks and small labels that are unreadable in the full page.",
+                        "enum": ["full", "top", "bottom", "left", "right", "top-left", "top-right", "middle-left", "middle-right", "bottom-left", "bottom-right", "center"],
+                        "description": "optional part of the page to zoom into, rendered at high resolution. Omit to read the whole page. Pass a region when you must read a precise value off a chart — a zoomed quadrant resolves tick marks and small labels that are unreadable in the full page.",
                     },
                 },
                 "required": ["doc_id", "page", "question"],

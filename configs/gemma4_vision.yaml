@@ -1,0 +1,52 @@
+# Opt-in chart-reading config: gemma4:31b dense reader + auto locate→zoom + thinking.
+# Identical to default.yaml except the models.vision slot and the three view_page flags.
+paths:
+  raw: data/raw
+  processed: data/processed
+  index: data/index
+  benchmarks: data/benchmarks
+  runs: runs
+
+serving:
+  base_url: http://localhost:11435/v1
+  api_key: ollama
+  timeout_s: 300
+
+models:
+  orchestrator: qwen3.6:35b-a3b
+  vision: gemma4:31b          # dense VLM for view_page
+  utility: qwen3.5:9b
+  embedder: Qwen/Qwen3-Embedding-0.6B
+  reranker: Qwen/Qwen3-Reranker-0.6B
+  visual_retriever: ModernVBERT/colmodernvbert
+
+embedding:
+  dim: 1024
+  batch_size: 16
+  device: auto
+  query_instruction: "Instruct: Given a search query, retrieve relevant passages from documents\nQuery: "
+
+ingest:
+  page_image_dpi: 150
+  chunk_max_tokens: 800
+  chunk_min_tokens: 120
+  contextual_headers: true
+
+retrieval:
+  candidates_per_channel: 30
+  rrf_k: 60
+  final_k: 8
+  rerank: true
+  rerank_candidates: 25
+
+agent:
+  max_tool_calls: 20
+  view_page_dpi: 220
+  view_page_zoom_dpi: 500
+  view_page_max_px: 2600
+  view_page_auto_zoom: true    # locate the figure then re-read that region zoomed
+  view_page_thinking: true     # dense VLM interpolates axis ticks; needs the big token budget
+  view_page_max_tokens: 6000
+  max_correction_loops: 2
+  distillate_max_tokens: 2000
+  no_new_info_stop: 2

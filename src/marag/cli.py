@@ -135,6 +135,17 @@ def eval_answers_cmd(dataset: str, mode: str = "single_shot", limit: int = 0):
 
 
 @app.command()
+def serve(host: str = "127.0.0.1", port: int = 8000):
+    """Run the local workbench API + UI (http://host:port)."""
+    import uvicorn
+
+    from .server.app import create_app
+
+    console.print(f"[bold]marag[/] workbench → http://{host}:{port}")
+    uvicorn.run(create_app(), host=host, port=port, log_level="warning")
+
+
+@app.command()
 def status():
     """Show corpus/index/benchmark/model status."""
     from .config import load_config

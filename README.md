@@ -29,7 +29,19 @@ marag answer "..." research_papers    # routed: router picks the mode
 
 marag eval-retrieval research_papers  # hit rates per channel vs QA benchmark
 marag eval-answers research_papers --mode agentic
+
+marag serve                           # local workbench UI at http://127.0.0.1:8000
 ```
+
+## Workbench UI (`marag serve`)
+
+A local web workbench backs the whole pipeline: multiple chat sessions (persisted in SQLite),
+source selection across indices with live doc/page/chunk scope, drag-and-drop upload that runs
+the ingest pipeline, an agent answer that **streams its tool trace** (search → grep → read →
+sql → view_page) as it works, and clickable `[doc pN]` citations that open the real rendered
+page plus its extracted tables in an evidence panel. `ui/mock.html` is the static design
+reference; the wired app is served at `/`. API is plain REST + SSE (`GET /api/sources`,
+`POST /api/ask` streaming, `GET /api/page/...png`, …) so any frontend can drive it.
 
 Datasets live in `data/raw/<dataset>/` with a `manifest.json`; QA benchmarks in `data/benchmarks/<dataset>.json`; eval outputs in `runs/`.
 

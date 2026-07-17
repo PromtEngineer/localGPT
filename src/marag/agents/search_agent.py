@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 
 from ..config import Config
 from ..llm import LLM, strip_thinking
 from ..retrieve.hybrid import Retriever
 from .tools import TOOL_SPECS, ToolBox
+
+# A "table-shaped" figure: currency, percentage, or a grouped number like 44,197 / 115,186.
+_TABLE_NUM_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%|\b\d{1,3}(?:,\d{3})+\b")
 
 SYSTEM = """You are a research agent answering questions over a private document corpus using tools.
 
@@ -38,7 +42,12 @@ def _serialize_tool_calls(tool_calls) -> list[dict]:
     ]
 
 
-def answer_agentic(question: str, dataset: str, cfg: Config, retriever: Retriever) -> dict:
+def answer_agentic(
+    question: str, dataset: str, cfg: Config, retriever: Retriever, on_event=None
+) -> dict:
+    """on_event(kind, payload): optional callback for live streaming — fired as
+    {"tool": name, "args": {...}} per tool call and {"answer": text} at the end."""
+    emit = on_event or (lambda *_: None)
     tb = ToolBox(cfg, dataset, retriever)
     llm = LLM("orchestrator", cfg)
     messages: list[dict] = [
@@ -49,6 +58,15 @@ def answer_agentic(question: str, dataset: str, cfg: Config, retriever: Retrieve
     used = 0
     no_new_rounds = 0
     nudged = False
+    tools_seen: set[str] = set()
+    sql_checked = False  # numbers-via-sql correction fires at most once
+
+    def sql_ungrounded(answer: str) -> bool:
+        """A table-quantitative answer produced without ever querying the tables is the
+        fin_q01 failure mode: the right number's row was never disambiguated."""
+        if "sql" in tools_seen or not tb.has_tables():
+            return False
+        return len(_TABLE_NUM_RE.findall(answer)) >= 2
 
     while used < cfg.agent.max_tool_calls:
         resp = llm.chat(messages, tools=TOOL_SPECS, max_tokens=3072, temperature=0.0)
@@ -65,6 +83,17 @@ def answer_agentic(question: str, dataset: str, cfg: Config, retriever: Retrieve
                     temperature=0.0,
                     reasoning="none",
                 )
+            if cfg.agent.numbers_via_sql and not sql_checked and sql_ungrounded(answer):
+                sql_checked = True
+                messages.append({"role": "assistant", "content": answer})
+                messages.append({
+                    "role": "user",
+                    "content": "Before finalizing: your answer states figures from tables but you "
+                    "never queried them. Similarly-named rows (e.g. a reportable segment vs a market "
+                    "category) carry different numbers. Use list_tables then sql to read each figure "
+                    "from its exact row, name that row, then give your final answer.",
+                })
+                continue  # let it run sql, then re-finalize
             return _final(answer, tb, transcript, used)
 
         messages.append(
@@ -82,8 +111,10 @@ def answer_agentic(question: str, dataset: str, cfg: Config, retriever: Retrieve
                 args = {}
             result = tb.dispatch(tc.function.name, args)
             used += 1
+            tools_seen.add(tc.function.name)
             round_new_evidence += tb.new_evidence_last_call
             transcript.append({"tool": tc.function.name, "args": args, "result_chars": len(result)})
+            emit("tool", {"tool": tc.function.name, "args": args, "result": result[:600]})
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 
         # marginal-utility stop: budgets beat "do you have enough?" prompts

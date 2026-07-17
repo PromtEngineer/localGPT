@@ -36,6 +36,7 @@ class ModelsCfg(BaseModel):
     embedder: str
     reranker: str
     visual_retriever: str | None = None
+    vision: str | None = None  # opt-in view_page reader; None -> orchestrator does vision
 
 
 class EmbeddingCfg(BaseModel):
@@ -68,6 +69,11 @@ class AgentCfg(BaseModel):
     view_page_dpi: int = 220
     view_page_zoom_dpi: int = 500
     view_page_max_px: int = 2600
+    # opt-in chart-reading path (see RESULTS.md chart-reading experiment). All off = validated default.
+    view_page_auto_zoom: bool = False   # locate the figure, then re-read that region zoomed
+    view_page_thinking: bool = False    # let a DENSE VLM interpolate axis ticks; MoE reader starves on it
+    view_page_max_tokens: int = 6000    # thinking needs room or it returns empty
+    numbers_via_sql: bool = False       # verifier: numeric claims must be grounded in tool output
 
 
 class Config(BaseModel):

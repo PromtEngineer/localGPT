@@ -36,6 +36,26 @@ def test_hop_hit_page_tolerance():
     assert not hop_hit(hits, {"doc_id": "d2", "pages": [5]})
 
 
+def test_table_num_detection():
+    from marag.agents.search_agent import _TABLE_NUM_RE
+
+    found = _TABLE_NUM_RE.findall("Gross Bookings were $44,197M, up 18% from $37,575M")
+    assert len(found) >= 3  # $44,197 / 18% / $37,575
+    # prose without table figures shouldn't trip the sql nudge
+    assert len(_TABLE_NUM_RE.findall("The model ranked second, ahead of three peers.")) == 0
+    assert len(_TABLE_NUM_RE.findall("a rate of 6.9 points on PopQA")) == 0
+
+
+def test_view_page_regions_cover_page():
+    from marag.agents.tools import _REGIONS
+
+    # every corner/half is a valid sub-rectangle inside the unit page
+    for name, (x0, y0, x1, y1) in _REGIONS.items():
+        assert 0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1, name
+    # corners are tall enough (~thirds) to clear the pixel cap at zoom dpi, not half-page
+    assert _REGIONS["top-left"][3] < 0.5
+
+
 def test_chunk_doc(tmp_path):
     md_pages = [
         {"page": 1, "md": "# Introduction\n\nSome intro text here.\n\nMore paragraph content."},

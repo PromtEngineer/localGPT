@@ -25,6 +25,9 @@ dependencies = [
     "colpali-engine>=0.3.17",
     "pillow>=12.3.0",
     "liteparse>=2.6.0",
+    "fastapi>=0.139.2",
+    "uvicorn[standard]>=0.51.0",
+    "python-multipart>=0.0.32",
 ]
 
 [dependency-groups]
