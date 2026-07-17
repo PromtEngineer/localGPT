@@ -56,6 +56,58 @@ def test_view_page_regions_cover_page():
     assert _REGIONS["top-left"][3] < 0.5
 
 
+def _cfg():
+    from marag.config import Config, ModelsCfg
+
+    return Config(models=ModelsCfg(orchestrator="x", utility="x", embedder="x", reranker="x"))
+
+
+def test_parse_data_file_csv(tmp_path):
+    import duckdb
+    import pandas as pd
+
+    from marag.ingest.formats import parse_data_file
+
+    csv = tmp_path / "sales.csv"
+    pd.DataFrame(
+        {"region": ["EMEA", "APAC", "EMEA", "AMER"], "revenue": [100.5, 200.0, 50.25, 400.0]}
+    ).to_csv(csv, index=False)
+    out = tmp_path / "out"
+    meta = parse_data_file(csv, out, _cfg(), "mix001")
+    assert meta["n_tables"] == 1 and meta["n_pages"] == 1 and meta["data_file"]
+    # profile page names the SQL view and carries the schema
+    page = json.loads((out / "pages.jsonl").read_text().splitlines()[0])
+    assert "t_mix001_p1_0" in page["text"] and "revenue" in page["text"] and "4 rows" in page["text"].replace(",", "")
+    # the parquet is the FULL data and is queryable
+    cat = json.loads((out / "tables_docling" / "catalog.json").read_text())
+    df = duckdb.sql(f"SELECT sum(revenue) s FROM read_parquet('{out/'tables_docling'/cat[0]['parquet']}')").df()
+    assert abs(df["s"][0] - 750.75) < 1e-6
+
+
+def test_parse_data_file_xlsx_multisheet(tmp_path):
+    import pandas as pd
+
+    from marag.ingest.formats import parse_data_file
+
+    xlsx = tmp_path / "book.xlsx"
+    with pd.ExcelWriter(xlsx) as w:
+        pd.DataFrame({"a": [1, 2]}).to_excel(w, sheet_name="first", index=False)
+        pd.DataFrame({"b": ["x", "y", "z"]}).to_excel(w, sheet_name="second", index=False)
+    out = tmp_path / "out"
+    meta = parse_data_file(xlsx, out, _cfg(), "mix002")
+    assert meta["n_tables"] == 2 and meta["n_pages"] == 2
+    pages = [json.loads(l) for l in (out / "pages.jsonl").read_text().splitlines()]
+    assert "t_mix002_p1_0" in pages[0]["text"] and "t_mix002_p2_1" in pages[1]["text"]
+
+
+def test_pseudo_page_split():
+    from marag.ingest.formats import PSEUDO_PAGE_CHARS
+
+    md = "x" * (PSEUDO_PAGE_CHARS * 2 + 10)
+    pages = [md[i : i + PSEUDO_PAGE_CHARS] for i in range(0, len(md), PSEUDO_PAGE_CHARS)]
+    assert len(pages) == 3 and "".join(pages) == md
+
+
 def test_chunk_doc(tmp_path):
     md_pages = [
         {"page": 1, "md": "# Introduction\n\nSome intro text here.\n\nMore paragraph content."},

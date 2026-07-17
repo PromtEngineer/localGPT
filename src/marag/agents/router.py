@@ -7,8 +7,10 @@ SYSTEM = """Classify how a document-QA query should be handled. Respond with ONL
 {"route": "single_shot" | "iterative"}
 
 single_shot — one retrieval pass suffices: single-fact lookup, one definition, one number from one document.
-iterative — needs multiple evidence pieces: comparisons across documents, multi-step reasoning,
-arithmetic over tables, aggregations ("all X that Y"), or questions naming 2+ entities to reconcile."""
+iterative — needs multiple evidence pieces or tools: comparisons across documents, multi-step
+reasoning, arithmetic over tables or spreadsheets, aggregations ("all X that Y"), questions
+naming 2+ entities to reconcile, and ANY whole-document operation (summarize/overview of a
+document or file)."""
 
 
 def route(question: str, cfg: Config) -> str:

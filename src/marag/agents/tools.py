@@ -116,6 +116,61 @@ class ToolBox:
         cm = self.processed / "corpus_map.md"
         return _cap(cm.read_text() if cm.exists() else "corpus map missing")
 
+    def summarize_doc(self, doc_id: str) -> str:
+        """Whole-document summary via map-reduce over every chunk; cached to disk.
+
+        This is the document-level primitive retrieval can't provide: top-k search assumes
+        the answer lives in a few chunks, a summary needs all of them.
+        """
+        doc_dir = self.processed / doc_id
+        cache = doc_dir / "summary.md"
+        meta_f = doc_dir / "meta.json"
+        if not meta_f.exists():
+            return f"unknown doc_id: {doc_id}"
+        meta = json.loads(meta_f.read_text())
+        title = meta.get("title", doc_id)
+        if cache.exists():
+            self._track([(doc_id, p) for p in range(1, meta.get("n_pages", 1) + 1)])
+            return _cap(f"[summary of {doc_id} · {title} (cached)]\n{cache.read_text()}")
+
+        chunks_f = doc_dir / "chunks.jsonl"
+        if not chunks_f.exists():
+            return f"no parsed content for {doc_id}"
+        texts = [json.loads(l)["raw_text"] for l in chunks_f.read_text().splitlines()]
+        if not texts:
+            return f"no parsed content for {doc_id}"
+
+        util = LLM("utility", self.cfg)
+        # map: ~10k-char batches → section notes on the small model
+        batches: list[str] = []
+        buf = ""
+        for t in texts:
+            if len(buf) + len(t) > 10_000 and buf:
+                batches.append(buf)
+                buf = ""
+            buf += t + "\n\n"
+        if buf:
+            batches.append(buf)
+        notes = []
+        for i, b in enumerate(batches):
+            notes.append(util.text(
+                [{"role": "system", "content": "Summarize this document section faithfully in 5-8 bullet points. Keep exact key figures, names and dates. No preamble."},
+                 {"role": "user", "content": f"Section {i + 1}/{len(batches)} of {title!r}:\n\n{b[:12000]}"}],
+                max_tokens=700, reasoning="none",
+            ))
+        if len(notes) == 1:
+            summary = notes[0]
+        else:  # reduce on the orchestrator
+            orch = LLM("orchestrator", self.cfg)
+            summary = orch.text(
+                [{"role": "system", "content": "Merge these section notes into one faithful summary of the whole document: a 2-3 sentence overview, then the key points as bullets grouped by theme. Keep exact figures. No preamble."},
+                 {"role": "user", "content": f"Document: {title}\n\n" + "\n\n".join(f"[section {i + 1}]\n{n}" for i, n in enumerate(notes))}],
+                max_tokens=4096,
+            )
+        cache.write_text(summary)
+        self._track([(doc_id, p) for p in range(1, meta.get("n_pages", 1) + 1)])
+        return _cap(f"[summary of {doc_id} · {title} · {len(batches)} sections mapped]\n{summary}")
+
     def has_tables(self) -> bool:
         db = self.processed / "tables.duckdb"
         if not db.exists():
@@ -371,6 +426,18 @@ TOOL_SPECS = [
                 "type": "object",
                 "properties": {"query": {"type": "string"}},
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "summarize_doc",
+            "description": "Faithful summary of an ENTIRE document (map-reduce over every chunk, cached after first use). USE for whole-document requests — 'summarize X', 'what is this document about', 'give me an overview' — instead of paging through it with read_doc, which cannot cover a long document within budget.",
+            "parameters": {
+                "type": "object",
+                "properties": {"doc_id": {"type": "string"}},
+                "required": ["doc_id"],
             },
         },
     },

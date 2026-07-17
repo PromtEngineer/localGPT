@@ -135,6 +135,17 @@ def eval_answers_cmd(dataset: str, mode: str = "single_shot", limit: int = 0):
 
 
 @app.command()
+def summarize(dataset: str, doc_id: str):
+    """Whole-document summary (cached map-reduce)."""
+    from .agents.tools import ToolBox
+    from .config import load_config
+    from .retrieve.hybrid import Retriever
+
+    cfg = load_config()
+    console.print(ToolBox(cfg, dataset, Retriever(cfg)).summarize_doc(doc_id))
+
+
+@app.command()
 def serve(host: str = "127.0.0.1", port: int = 8000):
     """Run the local workbench API + UI (http://host:port)."""
     import uvicorn

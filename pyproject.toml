@@ -28,6 +28,7 @@ dependencies = [
     "fastapi>=0.139.2",
     "uvicorn[standard]>=0.51.0",
     "python-multipart>=0.0.32",
+    "openpyxl>=3.1.5",
 ]
 
 [dependency-groups]

@@ -44,7 +44,17 @@ def ingest_dataset(dataset: str, cfg: Config, limit: int | None = None, force: b
         title = entry.get("title") or pdf.stem
         t0 = time.time()
         try:
-            meta = parse_pdf(pdf, out_dir, cfg)
+            from .formats import DATA_FORMATS, DOC_FORMATS, parse_data_file, parse_office_doc
+
+            suffix = pdf.suffix.lower()
+            if suffix == ".pdf":
+                meta = parse_pdf(pdf, out_dir, cfg)
+            elif suffix in DOC_FORMATS:
+                meta = parse_office_doc(pdf, out_dir, cfg)
+            elif suffix in DATA_FORMATS:
+                meta = parse_data_file(pdf, out_dir, cfg, doc_id)
+            else:
+                raise ValueError(f"unsupported format: {suffix}")
             chunks = chunk_doc(out_dir, doc_id, dataset, title, cfg)
             with open(out_dir / "chunks.jsonl", "w") as f:
                 for c in chunks:

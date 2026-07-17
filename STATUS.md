@@ -49,6 +49,22 @@ trace and citation→page-evidence panel. Verified end-to-end in the browser aga
 (sessions persist and reload, `[doc pN]` opens the real rendered page + Docling tables, SSE
 answer stream). `src/marag/server/`; static reference design in `ui/mock.html`.
 
+## Formats &amp; document-level ops (July 17)
+
+- **Beyond PDF**: ingest now dispatches by extension. DOCX/PPTX/HTML/MD go through Docling
+  (markdown + tables, split into ~800-token pseudo-pages; no visual channel — these have no
+  canonical layout). CSV/XLSX/Parquet register their **full sheets into DuckDB** as `sql`
+  views plus one searchable profile card per sheet (columns, types, ranges, sample rows, and
+  the exact view name) — so spreadsheets plug straight into the numbers-via-sql path rather
+  than being embedded as raw grids. Verified end-to-end on a CSV+XLSX+MD corpus: the agent
+  answered a cross-file question via sql (Q4 cloud+ads = $5,620M, APAC 28% YoY — both exact).
+- **Whole-document ops**: `summarize_doc(doc_id)` — cached map-reduce over every chunk (utility
+  model maps section notes, orchestrator reduces). This is the document-level primitive top-k
+  retrieval can't provide. `marag summarize <ds> <doc>` / exposed as an agent tool; the router
+  sends "summarize/overview" requests to the agentic path.
+- **Not yet**: true multi-index scope merge (API queries the first source in scope);
+  spreadsheet formulas/merged-cell headers rely on pandas' read (fine for clean data files).
+
 ## Opt-in capabilities (off by default; default path byte-identical to validated)
 
 - **Dense vision reader** — `models.vision` + `agent.view_page_auto_zoom` + `view_page_thinking`
