@@ -52,6 +52,30 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     ingest_jobs: dict[str, dict] = {}
     app = FastAPI(title="marag")
 
+    # ---------- status ----------
+    @app.get("/api/status")
+    def status():
+        from ..llm import served_models
+
+        srcs = catalog.list_sources(cfg)
+        served = set(served_models(cfg))
+        roles = [
+            ("agent", cfg.models.orchestrator),
+            ("vision", cfg.models.vision or cfg.models.orchestrator),
+            ("utility", cfg.models.utility),
+        ]
+        return {
+            "models": [{"role": r, "name": m, "up": m in served} for r, m in roles],
+            "totals": {
+                "sources": len(srcs),
+                "docs": sum(s["docs"] for s in srcs),
+                "pages": sum(s["pages"] for s in srcs),
+                "chunks": sum(s["chunks"] for s in srcs),
+                "tables": sum(s["tables"] for s in srcs),
+            },
+            "endpoint": cfg.serving.base_url,
+        }
+
     # ---------- sources & docs ----------
     @app.get("/api/sources")
     def sources():
@@ -89,7 +113,14 @@ def create_app(cfg: Config | None = None) -> FastAPI:
 
     # ---------- evidence ----------
     @app.get("/api/page/{dataset}/{doc_id}/{page}.png")
-    def page_png(dataset: str, doc_id: str, page: int):
+    def page_png(dataset: str, doc_id: str, page: int, region: str = "full"):
+        if region and region != "full":
+            png = catalog.render_region_png(cfg, dataset, doc_id, page, region)
+            if png is None:
+                raise HTTPException(404, "cannot render region")
+            from fastapi import Response
+
+            return Response(png, media_type="image/png")
         p = catalog.page_image_path(cfg, dataset, doc_id, page)
         if not p:
             raise HTTPException(404, "no page image")

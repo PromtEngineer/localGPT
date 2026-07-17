@@ -99,3 +99,36 @@ def page_evidence(cfg: Config, dataset: str, doc_id: str, page: int) -> dict:
 def page_image_path(cfg: Config, dataset: str, doc_id: str, page: int) -> Path | None:
     p = cfg.path("processed", create=False) / dataset / doc_id / "pages" / f"p{page:04d}.png"
     return p if p.exists() else None
+
+
+def render_region_png(cfg: Config, dataset: str, doc_id: str, page: int, region: str) -> bytes | None:
+    """Re-rasterize a page region from the source PDF at high dpi — the same crop the
+    view_page tool reads. Lets the evidence grid zoom exactly like the agent does."""
+    import fitz
+
+    from ..agents.tools import _REGIONS
+
+    if region not in _REGIONS or region == "full":
+        return None
+    doc_dir = cfg.path("processed", create=False) / dataset / doc_id
+    meta_f = doc_dir / "meta.json"
+    if not meta_f.exists():
+        return None
+    pdf = json.loads(meta_f.read_text()).get("source_pdf")
+    if not pdf or not Path(pdf).exists():
+        return None
+    doc = fitz.open(pdf)
+    if not 1 <= page <= len(doc):
+        return None
+    pg = doc[page - 1]
+    r = pg.rect
+    fx0, fy0, fx1, fy1 = _REGIONS[region]
+    clip = fitz.Rect(r.x0 + fx0 * r.width, r.y0 + fy0 * r.height,
+                     r.x0 + fx1 * r.width, r.y0 + fy1 * r.height)
+    dpi = cfg.agent.view_page_zoom_dpi
+    pix = pg.get_pixmap(dpi=dpi, clip=clip)
+    cap = cfg.agent.view_page_max_px
+    if max(pix.width, pix.height) > cap:
+        dpi = max(72, int(dpi * cap / max(pix.width, pix.height)))
+        pix = pg.get_pixmap(dpi=dpi, clip=clip)
+    return pix.tobytes("png")
