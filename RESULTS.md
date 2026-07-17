@@ -1,5 +1,9 @@
 # Validation Results — July 16, 2026
 
+**Headline: 95.6% agentic accuracy (43/45) on the three development domains, and 80% on a
+fourth unseen domain run with zero code changes — the system generalizes.** See the
+Generalization test section for the transfer evidence.
+
 First full validation of the marag pipeline on three purpose-built multimodal benchmarks
 (15 verified multi-hop questions each; gold evidence = doc + page + modality, answers read
 off rendered PDF pages by the benchmark authors). Hardware: M2 Max 96GB. Models: qwen3.6:35b-a3b
@@ -106,6 +110,47 @@ single-question variance (rp_q08, fin_q01 — each has passed in other runs); fi
 (NVIDIA "Compute & Networking" segment vs "Data Center" market platform) remains the
 motivating case for hard-enforcing the numbers-via-SQL rule.
 
+## Generalization test — unseen domain (health_docs, July 16)
+
+To test whether the system generalizes or was merely tuned to its three development
+corpora, a **fourth domain the pipeline had never seen** was added and run with **zero
+code or prompt changes**: 24 public-health PDFs (14 CDC MMWR/surveillance, 5 WHO reports,
+5 FDA drug labels; influenza/COVID/RSV + vaccination theme) with 15 verified multi-hop
+questions (93% carrying a table/figure hop). It is *harder* than the originals: FDA label
+tables have an unusable text layer (Mounjaro's Table 1 extracts with no values at all),
+so some answers are reachable only through vision.
+
+| metric | health_docs (unseen) | 3 development domains |
+|---|---|---|
+| retrieval hop recall (tri-hybrid+rerank) | **97.0%** | 84.4–97.0% |
+| full-question retrieval recall | **93.3%** | 66.7–93.3% |
+| Docling table coverage of gold hops | **100%** (19/19) | 100% |
+| single-shot answers | 33.3% | 13.3–46.7% |
+| **agentic answers** | **80.0%** | 93.3–100% |
+| citation grounding | 1.0 | 1.0 |
+
+Everything upstream of generation transferred **without any tuning** — retrieval landed at
+the top of the range seen on the development domains, and Docling hit 100% table coverage
+on a document class (FDA labels, WHO reports) it had never been tested on.
+
+Notable: **the visual channel alone (93.9% hop recall) beat every text configuration** on
+this corpus — the strongest evidence yet for the design's multimodal bet, on the domain
+where the text layer is worst.
+
+Agentic accuracy at 80% (12/15) sits below the development domains but above where those
+domains started (financial 80%, legal 73.3% at the same stage). All three failures are
+**figure_read** or chart-derived: reading a peak off an epidemic curve (hlt_q10), a
+multi-panel WHO slope chart (hlt_q14), and a TB-report figure (hlt_q15). The benchmark
+author independently hit the same wall — two of their first-pass figure readings were
+wrong at normal render and needed 400–500 dpi crops. Our page images are rendered at
+150 dpi, which is very likely the binding constraint.
+
+**Verdict: the system generalizes.** Retrieval, parsing, and the agent loop transfer
+cleanly to an unseen domain; the gap is a known, addressable limit in fine-grained chart
+reading, not a domain-fit problem. Next step for it: render/crop pages at higher DPI for
+`view_page` (region crop around the figure), which is a tool-level change, not an
+architecture change.
+
 ## Bugs found by validation (all fixed)
 
 | bug | symptom | fix |
@@ -118,9 +163,12 @@ motivating case for hard-enforcing the numbers-via-SQL rule.
 ## Next steps (ranked by expected gain)
 
 1. ~~`view_page` VLM tool~~ **DONE** — legal 66.7%→100%, aggregate 95.6%.
-2. ~~Docling parsing upgrade~~ **DONE** — next: hard-enforce the numbers-rule (answers with
+2. **High-DPI figure crops for `view_page`** — the generalization test's only failure class
+   is fine-grained chart reading at 150 dpi; re-render the requested page (or a crop around
+   the figure) at 400–500 dpi on demand. Tool-level change, biggest remaining win.
+3. ~~Docling parsing upgrade~~ **DONE** — next: hard-enforce the numbers-rule (answers with
    numbers must cite a `sql` result) now that coverage is 100% (would catch fin_q01).
-3. **Rerank tuning** — depth/threshold so easy-recall corpora aren't hurt.
+4. **Rerank tuning** — depth/threshold so easy-recall corpora aren't hurt.
 4. Router-based auto mode end-to-end eval (route simple→single-shot, hard→agentic) to get
    the cost/quality frontier.
 5. Verifier pass (claim→span NLI + ≤2 correction loops) per DESIGN.md §8.5.

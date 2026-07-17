@@ -1,0 +1,189 @@
+{
+  "dataset": "health_docs",
+  "created": "2026-07-16",
+  "questions": [
+    {
+      "id": "hlt_q01",
+      "question": "For a 70 kg adult with acute uncomplicated influenza treated within 48 hours of symptom onset, how many total milligrams of active drug does a complete FDA-labeled treatment course deliver with Tamiflu (oseltamivir) versus Xofluza (baloxavir marboxil)?",
+      "answer": "Tamiflu: 750 mg total (75 mg twice daily x 5 days = 10 doses x 75 mg). Xofluza: 40 mg total (a 70 kg patient falls in the 40 kg to less than 80 kg band = a single 40 mg dose, given as two 20 mg tablets). Tamiflu delivers 18.75 times more drug (750 / 40).",
+      "answer_type": "numeric",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "hlt020", "pages": [3], "modality": "text", "evidence": "Section 2.2 Recommended Dosage for Treatment of Influenza: 'Adults and Adolescents (13 years of age and older) ... 75 mg twice daily (one 75 mg capsule or 12.5 mL of oral suspension twice daily) for 5 days.'"},
+        {"doc_id": "hlt021", "pages": [2], "modality": "table", "evidence": "Table 1 Recommended XOFLUZA Dosage in Adults and Adolescents 12 Years and Older: body weight 40 kg to less than 80 kg -> two 20 mg tablets for a total single dose of 40 mg; at least 80 kg -> total single dose of 80 mg."}
+      ]
+    },
+    {
+      "id": "hlt_q02",
+      "question": "In the FDA prescribing information for the two influenza antivirals Tamiflu (oseltamivir) and Xofluza (baloxavir marboxil), what incidence of nausea was reported in the treatment arm of each drug's clinical trials, and what is the difference in percentage points?",
+      "answer": "Tamiflu 10% (Table 5, treatment trials, TAMIFLU 75 mg twice daily, n = 2,646) versus Xofluza 2% (Table 2, XOFLUZA at the recommended dose, N = 1,440). Difference = 8 percentage points; Tamiflu is 5 times higher.",
+      "answer_type": "numeric",
+      "difficulty": "medium",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "hlt020", "pages": [10], "modality": "table", "evidence": "Table 5 Adverse Reactions Occurring in >=1% of Adults and Adolescents in Treatment and Prophylaxis Trials: Nausea 10% (TAMIFLU 75 mg twice daily, n=2646) vs 6% placebo; Vomiting 8%; Headache 2%."},
+        {"doc_id": "hlt021", "pages": [3], "modality": "table", "evidence": "Table 2 Incidence of Adverse Events Occurring in At Least 1% of Subjects Receiving XOFLUZA in Trials 1, 2, and 3: Diarrhea 3%, Bronchitis 3%, Nausea 2% (N=1,440) vs 3% placebo, Sinusitis 2%, Headache 1%."}
+      ]
+    },
+    {
+      "id": "hlt_q03",
+      "question": "Compare how the FDA labels for Tamiflu (oseltamivir) and Paxlovid (nirmatrelvir/ritonavir) adjust the treatment dose for adults with MODERATE renal impairment relative to each drug's normal adult treatment dose. Which drug's label imposes the larger proportional reduction in the active antiviral?",
+      "answer": "Tamiflu: normal adult treatment dose 75 mg twice daily for 5 days is reduced to 30 mg twice daily for 5 days for creatinine clearance >30-60 mL/minute — a 60% reduction per dose. Paxlovid: normal dose 300 mg nirmatrelvir with 100 mg ritonavir twice daily for 5 days is reduced to 150 mg nirmatrelvir with 100 mg ritonavir twice daily for Days 1-5 at eGFR >=30 to <60 mL/min — a 50% reduction in nirmatrelvir (ritonavir stays at 100 mg). Tamiflu imposes the larger proportional reduction (60% vs 50%). Both retain twice-daily dosing for 5 days.",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "hlt020", "pages": [6], "modality": "table", "evidence": "Table 2 Recommended Dosage Modifications for Treatment and Prophylaxis of Influenza in Adults with Renal Impairment or ESRD on Dialysis: Mild (>60-90 mL/minute) 75 mg twice daily for 5 days; Moderate (>30-60 mL/minute) 30 mg twice daily for 5 days; Severe (>10-30 mL/minute) 30 mg once daily for 5 days."},
+        {"doc_id": "hlt022", "pages": [4, 5], "modality": "table", "evidence": "Page 4 section 2.2: recommended dosage is 300 mg nirmatrelvir with 100 mg ritonavir twice daily for 5 days. Page 5 Table 1 Recommended Dose and Regimen for Patients with Renal Impairment: moderate (eGFR >=30 to <60 mL/min) Days 1-5 = 150 mg nirmatrelvir with 100 mg ritonavir twice daily; severe (eGFR <30) Day 1 = 300/100 once then Days 2-5 = 150/100 once daily."}
+      ]
+    },
+    {
+      "id": "hlt_q04",
+      "question": "In the pool of placebo-controlled trials in adults with type 2 diabetes reported in each drug's FDA label, what was the incidence of nausea at the highest studied maintenance dose of Ozempic (semaglutide) versus Mounjaro (tirzepatide), and which was higher?",
+      "answer": "Ozempic 1 mg: 20.3% nausea (Table 1, N = 261). Mounjaro 15 mg: 18% nausea (Table 1, N = 241). Ozempic 1 mg was higher by 2.3 percentage points. (Placebo arms: Ozempic pool 6.1%, Mounjaro pool 4%.)",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "hlt023", "pages": [7, 8], "modality": "table", "evidence": "Table 1 Adverse Reactions in Placebo-Controlled Trials Reported in >=5% of OZEMPIC-Treated Patients: header on p.7 (Placebo N=262, OZEMPIC 0.5 mg N=260, OZEMPIC 1 mg N=261); rows on p.8 — Nausea 6.1 / 15.8 / 20.3; Vomiting 2.3 / 5 / 9.2; Diarrhea 1.9 / 8.5 / 8.8."},
+        {"doc_id": "hlt024", "pages": [6], "modality": "table", "evidence": "Table 1 Adverse Reactions in Pool of Placebo-Controlled Trials Reported in >=5% of MOUNJARO-treated Adult Patients: Nausea placebo 4, 5 mg 12, 10 mg 15, 15 mg 18 (N=241); Diarrhea 9/12/13/17; Vomiting 2/5/5/9."}
+      ]
+    },
+    {
+      "id": "hlt_q05",
+      "question": "According to the FDA labels for the GLP-1 receptor agonists Ozempic (semaglutide) and Mounjaro (tirzepatide), what is the recommended starting dose and the maximum recommended dose in adults for each, and how do the maximum doses compare by milligrams?",
+      "answer": "Ozempic: initiate 0.25 mg subcutaneously once weekly for 4 weeks, then increase to 0.5 mg once weekly; maximum recommended dosage 2 mg once weekly (an 8-fold increase from the starting dose). Mounjaro: starting dosage 2.5 mg subcutaneously once weekly, increase to 5 mg after 4 weeks, then in 2.5 mg increments after at least 4 weeks on the current dose; maximum 15 mg once weekly in adults (10 mg in pediatric patients) — a 6-fold increase. Mounjaro's adult maximum (15 mg) is 7.5 times Ozempic's (2 mg) by milligrams.",
+      "answer_type": "comparison",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "hlt023", "pages": [4], "modality": "text", "evidence": "Section 2 Recommended Initiation Dosage: 0.25 mg once weekly for 4 weeks, then 0.5 mg once weekly. Maintenance 0.5 mg, 1 mg, or 2 mg once weekly; 'The maximum recommended dosage is 2 mg once weekly.'"},
+        {"doc_id": "hlt024", "pages": [3], "modality": "text", "evidence": "Section 2.1 Dosage: starting dosage 2.5 mg injected subcutaneously once weekly; after 4 weeks increase to 5 mg once weekly; increase in 2.5 mg increments after at least 4 weeks; maximum dosage 15 mg once weekly in adults, 10 mg once weekly in pediatric patients."}
+      ]
+    },
+    {
+      "id": "hlt_q06",
+      "question": "For the 2024-25 respiratory virus season, rank influenza vaccination coverage among (a) U.S. health care personnel, (b) U.S. nursing home residents as of November 2024, and (c) U.S. adults aged >=18 years as of the week ending November 9, 2024, and give the gap in percentage points between the highest and lowest.",
+      "answer": "Health care personnel 76.3% > nursing home residents 58.4% > adults aged >=18 years 34.7%. Gap between highest (HCP, 76.3%) and lowest (general adults, 34.7%) = 41.6 percentage points. HCP exceeded nursing home residents by 17.9 percentage points.",
+      "answer_type": "list",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "hlt002", "pages": [2], "modality": "table", "evidence": "TABLE. Influenza and COVID-19 vaccination coverage among health care personnel: 'Influenza vaccine, total' row — 2023-24 season 75.4% (72.4-78.3); 2024-25 season 76.3% (73.1-79.3); percentage point change 0.9 (-3.3 to 5.1)."},
+        {"doc_id": "hlt013", "pages": [3], "modality": "table", "evidence": "TABLE. Estimates of 2024-2025 COVID-19, annual influenza, and RSV vaccination coverage among nursing home residents, November 2024: Total row — influenza coverage 58.4% (58.2-58.6) among 765,333 residents in 8,974 reporting facilities; COVID-19 29.7%; RSV 17.9%."},
+        {"doc_id": "hlt010", "pages": [3], "modality": "text", "evidence": "Results, Overall Vaccination Coverage and Intent: 'As of November 9, 2024, cumulative estimated coverage with 2024-2025 influenza and COVID-19 vaccines among adults aged >=18 years was 34.7% and 17.9%, respectively.'"}
+      ]
+    },
+    {
+      "id": "hlt_q07",
+      "question": "Comparing CDC's National Healthcare Safety Network report on nursing home residents (November 2024) with the National Immunization Survey-Adult COVID Module report for fall 2024, what was RSV vaccination coverage among nursing home residents versus among community-dwelling adults aged >=75 years, and what is the difference?",
+      "answer": "Nursing home residents: 17.9% (95% CI = 17.8-18.0) RSV vaccination coverage as of November 2024. Adults aged >=75 years: 39.7% had ever received an RSV vaccine as of the week ending November 9, 2024. Nursing home residents were 21.8 percentage points lower. (For context, adults aged 60-74 years at increased risk for severe RSV were at 31.6%.)",
+      "answer_type": "numeric",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "hlt013", "pages": [3], "modality": "table", "evidence": "TABLE, Total row, RSV vaccination coverage columns: 7,816 facilities reporting (51.8%), 661,075 residents, 118,433 vaccinated, coverage 17.9% (17.8-18.0)."},
+        {"doc_id": "hlt010", "pages": [3], "modality": "text", "evidence": "Results: 'Estimated RSV vaccination coverage was 39.7% among adults aged >=75 years and 31.6% among those aged 60-74 years at increased risk (Figure 1).'"}
+      ]
+    },
+    {
+      "id": "hlt_q08",
+      "question": "In CDC's report on influenza and COVID-19 vaccination coverage among health care personnel for the 2024-25 season, Figure 1 plots annual influenza vaccination coverage by work setting across the 2015-16 through 2024-25 seasons. Which work setting was consistently the lowest, at roughly what 2024-25 level, and how does that compare with influenza coverage among nursing home residents in November 2024?",
+      "answer": "Long-term care was consistently the lowest work setting in Figure 1, tracking around 65-70% across seasons and ending at roughly 70% in 2024-25 (the report's table gives 70.5%); hospital was consistently highest at roughly 88-95% (88.3% in 2024-25). Nursing home residents' influenza coverage was 58.4% in November 2024 — about 12 percentage points below the long-term care staff who care for them.",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "hlt002", "pages": [5], "modality": "figure", "evidence": "FIGURE 1. Percentage of health care personnel who received an annual influenza vaccination, by work setting, 2015-16 through 2024-25: five lines (Overall, Hospital, Ambulatory care, Long-term care, Other clinical setting). Hospital is the top line (~91% in 2015-16, peaking ~95% in 2018-19, ~88% in 2024-25); Long-term care is the bottom line throughout (~65-70%, ~70% in 2024-25); Overall ends ~76%."},
+        {"doc_id": "hlt002", "pages": [3], "modality": "table", "evidence": "TABLE (Continued), Work setting rows for influenza: Hospital 89.1 (2023-24) -> 88.3 (2024-25); Ambulatory care 74.6 -> 74.2; LTCF/Home health care 65.2 -> 70.5; Other clinical setting 68.0 -> 73.7."},
+        {"doc_id": "hlt013", "pages": [3], "modality": "table", "evidence": "TABLE, Total row: influenza vaccination coverage among nursing home residents 58.4% (58.2-58.6), November 2024."}
+      ]
+    },
+    {
+      "id": "hlt_q09",
+      "question": "Which race and ethnicity group had the highest hospitalization rate in each of these two CDC surveillance reports: COVID-19-associated hospitalizations in COVID-NET for October 1, 2023-April 27, 2024 (Figure 2, cumulative age-adjusted rates), and laboratory-confirmed influenza-associated hospitalizations in FluSurv-NET for the 2022-23 season (Table 1, age-adjusted rates)? Give the approximate end-of-period value for each.",
+      "answer": "The same group leads both: American Indian or Alaska Native. In COVID-NET Figure 2 the AI/AN line is highest all season and ends at approximately 205 hospitalizations per 100,000 by late April 2024 (Black or African American second at approximately 197; Asian or Pacific Islander lowest at approximately 105). In FluSurv-NET Table 1 for 2022-23, AI/AN persons had the highest age-adjusted rate at 104.2 per 100,000 (95% CI = 89.7-118.7), ahead of Black or African American at 99.1 and White at 51.1.",
+      "answer_type": "comparison",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "hlt003", "pages": [4], "modality": "figure", "evidence": "FIGURE 2. Cumulative age-adjusted COVID-19-associated hospitalization rates among adults aged >=18 years, by race and ethnicity — COVID-NET, 12 states, October 1, 2023-April 27, 2024: five rising cumulative lines on a 0-250 per 100,000 y-axis. American Indian or Alaska Native is the top line throughout, ending ~205; Black or African American ~197; Hispanic or Latino and White both ~150; Asian or Pacific Islander lowest ~105. Values are not stated in the body text."},
+        {"doc_id": "hlt012", "pages": [9], "modality": "table", "evidence": "TABLE 1. Laboratory-confirmed influenza-associated hospitalization rates by season overall and by age, sex, race and ethnicity, and influenza type and subtype, 2010-11 through 2022-23. Race and ethnicity rows, 2022-23 column: American Indian or Alaska Native 104.2 (89.7-118.7); Asian or Pacific Islander 32.4; Black or African American 99.1; White 51.1; Hispanic or Latino 67.7."}
+      ]
+    },
+    {
+      "id": "hlt_q10",
+      "question": "In CDC's interim evaluation of RSV hospitalization rates after introduction of RSV prevention products (RSV-NET, October 2024-February 2025), Figure 1 plots weekly adjusted RSV-associated hospitalization rates for infants aged 0-7 months. What was the approximate peak weekly rate in 2024-25 versus the pooled 2018-20 peak, and what nirsevimab effectiveness against RSV-associated hospitalization did CDC's earlier New Vaccine Surveillance Network estimate (October 2023-February 2024) report?",
+      "answer": "Figure 1, infants aged 0-7 months panel: the 2024-25 curve peaks at approximately 0.75 RSV hospitalizations per 1,000 children, versus a pooled 2018-20 peak of approximately 1.33 per 1,000 — both at about surveillance week 1 — roughly a 44% lower peak. The New Vaccine Surveillance Network early estimate found nirsevimab effectiveness of 90% (95% CI = 75%-96%) against RSV-associated hospitalization, at a median of 45 days (IQR = 19-76) from receipt to symptom onset.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "hlt014", "pages": [5], "modality": "figure", "evidence": "FIGURE 1. RSV-associated hospitalization rates among children aged <5 years, by age group and surveillance week — RSV-NET, October-April 2018-20 and October-February 2024-25. Top panel 'Infants aged 0-7 mos', y-axis 0.0-1.6 per 1,000: thick 2024-25 line peaks just under 0.8 (~0.75) at week 1; black pooled 2018-20 line peaks between 1.2 and 1.4 (~1.33) at week 1, with a shaded min-max band. Peak values are not given in the body text."},
+        {"doc_id": "hlt005", "pages": [3], "modality": "text", "evidence": "Results/Discussion: 'Nirsevimab effectiveness was 90% (95% CI = 75-96) against RSV-associated hospitalization.' and 'receipt of nirsevimab was 90% effective against RSV-associated hospitalization at a median of 45 days from receipt of nirsevimab to ARI symptom onset.' Adjacent to the TABLE of characteristics of hospitalized infants by nirsevimab receipt."}
+      ]
+    },
+    {
+      "id": "hlt_q11",
+      "question": "Combining CDC's interim RSV hospitalization evaluation (RSV-NET, 2024-25 versus pooled 2018-20) with CDC's April 2024 survey of maternal RSV vaccination and infant nirsevimab receipt: what was the RSV-NET hospitalization rate reduction for infants aged 0-2 months, and what percentage of infants aged 8 months were protected by maternal RSV vaccine, nirsevimab, or both?",
+      "answer": "RSV-NET, infants aged 0-2 months: the pooled 2018-20 rate of 22.2 per 1,000 children (95% CI = 21.5-22.9) fell to 10.6 per 1,000 (95% CI = 9.9-11.3) in 2024-25 — a rate ratio of 0.48 (95% CI = 0.44-0.51) and a relative rate reduction of 52% (95% CI = 49-56), the largest reduction of any age group. Protection: 55.8% (95% CI = 52.1-59.6) of infants were protected by maternal RSV vaccination, nirsevimab, or both (maternal RSV vaccination 32.6%, infant nirsevimab 44.6%, both 14.2%).",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "table_math",
+      "hops": [
+        {"doc_id": "hlt014", "pages": [4], "modality": "table", "evidence": "TABLE. Hospitalization rates among U.S. children aged <5 years with laboratory-confirmed RSV — RSV-NET and NVSN, 2018-20 and 2024-25. RSV-NET, age 0-2 mos column: pooled 2018-20 rate 22.2 (21.5-22.9); 2024-25 rate 10.6 (9.9-11.3); rate ratio 0.48 (0.44-0.51); RRR 52% (49-56). Also 0-7 mos 15.0 -> 8.5, RRR 43%; 8-19 mos 5.0 -> 6.7, RRR -33%; 20-59 mos 1.5 -> 2.5, RRR -64%."},
+        {"doc_id": "hlt006", "pages": [2], "modality": "table", "evidence": "TABLE 1. RSV vaccination and RSV antibody (nirsevimab) coverage among pregnant women and their infants, Internet panel survey, April 2024. Overall row: maternal RSV vaccination 32.6% (28.8-36.6) of 678 eligible women; receipt of nirsevimab by infant 44.6% (40.9-48.3) of 866; maternal RSV vaccination or receipt of nirsevimab by infant 55.8% (52.1-59.6). Adjacent text notes 14.2% of infants were protected by both."}
+      ]
+    },
+    {
+      "id": "hlt_q12",
+      "question": "Comparing CDC's two nirsevimab effectiveness reports — the New Vaccine Surveillance Network early estimate against RSV-associated hospitalization (October 2023-February 2024) and the Overcoming RSV Network case-control study against RSV-associated intensive care unit admission (24 states, December 2024-April 2025) — what effectiveness did each report, and which endpoint had the higher point estimate?",
+      "answer": "Against RSV-associated hospitalization: 90% (95% CI = 75%-96%), New Vaccine Surveillance Network, October 2023-February 2024. Against RSV-associated ICU admission: 80% adjusted (95% CI = 70%-86%), Overcoming RSV Network, December 2024-April 2025 (crude 81%, 95% CI = 73%-87%); the same study reported 83% (95% CI = 74%-90%) adjusted effectiveness against acute respiratory failure. The hospitalization estimate is the higher point estimate, by 10 percentage points.",
+      "answer_type": "comparison",
+      "difficulty": "medium",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "hlt005", "pages": [3], "modality": "text", "evidence": "Results/Discussion: 'Nirsevimab effectiveness was 90% (95% CI = 75-96) against RSV-associated hospitalization', among 699 infants hospitalized with acute respiratory illness, 59 (8%) of whom received nirsevimab >=7 days before symptom onset."},
+        {"doc_id": "hlt007", "pages": [7], "modality": "table", "evidence": "TABLE 2. Nirsevimab product effectiveness against RSV-associated intensive care unit admission and acute respiratory failure — Overcoming RSV Network, December 1, 2024-April 15, 2025: ICU admission crude 81 (73-87), adjusted 80 (70-86); acute respiratory failure crude 82 (72-89), adjusted 83 (74-90); by time from dose to onset, 7-59 days adjusted 86 (77-92) and 60-183 days adjusted 66 (49-79)."}
+      ]
+    },
+    {
+      "id": "hlt_q13",
+      "question": "In CDC's FluSurv-NET Surveillance Summary of laboratory-confirmed influenza-associated hospitalizations (United States, 2010-11 through 2022-23), Figure 1 plots weekly hospitalization rates for all 13 seasons. Which season reached the highest weekly peak rate and at roughly what value, and what was that same season's overall cumulative hospitalization rate in Table 1?",
+      "answer": "The 2017-18 season reached the highest weekly peak, at approximately 10.2 hospitalizations per 100,000 population, around MMWR weeks 52-1 (late December/early January). Its overall cumulative rate in Table 1 was 102.9 per 100,000 (95% CI = 101.7-104.0) — the highest of any season in the series (the lowest prepandemic season was 2011-12 at 8.7; 2020-21 was 0.8 and 2022-23 was 64.4). The second-highest weekly peak was 2022-23 at approximately 8.7 per 100,000, which peaked unusually early around week 48 (early December).",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "hlt012", "pages": [8], "modality": "figure", "evidence": "FIGURE 1. Weekly rates of laboratory-confirmed influenza-associated hospitalizations among patients of all ages — FluSurv-NET, 2010-11 through 2022-23. Y-axis 0-12 per 100,000, x-axis MMWR weeks 40-23; 13 season lines. The solid dark-brown 2017-18 line is the tallest, cresting at ~10.2 near weeks 52-1; the thick dash-dot 2022-23 line peaks ~8.7 at ~week 48. Weekly peak values are not stated in the text."},
+        {"doc_id": "hlt012", "pages": [9], "modality": "table", "evidence": "TABLE 1, 'Overall' row across seasons: 2010-11 21.7; 2011-12 8.7; 2012-13 43.2; 2013-14 35.1; 2014-15 64.2; 2015-16 21.5; 2016-17 47.5; 2017-18 102.9 (101.7-104.0); 2018-19 63.6; 2019-20 66.0; 2020-21 0.8; 2021-22 17.5; 2022-23 64.4."}
+      ]
+    },
+    {
+      "id": "hlt_q14",
+      "question": "In WHO's World Health Statistics 2024, Figure 1.9 ranks the top 10 causes of death by World Bank income group for 2000, 2019, 2020 and 2021. In 2021, in which income group was COVID-19 the number one cause of death, and what rank did it hold in low-income countries? How many lives did COVID-19 claim globally in 2021 according to the same report?",
+      "answer": "Lower-middle-income countries: COVID-19 ranked 1 (the leading cause of death) in 2021. Low-income countries: COVID-19 ranked 6 in 2021. (Upper-middle-income: rank 3; high-income: rank 2.) Globally, COVID-19 claimed 8.8 million lives in 2021, making it the second leading cause of death worldwide that year, after claiming 4.1 million in 2020 when it was third.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "figure_read",
+      "hops": [
+        {"doc_id": "hlt015", "pages": [22], "modality": "figure", "evidence": "Figure 1.9 Top 10 causes of death, by World Bank income group, in 2000, 2019, 2020 and 2021 (PDF p.22 = printed p.14): four slope-chart panels ranked 1 to >10. Low-income panel — COVID-19 line terminates at rank 6 in 2021. Lower-middle-income panel — COVID-19 terminates at rank 1. Upper-middle-income — rank 3. High-income — rank 2. Income-group ranks are not given in the body text."},
+        {"doc_id": "hlt015", "pages": [22], "modality": "text", "evidence": "Body text above Figure 1.9: 'COVID-19 emerged as the third and second leading causes, respectively, claiming 4.1 million and 8.8 million lives globally' in 2020 and 2021; 'In all but two WHO regions (the African and Western Pacific regions), COVID-19 ranked among the top five causes of deaths in 2020 and 2021.'"}
+      ]
+    },
+    {
+      "id": "hlt_q15",
+      "question": "In WHO's COVID-19 Epidemiological Update Special Edition (24 December 2024), the bottom panel of Figure 1 plots global COVID-19 vaccination coverage. What levels did the 'complete primary series' and 'at least one booster' curves plateau at, and how does the cumulative number of confirmed COVID-19 deaths notified to WHO by 10 November 2024 compare with the number of TB deaths WHO estimated for 2023 in its Global Tuberculosis Report 2024?",
+      "answer": "Figure 1 vaccination panel: the 'complete primary series' curve rises steeply through 2021 and plateaus at roughly 67% (about 65-68%); 'at least one booster' plateaus at roughly 32% (about 30-33%) — approximately a 2:1 ratio; both series flatten and end around late 2023. Deaths: over 7 million confirmed COVID-19 deaths (with over 776.8 million confirmed cases) were notified to WHO across 234 countries, areas and territories from the start of the pandemic to 10 November 2024. WHO's Global Tuberculosis Report 2024 estimated 1.25 million TB deaths in 2023 alone (95% UI = 1.13-1.37 million), and noted TB probably returned in 2023 to being the world's leading cause of death from a single infectious agent, after three years in which it was replaced by COVID-19.",
+      "answer_type": "numeric",
+      "difficulty": "hard",
+      "hop_type": "cross_doc",
+      "hops": [
+        {"doc_id": "hlt018", "pages": [6], "modality": "figure", "evidence": "Figure 1. Global COVID-19 cases, proportions of circulating variants, deaths and vaccination coverage by 28-day intervals, as of 10 November 2024. Bottom 'Coverage' panel, y-axis gridlines at 0/20/40/60: teal 'complete primary series' curve plateaus just above 60 (~67%); salmon 'at least one booster' curve plateaus at ~32%; both end around late 2023. Coverage values are not stated in the body text."},
+        {"doc_id": "hlt018", "pages": [6], "modality": "text", "evidence": "Text below Figure 1: 'From the start of the pandemic until 10 November 2024, over 776.8 million confirmed COVID-19 cases and over 7 million confirmed deaths were notified to WHO across 234 countries, areas and territories (Figure 1).'"},
+        {"doc_id": "hlt017", "pages": [27], "modality": "text", "evidence": "'Deaths caused by TB' section (PDF p.27 = printed p.10): 'Globally in 2023, TB caused an estimated 1.25 million deaths (95% UI: 1.13-1.37 million)', down from 1.32 million in 2022; 'In 2023, TB probably returned to being the world's leading cause of death from a single infectious agent, following 3 years in which it was replaced by COVID-19.'"}
+      ]
+    }
+  ]
+}

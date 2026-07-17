@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DATASETS = ["research_papers", "financial_docs", "legal_docs"]
+DATASETS = sorted(p.stem for p in (ROOT / "data/benchmarks").glob("*.json"))
 
 
 def catalog_for(ds: str, doc_id: str) -> list[dict]:
