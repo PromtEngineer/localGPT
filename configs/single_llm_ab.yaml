@@ -1,0 +1,57 @@
+# Clean single-LLM A/B config: gemma4:31b for EVERY role, but vision opt-in flags OFF
+# so the ONLY variable vs configs/default.yaml is the LLM stack (one dense 31B replacing
+# the qwen3.6-MoE + qwen3.5 two-model stack). This isolates "can one LLM do everything"
+# from the separately-settled dense-vision question (the earlier gemma4_only.yaml left
+# view_page_auto_zoom/thinking ON, confounding the two variables — review finding M3).
+# Judge pinned to qwen3.5:9b (fixed measuring instrument, not part of the system).
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  index: data/index
+  benchmarks: data/benchmarks
+  runs: runs
+
+serving:
+  base_url: http://localhost:11435/v1
+  api_key: ollama
+  timeout_s: 600
+
+models:
+  orchestrator: gemma4:31b
+  utility: gemma4:31b
+  vision: gemma4:31b
+  judge: qwen3.5:9b
+  embedder: Qwen/Qwen3-Embedding-0.6B
+  reranker: Qwen/Qwen3-Reranker-0.6B
+  visual_retriever: ModernVBERT/colmodernvbert
+
+embedding:
+  dim: 1024
+  batch_size: 16
+  device: auto
+  query_instruction: "Instruct: Given a search query, retrieve relevant passages from documents\nQuery: "
+
+ingest:
+  page_image_dpi: 150
+  chunk_max_tokens: 800
+  chunk_min_tokens: 120
+  contextual_headers: true
+
+retrieval:
+  candidates_per_channel: 30
+  rrf_k: 60
+  final_k: 8
+  rerank: true
+  rerank_candidates: 25
+
+agent:
+  max_tool_calls: 20
+  view_page_dpi: 220
+  view_page_zoom_dpi: 500
+  view_page_max_px: 2600
+  view_page_auto_zoom: false   # equalized with default.yaml — isolates the LLM-stack variable
+  view_page_thinking: false
+  max_correction_loops: 2
+  distillate_max_tokens: 2000
+  no_new_info_stop: 2

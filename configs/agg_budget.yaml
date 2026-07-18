@@ -1,0 +1,53 @@
+# Aggregate-benchmark config: the default two-model stack with a raised tool budget.
+# The graph-RAG decision gate's first run averaged 20.4 tool calls against a cap of 20
+# (and the cap itself leaked past 20 pre-hardening) — so it measured budget starvation
+# as much as architecture (review finding C2). This raises the ceiling to 50 so the
+# aggregate baseline reflects the system's real reach, not the budget wall.
+# Everything else identical to default.yaml.
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  index: data/index
+  benchmarks: data/benchmarks
+  runs: runs
+
+serving:
+  base_url: http://localhost:11435/v1
+  api_key: ollama
+  timeout_s: 300
+
+models:
+  orchestrator: qwen3.6:35b-a3b
+  utility: qwen3.5:9b
+  embedder: Qwen/Qwen3-Embedding-0.6B
+  reranker: Qwen/Qwen3-Reranker-0.6B
+  visual_retriever: ModernVBERT/colmodernvbert
+
+embedding:
+  dim: 1024
+  batch_size: 16
+  device: auto
+  query_instruction: "Instruct: Given a search query, retrieve relevant passages from documents\nQuery: "
+
+ingest:
+  page_image_dpi: 150
+  chunk_max_tokens: 800
+  chunk_min_tokens: 120
+  contextual_headers: true
+
+retrieval:
+  candidates_per_channel: 30
+  rrf_k: 60
+  final_k: 8
+  rerank: true
+  rerank_candidates: 25
+
+agent:
+  max_tool_calls: 50   # raised from 20 — the aggregate questions average 10+ evidence docs
+  view_page_dpi: 220
+  view_page_zoom_dpi: 500
+  view_page_max_px: 2600
+  max_correction_loops: 2
+  distillate_max_tokens: 2000
+  no_new_info_stop: 2
