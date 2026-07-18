@@ -23,7 +23,17 @@ Grade "correct": true only if the model answer contains the gold answer's key fa
 - numbers must match the gold values (allow rounding in the last digit and unit reformatting),
 - comparisons/rankings must agree in direction,
 - for lists, all gold items must be present.
-An answer that says the information is missing is incorrect. Extra correct detail is fine."""
+An answer that says the information is missing is incorrect. Extra correct detail is fine.
+
+Grade ONLY what the QUESTION asks for, and treat the GOLD answer's own acceptance
+instructions as authoritative:
+- If the gold is a rubric like "name at least N of: ...", grade by counting how many of the
+  listed items the answer names; if it names N or more it is correct. Naming EXTRA items
+  beyond the list NEVER makes it wrong.
+- If the gold says "Accept also ...", or marks an item optional/parenthetical, honor that:
+  do not require the optional item, and do not fail an answer for it.
+- Do not fail an answer for volunteering an incidental extra figure the question did not ask
+  for (even if that extra figure is off); judge only the facts the question requested."""
 
 
 _CITE_RE = re.compile(r"\[(\w+)\s+p(\d+)\]")

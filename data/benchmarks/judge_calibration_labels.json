@@ -1,0 +1,1054 @@
+{
+ "description": "Reference (human/Claude) labels vs stored qwen3.5:9b judge verdicts. CPU-only re-grading of stored runs/answers_*.json against each benchmark's own gold acceptance criteria. No models loaded, no server, no evals.",
+ "reference_grader": "claude-opus (careful manual grade against gold + accept-also notes)",
+ "judge_model": "qwen3.5:9b (pinned eval judge; provenance null in these run files, judge fixed by config)",
+ "counts": {
+  "total": 104,
+  "aggregate": 12,
+  "standard": 92,
+  "false_FAIL": 2,
+  "false_PASS": 0
+ },
+ "labels": [
+  {
+   "id": "fin_agg_q01",
+   "dataset": "financial_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Names Tesla as sole decliner; gold=Intel only (gold: do NOT accept Tesla). Required answer wrong. Correct FAIL."
+  },
+  {
+   "id": "fin_agg_q02",
+   "dataset": "financial_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Count 5 = NVIDIA/AMD/Apple/Intel/Qualcomm with exact FY-end dates. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_agg_q03",
+   "dataset": "financial_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Runner-up given as Meta (+22%); gold requires Coinbase (+111%). Required entity wrong. Correct FAIL."
+  },
+  {
+   "id": "fin_agg_q04",
+   "dataset": "financial_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "$248,345M with correct four components (NVDA FY25/AMD/Intel/QCOM). Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_agg_q05",
+   "dataset": "financial_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Exactly {fin003,fin011,fin019,fin023,fin024}. Matches gold doc-set. Correct PASS."
+  },
+  {
+   "id": "fin_agg_q06",
+   "dataset": "financial_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": true,
+   "judge_correct": false,
+   "agree": false,
+   "note": "FALSE-FAIL. Entity set exactly right (6 payers incl. Intel; correctly excludes AMD/Amazon/Tesla/Pinterest) = PASS per gold's own fail-criteria. Judge failed on (a) Alphabet's volunteered $3.5B vs gold $7,363M (an amount the question does not ask for) and (b) demanding Intel's Q4-suspension flag that gold marks 'Accept also' (optional). Both non-required."
+  },
+  {
+   "id": "fin_agg_q07",
+   "dataset": "financial_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": true,
+   "judge_correct": false,
+   "agree": false,
+   "note": "FALSE-FAIL. Rubric=name >=3 of 5 themes; answer clearly names tariffs/trade, inflation, fiscal-debt (+ uncertainty) = PASS. Judge failed it solely because it added an EXTRA theme (NBFI) 'not among the 5 required'; extras are explicitly not penalized. Confirms review claim."
+  },
+  {
+   "id": "rp_agg_q01",
+   "dataset": "research_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Exactly 7 papers = gold set. Correct PASS."
+  },
+  {
+   "id": "rp_agg_q02",
+   "dataset": "research_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Count 10 with exact list = gold. Correct PASS."
+  },
+  {
+   "id": "rp_agg_q03",
+   "dataset": "research_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Exactly 5 papers = gold set. Correct PASS."
+  },
+  {
+   "id": "rp_agg_q04",
+   "dataset": "research_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Names MS MARCO but count=10; gold count=12 (count is load-bearing). Correct FAIL."
+  },
+  {
+   "id": "rp_agg_q05",
+   "dataset": "research_agg",
+   "run": "agg",
+   "slice": "aggregate",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Names Gecko/NV-Embed/Qwen3 = 3 of 6 valid; rubric >=3 satisfied. Correct PASS."
+  },
+  {
+   "id": "fin_q01",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Refuses ('data missing'); gold has definite answer (NVIDIA 142% > AMD 94%). Correct FAIL."
+  },
+  {
+   "id": "fin_q02",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Reports Data Center as $116,193M/89% (Compute&Networking segment); gold Data Center end-market = $115,186M/88%. Question asks Data Center end market specifically. Wrong required value. Correct FAIL."
+  },
+  {
+   "id": "fin_q03",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "495,570->336,681, decline 158,889. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_q04",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "31.4 GWh/114%, $10,086M/67%. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_q05",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "MAPCs reported as 2,572M; gold 171M (gross misread). Correct FAIL."
+  },
+  {
+   "id": "fin_q06",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Netflix 302M vs Spotify 263M (gold 301.63M). Rounding OK. Correct PASS."
+  },
+  {
+   "id": "fin_q07",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "18.91M total, EMEA 5.00M top, matches ~19M. Correct PASS."
+  },
+  {
+   "id": "fin_q08",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "$13,189M, $13,408M loss, $219M diff. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_q09",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Question explicitly asks both 2024 & 2023 revenue figures for both; model omits Google Cloud absolutes ('not provided'). Required part missing. Correct FAIL."
+  },
+  {
+   "id": "fin_q10",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Apple $391,035M vs Alphabet $350,018M, diff $41,017M. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_q11",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "$17.73B; RL -(17,729), FoA 87,109, total 69,380. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_q12",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Both 1.4%. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_q13",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "4.2%, 4.5%, +0.3pp. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_q14",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "AI; NVIDIA Data Center $115,186M. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_q15",
+   "dataset": "financial_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Tesla part right (-13%, 336,681 vs 386,810) but World Bank 2.3%/-0.4pp explicitly required and 'missing'. Correct FAIL."
+  },
+  {
+   "id": "leg_q01",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "94% Fig 7 + 94.9% Mehta. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q02",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Bing 12% computer, ~6% all queries. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q03",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "~4.2x (4.16), 2,156M/518M. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q04",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "94.5pp; Android 96.4%, Windows 1.9%. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q05",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "PageRank first (1/9/1998 vs 5/28/1999); 38 more claims (67 vs 29). Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q06",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Docs A&C=0.4; inventor Lawrence Page. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q07",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "1-Click(4 inventors, Bezos) vs recommendations(3). Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q08",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "PageRank not Google; Stanford assignee. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q09",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "23pp (22->45%); Windows 93.8% units 2002. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q10",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Rose Enigma, VAu001528922; prompts-alone conclusion. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q11",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "SoFi/Earnest/LendKey; rankings by payment to LendEDU. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q12",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "30%/15% commission; >75% margins FY2018-19. Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q13",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "EU 80.47% (Feb2017); DOJ 82% (Sep2020). Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q14",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Mehta 89.2% (2020); Brinkema 91% (2022). Matches gold. Correct PASS."
+  },
+  {
+   "id": "leg_q15",
+   "dataset": "legal_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Amazon 69->77%; eBay 21->8%. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q01",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Tamiflu 750mg, Xofluza 40mg (question asks totals; 18.75x is gold extra). Correct PASS."
+  },
+  {
+   "id": "hlt_q02",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "10% vs 2%, 8pp. Matches gold primary. Correct PASS."
+  },
+  {
+   "id": "hlt_q03",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Tamiflu 60% vs Paxlovid 50% reduction. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q04",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Ozempic 20.3% vs Mounjaro 18%, Ozempic higher. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q05",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Ozempic 0.25->2mg; Mounjaro 2.5->15mg; 7.5x. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q06",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "76.3>58.4>34.7%, gap 41.6pp. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q07",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "NH 17.9% vs >=75 39.7%, 21.8pp. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q08",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "LTC lowest ~71% (gold 70.5%, within tol); NH 58.4%, ~12pp. Question doesn't require hospital. Correct PASS."
+  },
+  {
+   "id": "hlt_q09",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "AI/AN highest both; ~205.9(~205) & 104.2. Within tol. Correct PASS."
+  },
+  {
+   "id": "hlt_q10",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "2024-25 infant RSV peak read as ~0.9/1,000; gold ~0.75 (+/-10% tol => 0.675-0.825). 0.9 outside tol. Correct FAIL."
+  },
+  {
+   "id": "hlt_q11",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "52% RRR; 55.8% protected. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q12",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "90% hosp, 80% ICU, hosp higher. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q13",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "2017-18, ~10.2 peak, 102.9 cumulative. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q14",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "LMIC rank1, LIC rank6, 8.8M. Matches gold. Correct PASS."
+  },
+  {
+   "id": "hlt_q15",
+   "dataset": "health_docs",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Primary series 60% (gold ~67%,65-68%) and booster 35% (gold ~32%,30-33%) both outside tol; TB 1.09M vs gold 1.25M. Correct FAIL."
+  },
+  {
+   "id": "rp_q01",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "72.31 vs 66.31, diff 6.0. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q02",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "81.3 nDCG@5; 76.54 vs 77.91, ColPali doesn't beat. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q03",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "6.9pts, 61.8 vs 54.9. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q04",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "96.5 vs 96.4, Qwen2-VL higher by 0.1. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q05",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "5,903M vs 675M, 8.7x. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q06",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "DSE 75.3; ColPali 81.3. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q07",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "BGE-M3 66.1; M3 Dense 69.2. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q08",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "256KB/1030 vec vs 4.5KB/2304-d; VisRAG-Ret higher 77.91. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q09",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Faithfulness 0.95. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q10",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "2.7 F-1, 55.7 vs 53.0. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q11",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "56.1% closed-book; dips below at middle. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q12",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Shift degrades most; 97.8% at pool factor 3. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q13",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Table 8 (79.8 vs 79.2) right, but Fig 1(b) response-length (the figure_read core) declared unreadable/'missing'. Required part not answered. Correct FAIL (borderline: qualitative trend was given)."
+  },
+  {
+   "id": "rp_q14",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "91 vs 80.1, diff 10.9. Matches gold. Correct PASS."
+  },
+  {
+   "id": "rp_q15",
+   "dataset": "research_papers",
+   "run": "agentic",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "75.24 VisRAG; 72.31 MTEB. Matches gold. Correct PASS."
+  },
+  {
+   "id": "fin_q03",
+   "dataset": "financial_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "495,570/336,681/158,889. Correct PASS."
+  },
+  {
+   "id": "fin_q06",
+   "dataset": "financial_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Netflix 302M vs Spotify 263M. Correct PASS."
+  },
+  {
+   "id": "fin_q07",
+   "dataset": "financial_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "18.91M, EMEA 5.00M, ~19M. Correct PASS."
+  },
+  {
+   "id": "fin_q08",
+   "dataset": "financial_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "$13,189M/$13,408M/$219M. Correct PASS."
+  },
+  {
+   "id": "fin_q09",
+   "dataset": "financial_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Google Cloud faster; GC $33,088M->$43,229M, AWS $90,757M->$107,556M, rates 31%/19%. Complete. Correct PASS."
+  },
+  {
+   "id": "fin_q11",
+   "dataset": "financial_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "$17.73B; -(17,729)/87,109/69,380. Correct PASS."
+  },
+  {
+   "id": "fin_q13",
+   "dataset": "financial_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "4.2%/4.5%/+0.3pp. Correct PASS."
+  },
+  {
+   "id": "leg_q01",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Fig 7 94% 'not in context'; only Mehta 94.9%. Required part missing. Correct FAIL."
+  },
+  {
+   "id": "leg_q02",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Says percentages missing; gold 12% & ~6%. Correct FAIL."
+  },
+  {
+   "id": "leg_q03",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "iOS 518M/ratio missing; wrong Android-vs-WindowsMobile comparison. Correct FAIL."
+  },
+  {
+   "id": "leg_q04",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "81.0pp from Windows 15.4%; gold 94.5pp/1.9%. Wrong. Correct FAIL."
+  },
+  {
+   "id": "leg_q05",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "2nd filing date 'missing'; 37 more claims (66); gold: PageRank first, 38 more (67 vs 29). Correct FAIL."
+  },
+  {
+   "id": "leg_q06",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Docs A&B and corrupted value '1%9'; gold A&C=0.4. Wrong. Correct FAIL."
+  },
+  {
+   "id": "leg_q07",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "4 vs 3 inventors, Bezos on 5,960,411. Matches gold (counts+Bezos). Correct PASS."
+  },
+  {
+   "id": "leg_q08",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "PageRank assignee 'missing'; gold Stanford. Correct FAIL."
+  },
+  {
+   "id": "leg_q09",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "23pp (22->45%); 93.8%. Correct PASS."
+  },
+  {
+   "id": "leg_q10",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Analysis conclusion given but title/registration 'not in context'. Required parts missing. Correct FAIL."
+  },
+  {
+   "id": "leg_q11",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Names 3 firms but 'exclusively by payment' allegation 'not provided'. Required part missing. Correct FAIL."
+  },
+  {
+   "id": "leg_q12",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "30%/15% given but Barnes >75% margins 'not contained'. Required part missing. Correct FAIL."
+  },
+  {
+   "id": "leg_q13",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "EU 80.47% given but DOJ Fig 8 82% 'missing' (notes 84% from other source). Required part missing/wrong. Correct FAIL."
+  },
+  {
+   "id": "leg_q14",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "Brinkema 91% given but Mehta 89.2% 'missing', cites ~88%. Required part wrong/missing. Correct FAIL."
+  },
+  {
+   "id": "leg_q15",
+   "dataset": "legal_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": false,
+   "judge_correct": false,
+   "agree": true,
+   "note": "All Fig 13 details declared missing; gold Amazon 69->77%, eBay 21->8%. Correct FAIL."
+  },
+  {
+   "id": "hlt_q01",
+   "dataset": "health_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "750mg vs 40mg. Correct PASS."
+  },
+  {
+   "id": "hlt_q02",
+   "dataset": "health_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "10%/2%/8pp. Correct PASS."
+  },
+  {
+   "id": "hlt_q06",
+   "dataset": "health_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "76.3/58.4/34.7%, 41.6pp. Correct PASS."
+  },
+  {
+   "id": "hlt_q07",
+   "dataset": "health_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "17.9% vs 39.7%, 21.8pp (values match gold; miscited source not graded). Correct PASS."
+  },
+  {
+   "id": "hlt_q12",
+   "dataset": "health_docs",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "90% hosp, 80% ICU, hosp higher. Correct PASS."
+  },
+  {
+   "id": "rp_q01",
+   "dataset": "research_papers",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "72.31/66.31/6.0. Correct PASS."
+  },
+  {
+   "id": "rp_q03",
+   "dataset": "research_papers",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "6.9pts, 54.9/61.8. Correct PASS."
+  },
+  {
+   "id": "rp_q09",
+   "dataset": "research_papers",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "Faithfulness 0.95. Correct PASS."
+  },
+  {
+   "id": "rp_q10",
+   "dataset": "research_papers",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "2.7 F-1, 55.7/53.0. Correct PASS."
+  },
+  {
+   "id": "rp_q15",
+   "dataset": "research_papers",
+   "run": "single_shot",
+   "slice": "standard",
+   "ref_correct": true,
+   "judge_correct": true,
+   "agree": true,
+   "note": "75.24 VisRAG, 72.31 MTEB. Correct PASS."
+  }
+ ]
+}
