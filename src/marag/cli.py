@@ -65,6 +65,16 @@ def index_visual(dataset: str, batch_size: int = 4):
     console.print(f"[green]visual index: {r['pages']} pages via {r['model']} → {r['path']}[/]")
 
 
+@app.command("index-text-mv")
+def index_text_mv(dataset: str, batch_size: int = 8):
+    """Build the late-interaction TEXT-chunk index (pylate GTE-ModernColBERT class models)."""
+    from .config import load_config
+    from .index.text_multivector import TextMultiVectorIndex
+
+    r = TextMultiVectorIndex(load_config()).build(dataset, batch_size=batch_size)
+    console.print(f"[green]text-mv index: {r['chunks']} chunks via {r['model']} → {r['path']}[/]")
+
+
 @app.command()
 def search(query: str, dataset: str, k: int = 8, channels: str = "dense,fts", rerank: bool = True):
     """Hybrid search against an indexed dataset."""

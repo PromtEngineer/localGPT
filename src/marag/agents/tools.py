@@ -102,6 +102,24 @@ _REGIONS: dict[str, tuple[float, float, float, float]] = {
 }
 
 
+def _crop_png_region(png_path: Path, region: str) -> bytes:
+    """Crop a stored page PNG to a named region with PIL — the zoom path for docs that have
+    no source PDF to re-rasterize (images). Uses the same fractional rectangles as the PDF
+    renderer so the region names line up across doc types."""
+    import io
+
+    from PIL import Image
+
+    fx0, fy0, fx1, fy1 = _REGIONS.get(region, _REGIONS["full"])
+    with Image.open(png_path) as im:
+        im = im.convert("RGB")
+        w, h = im.size
+        box = (int(fx0 * w), int(fy0 * h), max(1, int(fx1 * w)), max(1, int(fy1 * h)))
+        buf = io.BytesIO()
+        im.crop(box).save(buf, format="PNG")
+        return buf.getvalue()
+
+
 class ToolBox:
     """Multi-granularity corpus access for the search agent: search → grep → read → sql."""
 
@@ -394,19 +412,34 @@ class ToolBox:
         the stored PNG scored WORSE (73.3% vs 80.0%), so the validated path is kept as the
         default. Zoom stays available because it costs nothing unused — but note it did not
         fix chart reading either (see RESULTS.md "high-DPI" postmortem).
-        """
-        import fitz
 
-        if region == "full":
-            png = self._docdir(doc_id) / "pages" / f"p{page:04d}.png"
-            if png.exists():
-                return png.read_bytes()
+        Image/audio docs have no source PDF: a region is cropped from the stored PNG with PIL,
+        and audio (which has no page image at all) returns a clear message instead.
+        """
+        png = self._docdir(doc_id) / "pages" / f"p{page:04d}.png"
+        if region == "full" and png.exists():
+            return png.read_bytes()
 
         meta_f = self._docdir(doc_id) / "meta.json"
         if not meta_f.exists():
             return f"unknown doc_id: {doc_id}"
-        pdf_path = json.loads(meta_f.read_text()).get("source_pdf")
-        if not pdf_path or not Path(pdf_path).exists():
+        meta = json.loads(meta_f.read_text())
+        pdf_path = meta.get("source_pdf")
+
+        # No source PDF (image/audio): can't re-rasterize. Crop the stored PNG, or — for audio,
+        # which has no visual channel — say so plainly.
+        if not pdf_path:
+            if not png.exists():
+                dt = meta.get("doc_type") or "this"
+                extra = " (audio has no visual channel)" if dt == "audio" else ""
+                return f"no page image for {dt} doc {doc_id}{extra}"
+            if region == "full" or region not in _REGIONS:
+                return png.read_bytes()
+            return _crop_png_region(png, region)
+
+        import fitz
+
+        if not Path(pdf_path).exists():
             return f"source PDF unavailable for {doc_id}"
         if doc_id not in self._pdfs:
             self._pdfs[doc_id] = fitz.open(pdf_path)
@@ -468,7 +501,7 @@ class ToolBox:
             return bad
         page = int(page)
         think = self.cfg.agent.view_page_thinking
-        err = ("unknown doc_id", "source PDF", f"{doc_id} has")
+        err = ("unknown doc_id", "source PDF", "no page image", f"{doc_id} has")
         try:
             if region in _REGIONS and region != "full":  # caller already knows where to look
                 reading = self._read(doc_id, page, question, region, think, locate=False)

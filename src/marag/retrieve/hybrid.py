@@ -43,6 +43,7 @@ class Retriever:
         self.reranker: Reranker | None = Reranker(cfg) if cfg.retrieval.rerank else None
         self._rerank_broken = False
         self._visual = None  # lazy VisualIndex
+        self._text_mv = None  # lazy TextMultiVectorIndex
 
     def _visual_index(self):
         if self._visual is None:
@@ -50,6 +51,46 @@ class Retriever:
 
             self._visual = VisualIndex(self.cfg)
         return self._visual
+
+    def _text_mv_index(self):
+        if self._text_mv is None:
+            from ..index.text_multivector import TextMultiVectorIndex
+
+            self._text_mv = TextMultiVectorIndex(self.cfg)
+        return self._text_mv
+
+    def _text_mv_active(self, channels: tuple[str, ...]) -> bool:
+        # off unless explicitly requested AND configured — keeps existing evals byte-identical
+        return (
+            "text_mv" in channels
+            and self.cfg.retrieval.text_multivector
+            and bool(self.cfg.models.text_mv_retriever)
+        )
+
+    def _text_mv_hits(self, query: str, dataset: str, n: int, doc_id: str | None = None) -> list[dict]:
+        """Run the text late-interaction channel and hydrate bare chunk ids into full hit dicts
+        (same shape as dense/fts) via the store, falling back to page text when a row is gone."""
+        ti = self._text_mv_index()
+        if not ti.exists(dataset):
+            return []
+        raw = ti.search(query, dataset, k=n)
+        if doc_id:
+            raw = [r for r in raw if r["doc_id"] == doc_id]
+        rows = self.store.get_by_ids(dataset, [r["chunk_id"] for r in raw])
+        resolved = {h["id"]: h for h in self._rows_to_hits(rows, "text_mv")} if len(rows) else {}
+        hits = []
+        for r in raw:
+            cid = r["chunk_id"]
+            h = resolved.get(cid)
+            if h is None:  # chunk not in the dense store (e.g. rebuilt separately): page fallback
+                txt = _page_text(self.cfg, dataset, r["doc_id"], r["page"])
+                h = {
+                    "id": cid, "doc_id": r["doc_id"], "page": r["page"],
+                    "section": "(text-multivector match)", "text": txt, "raw_text": txt,
+                    "source": "text_mv",
+                }
+            hits.append(h)
+        return hits
 
     def _rows_to_hits(self, df: pd.DataFrame, source: str) -> list[dict]:
         hits = []
@@ -118,6 +159,11 @@ class Retriever:
                 rank_lists.append([h["id"] for h in vhits])
                 for h in vhits:
                     by_id.setdefault(h["id"], h)
+        if self._text_mv_active(channels):
+            thits = self._text_mv_hits(query, dataset, n, doc_id=doc_id)
+            rank_lists.append([h["id"] for h in thits])
+            for h in thits:
+                by_id.setdefault(h["id"], h)
 
         fused = rrf_fuse(rank_lists, k=cfg.rrf_k)
         ordered = sorted(fused, key=fused.get, reverse=True)
@@ -194,6 +240,13 @@ class Retriever:
                     rank_lists.append([f"{ds}::{h['id']}" for h in vhits])
                     for h in vhits:
                         by_id.setdefault(f"{ds}::{h['id']}", h)
+            if self._text_mv_active(channels):
+                thits = self._text_mv_hits(query, ds, n)
+                for h in thits:
+                    h["dataset"] = ds
+                rank_lists.append([f"{ds}::{h['id']}" for h in thits])
+                for h in thits:
+                    by_id.setdefault(f"{ds}::{h['id']}", h)
 
         fused = rrf_fuse(rank_lists, k=cfg.rrf_k)
         ordered = sorted(fused, key=fused.get, reverse=True)

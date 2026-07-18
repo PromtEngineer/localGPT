@@ -1,0 +1,52 @@
+# Copy of default.yaml with the late-interaction TEXT channel turned on.
+# Used by the queued GPU eval:  MARAG_CONFIG=configs/text_mv.yaml marag index-text-mv <dataset>
+# then  MARAG_CONFIG=configs/text_mv.yaml marag search "<q>" <dataset> --channels dense,fts,text_mv
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  index: data/index
+  benchmarks: data/benchmarks
+  runs: runs
+
+serving:
+  base_url: http://localhost:11435/v1
+  api_key: ollama  # dummy for local servers
+  timeout_s: 300
+
+models:
+  orchestrator: qwen3.6:35b-a3b   # planning, generation, agent loop
+  utility: qwen3.5:9b             # router, graders, judge (overridden at runtime if unavailable)
+  embedder: Qwen/Qwen3-Embedding-0.6B   # in-process via sentence-transformers
+  reranker: Qwen/Qwen3-Reranker-0.6B    # in-process, optional
+  visual_retriever: ModernVBERT/colmodernvbert  # late-interaction page-image model (optional channel)
+  text_mv_retriever: lightonai/GTE-ModernColBERT-v1  # Apache-2.0 late-interaction TEXT model (pylate)
+
+embedding:
+  dim: 1024
+  batch_size: 16
+  device: auto        # mps on Apple Silicon, cuda if available, else cpu
+  query_instruction: "Instruct: Given a search query, retrieve relevant passages from documents\nQuery: "
+
+ingest:
+  page_image_dpi: 150
+  chunk_max_tokens: 800
+  chunk_min_tokens: 120
+  contextual_headers: true
+
+retrieval:
+  candidates_per_channel: 30
+  rrf_k: 60
+  final_k: 8
+  rerank: true
+  rerank_candidates: 25
+  text_multivector: true   # enable the "text_mv" channel (pass it in --channels to activate)
+
+agent:
+  max_tool_calls: 20
+  view_page_dpi: 220
+  view_page_zoom_dpi: 500
+  view_page_max_px: 2600
+  max_correction_loops: 2
+  distillate_max_tokens: 2000
+  no_new_info_stop: 2

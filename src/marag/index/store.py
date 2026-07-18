@@ -59,6 +59,21 @@ class Store:
             q = q.where(self._doc_filter(doc_id), prefilter=True)
         return q.limit(k).to_pandas()
 
+    def get_by_ids(self, dataset: str, ids: list[str]) -> pd.DataFrame:
+        """Fetch chunk rows by id (filter-only scan). Used to hydrate text-only channels
+        (e.g. text_mv) whose hits are bare chunk ids into full hit dicts."""
+        name = self._name(dataset)
+        if not ids or name not in self.db.table_names():
+            return pd.DataFrame()
+        quoted = ",".join("'{}'".format(str(i).replace("'", "''")) for i in ids)  # escape quotes
+        return (
+            self.db.open_table(name)
+            .search()
+            .where(f"id IN ({quoted})")
+            .limit(len(ids))
+            .to_pandas()
+        )
+
     def fts(self, dataset: str, query: str, k: int, doc_id: str | None = None) -> pd.DataFrame:
         clean = _FTS_SANITIZE.sub(" ", query).strip()
         if not clean:

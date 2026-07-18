@@ -36,6 +36,7 @@ class ModelsCfg(BaseModel):
     embedder: str
     reranker: str
     visual_retriever: str | None = None
+    text_mv_retriever: str | None = None  # opt-in late-interaction TEXT channel (pylate ColBERT)
     vision: str | None = None  # opt-in view_page reader; None -> orchestrator does vision
     judge: str | None = None  # eval-only: pin the judge independent of utility; None -> utility
 
@@ -60,6 +61,7 @@ class RetrievalCfg(BaseModel):
     final_k: int = 8
     rerank: bool = True
     rerank_candidates: int = 25
+    text_multivector: bool = False  # gate the "text_mv" late-interaction channel (off by default)
 
 
 class AgentCfg(BaseModel):

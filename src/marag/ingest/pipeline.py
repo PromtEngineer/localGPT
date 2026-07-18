@@ -45,17 +45,27 @@ def ingest_dataset(dataset: str, cfg: Config, limit: int | None = None, force: b
         title = entry.get("title") or pdf.stem
         t0 = time.time()
         try:
-            from .formats import DATA_FORMATS, DOC_FORMATS, parse_data_file, parse_office_doc
+            from .formats import (
+                parse_audio_file,
+                parse_data_file,
+                parse_image_file,
+                parse_office_doc,
+                parser_for,
+            )
 
-            suffix = pdf.suffix.lower()
-            if suffix == ".pdf":
+            kind = parser_for(pdf.suffix)  # extension lookup, case-insensitive
+            if kind == "pdf":
                 meta = parse_pdf(pdf, out_dir, cfg)
-            elif suffix in DOC_FORMATS:
+            elif kind == "office":
                 meta = parse_office_doc(pdf, out_dir, cfg)
-            elif suffix in DATA_FORMATS:
+            elif kind == "data":
                 meta = parse_data_file(pdf, out_dir, cfg, doc_id)
+            elif kind == "image":
+                meta = parse_image_file(pdf, out_dir, cfg, doc_id)
+            elif kind == "audio":
+                meta = parse_audio_file(pdf, out_dir, cfg, doc_id)
             else:
-                raise ValueError(f"unsupported format: {suffix}")
+                raise ValueError(f"unsupported format: {pdf.suffix.lower()}")
             (out_dir / "summary.md").unlink(missing_ok=True)  # stale after any re-parse
             chunks = chunk_doc(out_dir, doc_id, dataset, title, cfg)
             with open(out_dir / "chunks.jsonl", "w") as f:
@@ -66,7 +76,8 @@ def ingest_dataset(dataset: str, cfg: Config, limit: int | None = None, force: b
                     "doc_id": doc_id,
                     "dataset": dataset,
                     "title": title,
-                    "doc_type": entry.get("doc_type", ""),
+                    # manifest wins; else fall back to the parser's intrinsic type (image/audio)
+                    "doc_type": entry.get("doc_type") or meta.get("doc_type", ""),
                     "n_chunks": len(chunks),
                     "parse_s": round(time.time() - t0, 1),
                 }

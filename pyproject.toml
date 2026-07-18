@@ -30,7 +30,14 @@ dependencies = [
     "python-multipart>=0.0.32",
     "openpyxl>=3.1.5",
     "regex>=2024.0",
+    "faster-whisper>=1.0",
 ]
+
+# NOTE: the late-interaction TEXT channel (marag index-text-mv / retrieval.text_multivector)
+# would use pylate, but pylate's transformers/pillow pins are UNSATISFIABLE alongside docling
+# in one env (docling-ibm-models pins pillow<11). So pylate is deliberately NOT declared here —
+# the channel's loader falls back to loading GTE-ModernColBERT via sentence-transformers
+# (already a base dep). If pylate is ever needed, it requires a separate venv.
 
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.6"]

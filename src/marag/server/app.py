@@ -25,13 +25,13 @@ _INFER_LOCK = threading.Lock()
 
 def safe_upload_name(filename: str | None) -> str:
     """Upload filename policy: basename only, visible name, ingest-supported extension."""
-    from ..ingest.formats import DATA_FORMATS, DOC_FORMATS
+    from ..ingest.formats import AUDIO_FORMATS, DATA_FORMATS, DOC_FORMATS, IMAGE_FORMATS
 
     name = Path(filename or "").name
     if not name or name.startswith("."):
         raise ValueError("empty or hidden filename")
     ext = Path(name).suffix.lower()
-    if ext not in {".pdf"} | DOC_FORMATS | DATA_FORMATS:
+    if ext not in {".pdf"} | DOC_FORMATS | DATA_FORMATS | IMAGE_FORMATS | AUDIO_FORMATS:
         raise ValueError(f"unsupported file type: {ext or '(none)'}")
     return name
 
