@@ -29,6 +29,7 @@ dependencies = [
     "uvicorn[standard]>=0.51.0",
     "python-multipart>=0.0.32",
     "openpyxl>=3.1.5",
+    "regex>=2024.0",
 ]
 
 [dependency-groups]

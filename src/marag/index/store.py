@@ -48,10 +48,15 @@ class Store:
     def count(self, dataset: str) -> int:
         return self.db.open_table(self._name(dataset)).count_rows()
 
+    @staticmethod
+    def _doc_filter(doc_id: str) -> str:
+        # LanceDB .where only takes a SQL string — escape quotes so doc_id cannot inject
+        return "doc_id = '{}'".format(doc_id.replace("'", "''"))
+
     def dense(self, dataset: str, qvec: np.ndarray, k: int, doc_id: str | None = None) -> pd.DataFrame:
         q = self.db.open_table(self._name(dataset)).search(qvec, vector_column_name="vector")
         if doc_id:
-            q = q.where(f"doc_id = '{doc_id}'", prefilter=True)
+            q = q.where(self._doc_filter(doc_id), prefilter=True)
         return q.limit(k).to_pandas()
 
     def fts(self, dataset: str, query: str, k: int, doc_id: str | None = None) -> pd.DataFrame:
@@ -60,5 +65,5 @@ class Store:
             return pd.DataFrame()
         q = self.db.open_table(self._name(dataset)).search(clean, query_type="fts")
         if doc_id:
-            q = q.where(f"doc_id = '{doc_id}'", prefilter=True)
+            q = q.where(self._doc_filter(doc_id), prefilter=True)
         return q.limit(k).to_pandas()

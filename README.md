@@ -1,6 +1,6 @@
 # Multimodal Agentic RAG (local-first)
 
-A fully-local agentic multimodal RAG system: plans its own retrieval pipeline per query, reasons over documents (text, tables, charts, scans, audio), executes analysis code in a sandbox, steps back to gather more context when evidence is thin, and fans out parallel search subagents from an orchestrator — all on open-weight models.
+A fully-local agentic multimodal RAG system: plans its own retrieval pipeline per query, reasons over documents (text, tables, charts, scans), and steps back to gather more context when evidence is thin — all on open-weight models. **Design goals not yet built:** sandboxed analysis-code execution, parallel search subagents fanned out from the orchestrator, and audio ingestion (see build phases below).
 
 **Start here: [DESIGN.md](DESIGN.md)** — the full system design (July 2026), grounded in a primary-source research sweep of the current model, retrieval, and infrastructure landscape.
 

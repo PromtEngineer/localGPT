@@ -113,17 +113,20 @@ def parse_data_file(path: Path, out_dir: Path, cfg: Config, doc_id: str) -> dict
 
     catalog: list[dict] = []
     profiles: list[str] = []
-    for j, (name, df) in enumerate(sheets.items()):
+    for name, df in sheets.items():
         if df.empty:
             continue
+        # catalog page, view-name suffix and pseudo-page must all number from ONE counter
+        # that skips empty sheets, or citations point at pages with no table
+        idx = len(catalog)
         df.columns = _safe_columns(list(df.columns))
-        pq = tables_dir / f"p0001_t{j}.parquet"
+        pq = tables_dir / f"p{idx + 1:04d}_t{idx}.parquet"
         df.to_parquet(pq)
         catalog.append(
-            {"page": j + 1, "table_index": j, "parquet": pq.name, "n_rows": int(df.shape[0]),
+            {"page": idx + 1, "table_index": idx, "parquet": pq.name, "n_rows": int(df.shape[0]),
              "n_cols": int(df.shape[1]), "headers": list(df.columns)[:12]}
         )
-        profiles.append(_sheet_profile(doc_id, name, j, df, path.name))
+        profiles.append(_sheet_profile(doc_id, name, idx, df, path.name))
     (tables_dir / "catalog.json").write_text(json.dumps(catalog, indent=1))
     _write_pages(out_dir, profiles or ["(empty data file)"])
     return {

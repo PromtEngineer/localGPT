@@ -1,17 +1,69 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import re
+import threading
+import time
 from pathlib import Path
 
 import duckdb
+import regex  # unlike re, supports a matching timeout — model-authored patterns can ReDoS
 
 from ..config import Config
 from ..llm import LLM
 from ..retrieve.hybrid import Retriever
 
 MAX_RESULT_CHARS = 4000
+MAX_GREP_PATTERN_CHARS = 200
+GREP_TIMEOUT_S = 5.0
+SQL_TIMEOUT_S = 30.0
+
+_DOC_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+# The sql guard scans with string literals / quoted identifiers blanked out, so a
+# WHERE clause like note = 'please update the set' is not a false positive.
+_SQL_STRING_RE = re.compile(r"'(?:[^']|'')*'")
+_SQL_QIDENT_RE = re.compile(r'"(?:[^"]|"")*"')
+_SQL_DENY_RE = re.compile(
+    r"\b(insert|update|delete|drop|create|alter|attach|detach|copy|export|import|call"
+    r"|pragma|install|load|set|reset|sniff_csv|glob"
+    r"|read_(?:text|csv|parquet|json|blob|ndjson)\w*)\b",
+    re.I,
+)
+
+
+def _bad_doc_id(doc_id: str) -> str | None:
+    return None if _DOC_ID_RE.match(doc_id) else f"invalid doc_id: {doc_id!r}"
+
+
+def _sql_guard(query: str) -> str | None:
+    stripped = _SQL_QIDENT_RE.sub('""', _SQL_STRING_RE.sub("''", query))
+    m = _SQL_DENY_RE.search(stripped)
+    if m:
+        return f"read-only: SELECT over corpus tables only ({m.group(1)} is not allowed)"
+    return None
+
+
+def _sql_lockdown(con, allowed_dir: Path) -> None:
+    """Corpus parquets must stay readable through the views; every other file is off-limits.
+    DuckDB refuses to re-enable external access on a running db, and lock_configuration
+    freezes the rest — so a query that slips the deny-list still cannot leave processed/."""
+    d = str(allowed_dir.resolve()).replace("'", "''")
+    con.execute(f"SET allowed_directories=['{d}']")
+    con.execute("SET memory_limit='4GB'")
+    con.execute("SET enable_external_access=false")
+    con.execute("SET lock_configuration=true")
+
+
+def wrap_corpus(text: str, source: str) -> str:
+    """Delimit retrieved content so the model treats it as data, never instructions.
+    A document embedding the closing marker cannot escape: markers inside are defanged."""
+    body = text.replace("<<<CORPUS_DATA", "<<CORPUS_DATA").replace(
+        "<<<END_CORPUS_DATA", "<<END_CORPUS_DATA"
+    )
+    return f"<<<CORPUS_DATA source={source}>>>\n{body}\n<<<END_CORPUS_DATA>>>"
 
 _VLM_READ_PROMPT = """You are reading a rendered document page image to answer one specific question.
 Rules:
@@ -61,13 +113,22 @@ class ToolBox:
         self.multi = len(self.datasets) > 1
         self._proc = cfg.path("processed", create=False)
         self.processed = self._proc / self.dataset  # primary dataset (single-dataset back-compat)
-        # doc_id -> owning dataset, so every tool resolves a doc to the right source
+        # doc_id -> owning dataset, so every tool resolves a doc to the right source.
+        # A collision would silently serve one source's text with another's tables — refuse.
         self.doc2ds: dict[str, str] = {}
         for ds in self.datasets:
             root = self._proc / ds
             if root.exists():
                 for meta in root.glob("*/meta.json"):
-                    self.doc2ds[meta.parent.name] = ds
+                    did = meta.parent.name
+                    prev = self.doc2ds.get(did)
+                    if prev and prev != ds:
+                        raise ValueError(
+                            f"doc_id {did!r} exists in both {prev!r} and {ds!r}; "
+                            "these sources cannot be scoped together"
+                        )
+                    self.doc2ds[did] = ds
+        self._view_errors: list[str] = []  # tables that failed to mount, surfaced by sql
         self._vlm: LLM | None = None  # lazy; shares the orchestrator's server
         self._pdfs: dict[str, object] = {}  # doc_id -> open fitz doc, for high-DPI renders
         # evidence tracking for marginal-utility stop
@@ -99,29 +160,44 @@ class ToolBox:
         return _cap("\n---\n".join(out) or "no results")
 
     def grep(self, pattern: str, doc_id: str = "") -> str:
+        if len(pattern) > MAX_GREP_PATTERN_CHARS:
+            return f"invalid regex: pattern too long (max {MAX_GREP_PATTERN_CHARS} chars)"
+        if doc_id and (bad := _bad_doc_id(doc_id)):
+            return bad
         try:
-            rx = re.compile(pattern, re.IGNORECASE)
-        except re.error as e:
+            rx = regex.compile(pattern, regex.IGNORECASE)
+        except regex.error as e:
             return f"invalid regex: {e}"
         matches: list[str] = []
         docs = [self._docdir(doc_id)] if doc_id else self._all_doc_dirs()
-        for doc_dir in docs:
-            pages = doc_dir / "pages.jsonl"
-            if not pages.exists():
-                continue
-            with open(pages) as f:
-                for line in f:
-                    rec = json.loads(line)
-                    for ln in rec["text"].split("\n"):
-                        if rx.search(ln):
-                            matches.append(f"[{doc_dir.name} p{rec['page']}] {ln.strip()[:200]}")
-                            if len(matches) >= 40:
-                                self._track_from_matches(matches)
-                                return _cap("\n".join(matches) + "\n(truncated at 40 matches)")
+        deadline = time.monotonic() + GREP_TIMEOUT_S
+        try:
+            for doc_dir in docs:
+                pages = doc_dir / "pages.jsonl"
+                if not pages.exists():
+                    continue
+                with open(pages) as f:
+                    for line in f:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise TimeoutError
+                        rec = json.loads(line)
+                        for ln in rec["text"].split("\n"):
+                            if rx.search(ln, timeout=remaining):
+                                matches.append(f"[{doc_dir.name} p{rec['page']}] {ln.strip()[:200]}")
+                                if len(matches) >= 40:
+                                    self._track_from_matches(matches)
+                                    return _cap("\n".join(matches) + "\n(truncated at 40 matches)")
+        except TimeoutError:
+            self._track_from_matches(matches)
+            partial = "\n".join(matches) + "\n" if matches else ""
+            return _cap(partial + "grep timed out — simplify the pattern")
         self._track_from_matches(matches)
         return _cap("\n".join(matches) or "no matches")
 
     def read_doc(self, doc_id: str, page_start: int, page_end: int) -> str:
+        if bad := _bad_doc_id(doc_id):
+            return bad
         page_start, page_end = int(page_start), int(page_end)
         page_end = min(page_end, page_start + 5)  # cap window
         pages_file = self._docdir(doc_id) / "pages.jsonl"
@@ -150,6 +226,8 @@ class ToolBox:
         This is the document-level primitive retrieval can't provide: top-k search assumes
         the answer lives in a few chunks, a summary needs all of them.
         """
+        if bad := _bad_doc_id(doc_id):
+            return bad
         doc_dir = self._docdir(doc_id)
         cache = doc_dir / "summary.md"
         meta_f = doc_dir / "meta.json"
@@ -157,14 +235,24 @@ class ToolBox:
             return f"unknown doc_id: {doc_id}"
         meta = json.loads(meta_f.read_text())
         title = meta.get("title", doc_id)
-        if cache.exists():
-            self._track([(doc_id, p) for p in range(1, meta.get("n_pages", 1) + 1)])
-            return _cap(f"[summary of {doc_id} · {title} (cached)]\n{cache.read_text()}")
-
         chunks_f = doc_dir / "chunks.jsonl"
+        # the cache is only valid for the chunks it was written from — hash-tag the header
+        src_tag = (
+            f"<!-- chunks:{hashlib.sha256(chunks_f.read_bytes()).hexdigest()[:16]} -->"
+            if chunks_f.exists()
+            else None
+        )
+        if cache.exists():
+            first, _, body = cache.read_text().partition("\n")
+            tagged = first.startswith("<!-- chunks:")
+            if (tagged and first == src_tag) or src_tag is None:
+                self._track([(doc_id, p) for p in range(1, meta.get("n_pages", 1) + 1)])
+                cached = body if tagged else f"{first}\n{body}"
+                return _cap(f"[summary of {doc_id} · {title} (cached)]\n{cached}")
+
         if not chunks_f.exists():
             return f"no parsed content for {doc_id}"
-        texts = [json.loads(l)["raw_text"] for l in chunks_f.read_text().splitlines()]
+        texts = [json.loads(ln)["raw_text"] for ln in chunks_f.read_text().splitlines()]
         if not texts:
             return f"no parsed content for {doc_id}"
 
@@ -195,7 +283,7 @@ class ToolBox:
                  {"role": "user", "content": f"Document: {title}\n\n" + "\n\n".join(f"[section {i + 1}]\n{n}" for i, n in enumerate(notes))}],
                 max_tokens=4096,
             )
-        cache.write_text(summary)
+        cache.write_text(f"{src_tag}\n{summary}")
         self._track([(doc_id, p) for p in range(1, meta.get("n_pages", 1) + 1)])
         return _cap(f"[summary of {doc_id} · {title} · {len(batches)} sections mapped]\n{summary}")
 
@@ -203,9 +291,14 @@ class ToolBox:
         """A DuckDB connection exposing every in-scope table under one flat view namespace.
         Single dataset → the file db (unchanged). Multi → in-memory with all sources attached;
         view names embed the globally-unique doc_id, so bare `SELECT ... FROM t_<doc>_...` works."""
+        self._view_errors = []
         if not self.multi:
             db = self.processed / "tables.duckdb"
-            return duckdb.connect(str(db), read_only=True) if db.exists() else None
+            if not db.exists():
+                return None
+            con = duckdb.connect(str(db), read_only=True)
+            _sql_lockdown(con, self._proc)
+            return con
         con = duckdb.connect(":memory:")
         cat: list = []
         for i, ds in enumerate(self.datasets):
@@ -213,22 +306,24 @@ class ToolBox:
             if not db.exists():
                 continue
             alias = f"src{i}"
-            con.execute(f"ATTACH '{db}' AS {alias} (READ_ONLY)")
+            con.execute(f"ATTACH '{str(db).replace(chr(39), chr(39) * 2)}' AS {alias} (READ_ONLY)")
             try:
                 rows = con.execute(
                     f"SELECT doc_id,page,view_name,n_rows,n_cols,headers FROM {alias}._catalog"
                 ).fetchall()
-            except Exception:
+            except Exception as e:
+                self._view_errors.append(f"{ds}: catalog unreadable ({e})")
                 rows = []
             for r in rows:
                 try:
                     con.execute(f'CREATE VIEW "{r[2]}" AS SELECT * FROM {alias}."{r[2]}"')
                     cat.append(r)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self._view_errors.append(f"{ds}.{r[2]}: {e}")
         con.execute("CREATE TABLE _catalog (doc_id VARCHAR, page INT, view_name VARCHAR, n_rows INT, n_cols INT, headers VARCHAR)")
         if cat:
             con.executemany("INSERT INTO _catalog VALUES (?,?,?,?,?,?)", cat)
+        _sql_lockdown(con, self._proc)  # after ATTACH: attaching needs external access
         return con
 
     def has_tables(self) -> bool:
@@ -243,29 +338,54 @@ class ToolBox:
             con.close()
 
     def list_tables(self, doc_id: str = "") -> str:
+        if doc_id and (bad := _bad_doc_id(doc_id)):
+            return bad
         con = self._tables_con()
         if con is None:
             return "no tables database"
         q = "SELECT doc_id, page, view_name, n_rows, n_cols, headers FROM _catalog"
+        params: list[str] = []
         if doc_id:
-            q += f" WHERE doc_id = '{doc_id}'"
-        rows = con.execute(q + " LIMIT 120").fetchall()
+            q += " WHERE doc_id = ?"
+            params.append(doc_id)
+        rows = con.execute(q + " LIMIT 120", params or None).fetchall()
         con.close()
         return _cap("\n".join(f"{r[2]} ({r[0]} p{r[1]}, {r[3]}x{r[4]}) cols={r[5]}" for r in rows) or "no tables")
 
     def sql(self, query: str) -> str:
-        if re.search(r"\b(insert|update|delete|drop|create|alter|attach|copy)\b", query, re.I):
-            return "read-only: SELECT queries only"
+        if blocked := _sql_guard(query):
+            return blocked
         con = self._tables_con()
         if con is None:
             return "no tables database"
-        try:
-            df = con.execute(query).fetchdf()
-            return _cap(df.head(50).to_markdown(index=False))
-        except Exception as e:
-            return f"sql error: {e}"
-        finally:
-            con.close()
+        header = (
+            "warning: some tables failed to mount — " + "; ".join(self._view_errors[:3]) + "\n"
+            if self._view_errors
+            else ""
+        )
+        out: dict = {}
+
+        def run():
+            try:
+                out["df"] = con.execute(query).fetchdf()
+            except Exception as e:
+                out["err"] = e
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        t.join(SQL_TIMEOUT_S)
+        timed_out = t.is_alive()
+        if timed_out:
+            con.interrupt()
+            t.join(5)
+        if t.is_alive():
+            return f"sql timed out after {SQL_TIMEOUT_S:g}s"  # leave con to the still-running query
+        con.close()
+        if timed_out:
+            return f"sql timed out after {SQL_TIMEOUT_S:g}s — narrow the query"
+        if "err" in out:
+            return f"sql error: {out['err']}"
+        return _cap(header + out["df"].head(50).to_markdown(index=False))
 
     def _render(self, doc_id: str, page: int, region: str) -> bytes | str:
         """Full page → the stored 150-dpi PNG; a region → re-rasterized from the source PDF.
@@ -344,6 +464,8 @@ class ToolBox:
         + view_page_thinking + models.vision: a cheap full-page locate pass reads a REGION hint,
         then that region is re-rendered at high dpi and read with thinking. See RESULTS.md.
         """
+        if bad := _bad_doc_id(doc_id):
+            return bad
         page = int(page)
         think = self.cfg.agent.view_page_thinking
         err = ("unknown doc_id", "source PDF", f"{doc_id} has")
@@ -380,6 +502,19 @@ class ToolBox:
             return f"view_page failed: {e}"
 
     # ---------- plumbing ----------
+
+    def close(self) -> None:
+        # getattr: __del__ may run on an instance whose __init__ raised before _pdfs existed
+        pdfs = getattr(self, "_pdfs", {})
+        for doc in pdfs.values():
+            try:
+                doc.close()
+            except Exception:
+                pass
+        pdfs.clear()
+
+    def __del__(self):
+        self.close()
 
     def _track(self, pairs: list[tuple[str, int]]) -> None:
         new = [p for p in pairs if p not in self.evidence_seen]

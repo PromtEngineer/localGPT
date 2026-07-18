@@ -162,21 +162,23 @@ class Retriever:
         rank_lists: list[list[str]] = []
         qv = self.embedder.embed_query(query) if "dense" in channels else None
 
+        # fusion keys are namespaced "{ds}::{chunk id}": identical chunk ids from different
+        # sources must never merge into one candidate (hit dicts keep the bare id)
         for ds in datasets:
             if "dense" in channels:
                 hits = self._rows_to_hits(self.store.dense(ds, qv, n), "dense")
-                rank_lists.append([h["id"] for h in hits])
+                rank_lists.append([f"{ds}::{h['id']}" for h in hits])
                 for h in hits:
                     h["dataset"] = ds
-                    by_id.setdefault(h["id"], h)
+                    by_id.setdefault(f"{ds}::{h['id']}", h)
             if "fts" in channels:
                 df = self.store.fts(ds, query, n)
                 if len(df):
                     hits = self._rows_to_hits(df, "fts")
-                    rank_lists.append([h["id"] for h in hits])
+                    rank_lists.append([f"{ds}::{h['id']}" for h in hits])
                     for h in hits:
                         h["dataset"] = ds
-                        by_id.setdefault(h["id"], h)
+                        by_id.setdefault(f"{ds}::{h['id']}", h)
             if "visual" in channels:
                 vi = self._visual_index()
                 if vi.exists(ds):
@@ -184,13 +186,14 @@ class Retriever:
                     for v in vi.search(query, ds, k=n):
                         txt = _page_text(self.cfg, ds, v["doc_id"], v["page"])
                         vhits.append({
-                            "id": f"vis::{ds}::{v['doc_id']}::p{v['page']}", "doc_id": v["doc_id"],
+                            # same id shape as search(): vis::<doc>::p<page>
+                            "id": f"vis::{v['doc_id']}::p{v['page']}", "doc_id": v["doc_id"],
                             "page": v["page"], "section": "(page-image match)", "text": txt,
                             "raw_text": txt, "source": "visual", "dataset": ds,
                         })
-                    rank_lists.append([h["id"] for h in vhits])
+                    rank_lists.append([f"{ds}::{h['id']}" for h in vhits])
                     for h in vhits:
-                        by_id.setdefault(h["id"], h)
+                        by_id.setdefault(f"{ds}::{h['id']}", h)
 
         fused = rrf_fuse(rank_lists, k=cfg.rrf_k)
         ordered = sorted(fused, key=fused.get, reverse=True)

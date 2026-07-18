@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import duckdb
 
 from ..config import Config
+
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _safe_doc_dir(cfg: Config, dataset: str, doc_id: str) -> Path | None:
+    """Join + resolve, refusing any result outside the processed root (path traversal)."""
+    root = cfg.path("processed", create=False).resolve()
+    p = (root / dataset / doc_id).resolve()
+    return p if p.is_relative_to(root) else None
 
 
 def _table_catalog(doc_dir: Path) -> list[dict]:
@@ -47,7 +57,7 @@ def list_sources(cfg: Config) -> list[dict]:
 def dataset_of(cfg: Config, doc_id: str) -> str | None:
     """Which ingested source owns this doc_id — resolves citations regardless of source."""
     processed = cfg.path("processed", create=False)
-    if not processed.exists():
+    if not processed.exists() or not _ID_RE.match(doc_id):
         return None
     for ds_dir in sorted(processed.iterdir()):
         if (ds_dir / doc_id / "meta.json").exists():
@@ -56,7 +66,10 @@ def dataset_of(cfg: Config, doc_id: str) -> str | None:
 
 
 def list_docs(cfg: Config, dataset: str) -> list[dict]:
-    ds_dir = cfg.path("processed", create=False) / dataset
+    root = cfg.path("processed", create=False).resolve()
+    ds_dir = (root / dataset).resolve()
+    if not ds_dir.is_relative_to(root):
+        return []
     docs = []
     for p in sorted(ds_dir.glob("*/meta.json")):
         m = json.loads(p.read_text())
@@ -70,7 +83,10 @@ def list_docs(cfg: Config, dataset: str) -> list[dict]:
 
 def page_evidence(cfg: Config, dataset: str, doc_id: str, page: int) -> dict:
     """Tables + text for one page — backs the evidence panel."""
-    doc_dir = cfg.path("processed", create=False) / dataset / doc_id
+    doc_dir = _safe_doc_dir(cfg, dataset, doc_id)
+    if doc_dir is None:
+        return {"doc_id": doc_id, "page": page, "title": "", "doc_type": "",
+                "n_pages": 0, "text": "", "tables": []}
     meta = json.loads((doc_dir / "meta.json").read_text()) if (doc_dir / "meta.json").exists() else {}
     text = ""
     pages_f = doc_dir / "pages.jsonl"
@@ -108,7 +124,10 @@ def page_evidence(cfg: Config, dataset: str, doc_id: str, page: int) -> dict:
 
 
 def page_image_path(cfg: Config, dataset: str, doc_id: str, page: int) -> Path | None:
-    p = cfg.path("processed", create=False) / dataset / doc_id / "pages" / f"p{page:04d}.png"
+    doc_dir = _safe_doc_dir(cfg, dataset, doc_id)
+    if doc_dir is None:
+        return None
+    p = doc_dir / "pages" / f"p{page:04d}.png"
     return p if p.exists() else None
 
 
@@ -121,7 +140,9 @@ def render_region_png(cfg: Config, dataset: str, doc_id: str, page: int, region:
 
     if region not in _REGIONS or region == "full":
         return None
-    doc_dir = cfg.path("processed", create=False) / dataset / doc_id
+    doc_dir = _safe_doc_dir(cfg, dataset, doc_id)
+    if doc_dir is None:
+        return None
     meta_f = doc_dir / "meta.json"
     if not meta_f.exists():
         return None
@@ -129,17 +150,20 @@ def render_region_png(cfg: Config, dataset: str, doc_id: str, page: int, region:
     if not pdf or not Path(pdf).exists():
         return None
     doc = fitz.open(pdf)
-    if not 1 <= page <= len(doc):
-        return None
-    pg = doc[page - 1]
-    r = pg.rect
-    fx0, fy0, fx1, fy1 = _REGIONS[region]
-    clip = fitz.Rect(r.x0 + fx0 * r.width, r.y0 + fy0 * r.height,
-                     r.x0 + fx1 * r.width, r.y0 + fy1 * r.height)
-    dpi = cfg.agent.view_page_zoom_dpi
-    pix = pg.get_pixmap(dpi=dpi, clip=clip)
-    cap = cfg.agent.view_page_max_px
-    if max(pix.width, pix.height) > cap:
-        dpi = max(72, int(dpi * cap / max(pix.width, pix.height)))
+    try:
+        if not 1 <= page <= len(doc):
+            return None
+        pg = doc[page - 1]
+        r = pg.rect
+        fx0, fy0, fx1, fy1 = _REGIONS[region]
+        clip = fitz.Rect(r.x0 + fx0 * r.width, r.y0 + fy0 * r.height,
+                         r.x0 + fx1 * r.width, r.y0 + fy1 * r.height)
+        dpi = cfg.agent.view_page_zoom_dpi
         pix = pg.get_pixmap(dpi=dpi, clip=clip)
-    return pix.tobytes("png")
+        cap = cfg.agent.view_page_max_px
+        if max(pix.width, pix.height) > cap:
+            dpi = max(72, int(dpi * cap / max(pix.width, pix.height)))
+            pix = pg.get_pixmap(dpi=dpi, clip=clip)
+        return pix.tobytes("png")
+    finally:
+        doc.close()

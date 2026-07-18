@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -55,6 +56,7 @@ def ingest_dataset(dataset: str, cfg: Config, limit: int | None = None, force: b
                 meta = parse_data_file(pdf, out_dir, cfg, doc_id)
             else:
                 raise ValueError(f"unsupported format: {suffix}")
+            (out_dir / "summary.md").unlink(missing_ok=True)  # stale after any re-parse
             chunks = chunk_doc(out_dir, doc_id, dataset, title, cfg)
             with open(out_dir / "chunks.jsonl", "w") as f:
                 for c in chunks:
@@ -89,39 +91,45 @@ def ingest_dataset(dataset: str, cfg: Config, limit: int | None = None, force: b
 
 
 def _build_duckdb(dataset: str, cfg: Config) -> Path:
-    """Register every extracted table as a DuckDB view: t_<docid>_p<page>_<idx>."""
+    """Register every extracted table as a DuckDB view: t_<docid>_p<page>_<idx>.
+    Built to a temp file then renamed, so a failed rebuild leaves the old db intact."""
     out_root = cfg.path("processed") / dataset
     db_path = out_root / "tables.duckdb"
-    if db_path.exists():
-        db_path.unlink()
-    con = duckdb.connect(str(db_path))
-    catalog_rows: list[tuple] = []
-    for doc_dir in sorted(out_root.iterdir()):
-        # prefer the Docling extraction when it exists (higher cell recall, less garble)
-        tdir = doc_dir / "tables_docling"
-        if not (tdir / "catalog.json").exists():
-            tdir = doc_dir / "tables"
-        cat = tdir / "catalog.json"
-        if not cat.exists():
-            continue
-        doc_id = doc_dir.name
-        for t in json.loads(cat.read_text()):
-            view = f"t_{_slug(doc_id)}_p{t['page']}_{t['table_index']}"
-            pq = tdir / Path(t["parquet"]).name
-            try:
-                con.execute(f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_parquet('{pq}')")
-                catalog_rows.append(
-                    (doc_id, t["page"], view, t["n_rows"], t["n_cols"], json.dumps(t["headers"]))
-                )
-            except Exception:
+    tmp_path = out_root / "tables.duckdb.tmp"
+    tmp_path.unlink(missing_ok=True)
+    try:
+        con = duckdb.connect(str(tmp_path))
+        catalog_rows: list[tuple] = []
+        for doc_dir in sorted(out_root.iterdir()):
+            # prefer the Docling extraction when it exists (higher cell recall, less garble)
+            tdir = doc_dir / "tables_docling"
+            if not (tdir / "catalog.json").exists():
+                tdir = doc_dir / "tables"
+            cat = tdir / "catalog.json"
+            if not cat.exists():
                 continue
-    con.execute(
-        "CREATE OR REPLACE TABLE _catalog (doc_id VARCHAR, page INT, view_name VARCHAR,"
-        " n_rows INT, n_cols INT, headers VARCHAR)"
-    )
-    if catalog_rows:
-        con.executemany("INSERT INTO _catalog VALUES (?,?,?,?,?,?)", catalog_rows)
-    con.close()
+            doc_id = doc_dir.name
+            for t in json.loads(cat.read_text()):
+                view = f"t_{_slug(doc_id)}_p{t['page']}_{t['table_index']}"
+                pq = tdir / Path(t["parquet"]).name
+                try:
+                    con.execute(f"CREATE OR REPLACE VIEW {view} AS SELECT * FROM read_parquet('{pq}')")
+                    catalog_rows.append(
+                        (doc_id, t["page"], view, t["n_rows"], t["n_cols"], json.dumps(t["headers"]))
+                    )
+                except Exception:
+                    continue
+        con.execute(
+            "CREATE OR REPLACE TABLE _catalog (doc_id VARCHAR, page INT, view_name VARCHAR,"
+            " n_rows INT, n_cols INT, headers VARCHAR)"
+        )
+        if catalog_rows:
+            con.executemany("INSERT INTO _catalog VALUES (?,?,?,?,?,?)", catalog_rows)
+        con.close()
+        os.replace(tmp_path, db_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
     return db_path
 
 

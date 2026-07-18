@@ -136,3 +136,17 @@ def served_models(cfg: Config | None = None) -> list[str]:
         return [m["name"] for m in r.json().get("models", [])]
     except Exception:
         return []
+
+
+def served_context(cfg: Config | None = None) -> list[dict]:
+    """Loaded models via /api/ps with the context length actually being served — a silent
+    16K regression is visible here. Called lazily per request, never at import/startup."""
+    cfg = cfg or load_config()
+    try:
+        r = httpx.get(cfg.serving.base_url.rstrip("/").removesuffix("/v1") + "/api/ps", timeout=5)
+        return [
+            {"name": m.get("name"), "context_length": m.get("context_length")}
+            for m in r.json().get("models", [])
+        ]
+    except Exception:
+        return []

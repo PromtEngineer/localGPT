@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 import time
 
 from rich.console import Console
 
 from ..agents.search_agent import answer_agentic
 from ..agents.single_shot import answer_single_shot
-from ..config import Config
+from ..config import Config, repo_root
 from ..llm import LLM
 from ..retrieve.hybrid import Retriever
 from .retrieval_eval import load_benchmark
@@ -25,6 +27,32 @@ An answer that says the information is missing is incorrect. Extra correct detai
 
 
 _CITE_RE = re.compile(r"\[(\w+)\s+p(\d+)\]")
+
+
+def _git_sha() -> str | None:
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo_root(), capture_output=True, text=True, timeout=5,
+        )
+        return out.stdout.strip() or None
+    except Exception:
+        return None
+
+
+def run_provenance(cfg: Config, judge_model: str) -> dict:
+    """Every report must say what produced it: config, models, code version. No network."""
+    return {
+        "config": os.environ.get("MARAG_CONFIG") or str(repo_root() / "configs" / "default.yaml"),
+        "models": {
+            "orchestrator": cfg.models.orchestrator,
+            "utility": cfg.models.utility,
+            "judge": judge_model,
+            "vision": cfg.models.vision or cfg.models.orchestrator,
+        },
+        "git_sha": _git_sha(),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
 
 
 def citation_grounding(answer: str, result: dict) -> float | None:
@@ -112,6 +140,7 @@ def eval_answers(
     report = {
         "dataset": dataset,
         "mode": mode,
+        "provenance": run_provenance(cfg, judge.model),
         "n": len(rows),
         "accuracy": round(n_correct / max(len(rows), 1), 3),
         "avg_tool_calls": round(sum(r.get("tool_calls", 0) for r in rows) / max(len(rows), 1), 1),

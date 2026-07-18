@@ -17,6 +17,31 @@ from .db import Store
 
 STATIC = Path(__file__).parent / "static"
 
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+# one MPS device: embedder/reranker/visual inference must never run concurrently
+_INFER_LOCK = threading.Lock()
+
+
+def safe_upload_name(filename: str | None) -> str:
+    """Upload filename policy: basename only, visible name, ingest-supported extension."""
+    from ..ingest.formats import DATA_FORMATS, DOC_FORMATS
+
+    name = Path(filename or "").name
+    if not name or name.startswith("."):
+        raise ValueError("empty or hidden filename")
+    ext = Path(name).suffix.lower()
+    if ext not in {".pdf"} | DOC_FORMATS | DATA_FORMATS:
+        raise ValueError(f"unsupported file type: {ext or '(none)'}")
+    return name
+
+
+def _path_part(v: str) -> str:
+    """Path params that reach the filesystem must be single, traversal-free components."""
+    if not v or "/" in v or "\\" in v or ".." in v:
+        raise HTTPException(400, "invalid path component")
+    return v
+
 
 def _retriever(cfg: Config):
     # one shared retriever (loads the embedder once); import here to keep startup light
@@ -55,7 +80,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     # ---------- status ----------
     @app.get("/api/status")
     def status():
-        from ..llm import served_models
+        from ..llm import served_context, served_models
 
         srcs = catalog.list_sources(cfg)
         served = set(served_models(cfg))
@@ -66,6 +91,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
         ]
         return {
             "models": [{"role": r, "name": m, "up": m in served} for r, m in roles],
+            # lazy /api/ps probe: a silently-shrunk served context window shows up here
+            "loaded": served_context(cfg),
             "totals": {
                 "sources": len(srcs),
                 "docs": sum(s["docs"] for s in srcs),
@@ -83,7 +110,7 @@ def create_app(cfg: Config | None = None) -> FastAPI:
 
     @app.get("/api/sources/{dataset}/docs")
     def docs(dataset: str):
-        return catalog.list_docs(cfg, dataset)
+        return catalog.list_docs(cfg, _path_part(dataset))
 
     # ---------- sessions ----------
     @app.get("/api/sessions")
@@ -114,6 +141,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     # ---------- evidence ----------
     @app.get("/api/page/{dataset}/{doc_id}/{page}.png")
     def page_png(dataset: str, doc_id: str, page: int, region: str = "full"):
+        _path_part(dataset)
+        _path_part(doc_id)
         if region and region != "full":
             png = catalog.render_region_png(cfg, dataset, doc_id, page, region)
             if png is None:
@@ -128,13 +157,15 @@ def create_app(cfg: Config | None = None) -> FastAPI:
 
     @app.get("/api/evidence/{dataset}/{doc_id}/{page}")
     def evidence(dataset: str, doc_id: str, page: int):
+        _path_part(dataset)
+        _path_part(doc_id)
         if dataset == "_":  # resolve which source owns this doc
             dataset = catalog.dataset_of(cfg, doc_id) or dataset
         return catalog.page_evidence(cfg, dataset, doc_id, page)
 
     @app.get("/api/resolve/{doc_id}")
     def resolve(doc_id: str):
-        ds = catalog.dataset_of(cfg, doc_id)
+        ds = catalog.dataset_of(cfg, _path_part(doc_id))
         if not ds:
             raise HTTPException(404, "unknown doc")
         return {"doc_id": doc_id, "dataset": ds}
@@ -142,21 +173,35 @@ def create_app(cfg: Config | None = None) -> FastAPI:
     # ---------- upload + ingest ----------
     @app.post("/api/upload")
     async def upload(source: str, file: UploadFile):
-        raw = cfg.path("raw") / source
+        try:
+            fname = safe_upload_name(file.filename)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        raw = cfg.path("raw") / _path_part(source)
         raw.mkdir(parents=True, exist_ok=True)
-        dest = raw / file.filename
-        dest.write_bytes(await file.read())
+        dest = raw / fname
+        size = 0
+        try:
+            with open(dest, "wb") as out:
+                while chunk := await file.read(1 << 20):
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        raise HTTPException(413, f"file exceeds {MAX_UPLOAD_BYTES >> 20}MB limit")
+                    out.write(chunk)
+        except HTTPException:
+            dest.unlink(missing_ok=True)
+            raise
         # register in the source manifest so ingest can find it
         manifest = raw / "manifest.json"
         entries = json.loads(manifest.read_text()) if manifest.exists() else []
         doc_id = f"{source[:3]}{len(entries) + 1:03d}"
-        if not any(e["filename"] == file.filename for e in entries):
-            entries.append({"id": doc_id, "filename": file.filename, "title": Path(file.filename).stem})
+        if not any(e["filename"] == fname for e in entries):
+            entries.append({"id": doc_id, "filename": fname, "title": Path(fname).stem})
             manifest.write_text(json.dumps(entries, indent=1))
         job = f"job_{int(time.time() * 1000) % 10_000_000}"
-        ingest_jobs[job] = {"file": file.filename, "source": source, "stage": "queued", "pct": 0}
+        ingest_jobs[job] = {"file": fname, "source": source, "stage": "queued", "pct": 0}
         threading.Thread(target=_run_ingest, args=(job,), daemon=True).start()
-        return {"job": job, "doc_id": doc_id, "bytes": dest.stat().st_size}
+        return {"job": job, "doc_id": doc_id, "bytes": size}
 
     def _run_ingest(job: str):
         from ..ingest.pipeline import ingest_dataset
@@ -167,7 +212,8 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                 j.update(stage=stage, pct=pct)
             ingest_dataset(j["source"], cfg)  # idempotent: only new docs parse
             j.update(stage="dense", pct=85)
-            _index_dataset(cfg, j["source"])
+            with _INFER_LOCK:
+                _index_dataset(cfg, j["source"])
             j.update(stage="done", pct=100)
         except Exception as e:
             j.update(stage="error", pct=100, error=str(e)[:300])
@@ -200,13 +246,14 @@ def create_app(cfg: Config | None = None) -> FastAPI:
                     mode = "single" if route(body.question, cfg) == "single_shot" else "agentic"
                     q.put(("route", {"mode": mode}))
                 try:
-                    if mode == "single":
-                        res = answer_single_shot(body.question, scope, cfg, r)
-                    else:
-                        res = answer_agentic(
-                            body.question, scope, cfg, r,
-                            on_event=lambda kind, p: q.put((kind, p)),
-                        )
+                    with _INFER_LOCK:  # concurrent sessions must not race on the MPS device
+                        if mode == "single":
+                            res = answer_single_shot(body.question, scope, cfg, r)
+                        else:
+                            res = answer_agentic(
+                                body.question, scope, cfg, r,
+                                on_event=lambda kind, p: q.put((kind, p)),
+                            )
                     result.update(res)
                     q.put(("answer", {"answer": res["answer"],
                                       "tool_calls": res.get("tool_calls", 0),
