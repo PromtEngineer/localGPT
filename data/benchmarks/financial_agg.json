@@ -1,0 +1,550 @@
+{
+ "dataset": "financial_docs",
+ "benchmark": "financial_agg",
+ "created": "2026-07-17",
+ "purpose": "corpus-level aggregate questions \u2014 graph RAG decision gate (docs/graphrag_research.md)",
+ "questions": [
+  {
+   "id": "fin_agg_q01",
+   "question": "Across all companies represented in this document collection, which company (or companies) reported a year-over-year DECLINE in total revenue for the latest full fiscal year covered by its documents in the collection? Name every such company.",
+   "answer": "Intel is the only one. Intel's total net revenue was $53,101M in fiscal 2024 vs $54,228M in fiscal 2023, a decline of about 2% (fin011, p74). Every other company in the collection grew total revenue in its latest full fiscal year: NVIDIA +114% (fin002 p38: $130,497M vs $60,922M), AMD +14% (fin003 p51: $25,785M vs $22,680M; corroborated fin024 p15), Alphabet +14% (fin007 p65: $350,018M vs $307,394M), Apple +2% (fin008 p32: $391,035M vs $383,285M), Amazon +11% (fin009 p49: $637,959M vs $574,785M), Meta +22% (fin010 p88: $164,501M vs $134,902M), Netflix +16% (fin012 p12: $39,001.0M vs $33,723.3M), Uber +18% (fin013 p22: $43,978M vs $37,281M), Airbnb +12% (fin015 p24: $11,102M vs $9,917M), Coinbase +111% (fin016 p4/p20: $6,564.0M vs $3,108.4M), Tesla +1% (fin018 p58: $97,690M vs $96,773M; corroborated fin004 p5), Qualcomm +9% (fin019 p61: $38,962M vs $35,820M), Spotify +18% (fin020 p35: EUR 15,673M vs EUR 13,247M), Roku +18% (fin021 p8: $4,112.9M vs $3,484.6M), Pinterest +19% (fin022 p130: $3,646.2M vs $3,055.1M). Accept also: answers naming only Intel, with or without the exact figures. Do NOT accept Tesla (its Q1-2025 deck fin014 shows a quarterly decline of -9%, but its latest FULL fiscal year, FY2024, grew ~1%). Evidence docs: fin002, fin003, fin004, fin007, fin008, fin009, fin010, fin011, fin012, fin013, fin014, fin015, fin016, fin018, fin019, fin020, fin021, fin022, fin024.",
+   "answer_type": "entity_set",
+   "difficulty": "aggregate",
+   "hop_type": "corpus_aggregate",
+   "hops": [
+    {
+     "doc_id": "fin002",
+     "pages": [
+      38
+     ]
+    },
+    {
+     "doc_id": "fin003",
+     "pages": [
+      51
+     ]
+    },
+    {
+     "doc_id": "fin004",
+     "pages": [
+      5
+     ]
+    },
+    {
+     "doc_id": "fin007",
+     "pages": [
+      65
+     ]
+    },
+    {
+     "doc_id": "fin008",
+     "pages": [
+      32
+     ]
+    },
+    {
+     "doc_id": "fin009",
+     "pages": [
+      49
+     ]
+    },
+    {
+     "doc_id": "fin010",
+     "pages": [
+      88
+     ]
+    },
+    {
+     "doc_id": "fin011",
+     "pages": [
+      74
+     ]
+    },
+    {
+     "doc_id": "fin012",
+     "pages": [
+      12
+     ]
+    },
+    {
+     "doc_id": "fin013",
+     "pages": [
+      22
+     ]
+    },
+    {
+     "doc_id": "fin014",
+     "pages": [
+      4
+     ]
+    },
+    {
+     "doc_id": "fin015",
+     "pages": [
+      24
+     ]
+    },
+    {
+     "doc_id": "fin016",
+     "pages": [
+      4,
+      20
+     ]
+    },
+    {
+     "doc_id": "fin018",
+     "pages": [
+      58
+     ]
+    },
+    {
+     "doc_id": "fin019",
+     "pages": [
+      61
+     ]
+    },
+    {
+     "doc_id": "fin020",
+     "pages": [
+      35
+     ]
+    },
+    {
+     "doc_id": "fin021",
+     "pages": [
+      8
+     ]
+    },
+    {
+     "doc_id": "fin022",
+     "pages": [
+      130
+     ]
+    },
+    {
+     "doc_id": "fin024",
+     "pages": [
+      15
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fin_agg_q02",
+   "question": "This document collection contains annual filings (Form 10-K or annual report) for ten companies. How many of those ten companies have a fiscal year that ended on a date OTHER than December 31, 2024, and which companies are they? Give the exact fiscal year-end date for each.",
+   "answer": "Five companies: NVIDIA (fiscal year ended January 26, 2025; fin002 p1), AMD (December 28, 2024; fin003 p1), Apple (September 28, 2024; fin008 p1), Intel (December 28, 2024; fin011 p1), and Qualcomm (September 29, 2024; fin019 p1). The other five filers all have fiscal years ended December 31, 2024: Alphabet (fin007 p1), Amazon (fin009 p13), Meta (fin010 p1), Tesla (fin018 p1), Pinterest (fin022 p77). The count MUST be 5 and must include AMD and Intel (both use 52/53-week fiscal years ending the last Saturday of December, i.e. December 28, 2024 -- a common miss). Accept also: minor date-format variations. Do NOT accept a count of 3 (NVIDIA/Apple/Qualcomm only). Evidence docs: fin002, fin003, fin007, fin008, fin009, fin010, fin011, fin018, fin019, fin022.",
+   "answer_type": "count_and_set",
+   "difficulty": "aggregate",
+   "hop_type": "corpus_aggregate",
+   "hops": [
+    {
+     "doc_id": "fin002",
+     "pages": [
+      1
+     ]
+    },
+    {
+     "doc_id": "fin003",
+     "pages": [
+      1
+     ]
+    },
+    {
+     "doc_id": "fin007",
+     "pages": [
+      1
+     ]
+    },
+    {
+     "doc_id": "fin008",
+     "pages": [
+      1
+     ]
+    },
+    {
+     "doc_id": "fin009",
+     "pages": [
+      13
+     ]
+    },
+    {
+     "doc_id": "fin010",
+     "pages": [
+      1
+     ]
+    },
+    {
+     "doc_id": "fin011",
+     "pages": [
+      1
+     ]
+    },
+    {
+     "doc_id": "fin018",
+     "pages": [
+      1
+     ]
+    },
+    {
+     "doc_id": "fin019",
+     "pages": [
+      1
+     ]
+    },
+    {
+     "doc_id": "fin022",
+     "pages": [
+      77
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fin_agg_q03",
+   "question": "Across all companies represented in this document collection, which company reported the HIGHEST year-over-year total revenue growth rate for the latest full fiscal year covered by its documents, and roughly what was that growth rate? Name the runner-up as well.",
+   "answer": "NVIDIA had the highest growth: fiscal 2025 revenue of $130,497M vs $60,922M in fiscal 2024, 'Up 114%' (fin002 p38). The runner-up is Coinbase, whose 2024 total revenue of $6,564.0M vs $3,108.4M in 2023 was 'up 111% Y/Y' (fin016 p4, p20) -- close but below NVIDIA. All other companies grew far less: Meta +22% (fin010 p88), Pinterest +19% (fin022 p130), Spotify +18% (fin020 p35), Roku +18% (fin021 p8), Uber +18% (fin013 p22), Netflix +16% (fin012 p12), Alphabet +14% (fin007 p65), AMD +14% (fin003 p51, fin024 p15), Airbnb +12% (fin015 p24), Amazon +11% (fin009 p49), Qualcomm +9% (fin019 p61), Apple +2% (fin008 p32), Tesla +1% (fin018 p58, fin004 p5), Intel -2% (fin011 p74). Accept also: growth stated as ~114% / 114.2% / 'more than doubled, +114%' for NVIDIA; runner-up Coinbase at ~111%. The answer must name NVIDIA first; grading fails if Coinbase is given as the highest. Evidence docs: fin002, fin003, fin004, fin007, fin008, fin009, fin010, fin011, fin012, fin013, fin015, fin016, fin018, fin019, fin020, fin021, fin022, fin024.",
+   "answer_type": "superlative_entity",
+   "difficulty": "aggregate",
+   "hop_type": "corpus_aggregate",
+   "hops": [
+    {
+     "doc_id": "fin002",
+     "pages": [
+      38
+     ]
+    },
+    {
+     "doc_id": "fin003",
+     "pages": [
+      51
+     ]
+    },
+    {
+     "doc_id": "fin004",
+     "pages": [
+      5
+     ]
+    },
+    {
+     "doc_id": "fin007",
+     "pages": [
+      65
+     ]
+    },
+    {
+     "doc_id": "fin008",
+     "pages": [
+      32
+     ]
+    },
+    {
+     "doc_id": "fin009",
+     "pages": [
+      49
+     ]
+    },
+    {
+     "doc_id": "fin010",
+     "pages": [
+      88
+     ]
+    },
+    {
+     "doc_id": "fin011",
+     "pages": [
+      74
+     ]
+    },
+    {
+     "doc_id": "fin012",
+     "pages": [
+      12
+     ]
+    },
+    {
+     "doc_id": "fin013",
+     "pages": [
+      22
+     ]
+    },
+    {
+     "doc_id": "fin015",
+     "pages": [
+      24
+     ]
+    },
+    {
+     "doc_id": "fin016",
+     "pages": [
+      4,
+      20
+     ]
+    },
+    {
+     "doc_id": "fin018",
+     "pages": [
+      58
+     ]
+    },
+    {
+     "doc_id": "fin019",
+     "pages": [
+      61
+     ]
+    },
+    {
+     "doc_id": "fin020",
+     "pages": [
+      35
+     ]
+    },
+    {
+     "doc_id": "fin021",
+     "pages": [
+      8
+     ]
+    },
+    {
+     "doc_id": "fin022",
+     "pages": [
+      130
+     ]
+    },
+    {
+     "doc_id": "fin024",
+     "pages": [
+      15
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fin_agg_q04",
+   "question": "This document collection contains annual filings for four semiconductor companies: NVIDIA, AMD, Intel, and Qualcomm. What is the combined total revenue of these four companies for the latest fiscal year covered by each company's annual filing, in US dollars?",
+   "answer": "Approximately $248.3 billion. Components: NVIDIA fiscal 2025 (ended Jan 26, 2025) revenue $130,497M (fin002 p38, p52) + AMD fiscal 2024 (ended Dec 28, 2024) net revenue $25,785M (fin003 p50-51; corroborated fin024 p15/p29) + Intel fiscal 2024 (ended Dec 28, 2024) net revenue $53,101M (fin011 p74, p25) + Qualcomm fiscal 2024 (ended Sep 29, 2024) total revenues $38,962M (fin019 p61) = $248,345M. Accept also: $248B-$249B, '$248.3 billion', 'about $248 billion', or the exact sum $248,345 million; also accept answers that note the fiscal periods are not aligned (NVIDIA ends Jan-2025, Qualcomm ends Sep-2024) as long as the sum uses each filing's latest fiscal year. Do NOT accept sums that swap in NVIDIA's fiscal 2024 ($60,922M). Evidence docs: fin002, fin003, fin011, fin019, fin024.",
+   "answer_type": "number",
+   "difficulty": "aggregate",
+   "hop_type": "corpus_aggregate",
+   "hops": [
+    {
+     "doc_id": "fin002",
+     "pages": [
+      38,
+      52
+     ]
+    },
+    {
+     "doc_id": "fin003",
+     "pages": [
+      50,
+      51
+     ]
+    },
+    {
+     "doc_id": "fin011",
+     "pages": [
+      25,
+      74
+     ]
+    },
+    {
+     "doc_id": "fin019",
+     "pages": [
+      61
+     ]
+    },
+    {
+     "doc_id": "fin024",
+     "pages": [
+      15,
+      29
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fin_agg_q05",
+   "question": "Which documents in this collection, other than NVIDIA's own Form 10-K, mention NVIDIA by name (including the spellings 'Nvidia' or the ticker 'NVDA')? Identify each document.",
+   "answer": "Five documents: (1) AMD's Form 10-K fin003 (competition discussion, e.g. p12: 'we compete primarily against Intel Corporation (Intel) and NVIDIA Corporation (NVIDIA)'; also p17, p19); (2) Intel's 2024 Annual Report/10-K fin011 (p17: 'providers of GPU systems such as NVIDIA'; also p33, p108); (3) Qualcomm's Form 10-K fin019 (p12 and p31: competitor lists including 'Nvidia'); (4) the BIS Quarterly Review March 2025 fin023 (p17: footnote defining big-tech stocks as 'Alphabet, Amazon, Apple, Meta, Microsoft, Nvidia and Tesla'); (5) AMD's Q4/FY-2024 earnings slides fin024 (p2 risk-factor language: 'Nvidia's dominance in the graphics processing unit market'). No other document names NVIDIA or NVDA (verified by exhaustive grep of all 24 docs). Note: Tesla's Q4-2024 deck fin004 p10 mentions a '~50k H100 training cluster' -- an NVIDIA product -- but never names NVIDIA, so it does not count; do not penalize an answer for mentioning this as a borderline case, but the core set must be exactly {fin003 (AMD 10-K), fin011 (Intel 10-K/annual report), fin019 (Qualcomm 10-K), fin023 (BIS Quarterly Review Mar-2025), fin024 (AMD Q4-2024 earnings slides)}. Accept document titles or doc ids. Evidence docs: fin003, fin011, fin019, fin023, fin024 (anchor: fin002).",
+   "answer_type": "doc_set",
+   "difficulty": "aggregate",
+   "hop_type": "corpus_aggregate",
+   "hops": [
+    {
+     "doc_id": "fin002",
+     "pages": [
+      1
+     ]
+    },
+    {
+     "doc_id": "fin003",
+     "pages": [
+      12,
+      17,
+      19
+     ]
+    },
+    {
+     "doc_id": "fin011",
+     "pages": [
+      17,
+      33,
+      108
+     ]
+    },
+    {
+     "doc_id": "fin019",
+     "pages": [
+      12,
+      31
+     ]
+    },
+    {
+     "doc_id": "fin023",
+     "pages": [
+      17
+     ]
+    },
+    {
+     "doc_id": "fin024",
+     "pages": [
+      2
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fin_agg_q06",
+   "question": "Among the ten companies with an annual filing (Form 10-K or annual report) in this document collection, which ones paid cash dividends on their common stock during the latest fiscal year covered by that filing? Name every dividend payer.",
+   "answer": "Six companies paid cash dividends: (1) NVIDIA -- $834M paid in fiscal 2025 (fin002 p34, p78); (2) Alphabet -- initiated its dividend program in 2024, $7,363M total dividends paid, $0.60/share declared (fin007 p24, p84, p56); (3) Apple -- $15.2B paid in fiscal 2024, quarterly dividend raised to $0.25/share (fin008 p29, p36); (4) Meta -- initiated dividends Feb 2024, four quarterly dividends totaling $2.00/share, $5.07B paid (fin010 p61, p79); (5) Intel -- paid $1,599M of dividends during 2024 before SUSPENDING the dividend starting Q4 2024 (fin011 p62, p8); (6) Qualcomm -- $3,687M dividends paid in fiscal 2024 (fin019 p63, p47). The four non-payers: AMD ('does not expect to pay dividends in the near future', fin003 p4, p81), Amazon (no dividend payments; financing activities show none, fin009 p48), Tesla ('never declared or paid cash dividends', fin018 p33), Pinterest ('never paid or declared dividends', fin022 p119, p160). Accept also: answers that flag Intel's Q4-2024 suspension -- Intel still counts as a payer because it paid dividends during fiscal 2024. Grading fails if Intel is omitted or if AMD/Amazon/Tesla/Pinterest are included. Evidence docs: fin002, fin003, fin007, fin008, fin009, fin010, fin011, fin018, fin019, fin022.",
+   "answer_type": "entity_set",
+   "difficulty": "aggregate",
+   "hop_type": "corpus_aggregate",
+   "hops": [
+    {
+     "doc_id": "fin002",
+     "pages": [
+      34,
+      78
+     ]
+    },
+    {
+     "doc_id": "fin003",
+     "pages": [
+      4,
+      81
+     ]
+    },
+    {
+     "doc_id": "fin007",
+     "pages": [
+      24,
+      56,
+      84
+     ]
+    },
+    {
+     "doc_id": "fin008",
+     "pages": [
+      29,
+      36
+     ]
+    },
+    {
+     "doc_id": "fin009",
+     "pages": [
+      48
+     ]
+    },
+    {
+     "doc_id": "fin010",
+     "pages": [
+      61,
+      79
+     ]
+    },
+    {
+     "doc_id": "fin011",
+     "pages": [
+      8,
+      62
+     ]
+    },
+    {
+     "doc_id": "fin018",
+     "pages": [
+      33
+     ]
+    },
+    {
+     "doc_id": "fin019",
+     "pages": [
+      47,
+      63
+     ]
+    },
+    {
+     "doc_id": "fin022",
+     "pages": [
+      119,
+      160
+     ]
+    }
+   ]
+  },
+  {
+   "id": "fin_agg_q07",
+   "question": "This document collection contains five official-sector macroeconomic reports: the Federal Reserve's Monetary Policy Report (June 2025), the BIS Annual Economic Report 2025, the Federal Reserve's Financial Stability Report (April 2025), the World Bank's Global Economic Prospects (June 2025), and the BIS Quarterly Review (March 2025). What risk themes recur across these reports? Name the major themes that appear in most or all of the five reports.",
+   "answer": "RUBRIC (thematic synthesis): the answer must name at least 3 of the following 5 recurring themes, each of which is discussed in at least 4 of the 5 reports: (1) TARIFFS / TRADE-POLICY TENSIONS -- present in all 5 (fin001 p11 'concerns about the effects of higher tariffs on inflation and employment'; fin005 p15 Box A on tariffs; fin006 p13 'announcements about changes to U.S. trade policy sparked a wave of price declines'; fin017 pervasive, e.g. p17, 82 pages match; fin023 p11 'key policy announcements, including on tariffs'). (2) ELEVATED ECONOMIC/POLICY UNCERTAINTY -- present in all 5 (fin001 p44; fin005 p12 'Elevated trade and policy uncertainty could weigh on economic activity'; fin006 p11; fin017 p19 'heightened policy uncertainty'; fin023 p11 'global policy uncertainty'). (3) FISCAL DEFICITS / RISING GOVERNMENT DEBT -- present in all 5 (fin001 p35, p77; fin005 p23 'Fiscal positions and government debt'; fin006 p11 'U.S. fiscal debt sustainability'; fin017 p18 'fiscal deficits ... highest level of this century'; fin023 p14 'higher compensation to absorb government debt supply'). (4) INFLATION PRESSURES/RISKS -- present in all 5 (fin001 32 pages; fin005 p22 Box C on inflation expectations; fin006 p11 'persistent inflation'; fin017 77 pages; fin023 28 pages). (5) GEOPOLITICAL TENSIONS -- present in 4 of 5 (fin005 p13; fin006 p55 Middle East / Russia-Ukraine; fin017 p130 'Rising geopolitical tensions'; fin023 p20; not in fin001). Also acceptable as supporting themes (not required): stretched asset valuations / market volatility (fin001 p44, fin006 12 pages, fin023), dollar depreciation (fin001, fin005). Grade PASS if at least 3 of the 5 numbered themes are clearly named; FAIL otherwise. Evidence docs: fin001, fin005, fin006, fin017, fin023.",
+   "answer_type": "rubric",
+   "difficulty": "aggregate",
+   "hop_type": "corpus_aggregate",
+   "hops": [
+    {
+     "doc_id": "fin001",
+     "pages": [
+      11,
+      35,
+      44
+     ]
+    },
+    {
+     "doc_id": "fin005",
+     "pages": [
+      12,
+      13,
+      15,
+      22,
+      23
+     ]
+    },
+    {
+     "doc_id": "fin006",
+     "pages": [
+      11,
+      13,
+      55
+     ]
+    },
+    {
+     "doc_id": "fin017",
+     "pages": [
+      17,
+      18,
+      19,
+      130
+     ]
+    },
+    {
+     "doc_id": "fin023",
+     "pages": [
+      11,
+      14,
+      17,
+      20
+     ]
+    }
+   ]
+  }
+ ]
+}

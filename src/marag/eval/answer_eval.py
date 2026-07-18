@@ -45,6 +45,9 @@ def eval_answers(
 ) -> dict:
     bench = load_benchmark(dataset, cfg)
     questions = bench["questions"][:limit] if limit else bench["questions"]
+    # a benchmark may target an existing corpus under its own name (e.g. financial_agg
+    # runs aggregate questions against financial_docs) — retrieve from bench["dataset"]
+    corpus = bench.get("dataset", dataset)
     retriever = Retriever(cfg)
     # judge is the measuring instrument — pin it via models.judge so scores stay
     # comparable when the system's utility model changes (e.g. single-LLM configs)
@@ -57,9 +60,9 @@ def eval_answers(
         t0 = time.time()
         try:
             if mode == "single_shot":
-                result = gen(q["question"], dataset, cfg, retriever)
+                result = gen(q["question"], corpus, cfg, retriever)
             else:
-                result = gen(q["question"], dataset, cfg, retriever)
+                result = gen(q["question"], corpus, cfg, retriever)
         except Exception as e:
             rows.append({"id": q["id"], "error": str(e), "correct": False})
             console.print(f"[red]✗ {q['id']} generation failed: {e}[/]")
