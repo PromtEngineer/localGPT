@@ -99,3 +99,35 @@ Phase 0 (eval harness) ──► Phase 1 (reranker / embedder / parser A/Bs) ─
 Phase 0 blocks everything. Phases 1 and 2 can interleave per-item, but 1.1/1.2
 should conclude before any re-index-requiring release. Phase 3.1 can be drafted
 in parallel at any time.
+
+## Phase 4 — Ideas adopted from agentic-file-search (planned 2026-08-09, not implemented)
+
+Source: [PromtEngineer/agentic-file-search](https://github.com/PromtEngineer/agentic-file-search)
+(FsExplorer lineage — an agentic filesystem QA agent: three-phase scan/dive/backtrack,
+Docling parsing, grep/glob tools, DuckDB+VSS indexed search with a metadata-filter DSL,
+exploration traces, per-query token/cost tracking). The evidence lens for every item:
+escalate-don't-pre-decide (PEA-CAE), retriever quality dominates agency
+(BrowseComp-Plus), and filesystem agents win small corpora but lose to ranked
+retrieval at scale with ~39x token cost (BM25-wins-at-scale) — so we adopt its
+*escalation mechanisms*, not its loop.
+
+| # | Item | From their design | Our incorporation | Evidence fit |
+|---|------|-------------------|-------------------|--------------|
+| 4.1 | **Full-document escalation** | `parse_file` / `get_document` deep-read tools | When the evidence-sufficiency retry (2.1) still lands weak, reassemble the top-cited document IN ORDER from its chunks (chunk_index exists in metadata) and hand it to synthesis, token-capped, one document max. New RAG API helper + agent step; SSE event `document_escalation`. | PEA-CAE escalation; DOS-RAG document-order finding; bounded, not a loop |
+| 4.2 | **Cross-reference hop** | Phase-3 backtracking on "See Exhibit B" | Index-time regex extraction of intra-corpus references (exhibit/section/filename mentions) into chunk metadata; query-time one-hop pull of the referenced doc's overview + top chunks when a top-ranked chunk carries one. Capped at one hop, no LLM in the hop. | Fixes the real "cross-references are invisible to embeddings" gap without unbounded agency |
+| 4.3 | **Overview prefilter ("peripheral vision")** | Phase-1 parallel scan + RELEVANT/MAYBE/SKIP triage | We already build per-doc overviews; embed them once and use overview-vs-query similarity to boost/restrict chunk retrieval to top documents on multi-document indexes. No per-query LLM cost (their scan phase is an LLM call per document — the measured 39x failure mode). | Jason Liu facets/peripheral-vision; avoids their linear-cost scan |
+| 4.4 | **Metadata filter DSL / self-query** | `semantic_search(filters="field=value, field in (a,b)")` on DuckDB | Same surface on LanceDB `where` clauses: accept `filters` on /chat + /chat/stream, wire to chunk metadata (document name, page, date). LLM filter-extraction later — small local models measured ~0.999 F1 on easy/medium filter translation. | The one query-planning technique local models already nail (component-map §6.4) |
+| 4.5 | **Per-query token/cost tracking** | TokenTracker + cost summary per query | Surface Ollama's prompt_eval_count/eval_count per stage in the SSE `complete` event and UI (local cost = time + watts, still worth showing). | Their nicest UX idea; zero risk |
+| 4.6 | **Ephemeral "ask a folder" mode** | Index-free filesystem QA | `python -m rag_system.main ask <folder> "<q>"`: build a temp in-memory/throwaway index (fast profile, no enrichment), answer, delete. Same pipeline, no agent loop. | FS-agents win small corpora — but an ephemeral *index* beats an ephemeral *agent* on our own retriever-dominance evidence |
+
+**Deliberately NOT adopted** (goes in design_rationale §13 when implemented): the
+LLM-per-document scan phase (linear cost in corpus size — the exact pattern
+BM25-wins-at-scale measured at ~39x tokens), the free-form ReAct exploration loop
+(search volume correlates weakly with quality; silent hand-off failures), cloud
+Gemini (violates the local/privacy premise), llama-index-workflows + DuckDB
+(duplicate our framework-free stack and LanceDB).
+
+Sequencing: 4.5 and 4.4 are independent quick wins; 4.1 depends on 2.1's signal
+(shipped); 4.2/4.3 are index-format-adjacent and should share a re-index window;
+4.6 is CLI-only. All gated on the Phase 0 harness like everything else — 4.2 and
+4.3 need multi-document gold queries with cross-references added to eval/goldset.
