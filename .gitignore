@@ -72,7 +72,17 @@ backend/chroma_db/**
 rag_system/documents/
 *.pdf
 
-# Ensure docker.env remains tracked
+# Ensure docker.env and .env.example remain tracked
 !docker.env
+!.env.example
 !backend/chat_data.db
 
+# Phase 0 evaluation harness (eval/) — rebuildable artefacts only.
+# The corpora, gold set, scripts and BASELINE.md are tracked.
+eval/.eval_indexes/
+eval/results/
+!eval/corpora/*.pdf
+
+
+# local virtualenv
+.venv/

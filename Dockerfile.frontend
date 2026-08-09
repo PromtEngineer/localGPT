@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 # Set working directory
 WORKDIR /app
@@ -12,20 +12,24 @@ COPY src/ ./src/
 COPY public/ ./public/
 COPY next.config.ts ./
 COPY tsconfig.json ./
-COPY tailwind.config.js ./
 COPY postcss.config.mjs ./
 COPY eslint.config.mjs ./
 
-# Build the application (skip linting for Docker)
-ENV NEXT_LINT=false
+# NEXT_PUBLIC_* values are inlined by `next build`, so they must be set before it runs
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ARG NEXT_PUBLIC_RAG_API_URL=http://localhost:8001
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_RAG_API_URL=$NEXT_PUBLIC_RAG_API_URL
+
+# Build the application
 RUN npm run build
 
 # Expose port
 EXPOSE 3000
 
-# Health check
+# Health check (node:20-alpine ships busybox wget, not curl)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:3000 || exit 1
+    CMD wget -qO- http://localhost:3000 >/dev/null 2>&1 || exit 1
 
 # Start the application
-CMD ["npm", "start"] 
+CMD ["npm", "start"]

@@ -18,6 +18,8 @@ Features:
 
 Usage:
     python run_system.py [--mode dev|prod] [--logs-only] [--no-frontend]
+    python run_system.py --health
+    python run_system.py --stop
 """
 
 import subprocess
@@ -36,6 +38,10 @@ import logging
 from dataclasses import dataclass
 import psutil
 
+GENERATION_MODEL = os.getenv("GENERATION_MODEL", "qwen3.5:9b")
+ENRICHMENT_MODEL = os.getenv("ENRICHMENT_MODEL", "qwen3.5:4b")
+
+
 @dataclass
 class ServiceConfig:
     name: str
@@ -46,6 +52,7 @@ class ServiceConfig:
     health_check_path: str = "/health"
     startup_delay: int = 2
     required: bool = True
+    build_command: Optional[List[str]] = None
 
 class ColoredFormatter(logging.Formatter):
     """Custom formatter with colors for different log levels and services."""
@@ -89,11 +96,12 @@ class ServiceManager:
         self.mode = mode
         self.logs_dir = Path(logs_dir)
         self.logs_dir.mkdir(exist_ok=True)
-        
+        self.pidfile = self.logs_dir / 'run_system.pid'
+
         self.processes: Dict[str, subprocess.Popen] = {}
         self.log_threads: Dict[str, threading.Thread] = {}
         self.running = False
-        
+
         # Setup logging
         self.setup_logging()
         
@@ -129,6 +137,7 @@ class ServiceManager:
                 name='ollama',
                 command=['ollama', 'serve'],
                 port=11434,
+                health_check_path='/api/tags',
                 startup_delay=5,
                 required=True
             ),
@@ -150,19 +159,21 @@ class ServiceManager:
                 name='frontend',
                 command=['npm', 'run', 'dev' if self.mode == 'dev' else 'start'],
                 port=3000,
+                health_check_path='/',
                 startup_delay=5,
                 required=False  # Optional in case Node.js not available
             )
         }
-        
+
         # Production mode adjustments
         if self.mode == 'prod':
-            # Use production build for frontend
+            # `next start` needs an existing .next build, so build before starting
             base_configs['frontend'].command = ['npm', 'run', 'start']
+            base_configs['frontend'].build_command = ['npm', 'run', 'build']
             # Add production environment variables
             base_configs['rag-api'].env = {'NODE_ENV': 'production'}
             base_configs['backend'].env = {'NODE_ENV': 'production'}
-        
+
         return base_configs
     
     def _signal_handler(self, signum, frame):
@@ -223,8 +234,8 @@ class ServiceManager:
         """Ensure required Ollama models are available."""
         self.logger.info("📥 Checking required models...")
         
-        required_models = ['qwen3:8b', 'qwen3:0.6b']
-        
+        required_models = [GENERATION_MODEL, ENRICHMENT_MODEL]
+
         try:
             # Get list of installed models
             result = subprocess.run(['ollama', 'list'], 
@@ -256,14 +267,17 @@ class ServiceManager:
             self.logger.warning(f"⚠️  Port {config.port} already in use, skipping {service_name}")
             return not config.required
         
+        if config.build_command and not self._run_build(service_name, config):
+            return False
+
         self.logger.info(f"🔄 Starting {service_name} on port {config.port}...")
-        
+
         try:
             # Setup environment
             env = os.environ.copy()
             if config.env:
                 env.update(config.env)
-            
+
             # Start process
             process = subprocess.Popen(
                 config.command,
@@ -293,15 +307,56 @@ class ServiceManager:
             # Check if process is still running
             if process.poll() is None:
                 self.logger.info(f"✅ {service_name} started successfully (PID: {process.pid})")
+                self._write_pidfile()
                 return True
             else:
                 self.logger.error(f"❌ {service_name} failed to start")
+                del self.processes[service_name]
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"❌ Failed to start {service_name}: {e}")
+            self.processes.pop(service_name, None)
             return False
-    
+
+    def _run_build(self, service_name: str, config: ServiceConfig) -> bool:
+        """Run a service's build step before starting it (prod frontend needs `next build`)."""
+        self.logger.info(f"🏗️  Building {service_name}: {' '.join(config.build_command)}")
+        try:
+            result = subprocess.run(config.build_command, cwd=config.cwd)
+        except FileNotFoundError as e:
+            self.logger.error(f"❌ Build command for {service_name} not found: {e}")
+            return False
+        if result.returncode != 0:
+            self.logger.error(f"❌ Build failed for {service_name} (exit {result.returncode})")
+            return False
+        self.logger.info(f"✅ {service_name} build complete")
+        return True
+
+    def _write_pidfile(self):
+        """Persist launcher + child PIDs so `--stop` can find them in another shell."""
+        data = {
+            'launcher': os.getpid(),
+            'services': {name: proc.pid for name, proc in self.processes.items()},
+        }
+        try:
+            self.pidfile.write_text(json.dumps(data, indent=2))
+        except OSError as e:
+            self.logger.warning(f"⚠️  Could not write pidfile {self.pidfile}: {e}")
+
+    def _read_pidfile(self) -> Dict:
+        try:
+            return json.loads(self.pidfile.read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def _clear_pidfile(self):
+        try:
+            self.pidfile.unlink()
+        except OSError:
+            pass
+
+
     def _monitor_service_logs(self, service_name: str, process: subprocess.Popen):
         """Monitor service logs and forward to main logger."""
         service_logger = logging.getLogger(service_name)
@@ -335,14 +390,43 @@ class ServiceManager:
             self.logger.error(f"Error monitoring {service_name} logs: {e}")
     
     def health_check(self, service_name: str, config: ServiceConfig) -> bool:
-        """Perform health check on a service."""
+        """Perform an HTTP health check against a service."""
+        url = f"http://localhost:{config.port}{config.health_check_path}"
         try:
-            url = f"http://localhost:{config.port}{config.health_check_path}"
             response = requests.get(url, timeout=5)
             return response.status_code == 200
-        except:
+        except requests.exceptions.RequestException:
             return False
-    
+
+    def print_health_report(self) -> bool:
+        """Run a real health check per service and report pass/fail."""
+        self.logger.info("🏥 Health check:")
+        all_required_healthy = True
+
+        for service_name, config in self.services.items():
+            url = f"http://localhost:{config.port}{config.health_check_path}"
+            if not self.is_port_in_use(config.port):
+                status = "❌ Not running"
+                healthy = False
+            elif self.health_check(service_name, config):
+                status = "✅ Healthy"
+                healthy = True
+            else:
+                status = "⚠️  Port open, health check failed"
+                healthy = False
+
+            self.logger.info(f"   • {service_name.capitalize():<10}: {status:<32} {url}")
+            if config.required and not healthy:
+                all_required_healthy = False
+
+        self.logger.info("")
+        if all_required_healthy:
+            self.logger.info("✅ All required services are healthy")
+        else:
+            self.logger.error("❌ One or more required services are unhealthy")
+        return all_required_healthy
+
+
     def start_all(self, skip_frontend: bool = False) -> bool:
         """Start all services in order."""
         self.logger.info("🚀 Starting RAG System Components...")
@@ -421,24 +505,112 @@ class ServiceManager:
         self.logger.info("🌐 Access your RAG system at: http://localhost:3000")
         self.logger.info("")
         self.logger.info("📋 Useful commands:")
-        self.logger.info("   • Stop system:  Ctrl+C")
+        self.logger.info("   • Stop system:  Ctrl+C  (or: python run_system.py --stop)")
         self.logger.info("   • Check logs:   tail -f logs/*.log")
         self.logger.info("   • Health check: python run_system.py --health")
-    
+
+    def stop_all(self) -> bool:
+        """Stop services recorded in the pidfile (works from a separate shell)."""
+        record = self._read_pidfile()
+        if not record:
+            self.logger.warning(f"⚠️  No pidfile at {self.pidfile} – nothing to stop.")
+            return False
+
+        stopped = 0
+
+        # Stop the launcher first so its monitor loop cannot restart anything
+        launcher_pid = record.get('launcher')
+        if launcher_pid and launcher_pid != os.getpid():
+            self._terminate_pid('launcher', launcher_pid)
+
+        for service_name, pid in (record.get('services') or {}).items():
+            if self._terminate_pid(service_name, pid):
+                stopped += 1
+
+        self._clear_pidfile()
+        self.logger.info(f"✅ Stopped {stopped} service(s)")
+        return stopped > 0
+
+    def _terminate_pid(self, label: str, pid: int) -> bool:
+        """Terminate a PID, escalating to kill, and reap its children."""
+        try:
+            process = psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            self.logger.info(f"   • {label}: already stopped (pid {pid})")
+            return False
+        except psutil.Error as e:
+            self.logger.warning(f"⚠️  Could not inspect {label} (pid {pid}): {e}")
+            return False
+
+        targets = [process]
+        try:
+            targets.extend(process.children(recursive=True))
+        except psutil.Error:
+            pass
+
+        for target in reversed(targets):
+            try:
+                target.terminate()
+            except psutil.Error:
+                pass
+
+        _, alive = psutil.wait_procs(targets, timeout=10)
+        for target in alive:
+            try:
+                target.kill()
+            except psutil.Error:
+                pass
+
+        self.logger.info(f"   • {label}: stopped (pid {pid})")
+        return True
+
+    def tail_logs(self):
+        """Follow every logs/*.log file, like `tail -f logs/*.log`."""
+        log_files = sorted(self.logs_dir.glob('*.log'))
+        if not log_files:
+            self.logger.warning(f"⚠️  No log files in {self.logs_dir}/ – start the system first.")
+            return
+
+        self.logger.info(f"📋 Following {len(log_files)} log file(s): {', '.join(f.name for f in log_files)}")
+        handles = {}
+        try:
+            for path in log_files:
+                handle = path.open('r', errors='replace')
+                handle.seek(0, os.SEEK_END)
+                handles[path.stem] = handle
+
+            while True:
+                emitted = False
+                for name, handle in handles.items():
+                    line = handle.readline()
+                    while line:
+                        print(f"[{name.upper()}] {line.rstrip()}")
+                        emitted = True
+                        line = handle.readline()
+                if not emitted:
+                    time.sleep(0.5)
+        except KeyboardInterrupt:
+            self.logger.info("Log tailing stopped by user")
+        finally:
+            for handle in handles.values():
+                handle.close()
+
     def shutdown(self):
         """Gracefully shutdown all services."""
         if not self.running:
             return
-        
+
         self.logger.info("🛑 Shutting down RAG system...")
         self.running = False
-        
+
         # Stop services in reverse order
         for service_name in reversed(list(self.processes.keys())):
             self._stop_service(service_name)
-        
+
+        self._clear_pidfile()
         self.logger.info("✅ All services stopped")
-    
+
+
     def _stop_service(self, service_name: str):
         """Stop a single service."""
         if service_name not in self.processes:
@@ -509,22 +681,20 @@ def main():
     
     try:
         if args.health:
-            # Health check mode
-            manager._print_status_summary()
-            return
-        
+            # Health check mode - real HTTP checks against each /health endpoint
+            sys.exit(0 if manager.print_health_report() else 1)
+
         if args.stop:
-            # Stop mode - kill any running processes
+            # Stop mode - terminate the processes recorded in the pidfile
             manager.logger.info("🛑 Stopping all RAG system processes...")
-            # Implementation for stopping would go here
-            return
-        
+            sys.exit(0 if manager.stop_all() else 1)
+
         if args.logs_only:
-            # Logs only mode - just tail existing logs
+            # Logs only mode - tail the log files written by a running launcher
             manager.logger.info("📋 Showing aggregated logs... (Press Ctrl+C to stop)")
-            manager.monitor()
+            manager.tail_logs()
             return
-        
+
         # Normal startup mode
         if manager.start_all(skip_frontend=args.no_frontend):
             manager.monitor()

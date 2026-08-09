@@ -11,13 +11,72 @@ class EmbeddingModel(Protocol):
 # Global cache for models - use dict to cache by model name
 _MODEL_CACHE = {}
 
+# ---------------------------------------------------------------------------
+# Query-side instruction prefix
+# ---------------------------------------------------------------------------
+# Instruction-tuned decoder embedders (Qwen3-Embedding, microsoft/harrier-oss-v1)
+# are trained with an instruction on the QUERY side only. Both model cards use
+# the identical wire format and the identical MS-MARCO-style retrieval task
+# string, and both state explicitly that documents must be embedded WITHOUT any
+# instruction.
+#
+#   query    -> "Instruct: {task}\nQuery: {text}"
+#   document -> "{text}"                            (unchanged, always)
+#
+# The asymmetry is what keeps this change index-compatible: an index built
+# before the prefix existed stays valid, because nothing on the document side
+# moves. Only the query vector changes.
+#
+# An embedder instance carries the instruction; it does not decide per call.
+# The indexing pipeline builds its embedder without one, the retrieval pipeline
+# builds its embedder with one, and neither can leak into the other.
+
+QUERY_PROMPT_TEMPLATE = "Instruct: {instruction}\nQuery: {text}"
+
+# The official retrieval task description used by both model families.
+DEFAULT_RETRIEVAL_INSTRUCTION = (
+    "Given a web search query, retrieve relevant passages that answer the query"
+)
+
+# Model-name fragments whose families are instruction-tuned in this format.
+_INSTRUCTION_TUNED_FAMILIES = ("qwen3-embedding", "harrier")
+
+
+def default_query_instruction(model_name: str) -> str:
+    """The retrieval instruction a model family expects, or "" when it wants none.
+
+    Returning "" (not None) is deliberate: "" means "this model takes no
+    instruction", which is a decision, whereas None means "nobody decided yet"
+    and is what callers pass to ask for this default.
+    """
+    name = (model_name or "").lower()
+    if any(fragment in name for fragment in _INSTRUCTION_TUNED_FAMILIES):
+        return DEFAULT_RETRIEVAL_INSTRUCTION
+    return ""
+
+
+def apply_query_instruction(texts: List[str], instruction: str | None) -> List[str]:
+    """Prefix every text with the instruction block, or return them untouched."""
+    if not instruction:
+        return texts
+    return [QUERY_PROMPT_TEMPLATE.format(instruction=instruction, text=t) for t in texts]
+
 # --- New Ollama Embedder ---
 class QwenEmbedder(EmbeddingModel):
     """
     An embedding model that uses a local Hugging Face transformer model.
     """
-    def __init__(self, model_name: str = "Qwen/Qwen3-Embedding-0.6B"):
+    MAX_TOKENS = 8192
+
+    def __init__(self, model_name: str | None = None, query_instruction: str | None = None):
+        if not model_name:
+            from rag_system.main import EXTERNAL_MODELS
+            model_name = EXTERNAL_MODELS["embedding_model"]
         self.model_name = model_name
+        # "" / None => this instance embeds raw text (the document side).
+        # A non-empty string => this instance is a QUERY embedder and prefixes
+        # every text it is given with the instruction block.
+        self.query_instruction = query_instruction or ""
         # Auto-select the best available device: CUDA > MPS > CPU
         if torch.cuda.is_available():
             self.device = "cuda"
@@ -39,22 +98,40 @@ class QwenEmbedder(EmbeddingModel):
             print(f"QwenEmbedder weights loaded and cached for {model_name}.")
         else:
             print(f"Reusing cached QwenEmbedder weights for {model_name}.")
-        
+
         self.tokenizer, self.model = _MODEL_CACHE[model_name]
+        # Some tokenizers report a sentinel model_max_length; clamp it so that
+        # truncation=True actually truncates.
+        reported = getattr(self.tokenizer, "model_max_length", None)
+        self.max_length = min(reported, self.MAX_TOKENS) if isinstance(reported, int) and reported > 0 else self.MAX_TOKENS
 
     def create_embeddings(self, texts: List[str]) -> np.ndarray:
         print(f"Generating {len(texts)} embeddings with {self.model_name} model...")
-        inputs = self.tokenizer(texts, padding=True, truncation=True, return_tensors="pt").to(self.device)
+        texts = apply_query_instruction(texts, self.query_instruction)
+        inputs = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors="pt",
+        ).to(self.device)
         with torch.no_grad():
             outputs = self.model(**inputs)
             last_hidden = outputs.last_hidden_state  # [B, seq, dim]
-            # Pool via last valid token per sequence (recommended for Qwen3)
-            seq_len = inputs["attention_mask"].sum(dim=1) - 1  # index of last token
-            batch_indices = torch.arange(last_hidden.size(0), device=self.device)
-            embeddings = last_hidden[batch_indices, seq_len]
-        
+            # Last-token pooling (recommended for Qwen3-Embedding). The tokenizer
+            # pads on the left, in which case the final column is the last real
+            # token for every row; handle right padding too for safety.
+            attention_mask = inputs["attention_mask"]
+            left_padded = bool(attention_mask[:, -1].min().item())
+            if left_padded:
+                embeddings = last_hidden[:, -1]
+            else:
+                seq_len = attention_mask.sum(dim=1) - 1  # index of last token
+                batch_indices = torch.arange(last_hidden.size(0), device=last_hidden.device)
+                embeddings = last_hidden[batch_indices, seq_len]
+
         # Convert to numpy and validate
-        embeddings_np = embeddings.cpu().numpy()
+        embeddings_np = embeddings.float().cpu().numpy()
         
         # Check for NaN or infinite values
         if np.isnan(embeddings_np).any():
@@ -105,10 +182,13 @@ class EmbeddingGenerator:
 
 class OllamaEmbedder(EmbeddingModel):
     """Call Ollama's /api/embeddings endpoint for each text."""
-    def __init__(self, model_name: str, host: str | None = None, timeout: int = 60):
+    def __init__(self, model_name: str, host: str | None = None, timeout: int = 60,
+                 query_instruction: str | None = None):
         self.model_name = model_name
         self.host = (host or os.getenv("OLLAMA_HOST") or "http://localhost:11434").rstrip("/")
         self.timeout = timeout
+        # Same contract as QwenEmbedder: set on the query-side instance only.
+        self.query_instruction = query_instruction or ""
 
     def _embed_single(self, text: str):
         import requests, numpy as np, json
@@ -124,6 +204,7 @@ class OllamaEmbedder(EmbeddingModel):
 
     def create_embeddings(self, texts: List[str]):
         import numpy as np
+        texts = apply_query_instruction(texts, self.query_instruction)
         vectors = [self._embed_single(t) for t in texts]
         embeddings_np = np.vstack(vectors)
         
@@ -142,13 +223,21 @@ class OllamaEmbedder(EmbeddingModel):
         
         return embeddings_np
 
-def select_embedder(model_name: str, ollama_host: str | None = None):
-    """Return appropriate EmbeddingModel implementation for the given name."""
+def select_embedder(model_name: str, ollama_host: str | None = None,
+                    query_instruction: str | None = None):
+    """Return appropriate EmbeddingModel implementation for the given name.
+
+    ``query_instruction`` is the query-side instruction prefix. Leave it unset
+    (the default) for document-side embedders — that is what keeps indexes
+    stable across this change. Callers on the query path pass the instruction
+    explicitly; see ``RetrievalPipeline._get_text_embedder``.
+    """
     if "/" in model_name or model_name.startswith("http"):
         # Treat as HF model path
-        return QwenEmbedder(model_name=model_name)
+        return QwenEmbedder(model_name=model_name, query_instruction=query_instruction)
     # Otherwise assume it's an Ollama tag
-    return OllamaEmbedder(model_name=model_name, host=ollama_host)
+    return OllamaEmbedder(model_name=model_name, host=ollama_host,
+                          query_instruction=query_instruction)
 
 if __name__ == '__main__':
     print("representations.py cleaned up.")

@@ -8,6 +8,21 @@ set -e
 echo "🐳 LocalGPT Docker Deployment"
 echo "============================"
 
+# Non-interactive mode: never prompt. Enable with -y/--yes or NONINTERACTIVE=1.
+ASSUME_YES="${NONINTERACTIVE:-}"
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes|--assume-yes)
+            ASSUME_YES=1
+            ;;
+        *)
+            ARGS+=("$arg")
+            ;;
+    esac
+done
+set -- "${ARGS[@]}"
+
 # Function to check if local Ollama is running
 check_local_ollama() {
     if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
@@ -43,11 +58,12 @@ start_with_local_ollama() {
 start_with_container_ollama() {
     echo "🚀 Starting LocalGPT containers (including Ollama container)..."
     
-    # Set environment variable for containerized Ollama
+    # Set environment variable for containerized Ollama.
+    # The shell environment takes precedence over --env-file, so this wins over docker.env.
     export OLLAMA_HOST=http://ollama:11434
-    
+
     # Start all services including Ollama
-    docker compose --profile with-ollama up --build -d
+    docker compose --env-file docker.env --profile with-ollama up --build -d
     
     echo ""
     echo "🎉 LocalGPT is starting up!"
@@ -64,7 +80,7 @@ start_with_container_ollama() {
 
 # Function to show usage
 show_usage() {
-    echo "Usage: $0 [option]"
+    echo "Usage: $0 [option] [-y|--yes]"
     echo ""
     echo "Options:"
     echo "  local     - Use local Ollama instance (default)"
@@ -74,9 +90,14 @@ show_usage() {
     echo "  status    - Show container status"
     echo "  help      - Show this help message"
     echo ""
+    echo "Flags:"
+    echo "  -y, --yes - Never prompt; fall back to containerized Ollama when no local"
+    echo "              Ollama is detected. Also enabled with NONINTERACTIVE=1."
+    echo ""
     echo "Examples:"
     echo "  $0 local      # Use local Ollama (recommended)"
     echo "  $0 container  # Use containerized Ollama"
+    echo "  $0 local -y   # Scripted/CI use - no prompts"
     echo "  $0 stop       # Stop all services"
 }
 
@@ -118,12 +139,22 @@ case "${1:-local}" in
             echo "1. Start local Ollama: 'ollama serve'"
             echo "2. Use containerized Ollama: '$0 container'"
             echo ""
-            read -p "Start with containerized Ollama instead? (y/N): " -n 1 -r
-            echo
-            if [[ $REPLY =~ ^[Yy]$ ]]; then
+            if [ -n "$ASSUME_YES" ]; then
+                echo "▶️  Non-interactive mode: starting containerized Ollama"
                 start_with_container_ollama
+            elif [ -t 0 ]; then
+                read -p "Start with containerized Ollama instead? (y/N): " -n 1 -r
+                echo
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    start_with_container_ollama
+                else
+                    echo "❌ Cancelled. Please start local Ollama or use '$0 container'"
+                    exit 1
+                fi
             else
-                echo "❌ Cancelled. Please start local Ollama or use '$0 container'"
+                echo "❌ No TTY for the confirmation prompt."
+                echo "   Re-run with '$0 local --yes' (or NONINTERACTIVE=1 $0) to use containerized Ollama,"
+                echo "   or '$0 container' to select it explicitly."
                 exit 1
             fi
         fi

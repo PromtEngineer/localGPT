@@ -1,38 +1,29 @@
 import os
 import json
-import sys
 import argparse
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
-# The sys.path manipulation has been removed to prevent import conflicts.
-# This script should be run as a module from the project root, e.g.:
+# This module holds the MASTER configuration for the RAG system plus a thin CLI.
+# Agent / pipeline construction lives in rag_system/factory.py.
+# Run it as a module from the project root, e.g.:
 # python -m rag_system.main api
 
-from rag_system.agent.loop import Agent
-from rag_system.utils.ollama_client import OllamaClient
-# Configuration is now defined in this file - no import needed
-
-# Advanced RAG System Configuration
-# ==================================
-# This file contains the MASTER configuration for all models used in the RAG system.
-# All components should reference these configurations to ensure consistency.
-
 # ============================================================================
-# 🎯 MASTER MODEL CONFIGURATION
+# MASTER MODEL CONFIGURATION
 # ============================================================================
-# All model configurations are centralized here to prevent conflicts
+# Every model default below can be overridden with an environment variable.
 
-# LLM Backend Configuration
+# LLM Backend Configuration ("ollama" or "watsonx")
 LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama")
 
 # Ollama Models Configuration (for inference via Ollama)
 OLLAMA_CONFIG = {
     "host": os.getenv("OLLAMA_HOST", "http://localhost:11434"),
-    "generation_model": "qwen3:8b",  # Main text generation model
-    "enrichment_model": "qwen3:0.6b",  # Lightweight model for routing/enrichment
+    "generation_model": os.getenv("GENERATION_MODEL", "qwen3.5:9b"),
+    "enrichment_model": os.getenv("ENRICHMENT_MODEL", "qwen3.5:4b"),
 }
 
 WATSONX_CONFIG = {
@@ -40,79 +31,89 @@ WATSONX_CONFIG = {
     "project_id": os.getenv("WATSONX_PROJECT_ID", ""),
     "url": os.getenv("WATSONX_URL", "https://us-south.ml.cloud.ibm.com"),
     "generation_model": os.getenv("WATSONX_GENERATION_MODEL", "ibm/granite-13b-chat-v2"),
-    "enrichment_model": os.getenv("WATSONX_ENRICHMENT_MODEL", "ibm/granite-8b-japanese"),  # Lightweight model
+    "enrichment_model": os.getenv("WATSONX_ENRICHMENT_MODEL", "ibm/granite-8b-japanese"),
 }
 
-# External Model Configuration (HuggingFace models used directly)
+# External Model Configuration (HuggingFace models loaded in-process)
+#
+# Defaults set at the Phase 1 adoption gate (2026-08-09); the measurements and
+# the reasoning are in eval/DECISIONS.md.
+#
+#   embedding_model  microsoft/harrier-oss-v1-0.6b (MIT, 1024-dim). Measured
+#                    mixed-corpus first-stage nDCG@10 0.915 vs 0.875 for
+#                    Qwen/Qwen3-Embedding-4B, at ~3x lower latency and ~7x less
+#                    memory. Qwen/Qwen3-Embedding-4B remains a supported option.
+#   reranker_model   Only loaded when reranking is switched on — the "default"
+#                    profile ships with reranker.enabled = False (see below).
+#                    When a user does switch it on, they get the model that
+#                    measured a win on top of this first stage.
 EXTERNAL_MODELS = {
-    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",  # HuggingFace embedding model (1024 dims - fresh start)
-    "reranker_model": "answerdotai/answerai-colbert-small-v1",  # ColBERT reranker
-    "vision_model": "Qwen/Qwen-VL-Chat",  # Vision model for multimodal
-    "fallback_reranker": "BAAI/bge-reranker-base",  # Backup reranker
+    "embedding_model": os.getenv("EMBEDDING_MODEL", "microsoft/harrier-oss-v1-0.6b"),
+    "reranker_model": os.getenv("RERANKER_MODEL", "Qwen/Qwen3-Reranker-4B"),
 }
 
 # ============================================================================
-# 🔧 PIPELINE CONFIGURATIONS
+# PIPELINE CONFIGURATIONS
 # ============================================================================
 
 PIPELINE_CONFIGS = {
     "default": {
-        "description": "Production-ready pipeline with hybrid search, AI reranking, and verification",
+        "description": "Production-ready pipeline with hybrid search, query decomposition, and verification",
         "storage": {
-            "lancedb_uri": "./lancedb",
-            "text_table_name": "text_pages_v3", 
-            "image_table_name": "image_pages_v3",
-            "bm25_path": "./index_store/bm25",
-            "graph_path": "./index_store/graph/knowledge_graph.gml"
+            "lancedb_uri": os.getenv("LANCEDB_PATH", "./lancedb"),
+            # v4: vectors are L2-normalized at write and query time (cosine
+            # ordering). v3 tables hold unnormalized vectors — see
+            # rag_system/indexing/embedders.py table markers.
+            "text_table_name": "text_pages_v4"
         },
         "retrieval": {
-            "retriever": "multivector",
             "search_type": "hybrid",
-            "late_chunking": {
-                "enabled": True,
-                "table_suffix": "_lc_v3"
-        },
-            "dense": { 
-                "enabled": True,
-                "weight": 0.7
+            "latechunk": {
+                "enabled": True
             },
-            "bm25": { 
-                "enabled": True,
-                "index_name": "rag_bm25_index"
+            "dense": {
+                "enabled": True
             },
-            "graph": { 
-                "enabled": False,
-                "graph_path": "./index_store/graph/knowledge_graph.gml"
+            # Evidence-sufficiency retry (roadmap 2.1). One conditional second
+            # retrieval when the first pass found weak evidence; hard cap of one
+            # extra attempt. The signal is NOT the raw top cosine — that measured
+            # anti-correlated with success — but the contrast between the best
+            # candidate and the background of the rest; see
+            # RetrievalPipeline._dense_evidence_score and eval/decisions/
+            # phase2-pipeline.md for the calibration.
+            "retry": {
+                "enabled": True,
+                "min_top_score": 0.12,
+                "max_attempts": 1
             }
         },
-        # 🎯 EMBEDDING MODEL: Uses HuggingFace Qwen model directly
         "embedding_model_name": EXTERNAL_MODELS["embedding_model"],
-        # 🎯 VISION MODEL: For multimodal capabilities  
-        "vision_model_name": EXTERNAL_MODELS["vision_model"],
-        # 🎯 RERANKER: AI-powered reranking with ColBERT
+        # Reranking is OFF by default. Measured at the Phase 1 gate on the mixed
+        # corpus: this first stage alone scores nDCG@10 0.915; the cheap
+        # cross-encoder (bge-reranker-v2-m3) drops it to 0.892 for ~1.6s/query,
+        # and Qwen3-Reranker-4B lifts it to 0.977 for ~12.7s/query. Neither is a
+        # sensible always-on default, so the toggle (UI "AI reranker" /
+        # reranker.enabled) picks the quality model and loads it lazily.
         "reranker": {
-            "enabled": True, 
-            "type": "ai",
+            "enabled": False,
+            "model_type": "cross-encoder",
             "strategy": "rerankers-lib",
             "model_name": EXTERNAL_MODELS["reranker_model"],
             "top_k": 10
         },
         "query_decomposition": {
             "enabled": True,
-            "max_sub_queries": 3,
             "compose_from_sub_answers": True
         },
         "verification": {"enabled": True},
         "retrieval_k": 20,
         "context_window_size": 0,
         "semantic_cache_threshold": 0.98,
-        "cache_scope": "global",
-        # 🔧 Contextual enrichment configuration
+        "cache_scope": "session",
         "contextual_enricher": {
             "enabled": True,
             "window_size": 1
         },
-        # 🔧 Indexing configuration
         "indexing": {
             "embedding_batch_size": 50,
             "enrichment_batch_size": 10,
@@ -122,16 +123,16 @@ PIPELINE_CONFIGS = {
     "fast": {
         "description": "Speed-optimized pipeline with minimal overhead",
         "storage": {
-            "lancedb_uri": "./lancedb",
-            "text_table_name": "text_pages_v3",
-            "image_table_name": "image_pages_v3", 
-            "bm25_path": "./index_store/bm25"
+            "lancedb_uri": os.getenv("LANCEDB_PATH", "./lancedb"),
+            "text_table_name": "text_pages_v4"
         },
         "retrieval": {
-            "retriever": "multivector",
             "search_type": "vector_only",
-            "late_chunking": {"enabled": False},
-            "dense": {"enabled": True}
+            "latechunk": {"enabled": False},
+            "dense": {"enabled": True},
+            # Off in `fast`: the retry costs one enrichment-model round-trip plus
+            # a second retrieval, which is exactly what this profile exists to avoid.
+            "retry": {"enabled": False}
         },
         "embedding_model_name": EXTERNAL_MODELS["embedding_model"],
         "reranker": {"enabled": False},
@@ -139,231 +140,100 @@ PIPELINE_CONFIGS = {
         "verification": {"enabled": False},
         "retrieval_k": 10,
         "context_window_size": 0,
-        # 🔧 Contextual enrichment (disabled for speed)
+        "semantic_cache_threshold": 0.98,
+        "cache_scope": "session",
         "contextual_enricher": {
             "enabled": False,
             "window_size": 1
         },
-        # 🔧 Indexing configuration
         "indexing": {
             "embedding_batch_size": 100,
             "enrichment_batch_size": 50,
             "enable_progress_tracking": False
         }
-    },
-    "bm25": {
-        "enabled": True,
-        "index_name": "rag_bm25_index"
-    },
-    "graph_rag": {
-        "enabled": False, # Keep disabled for now unless specified
     }
 }
 
 # ============================================================================
-# 🏭 FACTORY FUNCTIONS
+# CLI
 # ============================================================================
 
-def get_agent(mode: str = "default") -> Agent:
-    """
-    Factory function to get an instance of the RAG agent based on the specified mode.
-    
-    Args:
-        mode: Configuration mode ("default", "fast")
-        
-    Returns:
-        Configured Agent instance
-    """
-    load_dotenv()
-    
-    # Initialize the appropriate LLM client based on backend configuration
-    if LLM_BACKEND.lower() == "watsonx":
-        from rag_system.utils.watsonx_client import WatsonXClient
-        
-        if not WATSONX_CONFIG["api_key"] or not WATSONX_CONFIG["project_id"]:
-            raise ValueError(
-                "Watson X configuration incomplete. Please set WATSONX_API_KEY and WATSONX_PROJECT_ID "
-                "environment variables."
-            )
-        
-        llm_client = WatsonXClient(
-            api_key=WATSONX_CONFIG["api_key"],
-            project_id=WATSONX_CONFIG["project_id"],
-            url=WATSONX_CONFIG["url"]
-        )
-        llm_config = WATSONX_CONFIG
-        print(f"🔧 Using Watson X backend with granite models")
-    else:
-        llm_client = OllamaClient(host=OLLAMA_CONFIG["host"])
-        llm_config = OLLAMA_CONFIG
-        print(f"🔧 Using Ollama backend")
-    
-    # Get the configuration for the specified mode
-    config = PIPELINE_CONFIGS.get(mode, PIPELINE_CONFIGS['default'])
-    
-    agent = Agent(
-        pipeline_configs=config, 
-        llm_client=llm_client, 
-        ollama_config=llm_config
+SUPPORTED_DOCUMENT_EXTENSIONS = (".pdf", ".docx", ".html", ".htm", ".md", ".txt")
+
+
+def _collect_file_paths(path: str) -> list[str]:
+    """Expand a file or directory argument into a list of indexable file paths."""
+    if os.path.isfile(path):
+        return [os.path.abspath(path)]
+
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"No such file or directory: {path}")
+
+    collected = []
+    for root, _dirs, files in os.walk(path):
+        for name in sorted(files):
+            if name.lower().endswith(SUPPORTED_DOCUMENT_EXTENSIONS):
+                collected.append(os.path.join(root, name))
+    return collected
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m rag_system.main",
+        description="localGPT RAG system: indexing, one-shot chat, and API server."
     )
-    return agent
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-def validate_model_config():
-    """
-    Validates the model configuration for consistency and availability.
-    
-    Raises:
-        ValueError: If configuration conflicts are detected
-    """
-    print("🔍 Validating model configuration...")
-    
-    # Check for embedding model consistency
-    default_embedding = PIPELINE_CONFIGS["default"]["embedding_model_name"]
-    external_embedding = EXTERNAL_MODELS["embedding_model"]
-    
-    if default_embedding != external_embedding:
-        raise ValueError(f"Embedding model mismatch: {default_embedding} != {external_embedding}")
-    
-    # Check reranker configuration
-    default_reranker = PIPELINE_CONFIGS["default"]["reranker"]["model_name"]
-    external_reranker = EXTERNAL_MODELS["reranker_model"]
-    
-    if default_reranker != external_reranker:
-        raise ValueError(f"Reranker model mismatch: {default_reranker} != {external_reranker}")
-    
-    print("✅ Model configuration validation passed!")
-    
-    return True
+    modes = sorted(PIPELINE_CONFIGS)
 
-# ============================================================================
-# 🚀 UTILITY FUNCTIONS  
-# ============================================================================
+    index_parser = subparsers.add_parser("index", help="Index a document or a directory of documents.")
+    index_parser.add_argument("path", help="File or directory to index.")
+    index_parser.add_argument("--mode", default="default", choices=modes, help="Pipeline profile to use.")
 
-def run_indexing(docs_path: str, config_mode: str = "default"):
-    """Runs the indexing pipeline for the specified documents."""
-    print(f"📚 Starting indexing for documents in: {docs_path}")
-    validate_model_config()
-    
-    # Local import to avoid circular dependencies
-    from rag_system.pipelines.indexing_pipeline import IndexingPipeline
-    
-    # Get the appropriate indexing pipeline from the factory
-    indexing_pipeline = IndexingPipeline(PIPELINE_CONFIGS[config_mode])
-    
-    # Find all PDF files in the directory
-    pdf_files = [os.path.join(docs_path, f) for f in os.listdir(docs_path) if f.endswith(".pdf")]
-    
-    if not pdf_files:
-        print("No PDF files found to index.")
-        return
+    chat_parser = subparsers.add_parser("chat", help="Answer a single query and print the JSON result.")
+    chat_parser.add_argument("query", help="The question to ask.")
+    chat_parser.add_argument("--mode", default="default", choices=modes, help="Pipeline profile to use.")
 
-    # Process all documents through the pipeline
-    indexing_pipeline.process_documents(pdf_files)
-    print("✅ Indexing complete.")
-
-def run_chat(query: str):
-    """
-    Runs the agentic RAG pipeline for a given query.
-    Returns the result as a JSON string.
-    """
-    try:
-        validate_model_config()
-        ollama_client = OllamaClient(OLLAMA_CONFIG["host"])
-    except ConnectionError as e:
-        print(e)
-        return json.dumps({"error": str(e)}, indent=2)
-    except ValueError as e:
-        print(f"Configuration Error: {e}")
-        return json.dumps({"error": f"Configuration Error: {e}"}, indent=2)
-
-    agent = Agent(PIPELINE_CONFIGS['default'], ollama_client, OLLAMA_CONFIG)
-    result = agent.run(query)
-    return json.dumps(result, indent=2, ensure_ascii=False)
-
-def show_graph():
-    """
-    Loads and displays the knowledge graph.
-    """
-    import networkx as nx
-    import matplotlib.pyplot as plt
-
-    graph_path = PIPELINE_CONFIGS["indexing"]["graph_path"]
-    if not os.path.exists(graph_path):
-        print("Knowledge graph not found. Please run the 'index' command first.")
-        return
-
-    G = nx.read_gml(graph_path)
-    print("--- Knowledge Graph ---")
-    print("Nodes:", G.nodes(data=True))
-    print("Edges:", G.edges(data=True))
-    print("---------------------")
-
-    # Optional: Visualize the graph
-    try:
-        pos = nx.spring_layout(G)
-        nx.draw(G, pos, with_labels=True, node_size=2000, node_color="skyblue", font_size=10, font_weight="bold")
-        edge_labels = nx.get_edge_attributes(G, 'label')
-        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels)
-        plt.title("Knowledge Graph Visualization")
-        plt.show()
-    except Exception as e:
-        print(f"\nCould not visualize the graph. Matplotlib might not be installed or configured for your environment.")
-        print(f"Error: {e}")
-
-def run_api_server():
-    """Starts the advanced RAG API server."""
-    from rag_system.api_server import start_server
-    start_server()
-
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python main.py [index|chat|show_graph|api] [query]")
-        return
-
-    command = sys.argv[1]
-    if command == "index":
-        # Allow passing file paths from the command line
-        files = sys.argv[2:] if len(sys.argv) > 2 else None
-        run_indexing(files)
-    elif command == "chat":
-        if len(sys.argv) < 3:
-            print("Usage: python main.py chat <query>")
-            return
-        query = " ".join(sys.argv[2:])
-        # 🆕 Print the result for command-line usage
-        print(run_chat(query))
-    elif command == "show_graph":
-        show_graph()
-    elif command == "api":
-        run_api_server()
-    else:
-        print(f"Unknown command: {command}")
-
-if __name__ == "__main__":
-    # This allows running the script from the command line to index documents.
-    parser = argparse.ArgumentParser(description="Main entry point for the RAG system.")
-    parser.add_argument(
-        '--index',
-        type=str,
-        help='Path to the directory containing documents to index.'
-    )
-    parser.add_argument(
-        '--config',
-        type=str,
-        default='default',
-        help='The configuration profile to use (e.g., "default", "fast").'
-    )
+    api_parser = subparsers.add_parser("api", help="Start the RAG API server.")
+    api_parser.add_argument("--port", type=int, default=8001, help="Port to listen on.")
 
     args = parser.parse_args()
 
-    # Load environment variables
-    load_dotenv()
+    if args.command == "index":
+        from rag_system.factory import get_indexing_pipeline
 
-    if args.index:
-        run_indexing(args.index, args.config)
-    else:
-        # This is where you might start a server or interactive session
-        print("No action specified. Use --index to process documents.")
-        # Example of how to get an agent instance
-        # agent = get_agent(args.config)
-        # print(f"Agent loaded with '{args.config}' config.")
+        try:
+            file_paths = _collect_file_paths(args.path)
+        except FileNotFoundError as e:
+            print(f"❌ {e}")
+            return 1
+
+        if not file_paths:
+            print(f"No indexable documents found in {args.path} "
+                  f"(supported: {', '.join(SUPPORTED_DOCUMENT_EXTENSIONS)}).")
+            return 1
+
+        print(f"📚 Indexing {len(file_paths)} file(s) with the '{args.mode}' profile...")
+        get_indexing_pipeline(args.mode).run(file_paths)
+        print("✅ Indexing complete.")
+        return 0
+
+    if args.command == "chat":
+        from rag_system.factory import get_agent
+
+        result = get_agent(args.mode).run(args.query)
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.command == "api":
+        from rag_system.api_server import start_server
+
+        start_server(port=args.port)
+        return 0
+
+    parser.error(f"Unknown command: {args.command}")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

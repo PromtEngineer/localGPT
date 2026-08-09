@@ -53,7 +53,7 @@ Please include relevant error messages or logs:
 
 ## 🔧 Configuration
 - Deployment method: [Docker / Direct Python]
-- Models used: [e.g. qwen3:0.6b, qwen3:8b]
+- Models used: [e.g. qwen3.5:9b, qwen3.5:4b]
 - Document types: [e.g. PDF, DOCX, TXT]
 
 ## 📎 Additional Context

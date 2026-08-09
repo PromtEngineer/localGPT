@@ -1,20 +1,40 @@
+import os
 import sqlite3
 import uuid
 import json
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
+
+def resolve_lancedb_path() -> str:
+    """LanceDB location, kept in sync with the store the indexing pipeline writes to."""
+    env_path = os.getenv('LANCEDB_PATH')
+    if env_path:
+        return env_path
+    try:
+        from rag_system.main import PIPELINE_CONFIGS
+        uri = PIPELINE_CONFIGS.get('default', {}).get('storage', {}).get('lancedb_uri')
+        if uri:
+            return uri
+    except Exception:
+        pass
+    return './lancedb'
+
+
 class ChatDatabase:
     def __init__(self, db_path: str = None):
         if db_path is None:
+            db_path = os.getenv("DB_PATH")
+        if db_path is None:
             # Auto-detect environment and set appropriate path
-            import os
             if os.path.exists("/app"):  # Docker environment
-                self.db_path = "/app/backend/chat_data.db"
+                db_path = "/app/backend/chat_data.db"
             else:  # Local development environment
-                self.db_path = "backend/chat_data.db"
-        else:
-            self.db_path = db_path
+                db_path = "backend/chat_data.db"
+        self.db_path = db_path
+        parent_dir = os.path.dirname(os.path.abspath(self.db_path))
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
         self.init_database()
     
     def init_database(self):
@@ -414,9 +434,7 @@ class ChatDatabase:
             if vector_table_name:
                 try:
                     from rag_system.indexing.embedders import LanceDBManager
-                    import os
-                    db_path = os.getenv('LANCEDB_PATH') or './rag_system/index_store/lancedb'
-                    ldb = LanceDBManager(db_path)
+                    ldb = LanceDBManager(resolve_lancedb_path())
                     db = ldb.db
                     if hasattr(db, 'table_names') and vector_table_name in db.table_names():
                         db.drop_table(vector_table_name)
@@ -464,12 +482,10 @@ class ChatDatabase:
                 # Try to import the RAG system modules
                 try:
                     from rag_system.indexing.embedders import LanceDBManager
-                    import os
-                    
-                    # Use the same path as the system
-                    db_path = os.getenv('LANCEDB_PATH') or './rag_system/index_store/lancedb'
-                    ldb = LanceDBManager(db_path)
-                    
+
+                    # Use the same store the indexing pipeline writes to
+                    ldb = LanceDBManager(resolve_lancedb_path())
+
                     # Check if table exists
                     if not hasattr(ldb.db, 'table_names') or vector_table_name not in ldb.db.table_names():
                         # Table doesn't exist - this means the index was never properly built
@@ -525,8 +541,14 @@ class ChatDatabase:
                                 384: 'BAAI/bge-small-en-v1.5 (or similar)',
                                 512: 'sentence-transformers/all-MiniLM-L6-v2 (or similar)',
                                 768: 'BAAI/bge-base-en-v1.5 (or similar)', 
-                                1024: 'Qwen/Qwen3-Embedding-0.6B (or similar)',
-                                1536: 'text-embedding-ada-002 (or similar)'
+                                # 1024 is ambiguous by construction: harrier-oss-v1-0.6b
+                                # (the default) and Qwen3-Embedding-0.6B share it. The
+                                # authoritative answer is the table's own embedder marker
+                                # (rag_system/indexing/embedders.py), not this guess.
+                                1024: 'microsoft/harrier-oss-v1-0.6b or Qwen/Qwen3-Embedding-0.6B (or similar)',
+                                1536: 'text-embedding-ada-002 (or similar)',
+                                2560: 'Qwen/Qwen3-Embedding-4B (or similar)',
+                                4096: 'Qwen/Qwen3-Embedding-8B (or similar)'
                             }
                             if len(vector_data) in dim_to_model:
                                 inferred_metadata['embedding_model_inferred'] = dim_to_model[len(vector_data)]
@@ -671,7 +693,7 @@ if __name__ == "__main__":
     print("🧪 Testing database...")
     
     # Create a test session
-    session_id = db.create_session("Test Chat", "llama3.2:latest")
+    session_id = db.create_session("Test Chat", os.getenv("GENERATION_MODEL", "qwen3.5:9b"))
     
     # Add some messages
     db.add_message(session_id, "Hello!", "user")

@@ -58,27 +58,6 @@ class WatsonXClient:
         image.save(buffered, format="PNG")
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-    def generate_embedding(self, model: str, text: str) -> List[float]:
-        """
-        Generate embeddings using Watson X embedding models.
-        Note: This requires using Watson X embedding models through the embeddings API.
-        """
-        try:
-            from ibm_watsonx_ai.foundation_models import Embeddings
-            
-            embedding_model = Embeddings(
-                model_id=model,
-                credentials=self.credentials,
-                project_id=self.project_id
-            )
-            
-            result = embedding_model.embed_query(text)
-            return result if isinstance(result, list) else []
-            
-        except Exception as e:
-            print(f"Error generating embedding: {e}")
-            return []
-
     def generate_completion(
         self,
         model: str,

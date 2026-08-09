@@ -1,40 +1,40 @@
 from __future__ import annotations
 
-"""Docling-aware chunker (simplified).
+"""Docling-aware chunker.
 
-For now we proxy the old MarkdownRecursiveChunker but add:
-• sentence-aware packing to max_tokens with overlap
-• breadcrumb metadata stubs so downstream code already handles them
+Two entry points:
+• chunk_document(doc) walks a DoclingDocument element tree, emitting tables and
+  code as atomic chunks and token-packing paragraphs up to max_tokens.
+• chunk()/split_markdown() fall back to MarkdownRecursiveChunker plus
+  sentence-aware packing when only Markdown is available.
 
-In a follow-up we can replace the internals with true Docling element-tree
-walking once the PDFConverter returns structured nodes.
+Both attach heading-path / block-type metadata to every chunk.
 """
-from typing import List, Dict, Any, Tuple
-import math
+from typing import List, Dict, Any
 import re
-from itertools import islice
 from rag_system.ingestion.chunking import MarkdownRecursiveChunker
 from transformers import AutoTokenizer
 
 class DoclingChunker:
-    def __init__(self, *, max_tokens: int = 512, overlap: int = 1, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
+    def __init__(self, *, max_tokens: int = 512, overlap: int = 1, tokenizer_model: str | None = None):
         self.max_tokens = max_tokens
         self.overlap = overlap  # sentences of overlap
-        repo_id = tokenizer_model
-        if "/" not in tokenizer_model and not tokenizer_model.startswith("Qwen/"):
-            repo_id = {
-                "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
-            }.get(tokenizer_model.lower(), tokenizer_model)
-        
+
+        if not tokenizer_model:
+            from rag_system.main import EXTERNAL_MODELS
+            tokenizer_model = EXTERNAL_MODELS["embedding_model"]
+
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_model, trust_remote_code=True)
         except Exception as e:
-            print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
+            print(f"Warning: Failed to load tokenizer {tokenizer_model}: {e}")
             print("Falling back to character-based approximation (4 chars ≈ 1 token)")
             self.tokenizer = None
         # Fallback simple sentence splitter (period, question, exclamation, newline)
         self._sent_re = re.compile(r"(?<=[\.\!\?])\s+|\n+")
-        self.legacy = MarkdownRecursiveChunker(max_chunk_size=10_000, min_chunk_size=100)
+        self.legacy = MarkdownRecursiveChunker(
+            max_chunk_size=10_000, min_chunk_size=100, tokenizer_model=tokenizer_model
+        )
 
     # ------------------------------------------------------------------
     def _token_len(self, text: str) -> int:

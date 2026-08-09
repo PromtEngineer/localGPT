@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useState, useRef } from "react"
-import { ArrowUp, Settings as SettingsIcon, Plus, X, FileText } from "lucide-react"
+import { ArrowUp, Settings as SettingsIcon, X, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AttachedFile } from "@/lib/types"
 

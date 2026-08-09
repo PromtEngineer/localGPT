@@ -8,7 +8,6 @@ import {
 import { Copy, RefreshCcw, ThumbsUp, ThumbsDown, Volume2, MoreHorizontal, ChevronDown, Loader2, CheckCircle, XOctagon } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChatMessage } from "@/lib/api"
-import { cn } from "@/lib/utils"
 import Markdown from "@/components/Markdown"
 import { normalizeWhitespace } from "@/utils/textNormalization"
 
@@ -111,7 +110,7 @@ function ThinkingText({ text }: { text: string }) {
         </details>
       )}
       {visibleText.trim() && (
-        <Markdown text={normalizeWhitespace(visibleText)} className="whitespace-pre-wrap" />
+        <Markdown text={normalizeWhitespace(visibleText)} className="whitespace-pre-wrap break-words" />
       )}
     </>
   );
@@ -151,7 +150,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
               {/* Details for each step */}
               {step.key === 'final' && step.details && typeof step.details === 'object' && !Array.isArray(step.details) ? (
                 <div className="space-y-3">
-                  <div className="whitespace-pre-wrap text-gray-100">
+                  <div className="whitespace-pre-wrap break-words text-gray-100">
                     <ThinkingText text={normalizeWhitespace(step.details.answer)} />
                   </div>
                   {!hasSubAnswers && step.details.source_documents && step.details.source_documents.length > 0 && (
@@ -159,7 +158,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                   )}
                 </div>
               ) : step.key === 'final' && step.details && typeof step.details === 'string' ? (
-                <div className="whitespace-pre-wrap text-gray-100">
+                <div className="whitespace-pre-wrap break-words text-gray-100">
                   <ThinkingText text={normalizeWhitespace(step.details)} />
                 </div>
               ) : Array.isArray(step.details) ? (
@@ -309,7 +308,7 @@ export function ConversationPage({
                     />
                   )}
                   
-                  <div className={`flex flex-col space-y-2 ${isUser ? 'items-end' : 'items-start'} max-w-full md:max-w-3xl`}>
+                  <div className={`flex flex-col space-y-2 ${isUser ? 'items-end' : 'items-start'} max-w-full md:max-w-3xl min-w-0`}>
                     <div
                       className={`rounded-2xl px-5 py-4 ${
                         isUser 
@@ -326,7 +325,7 @@ export function ConversationPage({
                           </div>
                         </div>
                       ) : (
-                        <div className="whitespace-pre-wrap text-base leading-relaxed">
+                        <div className="whitespace-pre-wrap break-words text-base leading-relaxed">
                           {typeof message.content === 'string' 
                               ? <ThinkingText text={normalizeWhitespace(message.content)} />
                               : <StructuredMessageBlock content={message.content} />

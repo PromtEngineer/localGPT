@@ -35,29 +35,6 @@ export function normalizeStreamingToken(currentText: string, newToken: string): 
   let combined = currentText + newToken;
   
   combined = normalizeWhitespace(combined);
-  
-  return combined;
-}
 
-/**
- * Check if text contains excessive whitespace that needs normalization
- */
-export function hasExcessiveWhitespace(text: string): boolean {
-  if (!text || typeof text !== 'string') {
-    return false;
-  }
-  
-  if (/\n{3,}/.test(text)) {
-    return true;
-  }
-  
-  if (/[ \t]{3,}/.test(text)) {
-    return true;
-  }
-  
-  if (/[ \t]*\n[ \t]*\n[ \t]*\n/.test(text)) {
-    return true;
-  }
-  
-  return false;
+  return combined;
 }

@@ -45,7 +45,7 @@ build_and_test() {
     elif [ "$service" = "backend" ]; then
         curl -f "http://localhost:$port/health" >/dev/null 2>&1
     elif [ "$service" = "rag-api" ]; then
-        curl -f "http://localhost:$port/models" >/dev/null 2>&1
+        curl -f "http://localhost:$port/health" >/dev/null 2>&1
     fi
     
     if [ $? -eq 0 ]; then

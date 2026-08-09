@@ -21,21 +21,25 @@ import numpy as np
 class LateChunkEncoder:
     """Generate late-chunked embeddings given character-offset spans."""
 
-    def __init__(self, model_name: str = "Qwen/Qwen3-Embedding-0.6B", *, max_tokens: int = 8192) -> None:
+    def __init__(self, model_name: str | None = None, *, max_tokens: int = 8192) -> None:
+        if not model_name:
+            from rag_system.main import EXTERNAL_MODELS
+            model_name = EXTERNAL_MODELS["embedding_model"]
         self.model_name = model_name
         self.max_len = max_tokens
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # Back-compat: allow short alias without repo namespace
-        repo_id = model_name
-        if "/" not in model_name and not model_name.startswith("Qwen/"):
-            # map common alias to official repo
-            alias_map = {
-                "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
-            }
-            repo_id = alias_map.get(model_name.lower(), model_name)
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
 
-        self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
-        self.model = AutoModel.from_pretrained(repo_id, trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+        self.model = AutoModel.from_pretrained(
+            model_name,
+            trust_remote_code=True,
+            torch_dtype=torch.float16 if self.device.type != "cpu" else None,
+        )
         self.model.to(self.device)
         self.model.eval()
 
@@ -66,7 +70,7 @@ class LateChunkEncoder:
 
         out = self.model(**inputs)
         last_hidden = out.last_hidden_state.squeeze(0)  # (seq_len, dim)
-        last_hidden = last_hidden.cpu()
+        last_hidden = last_hidden.float().cpu()
 
         # For each chunk span, gather token indices belonging to it
         vectors: List[np.ndarray] = []

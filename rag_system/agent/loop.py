@@ -7,8 +7,7 @@ from cachetools import TTLCache, LRUCache
 from rag_system.utils.ollama_client import OllamaClient
 from rag_system.pipelines.retrieval_pipeline import RetrievalPipeline
 from rag_system.agent.verifier import Verifier
-from rag_system.retrieval.query_transformer import QueryDecomposer, GraphQueryTranslator
-from rag_system.retrieval.retrievers import GraphRetriever
+from rag_system.retrieval.query_transformer import QueryDecomposer
 
 class Agent:
     """
@@ -18,39 +17,45 @@ class Agent:
         self.pipeline_configs = pipeline_configs
         self.llm_client = llm_client
         self.ollama_config = ollama_config
-        
-        gen_model = self.ollama_config["generation_model"]
-        
+
+        # Utility work (routing, triage, decomposition, verification) runs on the
+        # small enrichment model; only user-facing answers use the generation model.
+        utility_model = self._utility_model()
+
         # Initialize the single, persistent retrieval pipeline for this agent
         self.retrieval_pipeline = RetrievalPipeline(pipeline_configs, self.llm_client, self.ollama_config)
-        
-        self.verifier = Verifier(llm_client, gen_model)
-        self.query_decomposer = QueryDecomposer(llm_client, gen_model)
-        
+
+        # `verification.model` (or the VERIFIER_MODEL env var, read inside
+        # Verifier) swaps the LLM-prompt verifier for a local NLI/verifier model.
+        # Unset by default — the LLM prompt is what ships (roadmap 2.4).
+        verification_config = self.pipeline_configs.get("verification", {}) or {}
+        self.verifier = Verifier(
+            llm_client,
+            utility_model,
+            model_name=verification_config.get("model"),
+            threshold=float(verification_config.get("threshold", 0.5)),
+        )
+        self.query_decomposer = QueryDecomposer(llm_client, utility_model)
+
         # 🚀 OPTIMIZED: TTL cache now stores embeddings for semantic matching
-        self._cache_max_size = 100  # fallback size limit for manual eviction helper
-        self._query_cache: TTLCache = TTLCache(maxsize=self._cache_max_size, ttl=300)
+        self._query_cache: TTLCache = TTLCache(maxsize=100, ttl=300)
         self.semantic_cache_threshold = self.pipeline_configs.get("semantic_cache_threshold", 0.98)
-        # If set to "session", semantic-cache hits will be restricted to the same chat session.
-        # Otherwise (default "global") answers can be reused across sessions.
-        self.cache_scope = self.pipeline_configs.get("cache_scope", "global")  # 'global' or 'session'
-        
+        # If set to "global", semantic-cache hits are reused across chat sessions.
+        # The default keeps answers (and therefore document content) inside one session.
+        self.cache_scope = self.pipeline_configs.get("cache_scope", "session")  # 'global' or 'session'
+
         # 🚀 NEW: In-memory store for conversational history per session
         self.chat_histories: LRUCache = LRUCache(maxsize=100) # Stores history for 100 recent sessions
-
-        graph_config = self.pipeline_configs.get("graph_strategy", {})
-        if graph_config.get("enabled"):
-            self.graph_query_translator = GraphQueryTranslator(llm_client, gen_model)
-            self.graph_retriever = GraphRetriever(graph_config["graph_path"])
-            print("Agent initialized with live GraphRAG capabilities.")
-        else:
-            print("Agent initialized (GraphRAG disabled).")
 
         # ---- Load document overviews for fast routing ----
         self._global_overview_path = os.path.join("index_store", "overviews", "overviews.jsonl")
         self.doc_overviews: list[str] = []
         self._current_overview_session: str | None = None  # cache key to avoid rereading on every query
         self._load_overviews(self._global_overview_path)
+
+    def _utility_model(self) -> str:
+        """Model used for routing, triage, decomposition and verification."""
+        return self.ollama_config.get("enrichment_model") or self.ollama_config["generation_model"]
 
     def _load_overviews(self, path: str):
         """Helper to load overviews from a .jsonl file into self.doc_overviews."""
@@ -133,9 +138,8 @@ class Agent:
                 continue
 
             # Respect cache scoping: if scope is session-level, skip results from other sessions
-            if self.cache_scope == "session" and session_id is not None:
-                if cached_item.get("session_id") != session_id:
-                    continue
+            if self.cache_scope != "global" and cached_item.get("session_id") != session_id:
+                continue
 
             try:
                 similarity = self._cosine_similarity(query_embedding, cached_embedding)
@@ -168,14 +172,26 @@ Latest User Query: "{query}"
         return prompt
 
     # ---------------- Asynchronous triage using Ollama ----------------
+    @staticmethod
+    def _normalize_triage(decision: str) -> str:
+        """Collapse a triage label to one of the two categories that still exist.
+
+        ``graph_query`` was a third outcome until the graph module was removed
+        (roadmap 2.5, 2026-08-09). Small utility models still emit it from time to
+        time — they have seen the label in their training data — so anything that
+        is not an explicit ``direct_answer`` is answered from the documents.
+        """
+        return "direct_answer" if (decision or "").strip() == "direct_answer" else "rag_query"
+
     async def _triage_query_async(self, query: str, history: list) -> str:
-        
+
         print(f"🔍 ROUTING DEBUG: Starting triage for query: '{query[:100]}...'")
         
         # 1️⃣ Fast routing using precomputed overviews (if available)
         print(f"📖 ROUTING DEBUG: Attempting overview-based routing...")
         routed = self._route_via_overviews(query)
         if routed:
+            routed = self._normalize_triage(routed)
             print(f"✅ ROUTING DEBUG: Overview routing decided: '{routed}'")
             return routed
         else:
@@ -198,8 +214,6 @@ Choose **exactly one** category:
 
 2. "direct_answer" – General knowledge questions, greetings, or queries unrelated to uploaded documents. Examples: "Who are the CEOs of Tesla and Amazon?", "What is the capital of France?", "Hello", "Explain quantum physics"
 
-3. "graph_query" – Specific factual relations for knowledge-graph lookup (currently limited use)
-
 IMPORTANT: For general world knowledge about well-known companies, people, or facts NOT related to uploaded documents, choose "direct_answer".
 
 User query: "{query}"
@@ -207,57 +221,28 @@ User query: "{query}"
 Respond with JSON: {{"category": "<your_choice>"}}
 """
         resp = self.llm_client.generate_completion(
-            model=self.ollama_config["generation_model"], prompt=prompt, format="json"
+            model=self._utility_model(), prompt=prompt, format="json"
         )
         try:
             data = json.loads(resp.get("response", "{}"))
-            decision = data.get("category", "rag_query")
+            decision = self._normalize_triage(data.get("category", "rag_query"))
             print(f"🤖 ROUTING DEBUG: LLM fallback triage decided: '{decision}'")
             return decision
         except json.JSONDecodeError:
             print(f"❌ ROUTING DEBUG: LLM fallback triage JSON parsing failed, defaulting to 'rag_query'")
             return "rag_query"
 
-    def _run_graph_query(self, query: str, history: list) -> Dict[str, Any]:
-        contextual_query = self._format_query_with_history(query, history)
-        structured_query = self.graph_query_translator.translate(contextual_query)
-        if not structured_query.get("start_node"):
-            return self.retrieval_pipeline.run(contextual_query, window_size_override=0)
-        results = self.graph_retriever.retrieve(structured_query)
-        if not results:
-            return self.retrieval_pipeline.run(contextual_query, window_size_override=0)
-        answer = ", ".join([res['details']['node_id'] for res in results])
-        return {"answer": f"From the knowledge graph: {answer}", "source_documents": results}
-
-    def _get_cache_key(self, query: str, query_type: str) -> str:
-        """Generate a cache key for the query"""
-        # Simple cache key based on query and type
-        return f"{query_type}:{query.strip().lower()}"
-    
-    def _cache_result(self, cache_key: str, result: Dict[str, Any], session_id: Optional[str] = None):
-        """Cache a result with size limit"""
-        if len(self._query_cache) >= self._cache_max_size:
-            # Remove oldest entry (simple FIFO eviction)
-            oldest_key = next(iter(self._query_cache))
-            del self._query_cache[oldest_key]
-        
-        self._query_cache[cache_key] = {
-            'result': result,
-            'timestamp': time.time(),
-            'session_id': session_id
-        }
-
     # ---------------- Public sync API (kept for backwards compatibility) --------------
-    def run(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    def run(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, retrieval_mode: Optional[str] = None, force_rag: bool = False, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Synchronous helper. If *event_callback* is supplied, important
         milestones will be forwarded to that callable as
 
             event_callback(phase:str, payload:Any)
         """
-        return asyncio.run(self._run_async(query, table_name, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, search_type, dense_weight, max_retries, event_callback))
+        return asyncio.run(self._run_async(query, table_name, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, retrieval_mode, force_rag, event_callback))
 
     # ---------------- Main async implementation --------------------------------------
-    async def _run_async(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, search_type: Optional[str] = None, dense_weight: Optional[float] = None, max_retries: int = 1, event_callback: Optional[callable] = None) -> Dict[str, Any]:
+    async def _run_async(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, retrieval_mode: Optional[str] = None, force_rag: bool = False, event_callback: Optional[callable] = None) -> Dict[str, Any]:
         start_time = time.time()
         
         # Emit analyze event at the start
@@ -279,51 +264,41 @@ Respond with JSON: {{"category": "<your_choice>"}}
         #             self._load_overviews(self._global_overview_path)
         #             self._current_overview_session = "GLOBAL"
         
-        query_type = await self._triage_query_async(query, history)
-        print(f"🎯 ROUTING DEBUG: Final triage decision: '{query_type}'")
+        if force_rag:
+            query_type = "rag_query"
+            print("🎯 ROUTING DEBUG: force_rag set – triage skipped, using 'rag_query'")
+        else:
+            query_type = await self._triage_query_async(query, history)
+            print(f"🎯 ROUTING DEBUG: Final triage decision: '{query_type}'")
         print(f"Agent Triage Decision: '{query_type}'")
-        
+
         # Create a contextual query that includes history for most operations
         contextual_query = self._format_query_with_history(query, history)
         raw_query = query.strip()
-        
+
         # --- Apply runtime AI reranker override (must happen before any retrieval calls) ---
         if ai_rerank is not None:
             rr_cfg = self.retrieval_pipeline.config.setdefault("reranker", {})
             rr_cfg["enabled"] = bool(ai_rerank)
-            if ai_rerank:
-                # Ensure the pipeline knows to use the external ColBERT reranker
-                rr_cfg.setdefault("type", "ai")
-                rr_cfg.setdefault("strategy", "rerankers-lib")
-                rr_cfg.setdefault(
-                    "model_name",
-                    # Falls back to ColBERT-small if the caller did not supply one
-                    self.ollama_config.get("rerank_model", "answerai-colbert-small-v1"),
-                )
 
         # --- Apply runtime retrieval configuration overrides ---
         if retrieval_k is not None:
             self.retrieval_pipeline.config["retrieval_k"] = retrieval_k
             print(f"🔍 Retrieval K set to: {retrieval_k}")
-            
+
         if context_window_size is not None:
             self.retrieval_pipeline.config["context_window_size"] = context_window_size
             print(f"🔍 Context window size set to: {context_window_size}")
-            
+
         if reranker_top_k is not None:
             rr_cfg = self.retrieval_pipeline.config.setdefault("reranker", {})
             rr_cfg["top_k"] = reranker_top_k
             print(f"🔍 Reranker top K set to: {reranker_top_k}")
-            
-        if search_type is not None:
+
+        if retrieval_mode is not None:
             retrieval_cfg = self.retrieval_pipeline.config.setdefault("retrieval", {})
-            retrieval_cfg["search_type"] = search_type
-            print(f"🔍 Search type set to: {search_type}")
-            
-        if dense_weight is not None:
-            dense_cfg = self.retrieval_pipeline.config.setdefault("retrieval", {}).setdefault("dense", {})
-            dense_cfg["weight"] = dense_weight
-            print(f"🔍 Dense search weight set to: {dense_weight}")
+            retrieval_cfg["search_type"] = retrieval_mode
+            print(f"🔍 Retrieval mode set to: {retrieval_mode}")
 
         query_embedding = None
         # 🚀 OPTIMIZED: Semantic Cache Check
@@ -376,10 +351,6 @@ Respond with JSON: {{"category": "<your_choice>"}}
 
             final_answer = await _run_stream()
             result = {"answer": final_answer, "source_documents": []}
-        
-        elif query_type == "graph_query" and hasattr(self, 'graph_retriever'):
-            print(f"✅ ROUTING DEBUG: Executing GRAPH_QUERY path")
-            result = self._run_graph_query(query, history)
 
         # --- RAG Query Processing with Optional Query Decomposition ---
         else: # Default to rag_query
@@ -394,7 +365,11 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 # Use the raw user query (without conversation history) for decomposition to avoid leakage of prior context
                 # Pass the last 5 conversation turns for context resolution within the decomposer
                 recent_history = history[-5:] if history else []
-                sub_queries = self.query_decomposer.decompose(raw_query, recent_history)
+                sub_queries = self.query_decomposer.decompose(
+                    raw_query,
+                    recent_history,
+                    max_sub_queries=query_decomp_config.get("max_sub_queries", 10),
+                )
                 if event_callback:
                     event_callback("decomposition", {"sub_queries": sub_queries})
                 print(f"Original query: '{query}' (Contextual: '{contextual_query}')")
@@ -426,59 +401,88 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     if compose_sub_answers is not None:
                         compose_from_sub_answers = compose_sub_answers
 
-                    print(f"\n--- Processing {len(sub_queries)} sub-queries in parallel ---")
-                    start_time_inner = time.time()
+                    if not compose_from_sub_answers:
+                        # ---- Roadmap item 2.2: decomposition applies at RERANK ----
+                        # The first stage runs ONCE, on the full original query.
+                        # Fanning the *first stage* out over sub-queries dilutes
+                        # it semantically (2026 MultiConIR/SSRB finding); the
+                        # sub-queries earn their keep at the rerank stage, where
+                        # every candidate is scored against every sub-query and
+                        # the scores are aggregated with
+                        # `query_decomposition.rerank_aggregate` ("max" or "mean").
+                        # With reranking off there is no rerank stage, so the
+                        # sub-queries go unused and this is plain single-query
+                        # retrieval — which is the shipped default.
+                        print("\n--- Decomposition applied at rerank; first stage uses the full query ---")
+                        if event_callback:
+                            event_callback("retrieval_started", {"count": 1})
+                        result = self.retrieval_pipeline.run(
+                            contextual_query,
+                            table_name,
+                            0 if context_expand is False else None,
+                            event_callback=event_callback,
+                            sub_queries=sub_queries,
+                        )
+                        if event_callback:
+                            event_callback("final_answer", result)
+                    else:
+                        # `compose_from_sub_answers` keeps per-sub-query *retrieval*
+                        # on purpose, and is the only thing that does: it needs a
+                        # separate answer per sub-question to compose from, which a
+                        # single shared candidate set cannot produce. One full
+                        # RetrievalPipeline.run() — retrieval, rerank, synthesis —
+                        # per sub-query, in parallel.
+                        print(f"\n--- Processing {len(sub_queries)} sub-queries in parallel ---")
+                        start_time_inner = time.time()
 
-                    # Shared containers
-                    sub_answers = []  # For two-stage composition
-                    all_source_docs = []  # For single-stage aggregation
-                    citations_seen = set()
+                        sub_answers = []
+                        all_source_docs = []
+                        citations_seen = set()
 
-                    # Emit rerank_started event before parallel retrievals (since each sub-query will rerank)
-                    if event_callback:
-                        event_callback("rerank_started", {"count": len(sub_queries)})
+                        # Emit rerank_started before the parallel retrievals (each sub-query reranks).
+                        if event_callback:
+                            event_callback("rerank_started", {"count": len(sub_queries)})
 
-                    # Emit token chunks as soon as we receive them. The UI
-                    # keeps answers separated by `index`, so interleaving is
-                    # harmless and gives continuous feedback.
+                        # Emit token chunks as soon as we receive them. The UI
+                        # keeps answers separated by `index`, so interleaving is
+                        # harmless and gives continuous feedback.
 
-                    def make_cb(idx: int):
-                        def _cb(ev_type: str, payload):
-                            if event_callback is None:
-                                return
-                            if ev_type == "token":
-                                event_callback("sub_query_token", {"index": idx, "text": payload.get("text", ""), "question": sub_queries[idx]})
-                            else:
-                                event_callback(ev_type, payload)
-                        return _cb
+                        def make_cb(idx: int):
+                            def _cb(ev_type: str, payload):
+                                if event_callback is None:
+                                    return
+                                if ev_type == "token":
+                                    event_callback("sub_query_token", {"index": idx, "text": payload.get("text", ""), "question": sub_queries[idx]})
+                                else:
+                                    event_callback(ev_type, payload)
+                            return _cb
 
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(sub_queries))) as executor:
-                        future_to_query = {
-                            executor.submit(
-                                self.retrieval_pipeline.run,
-                                sub_query,
-                                table_name,
-                                0 if context_expand is False else None,
-                                make_cb(i),
-                            ): (i, sub_query)
-                            for i, sub_query in enumerate(sub_queries)
-                        }
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(sub_queries))) as executor:
+                            future_to_query = {
+                                executor.submit(
+                                    self.retrieval_pipeline.run,
+                                    sub_query,
+                                    table_name,
+                                    0 if context_expand is False else None,
+                                    make_cb(i),
+                                ): (i, sub_query)
+                                for i, sub_query in enumerate(sub_queries)
+                            }
 
-                        for future in concurrent.futures.as_completed(future_to_query):
-                            i, sub_query = future_to_query[future]
-                            try:
-                                sub_result = future.result()
-                                print(f"✅ Sub-Query {i+1} completed: '{sub_query}'")
+                            for future in concurrent.futures.as_completed(future_to_query):
+                                i, sub_query = future_to_query[future]
+                                try:
+                                    sub_result = future.result()
+                                    print(f"✅ Sub-Query {i+1} completed: '{sub_query}'")
 
-                                if event_callback:
-                                    event_callback("sub_query_result", {
-                                        "index": i,
-                                        "query": sub_query,
-                                        "answer": sub_result.get("answer", ""),
-                                        "source_documents": sub_result.get("source_documents", []),
-                                    })
+                                    if event_callback:
+                                        event_callback("sub_query_result", {
+                                            "index": i,
+                                            "query": sub_query,
+                                            "answer": sub_result.get("answer", ""),
+                                            "source_documents": sub_result.get("source_documents", []),
+                                        })
 
-                                if compose_from_sub_answers:
                                     sub_answers.append({
                                         "question": sub_query,
                                         "answer": sub_result.get("answer", "")
@@ -488,24 +492,15 @@ Respond with JSON: {{"category": "<your_choice>"}}
                                         if doc['chunk_id'] not in citations_seen:
                                             all_source_docs.append(doc)
                                             citations_seen.add(doc['chunk_id'])
-                                else:
-                                    # Aggregate unique docs (single-stage path)
-                                    for doc in sub_result.get('source_documents', []):
-                                        if doc['chunk_id'] not in citations_seen:
-                                            all_source_docs.append(doc)
-                                            citations_seen.add(doc['chunk_id'])
-                            except Exception as e:
-                                print(f"❌ Sub-Query {i+1} failed: '{sub_query}' - {e}")
+                                except Exception as e:
+                                    print(f"❌ Sub-Query {i+1} failed: '{sub_query}' - {e}")
 
-                    parallel_time = time.time() - start_time_inner
-                    print(f"🚀 Parallel processing completed in {parallel_time:.2f}s")
+                        print(f"🚀 Parallel processing completed in {time.time() - start_time_inner:.2f}s")
 
-                    # Emit retrieval_done and rerank_done after all sub-queries are processed
-                    if event_callback:
-                        event_callback("retrieval_done", {"count": len(sub_queries)})
-                        event_callback("rerank_done", {"count": len(sub_queries)})
+                        if event_callback:
+                            event_callback("retrieval_done", {"count": len(sub_queries)})
+                            event_callback("rerank_done", {"count": len(sub_queries)})
 
-                    if compose_from_sub_answers:
                         print("\n--- Composing final answer from sub-answers ---")
                         compose_prompt = f"""
 You are an expert answer composer for a Retrieval-Augmented Generation (RAG) system.
@@ -552,47 +547,11 @@ FINAL ANSWER:
                         }
                         if event_callback:
                             event_callback("final_answer", result)
-                    else:
-                        print(f"\n--- Aggregated {len(all_source_docs)} unique documents from all sub-queries ---")
-
-                        if all_source_docs:
-                            aggregated_context = "\n\n".join([doc['text'] for doc in all_source_docs])
-                            final_answer = self.retrieval_pipeline._synthesize_final_answer(contextual_query, aggregated_context)
-                            result = {
-                                "answer": final_answer,
-                                "source_documents": all_source_docs
-                            }
-                            if event_callback:
-                                event_callback("final_answer", result)
-                        else:
-                            result = {
-                                "answer": "I could not find relevant information to answer your question.",
-                                "source_documents": []
-                            }
-                            if event_callback:
-                                event_callback("final_answer", result)
             else:
                 # Standard retrieval (single-query)
-                retrieved_docs = (self.retrieval_pipeline.retriever.retrieve(
-                    text_query=contextual_query,
-                    table_name=table_name or self.retrieval_pipeline.storage_config["text_table_name"],
-                    k=self.retrieval_pipeline.config.get("retrieval_k", 10),
-                ) if hasattr(self.retrieval_pipeline, "retriever") and self.retrieval_pipeline.retriever else [])
-
-                print("\n=== DEBUG: Original retrieval order ===")
-                for i, d in enumerate(retrieved_docs[:10]):
-                    snippet = (d.get('text','') or '')[:200].replace('\n',' ')
-                    print(f"Orig[{i}] id={d.get('chunk_id')} dist={d.get('_distance','') or d.get('score','')}  {snippet}")
-
                 result = self.retrieval_pipeline.run(contextual_query, table_name, 0 if context_expand is False else None, event_callback=event_callback)
 
-                # After run, result['source_documents'] is reranked list
-                reranked_docs = result.get('source_documents', [])
-                print("\n=== DEBUG: Reranked docs order ===")
-                for i, d in enumerate(reranked_docs[:10]):
-                    snippet = (d.get('text','') or '')[:200].replace('\n',' ')
-                    print(f"ReRank[{i}] id={d.get('chunk_id')} score={d.get('rerank_score','')} {snippet}")
-        
+
         # Verification step (simplified for now) - Skip in fast mode
         verification_enabled = self.pipeline_configs.get("verification", {}).get("enabled", True)
         if verify is not None:
@@ -651,22 +610,23 @@ FINAL ANSWER:
 
         router_prompt = f"""Task: Route query to correct system.
 
-Documents available: Invoices, DeepSeek-V3 research papers
+DOCUMENT OVERVIEWS:
+{overviews_block}
 
 Query: "{query}"
 
 Is this query asking about:
 A) Greetings/social: "Hi", "Hello", "Thanks", "What's up", "How are you"
-B) General knowledge: "CEO of Tesla", "capital of France", "what is 2+2"  
-C) Document content: invoice amounts, DeepSeek-V3 details, companies mentioned
+B) General knowledge unrelated to the documents above: "CEO of Tesla", "capital of France", "what is 2+2"
+C) Anything covered by, or plausibly contained in, the documents above
 
 If A or B → {{"category": "direct_answer"}}
 If C → {{"category": "rag_query"}}
 
 Response:"""
-        
+
         resp = self.llm_client.generate_completion(
-            model=self.ollama_config["generation_model"], prompt=router_prompt, format="json"
+            model=self._utility_model(), prompt=router_prompt, format="json"
         )
         try:
             raw_response = resp.get("response", "{}")

@@ -77,8 +77,7 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
     
     if (indexStatus === 'functional') {
       // Check if we have complete configuration metadata
-      const hasCompleteConfig = indexMeta.chunk_size && 
-                               indexMeta.chunk_overlap !== undefined &&
+      const hasCompleteConfig = indexMeta.chunk_size &&
                                indexMeta.retrieval_mode &&
                                indexMeta.embedding_model;
       
@@ -183,12 +182,6 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
                         {typeof indexMeta.chunk_size==='number' ? `${indexMeta.chunk_size} tokens` : indexMeta.chunk_size_inferred}
                         {indexMeta.chunk_size_inferred && <span className="text-gray-400"> (estimated)</span>}
                       </p>
-                    </div>
-                  )}
-                  {typeof indexMeta.chunk_overlap==='number' && (
-                    <div>
-                      <span className="block text-xs uppercase tracking-wide text-gray-300 mb-1">Chunk overlap</span>
-                      <p className="text-sm">{indexMeta.chunk_overlap} tokens</p>
                     </div>
                   )}
                 </div>

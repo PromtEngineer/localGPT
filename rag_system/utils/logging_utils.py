@@ -12,17 +12,6 @@ if not logger.handlers:
     )
 
 
-def log_query(query: str, sub_queries: List[str] | None = None) -> None:
-    """Emit a nicely-formatted block describing the incoming query and any
-    decomposition."""
-    border = "=" * 60
-    logger.info("\n%s\nUSER QUERY: %s", border, query)
-    if sub_queries:
-        for i, q in enumerate(sub_queries, 1):
-            logger.info("  sub-%d → %s", i, q)
-    logger.info("%s", border)
-
-
 def log_retrieval_results(results: List[Dict], k: int) -> None:
     """Show chunk_id, truncated text and score for the first *k* rows."""
     if not results:

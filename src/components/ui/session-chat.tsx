@@ -1,10 +1,8 @@
 "use client"
 
-import * as React from "react"
 import { ConversationPage } from "./conversation-page"
 import { ChatInput } from "./chat-input"
-import { EmptyChatState } from "./empty-chat-state"
-import { ChatMessage, ChatSession, chatAPI, generateUUID } from "@/lib/api"
+import { ChatMessage, ChatSession, chatAPI, generateUUID, DEFAULT_GENERATION_MODEL } from "@/lib/api"
 import { AttachedFile } from "@/lib/types"
 import { useEffect, useState, forwardRef, useImperativeHandle, useCallback } from "react"
 import { normalizeStreamingToken } from "@/utils/textNormalization"
@@ -45,7 +43,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   const [isIndexed, setIsIndexed] = useState(false)
   const [composeSubAnswers, setComposeSubAnswers] = useState<boolean>(true)
   const [enableDecompose, setEnableDecompose] = useState<boolean>(true)
-  const [enableAiRerank, setEnableAiRerank] = useState<boolean>(true)
+  // Off by default, matching PIPELINE_CONFIGS["default"].reranker.enabled — see
+  // eval/DECISIONS.md. Switching it on loads Qwen3-Reranker-4B lazily.
+  const [enableAiRerank, setEnableAiRerank] = useState<boolean>(false)
   const [enableContextExpand, setEnableContextExpand] = useState<boolean>(true)
   const [enableStream, setEnableStream] = useState<boolean>(true)
   const [enableVerify, setEnableVerify] = useState<boolean>(true)
@@ -54,13 +54,12 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   // Provence pruning toggle
   const [provencePrune, setProvencePrune] = useState<boolean>(false)
   
-  // ✨ NEW RETRIEVAL PARAMETERS
   const [retrievalK, setRetrievalK] = useState<number>(20)
   const [contextWindowSize, setContextWindowSize] = useState<number>(1)
   const [rerankerTopK, setRerankerTopK] = useState<number>(10)
   const [searchType, setSearchType] = useState<string>('hybrid')
   const [generationModels,setGenerationModels]=useState<string[]>([])
-  const [selectedModel,setSelectedModel]=useState<string>('qwen3:8b')
+  const [selectedModel,setSelectedModel]=useState<string>(DEFAULT_GENERATION_MODEL)
   const [currentIndexId, setCurrentIndexId] = useState<string | null>(null)
   const [currentIndexName, setCurrentIndexName] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -121,7 +120,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         const resp=await apiService.getModels();
         setGenerationModels(resp.generation_models||[])
         if(resp.generation_models&&resp.generation_models.length>0){
-          const def = resp.generation_models.find((m:string)=>m==='qwen3:8b');
+          const def = resp.generation_models.find((m:string)=>m===DEFAULT_GENERATION_MODEL);
           setSelectedModel(def || resp.generation_models[0])
         }
       }catch(e){console.warn('Failed to load models',e)}
@@ -214,6 +213,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           { key: 'analyze', label: 'Analyzing user question', status: 'pending' as const, details: '' },
           { key: 'decompose', label: 'Generating sub-queries', status: 'pending' as const, details: '' },
           { key: 'retrieval', label: 'Retrieving context', status: 'pending' as const, details: '' },
+          // Only ever becomes visible when the evidence-sufficiency retry fires
+          // (retrieval.retry, roadmap 2.1) — on most queries it stays pending.
+          { key: 'retry', label: 'Rechecking weak evidence', status: 'pending' as const, details: '' },
           { key: 'rerank', label: 'Reranking results', status: 'pending' as const, details: '' },
           { key: 'expand', label: 'Expanding context window', status: 'pending' as const, details: '' },
           { key: 'answer', label: 'Answering sub-queries', status: 'pending' as const, details: [] },
@@ -234,6 +236,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         })
         // keep global isLoading true so input disabled until completion
 
+        // Written from the setMessages updater when the 'complete' event lands,
+        // read by the deferred persistence call above. Assignment is idempotent,
+        // so StrictMode's double updater invocation is harmless.
+        const finalStepsSnapshot: { steps: Step[] | null } = { steps: null }
+
         await apiService.streamSessionMessage(
           {
             query: content,
@@ -245,7 +252,6 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             contextExpand: enableContextExpand,
             verify: enableVerify,
             model: selectedModel,
-            // ✨ NEW RETRIEVAL PARAMETERS
             retrievalK,
             contextWindowSize,
             rerankerTopK,
@@ -254,7 +260,34 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             provencePrune,
           },
           (evt) => {
-            console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
+            // 💾 PERSIST + REFRESH on completion. This must happen HERE, in the
+            // event callback (fires exactly once per SSE event) — never inside the
+            // setMessages updater below, which React StrictMode invokes twice and
+            // would persist every turn twice. The save itself is deferred one tick
+            // so the updater has applied and finalStepsSnapshot holds the finished
+            // pipeline cascade (writing a ref-like local from the updater is
+            // idempotent, so StrictMode double-invocation is harmless).
+            if (evt.type === 'complete' && activeSessionId) {
+              const answerText = typeof evt.data.answer === 'string' ? evt.data.answer : '';
+              const sourceDocs = Array.isArray(evt.data.source_documents) ? evt.data.source_documents : [];
+              setTimeout(async () => {
+                try {
+                  if (answerText) {
+                    await apiService.saveStreamedTurn(
+                      activeSessionId as string, content, answerText, sourceDocs,
+                      finalStepsSnapshot.steps ?? undefined,
+                    );
+                  }
+                  const { session } = await apiService.getSession(activeSessionId as string);
+                  setCurrentSession(session);
+                  if (onSessionChange) {
+                    onSessionChange(session);
+                  }
+                } catch (error) {
+                  console.error('Failed to persist/refresh session after completion:', error);
+                }
+              }, 0);
+            }
             setMessages(prev => prev.map(m => {
               if (m.id !== placeholder.id) return m;
               const steps = [...(m.content as any).steps];
@@ -285,6 +318,16 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 if (rrxIdx !== -1) {
                   steps[rrxIdx].status = 'active';
                   steps[rrxIdx].details = 'Reranking results...';
+                }
+                return { ...m, content: { steps } };
+              }
+              if (evt.type === 'retrieval_retry') {
+                const tidx = steps.findIndex(s => s.key === 'retry');
+                if (tidx !== -1) {
+                  steps[tidx].status = 'done';
+                  steps[tidx].details = evt.data?.kept === 'retry'
+                    ? `Weak evidence (${evt.data?.signal} ${evt.data?.score_before}); retried and kept the better result set.`
+                    : `Weak evidence (${evt.data?.signal} ${evt.data?.score_before}); retry did not improve it, kept the original.`;
                 }
                 return { ...m, content: { steps } };
               }
@@ -423,23 +466,8 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 steps.forEach(s => {
                   if (s.status !== 'done') s.status = 'done';
                 });
-                
-                // 🔄 REFRESH SESSION: After completion, refresh session data to get updated title
-                if (activeSessionId) {
-                  // Always refresh session data so updated title & message count are reflected in the UI
-                  setTimeout(async () => {
-                    try {
-                      const { session } = await apiService.getSession(activeSessionId as string);
-                      setCurrentSession(session);
-                      if (onSessionChange) {
-                        onSessionChange(session);
-                      }
-                    } catch (error) {
-                      console.error('Failed to refresh session after completion:', error);
-                    }
-                  }, 100); // Small delay to ensure backend has processed the title update
-                }
-                
+
+                finalStepsSnapshot.steps = steps;
                 return { ...m, content: { steps }, metadata: { message_type: 'complete' } };
               }
               if (evt.type === 'direct_answer') {
@@ -460,7 +488,6 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           contextExpand: enableContextExpand, 
           verify: enableVerify,
           model: selectedModel,
-          // ✨ NEW RETRIEVAL PARAMETERS
           retrievalK,
           contextWindowSize,
           rerankerTopK,
@@ -468,23 +495,22 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           forceRag: forceDocs,
           provencePrune,
         })
-      
+
       const aiMessage: ChatMessage = {
-        id: response.ai_message_id || generateUUID(),
+        id: generateUUID(),
         content: response.response,
         sender: 'assistant',
         timestamp: new Date().toISOString(),
-          metadata: { 
+          metadata: {
             message_type: 'sub_answer',
-            source_documents: (response as any).source_documents || [] 
+            source_documents: response.source_documents || []
           }
       }
       setMessages(prev => [...prev, aiMessage])
-      
-        if ((response as any).session) {
-          const sess = (response as any).session as ChatSession
-          setCurrentSession(sess)
-          if (onSessionChange) onSessionChange(sess)
+
+        if (response.session) {
+          setCurrentSession(response.session)
+          if (onSessionChange) onSessionChange(response.session)
         }
         if (onNewMessage) onNewMessage(aiMessage)
       }
@@ -646,7 +672,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'dropdown', label:'Search type', value: searchType, setter: setSearchType, options: [
               {value: 'hybrid', label: 'Hybrid (Vector + FTS)'},
               {value: 'vector_only', label: 'Vector Only'},
-              {value: 'bm25_only', label: 'FTS Only'}
+              {value: 'fts_only', label: 'FTS Only'}
             ]},
             {type: 'slider', label:'Retrieval chunks', value: retrievalK, setter: setRetrievalK, min: 5, max: 50, unit: ' chunks'},
             

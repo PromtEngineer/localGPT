@@ -8,6 +8,18 @@ import sys
 import traceback
 from pathlib import Path
 
+def lancedb_uri() -> str:
+    """LanceDB location as configured for the default pipeline."""
+    import os
+    env_path = os.getenv('LANCEDB_PATH')
+    if env_path:
+        return env_path
+    try:
+        from rag_system.main import PIPELINE_CONFIGS
+        return PIPELINE_CONFIGS.get('default', {}).get('storage', {}).get('lancedb_uri', './lancedb')
+    except Exception:
+        return './lancedb'
+
 def print_status(message, success=None):
     """Print status with emoji"""
     if success is True:
@@ -21,7 +33,8 @@ def check_imports():
     """Test basic imports"""
     print_status("Testing basic imports...")
     try:
-        from rag_system.main import get_agent, EXTERNAL_MODELS, OLLAMA_CONFIG, PIPELINE_CONFIGS
+        from rag_system.factory import get_agent
+        from rag_system.main import EXTERNAL_MODELS, OLLAMA_CONFIG, PIPELINE_CONFIGS
         print_status("Basic imports successful", True)
         return True
     except Exception as e:
@@ -33,20 +46,15 @@ def check_configurations():
     print_status("Checking configurations...")
     try:
         from rag_system.main import EXTERNAL_MODELS, OLLAMA_CONFIG, PIPELINE_CONFIGS
-        
+
         print(f"📊 External Models: {EXTERNAL_MODELS}")
         print(f"📊 Ollama Config: {OLLAMA_CONFIG}")
         print(f"📊 Pipeline Configs: {PIPELINE_CONFIGS}")
-        
-        # Check for common model dimension issues
+
         embedding_model = EXTERNAL_MODELS.get("embedding_model", "Unknown")
-        if "bge-small" in embedding_model:
-            print_status(f"Embedding model: {embedding_model} (384 dims)", True)
-        elif "Qwen3-Embedding" in embedding_model:
-            print_status(f"Embedding model: {embedding_model} (1024 dims) - Check data compatibility!", None)
-        else:
-            print_status(f"Embedding model: {embedding_model} - Verify dimensions!", None)
-            
+        print_status(f"Embedding model: {embedding_model}", True)
+        print_status("Dimensions are derived from the loaded model - see the embedding check below", None)
+
         print_status("Configuration check completed", True)
         return True
     except Exception as e:
@@ -57,7 +65,7 @@ def check_agent_initialization():
     """Test agent initialization"""
     print_status("Testing agent initialization...")
     try:
-        from rag_system.main import get_agent
+        from rag_system.factory import get_agent
         agent = get_agent('default')
         print_status("Agent initialization successful", True)
         return agent
@@ -77,14 +85,9 @@ def check_embedding_model(agent):
         dimensions = test_emb.shape[1]
         
         print_status(f"Embedding model: {model_name}", True)
-        print_status(f"Vector dimension: {dimensions}", True)
-        
-        # Warn about dimension compatibility
-        if dimensions == 384:
-            print_status("Using 384-dim embeddings (bge-small compatible)", True)
-        elif dimensions == 1024:
-            print_status("Using 1024-dim embeddings (Qwen3 compatible) - Ensure data compatibility!", None)
-        
+        print_status(f"Vector dimension: {dimensions} (read from the loaded model)", True)
+        print_status("Existing indexes must be rebuilt if this dimension changed", None)
+
         return True
     except Exception as e:
         print_status(f"Embedding model test failed: {e}", False)
@@ -95,7 +98,7 @@ def check_database_access():
     print_status("Testing database access...")
     try:
         import lancedb
-        db = lancedb.connect('./lancedb')
+        db = lancedb.connect(lancedb_uri())
         tables = db.table_names()
         
         print_status(f"LanceDB connected - {len(tables)} tables available", True)
@@ -118,7 +121,7 @@ def check_sample_query(agent):
     print_status("Testing sample query...")
     try:
         import lancedb
-        db = lancedb.connect('./lancedb')
+        db = lancedb.connect(lancedb_uri())
         tables = db.table_names()
         
         if not tables:

@@ -1,3 +1,2 @@
 requests
 python-dotenv
-PyPDF2 

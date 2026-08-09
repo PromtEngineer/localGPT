@@ -43,7 +43,7 @@ const optionHelp: Record<string,string> = {
   'RAG (no-triage)':'Force retrieval on every query; disables index-selection triage.',
   'Verify answer':'Runs an extra LLM pass to self-critique the draft answer.',
   'Streaming':'Send tokens to the UI as they are generated.',
-  'AI reranker':'Re-orders retrieved chunks with a cross-encoder (higher quality, more latency).',
+  'AI reranker':'Off by default. Re-orders retrieved chunks with Qwen3-Reranker-4B: measurably better ranking, but it loads 7.5GB of weights and added ~12.7s per query in our eval.',
   'Expand context window':'Adds neighbour chunks around each top chunk to provide more context.',
   'Context window size':'How many neighbour chunks to include on each side.',
   'Retrieval chunks':'Number of chunks fetched before reranking.',

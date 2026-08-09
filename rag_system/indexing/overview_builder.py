@@ -18,7 +18,7 @@ class OverviewBuilder:
         "DOCUMENT_START:\n{text}\n\nOVERVIEW:"
     )
 
-    def __init__(self, llm_client, model: str = "qwen3:0.6b", first_n_chunks: int = 5,
+    def __init__(self, llm_client, model: str, first_n_chunks: int = 5,
                  out_path: str | None = None):
         if out_path is None:
             out_path = "index_store/overviews/overviews.jsonl"
@@ -26,7 +26,9 @@ class OverviewBuilder:
         self.model = model
         self.first_n = first_n_chunks
         self.out_path = out_path
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        out_dir = os.path.dirname(out_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
 
     def build_and_store(self, doc_id: str, chunks: List[Dict[str, Any]]):
         if not chunks:

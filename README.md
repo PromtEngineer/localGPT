@@ -10,7 +10,7 @@
 [![GitHub Forks](https://img.shields.io/github/forks/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/network/members)
 [![GitHub Issues](https://img.shields.io/github/issues/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/PromtEngineer/localGPT?style=flat-square)](https://github.com/PromtEngineer/localGPT/pulls)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg?style=flat-square)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg?style=flat-square)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg?style=flat-square)](https://www.docker.com/)
 
@@ -28,12 +28,12 @@
 
 LocalGPT is a **fully private, on-premise Document Intelligence platform**. Ask questions, summarise, and uncover insights from your files with state-of-the-art AI—no data ever leaves your machine.
 
-More than a traditional RAG (Retrieval-Augmented Generation) tool, LocalGPT features a **hybrid search engine** that blends semantic similarity, keyword matching, and [Late Chunking](https://jina.ai/news/late-chunking-in-long-context-embedding-models/) for long-context precision. A **smart router** automatically selects between RAG and direct LLM answering for every query, while **contextual enrichment** and sentence-level [Context Pruning](https://huggingface.co/naver/provence-reranker-debertav3-v1) surface only the most relevant content. An independent **verification** pass adds an extra layer of accuracy.
+More than a traditional RAG (Retrieval-Augmented Generation) tool, LocalGPT features a **hybrid search engine** that fuses dense vector search with LanceDB's native full-text search, plus [Late Chunking](https://jina.ai/news/late-chunking-in-long-context-embedding-models/) for long-context precision. A **smart router** picks between RAG and direct LLM answering for every query, while **contextual enrichment** and sentence-level [Context Pruning](https://huggingface.co/naver/provence-reranker-debertav3-v1) surface only the most relevant content. An independent **verification** pass adds an extra layer of accuracy.
 
-The architecture is **modular and lightweight**—enable only the components you need. With a pure-Python core and minimal dependencies, LocalGPT is simple to deploy, run, and maintain on any infrastructure.The system has minimal dependencies on frameworks and libraries, making it easy to deploy and maintain. The RAG system is pure python and does not require any additional dependencies.
+The architecture is **modular and lightweight**—enable only the components you need. The RAG core is plain Python built on the standard library's HTTP server, with no web framework and no agent framework in the way.
 
 ## ▶️ Video
-Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT. 
+Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT.
 
 | Home | Create Index | Chat |
 |------|--------------|------|
@@ -42,73 +42,64 @@ Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT.
 ## ✨ Features
 
 - **Utmost Privacy**: Your data remains on your computer, ensuring 100% security.
-- **Versatile Model Support**: Seamlessly integrate a variety of open-source models via Ollama.
-- **Diverse Embeddings**: Choose from a range of open-source embeddings.
+- **Versatile Model Support**: Swap generation models freely via Ollama.
+- **Diverse Embeddings**: HuggingFace embedding models (harrier-oss-v1, the Qwen3-Embedding family) or any Ollama embedding tag.
 - **Reuse Your LLM**: Once downloaded, reuse your LLM without the need for repeated downloads.
-- **Chat History**: Remembers your previous conversations (in a session).
-- **API**: LocalGPT has an API that you can use for building RAG Applications.
-- **GPU, CPU, HPU & MPS Support**: Supports multiple platforms out of the box, Chat with your data using `CUDA`, `CPU`, `HPU (Intel® Gaudi®)` or `MPS` and more!
+- **API**: A REST gateway on port 8000 and the RAG API on port 8001 for building your own applications.
+- **CUDA, MPS & CPU**: Embedding and reranking pick CUDA, then Apple MPS, then CPU automatically.
 
 ### 📖 Document Processing
-- **Multi-format Support**: PDF, DOCX, TXT, Markdown, and more (Currently only PDF is supported)
-- **Contextual Enrichment**: Enhanced document understanding with AI-generated context, inspired by [Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)
-- **Batch Processing**: Handle multiple documents simultaneously
+- **Formats**: PDF, DOCX, HTML/HTM, Markdown, and TXT, parsed by [Docling](https://github.com/docling-project/docling)
+- **OCR fallback**: PDFs with no text layer are re-run through Docling's OCR pipeline; the engine is chosen from whatever is installed (OcrMac on macOS, then EasyOCR, RapidOCR, tesserocr, or the `tesseract` CLI)
+- **Contextual Enrichment**: Chunk-level context generated by a small LLM, inspired by [Contextual Retrieval](https://www.anthropic.com/news/contextual-retrieval)
+- **Late Chunking**: A second, document-level embedding pass stored in a companion `<table>_lc` table
+- **Document Overviews**: A short per-document summary written to `index_store/overviews/<id>.jsonl` and used by the router
 
 ### 🤖 AI-Powered Chat
 - **Natural Language Queries**: Ask questions in plain English
-- **Source Attribution**: Every answer includes document references
-- **Smart Routing**: Automatically chooses between RAG and direct LLM responses
-- **Query Decomposition**: Breaks complex queries into sub-questions for better answers
-- **Semantic Caching**: TTL-based caching with similarity matching for faster responses
-- **Session-Aware History**: Maintains conversation context across interactions
-- **Answer Verification**: Independent verification pass for accuracy
-- **Multiple AI Models**: Ollama for inference, HuggingFace for embeddings and reranking
-
+- **Source Attribution**: Answers come back with the chunks they were grounded in
+- **Smart Routing**: Chooses between RAG and a direct LLM answer per query
+- **Query Decomposition**: Splits complex questions into sub-questions, answers each, then composes
+- **Reciprocal Rank Fusion**: Vector and full-text hits are fused with RRF — no weights to tune
+- **Optional Reranking**: A cross-encoder pass over the fused candidate set, off by default — the first stage already outranks it ([`eval/DECISIONS.md`](eval/DECISIONS.md))
+- **Sentence Pruning**: Optional Provence pruning drops irrelevant sentences from each chunk
+- **Semantic Caching**: TTL cache with a 0.98 similarity threshold, scoped to the session
+- **Answer Verification**: A second pass that appends `[Confidence: N%]` to the answer
 
 ### 🛠️ Developer-Friendly
-- **RESTful APIs**: Complete API access for integration
-- **Real-time Progress**: Live updates during document processing
-- **Flexible Configuration**: Customize models, chunk sizes, and search parameters
-- **Extensible Architecture**: Plugin system for custom components
+- **RESTful APIs**: Every UI action is a documented HTTP call
+- **Streaming phases**: Server-Sent Events expose each pipeline stage as it runs
+- **Flexible Configuration**: Models, chunk size, retrieval mode and toggles per request
+- **One master config**: `rag_system/main.py` holds every default, overridable by environment variable
 
 ### 🎨 Modern Interface
 - **Intuitive Web UI**: Clean, responsive design
 - **Session Management**: Organize conversations by topic
 - **Index Management**: Easy document collection management
-- **Real-time Chat**: Streaming responses for immediate feedback
+- **Live Progress**: Retrieval, reranking and synthesis stages stream into the chat as they happen
 
 ---
 
 ## 🚀 Quick Start
 
-Note: The installation is currently only tested on macOS. 
-
 ### Prerequisites
-- Python 3.8 or higher (tested with Python 3.11.5)
-- Node.js 16+ and npm (tested with Node.js 23.10.0, npm 10.9.2)
+- Python 3.10+ (3.11 recommended — the Docker images use `python:3.11-slim`)
+- Node.js 20+ and npm
 - Docker (optional, for containerized deployment)
 - 8GB+ RAM (16GB+ recommended)
 - Ollama (required for both deployment approaches)
 
-### ***NOTE***
-Before this brach is moved to the main branch, please clone this branch for instalation:
-
-```bash
-git clone -b localgpt-v2 https://github.com/PromtEngineer/localGPT.git
-cd localGPT
-```
-
-### Option 1: Docker Deployment 
+### Option 1: Docker Deployment
 
 ```bash
 # Clone the repository
 git clone https://github.com/PromtEngineer/localGPT.git
 cd localGPT
 
-# Install Ollama locally (required even for Docker)
+# Install Ollama locally (recommended even for Docker)
 curl -fsSL https://ollama.ai/install.sh | sh
-ollama pull qwen3:0.6b
-ollama pull qwen3:8b
+ollama pull qwen3.5:9b
+ollama pull qwen3.5:4b
 
 # Start Ollama
 ollama serve
@@ -119,6 +110,19 @@ ollama serve
 # Access the application
 open http://localhost:3000
 ```
+
+If you would rather not install Ollama on the host, run it as a container instead:
+
+```bash
+./start-docker.sh container
+# then pull the models inside the container
+docker compose --profile with-ollama exec ollama ollama pull qwen3.5:9b
+docker compose --profile with-ollama exec ollama ollama pull qwen3.5:4b
+```
+
+`./start-docker.sh` (with no argument) uses local Ollama. If nothing is listening on
+port 11434 it offers to switch to the containerized Ollama; add `-y` (or set
+`NONINTERACTIVE=1`) to take that fallback without a prompt in scripts and CI.
 
 **Docker Management Commands:**
 ```bash
@@ -143,20 +147,19 @@ cd localGPT
 pip install -r requirements.txt
 
 # Key dependencies installed:
-# - torch==2.4.1, transformers==4.51.0 (AI models)
-# - lancedb (vector database)
-# - rank_bm25, fuzzywuzzy (search algorithms)
-# - sentence_transformers, rerankers (embedding/reranking)
-# - docling (document processing)
-# - colpali-engine (multimodal processing - support coming soon)
+# - torch==2.4.1, transformers==4.51.0 (embedding + reranker models)
+# - lancedb (vector store and full-text search)
+# - rerankers (cross-encoder reranking)
+# - docling (document parsing)
+# - fuzzywuzzy, python-Levenshtein (fuzzy matching helpers)
 
 # Install Node.js dependencies
 npm install
 
 # Install and start Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
-ollama pull qwen3:0.6b
-ollama pull qwen3:8b
+ollama pull qwen3.5:9b
+ollama pull qwen3.5:4b
 ollama serve
 
 # Start the system (in a new terminal)
@@ -168,32 +171,35 @@ open http://localhost:3000
 
 **System Management:**
 ```bash
-# Check system health (comprehensive diagnostics)
+# Check system health (loads the models and runs a sample query)
 python system_health_check.py
 
-# Check service status and health
+# Real HTTP health checks against each service; exits non-zero if one is unhealthy
 python run_system.py --health
 
-# Start in production mode
+# Start in production mode (runs `npm run build` before `next start`)
 python run_system.py --mode prod
 
-# Skip frontend (backend + RAG API only)
+# Skip frontend (Ollama + RAG API + backend only)
 python run_system.py --no-frontend
 
-# View aggregated logs
+# Tail logs/*.log from another shell
 python run_system.py --logs-only
 
-# Stop all services
+# Stop everything recorded in logs/run_system.pid
 python run_system.py --stop
 # Or press Ctrl+C in the terminal running python run_system.py
 ```
 
 **Service Architecture:**
-The `run_system.py` launcher manages four key services:
-- **Ollama Server** (port 11434): AI model serving
-- **RAG API Server** (port 8001): Document processing and retrieval
-- **Backend Server** (port 8000): Session management and API endpoints
-- **Frontend Server** (port 3000): React/Next.js web interface
+The `run_system.py` launcher manages four services and writes their PIDs to `logs/run_system.pid`:
+- **Ollama Server** (port 11434): model serving — reused if already running
+- **RAG API Server** (port 8001): indexing, retrieval and the agent loop
+- **Backend Server** (port 8000): sessions, indexes, uploads, chat history
+- **Frontend Server** (port 3000): Next.js web interface (optional — skipped if `npm` is missing)
+
+On startup the launcher checks that `qwen3.5:9b` and `qwen3.5:4b` are present and
+runs `ollama pull` for anything missing.
 
 ### Option 3: Manual Component Startup
 
@@ -203,15 +209,21 @@ ollama serve
 
 # Terminal 2: Start RAG API
 python -m rag_system.api_server
+# equivalently: python -m rag_system.main api --port 8001
 
 # Terminal 3: Start Backend
-cd backend && python server.py
+python backend/server.py
 
 # Terminal 4: Start Frontend
 npm run dev
 
 # Access at http://localhost:3000
 ```
+
+> Run every command from the repository root. Relative paths (`backend/chat_data.db`,
+> `lancedb/`, `index_store/`, `shared_uploads/`) resolve against the current working
+> directory, so `cd backend && python server.py` would create a second database at
+> `backend/backend/chat_data.db`.
 
 ---
 
@@ -222,62 +234,69 @@ npm run dev
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
-sudo apt install python3.8 python3-pip nodejs npm docker.io docker-compose
+sudo apt install python3.11 python3-pip nodejs npm docker.io docker-compose-plugin
 ```
 
 **macOS:**
 ```bash
-brew install python@3.8 node npm docker docker-compose
+brew install python@3.11 node docker
 ```
 
 **Windows:**
 ```bash
-# Install Python 3.8+, Node.js, and Docker Desktop
+# Install Python 3.10+, Node.js 20+, and Docker Desktop
 # Then use PowerShell or WSL2
 ```
 
 #### 2. Install AI Models
 
-**Install Ollama (Recommended):**
+Only the two Ollama models need an explicit pull. The embedding model
+(`microsoft/harrier-oss-v1-0.6b`, 1.2 GB) is downloaded from HuggingFace the
+first time it is used; the reranker is only downloaded if you switch reranking
+on, which is off by default.
+
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
 
-# Pull recommended models
-ollama pull qwen3:0.6b          # Fast generation model
-ollama pull qwen3:8b            # High-quality generation model
+# Pull the default models
+ollama pull qwen3.5:9b          # answer generation
+ollama pull qwen3.5:4b          # routing, triage, enrichment, verification
 ```
 
-#### 3. Configure Environment
+#### 3. Configure Environment (optional)
 
-```bash
-# Copy environment template
-cp .env.example .env
+Every setting has a working default, so LocalGPT runs with no `.env` at all.
+To override one, create a `.env` in the repository root (`rag_system/main.py`
+calls `load_dotenv()` at import, before its config constants are evaluated; the
+factory calls it again defensively). `.env.example` lists the same variables
+with their code defaults.
 
-# Edit configuration
-nano .env
-```
+| Variable | Default | Read by |
+|----------|---------|---------|
+| `OLLAMA_HOST` | `http://localhost:11434` | `rag_system/main.py`, `backend/ollama_client.py` |
+| `RAG_API_URL` | `http://localhost:8001` | `backend/server.py` (builds `/chat` and `/index`) |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | `src/lib/api.ts` — inlined at `npm run build` |
+| `NEXT_PUBLIC_RAG_API_URL` | `http://localhost:8001` | `src/lib/api.ts` — inlined at `npm run build` |
+| `DB_PATH` | `backend/chat_data.db` | `backend/database.py` |
+| `LANCEDB_PATH` | `storage.lancedb_uri` (`./lancedb`) | `rag_system/main.py` (pipeline profiles), `backend/database.py`, `system_health_check.py` |
+| `GENERATION_MODEL` | `qwen3.5:9b` | `rag_system/main.py`, `backend/server.py`, `run_system.py` |
+| `ENRICHMENT_MODEL` | `qwen3.5:4b` | `rag_system/main.py`, `backend/server.py`, `run_system.py` |
+| `EMBEDDING_MODEL` | `microsoft/harrier-oss-v1-0.6b` | `rag_system/main.py` |
+| `RERANKER_MODEL` | `Qwen/Qwen3-Reranker-4B` (only loaded when reranking is switched on) | `rag_system/main.py` |
+| `RAG_CONFIG_MODE` | `default` | `rag_system/api_server.py` (`default` or `fast`) |
+| `RAG_API_TIMEOUT` | `600` | `backend/server.py` (seconds to wait for a chat answer) |
+| `RAG_API_INDEX_TIMEOUT` | `3600` | `backend/server.py` (seconds to wait for an indexing run) |
+| `LLM_BACKEND` | `ollama` | `rag_system/main.py` (`ollama` or `watsonx`) |
+| `HF_TOKEN` | unset | HuggingFace, for gated model downloads |
 
-**Key Configuration Options:**
-```env
-# AI Models (referenced in rag_system/main.py)
-OLLAMA_HOST=http://localhost:11434
+`NEXT_PUBLIC_*` values are baked into the frontend bundle by `next build`.
+Changing them requires a rebuild (`npm run build`, or `docker compose build frontend`).
 
-# Database Paths (used by backend and RAG system)
-DATABASE_PATH=./backend/chat_data.db
-VECTOR_DB_PATH=./lancedb
-
-# Server Settings (used by run_system.py)
-BACKEND_PORT=8000
-FRONTEND_PORT=3000
-RAG_API_PORT=8001
-
-# Optional: Override default models
-GENERATION_MODEL=qwen3:8b
-ENRICHMENT_MODEL=qwen3:0.6b
-EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
-RERANKER_MODEL=answerdotai/answerai-colbert-small-v1
-```
+> **Changing `EMBEDDING_MODEL` invalidates existing indexes.** Vector width is read
+> from the loaded model, and appending vectors of a different width to an existing
+> LanceDB table raises an error telling you to rebuild. Re-create your indexes after
+> switching embedding models.
 
 #### 4. Initialize the System
 
@@ -285,13 +304,13 @@ RERANKER_MODEL=answerdotai/answerai-colbert-small-v1
 # Run system health check
 python system_health_check.py
 
-# Initialize databases
+# Initialize the SQLite database
 python -c "from backend.database import ChatDatabase; ChatDatabase().init_database()"
 
-# Test installation
-python -c "from rag_system.main import get_agent; print('✅ Installation successful!')"
+# Test the RAG imports
+python -c "from rag_system.factory import get_agent; print('✅ Installation successful!')"
 
-# Validate complete setup
+# Validate the running services
 python run_system.py --health
 ```
 
@@ -306,32 +325,51 @@ An **index** is a collection of processed documents that you can chat with.
 #### Using the Web Interface:
 1. Open http://localhost:3000
 2. Click "Create New Index"
-3. Upload your documents (PDF, DOCX, TXT)
+3. Upload your documents (PDF, DOCX, TXT, MD, HTML)
 4. Configure processing options
 5. Click "Build Index"
 
-#### Using Scripts:
+#### Using the CLI:
 ```bash
-# Simple script approach
-./simple_create_index.sh "My Documents" "path/to/document.pdf"
+# Index a single file or a whole directory with the 'default' profile
+python -m rag_system.main index ./my_documents
 
-# Interactive script
-python create_index_script.py
+# Use the speed-optimised profile instead
+python -m rag_system.main index ./my_documents --mode fast
+
+# Ask one question and print the JSON result
+python -m rag_system.main chat "What are the key findings?"
 ```
 
-#### Using API:
+`index` walks a directory for `.pdf`, `.docx`, `.html`, `.htm`, `.md` and `.txt`
+files. It writes into the profile's `storage.text_table_name` (`text_pages_v4`),
+which is *not* the per-index table the web UI creates.
+
+#### Using the interactive script (creates a UI-visible index):
+```bash
+# Guided prompts: name, documents, chunk size, models
+python create_index_script.py
+
+# Non-interactive, from a JSON file
+python create_index_script.py --create-sample    # writes index_config.sample.json
+python create_index_script.py --batch index_config.sample.json
+```
+
+#### Using the HTTP API:
 ```bash
 # Create index
 curl -X POST http://localhost:8000/indexes \
   -H "Content-Type: application/json" \
   -d '{"name": "My Index", "description": "My documents"}'
 
-# Upload documents
+# Upload documents (form field name must be "files")
 curl -X POST http://localhost:8000/indexes/INDEX_ID/upload \
   -F "files=@document.pdf"
 
 # Build index
-curl -X POST http://localhost:8000/indexes/INDEX_ID/build
+curl -X POST http://localhost:8000/indexes/INDEX_ID/build \
+  -H "Content-Type: application/json" \
+  -d '{"chunk_size": 512, "enable_enrich": true, "enable_latechunk": true}'
 ```
 
 ### 2. Start Chatting
@@ -345,96 +383,116 @@ Once your index is built:
 
 ### 3. Advanced Features
 
-#### Custom Model Configuration
+#### Per-session and per-request model choice
 ```bash
-# Use different models for different tasks
+# The session's default generation model
 curl -X POST http://localhost:8000/sessions \
   -H "Content-Type: application/json" \
-  -d '{
-    "title": "High Quality Session",
-    "model": "qwen3:8b",
-    "embedding_model": "Qwen/Qwen3-Embedding-4B"
-  }'
+  -d '{"title": "High Quality Session", "model": "qwen3.6:27b"}'
+
+# Override it for one message
+curl -X POST http://localhost:8000/sessions/SESSION_ID/messages \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Summarise section 3", "model": "qwen3.5:4b"}'
 ```
 
-#### Batch Document Processing
-```bash
-# Process multiple documents at once
-python demo_batch_indexing.py --config batch_indexing_config.json
-```
+The embedding model is a property of the index, not the session — choose it when
+you build the index.
 
 #### API Integration
 ```python
 import requests
 
-# Chat with your documents via API
-response = requests.post('http://localhost:8000/chat', json={
+# Talk to the RAG API directly
+response = requests.post('http://localhost:8001/chat', json={
     'query': 'What are the key findings in the research papers?',
     'session_id': 'your-session-id',
-    'search_type': 'hybrid',
-    'retrieval_k': 20
+    'retrieval_mode': 'hybrid',
+    'retrieval_k': 20,
 })
 
-print(response.json()['response'])
+print(response.json()['answer'])
 ```
 
 ---
 
 ## 🔧 Configuration
 
+All defaults live in `rag_system/main.py`. Every model name there can be
+overridden with the environment variables listed above.
+
 ### Model Configuration
 
-LocalGPT supports multiple AI model providers with centralized configuration:
+| Role | Default | Documented options |
+|------|---------|--------------------|
+| Generation (answers) | `qwen3.5:9b` | `qwen3.6:27b` (high-end, ~17GB), `qwen3.5:4b` (light) |
+| Enrichment / utility (routing, triage, decomposition, verification) | `qwen3.5:4b` | `qwen3.5:2b` (light) |
+| Embedding | `microsoft/harrier-oss-v1-0.6b` (MIT, 1024 dims) | `Qwen/Qwen3-Embedding-4B` (2560 dims, 32K context, for multilingual / long-context corpora), `Qwen/Qwen3-Embedding-0.6B` (1024 dims) |
+| Reranker (off by default) | `Qwen/Qwen3-Reranker-4B` | `BAAI/bge-reranker-v2-m3` (low latency), `answerdotai/answerai-colbert-small-v1`, `Qwen/Qwen3-Reranker-0.6B` |
 
-#### Ollama Models (Local Inference)
 ```python
+# rag_system/main.py
 OLLAMA_CONFIG = {
-    "host": "http://localhost:11434",
-    "generation_model": "qwen3:8b",        # Main text generation
-    "enrichment_model": "qwen3:0.6b"       # Lightweight routing/enrichment
+    "host": os.getenv("OLLAMA_HOST", "http://localhost:11434"),
+    "generation_model": os.getenv("GENERATION_MODEL", "qwen3.5:9b"),
+    "enrichment_model": os.getenv("ENRICHMENT_MODEL", "qwen3.5:4b"),
+}
+
+EXTERNAL_MODELS = {
+    "embedding_model": os.getenv("EMBEDDING_MODEL", "microsoft/harrier-oss-v1-0.6b"),
+    "reranker_model": os.getenv("RERANKER_MODEL", "Qwen/Qwen3-Reranker-4B"),
 }
 ```
 
-#### External Models (HuggingFace Direct)
-```python
-EXTERNAL_MODELS = {
-    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",           # 1024 dimensions
-    "reranker_model": "answerdotai/answerai-colbert-small-v1", # ColBERT reranker
-    "fallback_reranker": "BAAI/bge-reranker-base"             # Backup reranker
-}
-```
+Embedding dimensions are never hardcoded — they are measured from the vectors the
+loaded model produces. If the reranker fails to load, the pipeline logs a warning
+and continues **without** reranking rather than falling back to another model.
+
+Vision / multimodal models are not part of the pipeline. PDF parsing and OCR are
+handled by Docling. Models such as GLM-OCR or Qwen3-VL could be added as a
+pre-processing step, but **they are not integrated today**.
 
 ### Pipeline Configuration
 
-LocalGPT offers two main pipeline configurations:
+`PIPELINE_CONFIGS` has exactly two profiles. Select one with `RAG_CONFIG_MODE`
+(RAG API) or `--mode` (CLI).
 
 #### Default Pipeline (Production-Ready)
 ```python
 "default": {
-    "description": "Production-ready pipeline with hybrid search, AI reranking, and verification",
+    "description": "Production-ready pipeline with hybrid search, query decomposition, and verification",
     "storage": {
         "lancedb_uri": "./lancedb",
-        "text_table_name": "text_pages_v3",
-        "bm25_path": "./index_store/bm25"
+        "text_table_name": "text_pages_v4"
     },
     "retrieval": {
-        "retriever": "multivector",
         "search_type": "hybrid",
-        "late_chunking": {"enabled": True},
-        "dense": {"enabled": True, "weight": 0.7},
-        "bm25": {"enabled": True}
+        "latechunk": {"enabled": True},
+        "dense": {"enabled": True},
+        "retry": {"enabled": True, "min_top_score": 0.12, "max_attempts": 1}
     },
+    "embedding_model_name": EXTERNAL_MODELS["embedding_model"],
+    # Off by default: the first stage already outranks the cheap cross-encoder,
+    # and the reranker that does win costs ~12.7s/query (eval/DECISIONS.md).
     "reranker": {
-        "enabled": True,
-        "type": "ai",
+        "enabled": False,
+        "model_type": "cross-encoder",
         "strategy": "rerankers-lib",
-        "model_name": "answerdotai/answerai-colbert-small-v1",
+        "model_name": EXTERNAL_MODELS["reranker_model"],
         "top_k": 10
     },
-    "query_decomposition": {"enabled": True, "max_sub_queries": 3},
+    "query_decomposition": {"enabled": True, "compose_from_sub_answers": True},
     "verification": {"enabled": True},
     "retrieval_k": 20,
-    "contextual_enricher": {"enabled": True, "window_size": 1}
+    "context_window_size": 0,
+    "semantic_cache_threshold": 0.98,
+    "cache_scope": "session",
+    "contextual_enricher": {"enabled": True, "window_size": 1},
+    "indexing": {
+        "embedding_batch_size": 50,
+        "enrichment_batch_size": 10,
+        "enable_progress_tracking": True
+    }
 }
 ```
 
@@ -444,28 +502,35 @@ LocalGPT offers two main pipeline configurations:
     "description": "Speed-optimized pipeline with minimal overhead",
     "retrieval": {
         "search_type": "vector_only",
-        "late_chunking": {"enabled": False}
+        "latechunk": {"enabled": False},
+        "dense": {"enabled": True}
     },
     "reranker": {"enabled": False},
     "query_decomposition": {"enabled": False},
     "verification": {"enabled": False},
     "retrieval_k": 10,
-    "contextual_enricher": {"enabled": False}
-}
-```
-
-### Search Configuration
-
-```python
-SEARCH_CONFIG = {
-    'hybrid': {
-        'dense_weight': 0.7,
-        'sparse_weight': 0.3,
-        'retrieval_k': 20,
-        'reranker_top_k': 10
+    "contextual_enricher": {"enabled": False},
+    "indexing": {
+        "embedding_batch_size": 100,
+        "enrichment_batch_size": 50,
+        "enable_progress_tracking": False
     }
 }
 ```
+
+### Retrieval Modes
+
+`retrieval_mode` (wire name; `search_type` inside the pipeline config) accepts:
+
+| Value | Behaviour |
+|-------|-----------|
+| `hybrid` *(default)* | Vector and LanceDB full-text legs run in parallel and are fused with Reciprocal Rank Fusion |
+| `vector_only` | Dense vector search only |
+| `fts_only` | LanceDB full-text search only |
+
+Anything else is rejected with HTTP 400 by the RAG API. There is no
+`dense_weight` / `denseWeight` knob — RRF needs no weights.
+
 ---
 
 ## 🛠️ Troubleshooting
@@ -475,10 +540,10 @@ SEARCH_CONFIG = {
 #### Installation Problems
 ```bash
 # Check Python version
-python --version  # Should be 3.8+
+python --version  # 3.10+ required, 3.11 recommended
 
 # Check dependencies
-pip list | grep -E "(torch|transformers|lancedb)"
+pip list | grep -E "(torch|transformers|lancedb|docling|rerankers)"
 
 # Reinstall dependencies
 pip install -r requirements.txt --force-reinstall
@@ -491,7 +556,8 @@ ollama list
 curl http://localhost:11434/api/tags
 
 # Pull missing models
-ollama pull qwen3:0.6b
+ollama pull qwen3.5:9b
+ollama pull qwen3.5:4b
 ```
 
 #### Database Issues
@@ -499,10 +565,16 @@ ollama pull qwen3:0.6b
 # Check database connectivity
 python -c "from backend.database import ChatDatabase; db = ChatDatabase(); print('✅ Database OK')"
 
-# Reset database (WARNING: This deletes all data)
+# Reset database (WARNING: This deletes all sessions, messages and index metadata)
 rm backend/chat_data.db
 python -c "from backend.database import ChatDatabase; ChatDatabase().init_database()"
 ```
+
+#### Dimension mismatch after changing the embedding model
+```
+ValueError: ... changing the embedding model requires rebuilding the index
+```
+Delete the affected index in the UI (or `DELETE /indexes/{id}`) and rebuild it.
 
 #### Performance Issues
 ```bash
@@ -512,263 +584,239 @@ python system_health_check.py
 # Monitor memory usage
 htop  # or Task Manager on Windows
 
-# Optimize for low-memory systems
-export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+# Use lighter models (the default embedder is already the small one at 1.2GB)
+export GENERATION_MODEL=qwen3.5:4b
 ```
 
 ### Getting Help
 
-1. **Check Logs**: The system creates structured logs in the `logs/` directory:
-   - `logs/system.log`: Main system events and errors
-   - `logs/ollama.log`: Ollama server logs
-   - `logs/rag-api.log`: RAG API processing logs
-   - `logs/backend.log`: Backend server logs
-   - `logs/frontend.log`: Frontend build and runtime logs
+1. **Check Logs**: `run_system.py` writes structured logs to `logs/`:
+   - `logs/system.log`: launcher events
+   - `logs/ollama.log`, `logs/rag-api.log`, `logs/backend.log`, `logs/frontend.log`: per-service output
+   - `logs/run_system.pid`: PIDs used by `--stop`
 
-2. **System Health**: Run comprehensive diagnostics:
+2. **System Health**: Run diagnostics:
    ```bash
-   python system_health_check.py  # Full system diagnostics
-   python run_system.py --health  # Service status check
+   python system_health_check.py  # loads models, runs a sample query
+   python run_system.py --health  # HTTP checks, non-zero exit on failure
    ```
 
-3. **Health Endpoints**: Check individual service health:
+3. **Health Endpoints**:
    - Backend: `http://localhost:8000/health`
    - RAG API: `http://localhost:8001/health`
    - Ollama: `http://localhost:11434/api/tags`
 
-4. **Documentation**: Check the [Technical Documentation](TECHNICAL_DOCS.md)
+4. **Documentation**: See [Documentation/system_overview.md](Documentation/system_overview.md), and [Documentation/design_rationale.md](Documentation/design_rationale.md) for why each component is built the way it is — with the evidence and the eval numbers behind every default, plus a "deliberately not implemented" list
 5. **GitHub Issues**: Report bugs and request features
-6. **Community**: Join our Discord/Slack community
+6. **Community**: Join our Discord
 
 ---
 
 ## 🔗 API Reference
 
-### Core Endpoints
+Two HTTP services. The backend gateway on **:8000** owns sessions, indexes,
+uploads and chat history; the RAG API on **:8001** owns retrieval and indexing.
+Both accept `snake_case` and `camelCase` spellings of every option and normalise
+them to one canonical key.
 
-#### Chat API
+### Backend gateway — http://localhost:8000
+
 ```http
-# Session-based chat (recommended)
-POST /sessions/{session_id}/chat
+GET    /health                              # {status, ollama_running, available_models, database_stats}
+GET    /models                              # {generation_models, embedding_models}
+
+GET    /sessions                            # {sessions, total}
+POST   /sessions                            # {title?, model?} -> 201 {session, session_id}
+GET    /sessions/{id}                       # {session, messages}
+DELETE /sessions/{id}                       # {deleted: true}
+GET    /sessions/cleanup                    # removes empty sessions
+POST   /sessions/{id}/rename                # {title} -> {message, session}
+GET    /sessions/{id}/documents             # {session, files, file_count}
+GET    /sessions/{id}/indexes               # {indexes, total}
+POST   /sessions/{id}/indexes/{index_id}    # link an index to a session
+POST   /sessions/{id}/upload                # multipart/form-data, field "files"
+POST   /sessions/{id}/index                 # index this session's uploads
+POST   /sessions/{id}/messages              # chat (see below)
+
+GET    /indexes                             # {indexes, total}
+POST   /indexes                             # {name, description?, metadata?} -> 201 {index_id}
+GET    /indexes/{id}
+DELETE /indexes/{id}                        # also drops the LanceDB table
+POST   /indexes/{id}/upload                 # multipart/form-data, field "files"
+POST   /indexes/{id}/build                  # build/rebuild from uploaded documents
+
+POST   /chat                                # session-less Ollama chat, no retrieval
+```
+
+#### Session chat
+
+```http
+POST /sessions/{session_id}/messages
 Content-Type: application/json
 
 {
-  "query": "What are the main topics discussed?",
-  "search_type": "hybrid",
+  "message": "What are the main topics discussed?",
+  "model": "qwen3.5:9b",
+  "retrieval_mode": "hybrid",
   "retrieval_k": 20,
+  "reranker_top_k": 10,
+  "context_window_size": 1,
   "ai_rerank": true,
-  "context_window_size": 5
-}
-
-# Legacy chat endpoint
-POST /chat
-Content-Type: application/json
-
-{
-  "query": "What are the main topics discussed?",
-  "session_id": "uuid",
-  "search_type": "hybrid",
-  "retrieval_k": 20
-}
-```
-
-#### Index Management
-```http
-# Create index
-POST /indexes
-Content-Type: application/json
-{
-  "name": "My Index",
-  "description": "Description",
-  "config": "default"
-}
-
-# Get all indexes
-GET /indexes
-
-# Get specific index
-GET /indexes/{id}
-
-# Upload documents to index
-POST /indexes/{id}/upload
-Content-Type: multipart/form-data
-files: [file1.pdf, file2.pdf, ...]
-
-# Build index (process uploaded documents)
-POST /indexes/{id}/build
-Content-Type: application/json
-{
-  "config_mode": "default",
-  "enable_enrich": true,
-  "chunk_size": 512
-}
-
-# Delete index
-DELETE /indexes/{id}
-```
-
-#### Session Management
-```http
-# Create session
-POST /sessions
-Content-Type: application/json
-{
-  "title": "My Session",
-  "model": "qwen3:0.6b"
-}
-
-# Get all sessions
-GET /sessions
-
-# Get specific session
-GET /sessions/{session_id}
-
-# Get session documents
-GET /sessions/{session_id}/documents
-
-# Get session indexes
-GET /sessions/{session_id}/indexes
-
-# Link index to session
-POST /sessions/{session_id}/indexes/{index_id}
-
-# Delete session
-DELETE /sessions/{session_id}
-
-# Rename session
-POST /sessions/{session_id}/rename
-Content-Type: application/json
-{
-  "new_title": "Updated Session Name"
-}
-```
-
-### Advanced Features
-
-#### Query Decomposition
-The system can break complex queries into sub-questions for better answers:
-```http
-POST /sessions/{session_id}/chat
-Content-Type: application/json
-
-{
-  "query": "Compare the methodologies and analyze their effectiveness",
+  "context_expand": true,
   "query_decompose": true,
-  "compose_sub_answers": true
+  "compose_sub_answers": true,
+  "verify": true,
+  "provence_prune": false,
+  "provence_threshold": 0.1,
+  "force_rag": false
 }
 ```
 
-#### Answer Verification
-Independent verification pass for accuracy using a separate verification model:
-```http
-POST /sessions/{session_id}/chat
-Content-Type: application/json
-
+Response:
+```json
 {
-  "query": "What are the key findings?",
-  "verify": true
+  "response": "…",
+  "session": { "...": "updated session row" },
+  "source_documents": [],
+  "used_rag": true
 }
 ```
 
-#### Contextual Enrichment
-Document context enrichment during indexing for better understanding:
-```bash
-# Enable during index building
-POST /indexes/{id}/build
-{
-  "enable_enrich": true,
-  "window_size": 2
-}
-```
+The backend decides per message whether to answer directly with Ollama or to
+forward to the RAG API. `force_rag: true` skips that decision and always calls the
+RAG API. Both the user message and the answer are written to SQLite on this path.
 
-#### Late Chunking
-Better context preservation by chunking after embedding:
-```bash
-# Configure in pipeline
-"late_chunking": {"enabled": true}
-```
+### RAG API — http://localhost:8001
 
-#### Streaming Chat
 ```http
-POST /chat/stream
-Content-Type: application/json
+GET  /health          # {"status": "ok"}
+GET  /models          # {generation_models, embedding_models}
+POST /chat            # {answer, source_documents}
+POST /chat/stream     # Server-Sent Events, terminated by a "complete" event
+POST /index           # run the indexing pipeline over file_paths
+```
 
+#### `POST /chat` and `POST /chat/stream`
+
+```json
 {
   "query": "Explain the methodology",
   "session_id": "uuid",
-  "stream": true
+  "table_name": "text_pages_<index_id>",
+  "model": "qwen3.5:9b",
+  "retrieval_mode": "hybrid",
+  "retrieval_k": 20,
+  "context_window_size": 1,
+  "reranker_top_k": 10,
+  "ai_rerank": true,
+  "context_expand": true,
+  "query_decompose": true,
+  "compose_sub_answers": true,
+  "verify": true,
+  "force_rag": false,
+  "provence_prune": false,
+  "provence_threshold": 0.1
 }
 ```
 
-#### Batch Processing
-```bash
-# Using the batch indexing script
-python demo_batch_indexing.py --config batch_indexing_config.json
+`/chat` returns `{"answer": "...", "source_documents": [...]}`. There is no
+top-level `confidence` field — when verification runs it appends
+`[Confidence: N%]` (and a low-confidence warning) to the answer text itself.
 
-# Example batch configuration (batch_indexing_config.json):
+`/chat/stream` emits `data: {"type": "<phase>", "data": {...}}` lines and ends
+with a `complete` event carrying the same object `/chat` would return.
+
+`force_rag: true` skips the agent's triage step so the query always goes through
+retrieval; `verify`, `ai_rerank`, `query_decompose` and `compose_sub_answers`
+still apply. An unsupported `retrieval_mode` is rejected with HTTP 400.
+
+#### `POST /index`
+
+```json
 {
-  "index_name": "Sample Batch Index",
-  "index_description": "Example batch index configuration",
-  "documents": [
-    "./rag_system/documents/invoice_1039.pdf",
-    "./rag_system/documents/invoice_1041.pdf"
-  ],
-  "processing": {
+  "file_paths": ["/abs/path/doc1.pdf", "/abs/path/doc2.pdf"],
+  "session_id": "uuid",
+  "table_name": "text_pages_<index_id>",
+  "chunk_size": 512,
+  "window_size": 2,
+  "retrieval_mode": "hybrid",
+  "enable_enrich": true,
+  "enable_latechunk": false,
+  "enable_docling_chunk": false,
+  "embedding_model": "microsoft/harrier-oss-v1-0.6b",
+  "enrich_model": "qwen3.5:4b",
+  "overview_model_name": "qwen3.5:4b",
+  "batch_size_embed": 50,
+  "batch_size_enrich": 25
+}
+```
+
+`file_paths` is required; the values above are the defaults applied when a field
+is omitted. Response:
+
+```json
+{
+  "message": "Indexing process for 2 file(s) completed successfully.",
+  "table_name": "text_pages_<index_id>",
+  "latechunk": false,
+  "docling_chunk": false,
+  "indexing_config": {
     "chunk_size": 512,
-    "chunk_overlap": 64,
-    "enable_enrich": true,
-    "enable_latechunk": true,
-    "enable_docling": true,
-    "embedding_model": "Qwen/Qwen3-Embedding-0.6B",
-    "generation_model": "qwen3:0.6b",
     "retrieval_mode": "hybrid",
-    "window_size": 2
-  }
-}
-```
-
-```http
-# API endpoint for batch processing
-POST /batch/index
-Content-Type: application/json
-
-{
-  "file_paths": ["doc1.pdf", "doc2.pdf"],
-  "config": {
-    "chunk_size": 512,
+    "window_size": 2,
     "enable_enrich": true,
-    "enable_latechunk": true,
-    "enable_docling": true
+    "embedding_model": "microsoft/harrier-oss-v1-0.6b",
+    "enrich_model": "qwen3.5:4b",
+    "overview_model_name": "qwen3.5:4b",
+    "batch_size_embed": 50,
+    "batch_size_enrich": 25
   }
 }
 ```
 
-For complete API documentation, see [API_REFERENCE.md](API_REFERENCE.md).
+`retrieval_mode` at index time is validated and recorded with the index config;
+it takes effect at query time. Indexing is synchronous — the call returns when
+the pipeline finishes, which is why the backend allows up to
+`RAG_API_INDEX_TIMEOUT` (default 3600s) for it.
+
+For the full route table see [Documentation/api_reference.md](Documentation/api_reference.md).
+
+### Known limitations
+
+- **The RAG API is single-threaded.** Requests are serialised: one chat or
+  indexing run at a time. The backend gateway is threaded, so it stays responsive,
+  but a long RAG call blocks the next one.
+- **Streamed turns are persisted after the fact.** The chat UI streams from
+  `:8001/chat/stream` directly and, when the stream completes, saves the finished
+  turn through the gateway (`POST /sessions/{id}/messages/save`). If the browser is
+  closed mid-stream, that turn is not saved.
+- **Index metadata is per index, not per session.** Choosing a different embedding
+  model requires rebuilding the index.
 
 ---
 
 ## 🏗️ Architecture
 
-LocalGPT is built with a modular, scalable architecture:
-
 ```mermaid
 graph TB
-    UI[Web Interface] --> API[Backend API]
-    API --> Agent[RAG Agent]
+    UI[Next.js UI :3000] --> API[Backend gateway :8000]
+    UI -. "SSE /chat/stream" .-> RAGAPI
+    API --> RAGAPI[RAG API :8001]
+    RAGAPI --> Agent[RAG Agent]
     Agent --> Retrieval[Retrieval Pipeline]
-    Agent --> Generation[Generation Pipeline]
+    Agent --> Ollama[Ollama :11434]
 
-    Retrieval --> Vector[Vector Search]
-    Retrieval --> BM25[BM25 Search]
-    Retrieval --> Rerank[Reranking]
+    Retrieval --> Vector[Vector search]
+    Retrieval --> FTS[LanceDB full-text search]
+    Vector --> RRF[Reciprocal Rank Fusion]
+    FTS --> RRF
+    RRF --> Rerank["Cross-encoder rerank (optional, off by default)"]
 
     Vector --> LanceDB[(LanceDB)]
-    BM25 --> BM25DB[(BM25 Index)]
+    FTS --> LanceDB
 
-    Generation --> Ollama[Ollama Models]
-    Generation --> HF[Hugging Face Models]
-
-    API --> SQLite[(SQLite DB)]
+    API --> SQLite[(SQLite: sessions, messages, indexes)]
+    RAGAPI --> SQLite
 ```
 
 Overview of the Retrieval Agent
@@ -778,52 +826,52 @@ graph TD
     classDef llmcall fill:#e6f3ff,stroke:#007bff;
     classDef pipeline fill:#e6ffe6,stroke:#28a745;
     classDef cache fill:#fff3e0,stroke:#fd7e14;
-    classDef logic fill:#f8f9fa,stroke:#6c757d;
-    classDef thread stroke-dasharray: 5 5;
 
-    A(Start: Agent.run) --> B_asyncio.run(_run_async);
-    B --> C{_run_async};
+    A(Start: Agent.run) --> C{_run_async};
 
-    C --> C1[Get Chat History];
-    C1 --> T1[Build Triage Prompt <br/> Query + Doc Overviews ];
-    T1 --> T2["(asyncio.to_thread)<br/>LLM Triage: RAG or LLM_DIRECT?"]; class T2 llmcall,thread;
+    C --> C1[Get chat history];
+    C1 --> T0{force_rag?};
+    T0 -- Yes --> RAG_Path;
+    T0 -- No --> T1[Route via document overviews];
+    T1 --> T2["LLM triage fallback:<br/>rag_query | direct_answer"]; class T2 llmcall;
     T2 --> T3{Decision?};
 
-    T3 -- RAG --> RAG_Path;
-    T3 -- LLM_DIRECT --> LLM_Path;
+    T3 -- rag_query --> RAG_Path;
+    T3 -- direct_answer --> LLM_Path;
 
     subgraph RAG Path
-        RAG_Path --> R1[Format Query + History];
-        R1 --> R2["(asyncio.to_thread)<br/>Generate Query Embedding"]; class R2 pipeline,thread;
-        R2 --> R3{{Check Semantic Cache}}; class R3 cache;
-        R3 -- Hit --> R_Cache_Hit(Return Cached Result);
-        R_Cache_Hit --> R_Hist_Update;
-        R3 -- Miss --> R4{Decomposition <br/> Enabled?};
+        RAG_Path --> R1[Format query + history];
+        R1 --> R2[Embed query]; class R2 pipeline;
+        R2 --> R3{{Semantic cache<br/>threshold 0.98, session-scoped}}; class R3 cache;
+        R3 -- Hit --> FinalResult;
+        R3 -- Miss --> R4{Decomposition enabled?};
 
-        R4 -- Yes --> R5["(asyncio.to_thread)<br/>Decompose Raw Query"]; class R5 llmcall,thread;
-        R5 --> R6{{Run Sub-Queries <br/> Parallel RAG Pipeline}}; class R6 pipeline,thread;
-        R6 --> R7[Collect Results & Docs];
-        R7 --> R8["(asyncio.to_thread)<br/>Compose Final Answer"]; class R8 llmcall,thread;
-        R8 --> V1(RAG Answer);
+        R4 -- Yes --> R5[Decompose query]; class R5 llmcall;
+        R5 --> R6{{Run sub-queries through the retrieval pipeline}}; class R6 pipeline;
+        R6 --> R8[Compose final answer]; class R8 llmcall;
+        R8 --> V1(RAG answer);
 
-        R4 -- No --> R9["(asyncio.to_thread)<br/>Run Single Query <br/>(RAG Pipeline)"]; class R9 pipeline,thread;
+        R4 -- No --> R9[Run single query through the retrieval pipeline]; class R9 pipeline;
         R9 --> V1;
 
-        V1 --> V2{{Verification <br/> await verify_async}}; class V2 llmcall;
-        V2 --> V3(Final RAG Result);
-        V3 --> R_Cache_Store{{Store in Semantic Cache}}; class R_Cache_Store cache;
+        V1 --> V2{{Verification}}; class V2 llmcall;
+        V2 --> R_Cache_Store{{Store in semantic cache}}; class R_Cache_Store cache;
         R_Cache_Store --> FinalResult;
     end
 
     subgraph Direct LLM Path
-        LLM_Path --> L1[Format Query + History];
-        L1 --> L2["(asyncio.to_thread)<br/>Generate Direct LLM Answer <br/> (No RAG)"]; class L2 llmcall,thread;
-        L2 --> FinalResult(Final Direct Result);
+        LLM_Path --> L2[Generate answer without retrieval]; class L2 llmcall;
+        L2 --> FinalResult(Final result);
     end
 
-    FinalResult --> R_Hist_Update(Update Chat History);
-    R_Hist_Update --> ZZZ(End: Return Result);
+    FinalResult --> R_Hist_Update(Update in-memory chat history);
+    R_Hist_Update --> ZZZ["End: return answer + source_documents"];
 ```
+
+Inside the retrieval pipeline a query runs: embed → hybrid retrieve (vector +
+FTS, fused with RRF) → optional late-chunk leg → optional cross-encoder rerank
+(off by default) → context window expansion → optional Provence sentence
+pruning → synthesis.
 
 ---
 
@@ -844,7 +892,8 @@ npm install
 
 # Install Ollama and models
 curl -fsSL https://ollama.ai/install.sh | sh
-ollama pull qwen3:0.6b qwen3:8b
+ollama pull qwen3.5:9b
+ollama pull qwen3.5:4b
 
 # Verify setup
 python system_health_check.py
@@ -879,7 +928,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Documentation**: [Technical Docs](TECHNICAL_DOCS.md)
+- **Documentation**: [Documentation/system_overview.md](Documentation/system_overview.md)
 - **Issues**: [GitHub Issues](https://github.com/PromtEngineer/localGPT/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/PromtEngineer/localGPT/discussions)
 - **Business Deployment and Customization**: [Contact Us](https://tally.so/r/wv6R2d)
@@ -890,3 +939,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=PromtEngineer/localGPT&type=Date)](https://star-history.com/#PromtEngineer/localGPT&Date)
+
+</div>

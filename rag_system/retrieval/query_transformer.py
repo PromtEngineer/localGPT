@@ -7,7 +7,7 @@ class QueryDecomposer:
         self.llm_client = llm_client
         self.llm_model = llm_model
 
-    def decompose(self, query: str, chat_history: List[Dict[str, Any]] | None = None) -> List[str]:
+    def decompose(self, query: str, chat_history: List[Dict[str, Any]] | None = None, max_sub_queries: int = 10) -> List[str]:
         """Decompose *query* into standalone sub-queries.
 
         Parameters
@@ -18,6 +18,8 @@ class QueryDecomposer:
             Recent conversation turns (each item should contain at least the original
             user query under the key ``"query"``). Only the **last 5** turns are
             included to keep the prompt short.
+        max_sub_queries : int
+            Hard cap on the returned sub-queries (``query_decomposition.max_sub_queries``).
         """
 
         # ---- Limit history to last 5 user turns and extract the queries ----
@@ -285,43 +287,13 @@ Input payload:
             # Deduplicate while preserving order
             sub_queries = list(dict.fromkeys(sub_queries))
 
-            # Enforce 10 sub-query limit per new requirements
-            return sub_queries[:10]
+            return sub_queries[:max(1, int(max_sub_queries))]
         except json.JSONDecodeError:
             print(f"Failed to decode JSON from query decomposer: {response_text}")
             return [query]
 
-class HyDEGenerator:
-    def __init__(self, llm_client: OllamaClient, llm_model: str):
-        self.llm_client = llm_client
-        self.llm_model = llm_model
-
-    def generate(self, query: str) -> str:
-        prompt = f"Generate a short, hypothetical document that answers the following question. The document should be dense with keywords and concepts related to the query.\n\nQuery: {query}\n\nHypothetical Document:"
-        response = self.llm_client.generate_completion(self.llm_model, prompt)
-        return response.get('response', '')
-
-class GraphQueryTranslator:
-    def __init__(self, llm_client: OllamaClient, llm_model: str):
-        self.llm_client = llm_client
-        self.llm_model = llm_model
-
-    def _generate_translation_prompt(self, query: str) -> str:
-        return f"""
-You are an expert query planner. Convert the user's question into a structured JSON query for a knowledge graph.
-The JSON should contain a 'start_node' (the known entity in the query) and an 'edge_label' (the relationship being asked about).
-The graph has nodes (entities) and directed edges (relationships). For example, (Tim Cook) -[IS_CEO_OF]-> (Apple).
-Return ONLY the JSON object.
-
-User Question: "{query}"
-
-JSON Output:
-"""
-
-    def translate(self, query: str) -> Dict[str, Any]:
-        prompt = self._generate_translation_prompt(query)
-        response = self.llm_client.generate_completion(self.llm_model, prompt, format="json")
-        try:
-            return json.loads(response.get('response', '{}'))
-        except json.JSONDecodeError:
-            return {}
+# GraphQueryTranslator was removed on 2026-08-09 (roadmap item 2.5) together with
+# GraphExtractor and GraphRetriever. Evidence: Documentation/research/
+# academic-evidence-2026.md §6 — GraphRAG loses on single-hop, its multi-hop
+# gains are contested, and it costs 41–57x at indexing and up to ~377x in query
+# tokens. Nothing in this repo ever armed it.

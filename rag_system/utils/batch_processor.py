@@ -1,6 +1,6 @@
 import time
 import logging
-from typing import List, Dict, Any, Callable, Optional, Iterator
+from typing import List, Dict, Any, Callable
 from contextlib import contextmanager
 import gc
 
@@ -126,76 +126,8 @@ class BatchProcessor:
                     
         tracker.finish()
         return results
-        
-    def batch_iterator(self, items: List[Any]) -> Iterator[List[Any]]:
-        """Generate batches as an iterator for memory-efficient processing"""
-        for i in range(0, len(items), self.batch_size):
-            yield items[i:i + self.batch_size]
-
-class StreamingProcessor:
-    """Process items one at a time with minimal memory usage"""
-    
-    def __init__(self, enable_gc_interval: int = 100):
-        self.enable_gc_interval = enable_gc_interval
-        
-    def process_streaming(
-        self,
-        items: List[Any],
-        process_func: Callable,
-        operation_name: str = "Streaming Processing",
-        **kwargs
-    ) -> List[Any]:
-        """
-        Process items one at a time with minimal memory footprint
-        
-        Args:
-            items: List of items to process
-            process_func: Function to process each item
-            operation_name: Name for progress reporting
-            **kwargs: Additional arguments passed to process_func
-            
-        Returns:
-            List of results
-        """
-        if not items:
-            logger.info(f"{operation_name}: No items to process")
-            return []
-            
-        tracker = ProgressTracker(len(items), operation_name)
-        results = []
-        
-        logger.info(f"Starting {operation_name} for {len(items)} items (streaming)")
-        
-        with timer(f"{operation_name} (streaming)"):
-            for i, item in enumerate(items):
-                try:
-                    result = process_func(item, **kwargs)
-                    results.append(result)
-                    tracker.update(1)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing item {i}: {e}")
-                    tracker.update(1, errors=1)
-                    continue
-                    
-                # Periodic garbage collection
-                if self.enable_gc_interval and (i + 1) % self.enable_gc_interval == 0:
-                    gc.collect()
-                    
-        tracker.finish()
-        return results
 
 # Utility functions for common batch operations
-def batch_chunks_by_document(chunks: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-    """Group chunks by document_id for document-level batch processing"""
-    document_batches = {}
-    for chunk in chunks:
-        doc_id = chunk.get('metadata', {}).get('document_id', 'unknown')
-        if doc_id not in document_batches:
-            document_batches[doc_id] = []
-        document_batches[doc_id].append(chunk)
-    return document_batches
-
 def estimate_memory_usage(chunks: List[Dict[str, Any]]) -> float:
     """Estimate memory usage of chunks in MB"""
     if not chunks:

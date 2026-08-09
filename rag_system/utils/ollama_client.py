@@ -21,18 +21,6 @@ class OllamaClient:
         image.save(buffered, format="PNG")
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-    def generate_embedding(self, model: str, text: str) -> List[float]:
-        try:
-            response = requests.post(
-                f"{self.api_url}/embeddings",
-                json={"model": model, "prompt": text}
-            )
-            response.raise_for_status()
-            return response.json().get("embedding", [])
-        except requests.exceptions.RequestException as e:
-            print(f"Error generating embedding: {e}")
-            return []
-
     def generate_completion(
         self,
         model: str,
@@ -64,9 +52,14 @@ class OllamaClient:
             if images:
                 payload["images"] = [self._image_to_base64(img) for img in images]
 
-            # Optional: disable thinking mode for Qwen3 / DeepSeek models
+            # Thinking models put JSON into the `thinking` field and leave
+            # `response` empty when format=json, so default thinking off there.
+            # `think` is the top-level knob /api/generate actually honors
+            # (chat_template_kwargs is silently ignored by the generate API).
+            if enable_thinking is None and format == "json":
+                enable_thinking = False
             if enable_thinking is not None:
-                payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
+                payload["think"] = enable_thinking
 
             response = requests.post(
                 f"{self.api_url}/generate",
@@ -103,8 +96,10 @@ class OllamaClient:
         if images:
             payload["images"] = [self._image_to_base64(img) for img in images]
 
+        if enable_thinking is None and format == "json":
+            enable_thinking = False
         if enable_thinking is not None:
-            payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
+            payload["think"] = enable_thinking
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -137,7 +132,7 @@ class OllamaClient:
         if images:
             payload["images"] = [self._image_to_base64(img) for img in images]
         if enable_thinking is not None:
-            payload["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
+            payload["think"] = enable_thinking
 
         with requests.post(f"{self.api_url}/generate", json=payload, stream=True) as resp:
             resp.raise_for_status()
@@ -155,27 +150,3 @@ class OllamaClient:
                     yield chunk
                 if data.get("done"):
                     break
-
-if __name__ == '__main__':
-    # This test now requires a VLM model like 'llava' or 'qwen-vl' to be pulled.
-    print("Ollama client updated for multimodal (VLM) support.")
-    try:
-        client = OllamaClient()
-        # Create a dummy black image for testing
-        dummy_image = Image.new('RGB', (100, 100), 'black')
-        
-        # Test VLM completion
-        vlm_response = client.generate_completion(
-            model="llava", # Make sure you have run 'ollama pull llava'
-            prompt="What color is this image?",
-            images=[dummy_image]
-        )
-        
-        if vlm_response and 'response' in vlm_response:
-            print("\n--- VLM Test Response ---")
-            print(vlm_response['response'])
-        else:
-            print("\nFailed to get VLM response. Is 'llava' model pulled and running?")
-
-    except Exception as e:
-        print(f"An error occurred: {e}")

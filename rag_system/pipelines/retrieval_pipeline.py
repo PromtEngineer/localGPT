@@ -1,32 +1,25 @@
-import pymupdf
-from typing import List, Dict, Any, Tuple, Optional
-from PIL import Image
+from typing import List, Dict, Any, Optional
 import concurrent.futures
 import time
 import json
-import lancedb
 import logging
 import math
+import os
 import numpy as np
 from threading import Lock
 
 from rag_system.utils.ollama_client import OllamaClient
-from rag_system.retrieval.retrievers import MultiVectorRetriever, GraphRetriever
-from rag_system.indexing.multimodal import LocalVisionModel
-from rag_system.indexing.representations import select_embedder
+from rag_system.retrieval.retrievers import MultiVectorRetriever
+from rag_system.indexing.representations import default_query_instruction, select_embedder
 from rag_system.indexing.embedders import LanceDBManager
-from rag_system.rerankers.reranker import QwenReranker
+from rag_system.rerankers.reranker import CrossEncoderReranker, QwenRerankerScorer, is_qwen3_reranker
 from rag_system.rerankers.sentence_pruner import SentencePruner
-# from rag_system.indexing.chunk_store import ChunkStore
-
-import os
-from PIL import Image
 
 # ---------------------------------------------------------------------------
 # Thread-safety helpers
 # ---------------------------------------------------------------------------
 
-# 1. ColBERT (via `rerankers` lib) is not thread-safe.  We protect the actual
+# 1. The `rerankers` lib backends are not thread-safe.  We protect the actual
 #    `.rank()` call with `_rerank_lock`.
 _rerank_lock: Lock = Lock()
 
@@ -42,26 +35,76 @@ _sentence_pruner_lock: Lock = Lock()
 
 class RetrievalPipeline:
     """
-    Orchestrates the state-of-the-art multimodal RAG pipeline.
+    Orchestrates retrieval, reranking, context expansion, pruning and synthesis.
     """
     def __init__(self, config: Dict[str, Any], ollama_client: OllamaClient, ollama_config: Dict[str, Any]):
         self.config = config
         self.ollama_config = ollama_config
         self.ollama_client = ollama_client
-        
-        # Support both legacy "retrievers" key and newer "retrieval" key
-        self.retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})
+
         self.storage_config = self.config["storage"]
-        
+
         # Defer initialization to just-in-time methods
         self.db_manager = None
         self.text_embedder = None
         self.dense_retriever = None
-        self.bm25_retriever = None
-        # Use a private attribute to avoid clashing with the public property
-        self._graph_retriever = None
-        self.reranker = None
         self.ai_reranker = None
+
+    def _retriever_config(self, name: str, *aliases: str) -> Dict[str, Any]:
+        """Look a retriever sub-config up in "retrievers" then "retrieval".
+
+        Resolved on every access instead of cached in ``__init__`` so runtime
+        overrides written by the API land in the pipeline.
+        """
+        for container_key in ("retrievers", "retrieval"):
+            container = self.config.get(container_key) or {}
+            for key in (name, *aliases):
+                if container.get(key):
+                    return container[key]
+        return {}
+
+    def _retrieval_mode(self) -> str:
+        """Query-time search mode: "hybrid" (default), "vector_only" or "fts_only"."""
+        retrieval_cfg = self.config.get("retrieval") or {}
+        return retrieval_cfg.get("search_type") or self.config.get("search_type") or "hybrid"
+
+    def _retry_config(self) -> Dict[str, Any]:
+        """The evidence-sufficiency retry block (roadmap item 2.1).
+
+        Merged across both container spellings so a runtime override written by
+        the API under ``retrievers.retry`` beats the profile's
+        ``retrieval.retry``, matching how ``_latechunk_config`` behaves.
+        """
+        merged: Dict[str, Any] = {}
+        for container_key in ("retrieval", "retrievers"):
+            block = (self.config.get(container_key) or {}).get("retry")
+            if isinstance(block, dict):
+                merged.update(block)
+        return merged
+
+    def _latechunk_config(self) -> Dict[str, Any]:
+        """Merge the late-chunk block across both container and key spellings.
+
+        The profile declares it under ``retrieval.late_chunking`` while the API
+        toggles it at runtime under ``retrievers.latechunk``; later writes win.
+        """
+        merged: Dict[str, Any] = {}
+        for container_key in ("retrieval", "retrievers"):
+            container = self.config.get(container_key) or {}
+            for key in ("late_chunking", "latechunk"):
+                block = container.get(key)
+                if isinstance(block, dict):
+                    merged.update(block)
+        return merged
+
+    @staticmethod
+    def _latechunk_table_name(latechunk_cfg: Dict[str, Any], base_table: str) -> Optional[str]:
+        explicit = latechunk_cfg.get("lancedb_table_name")
+        if explicit:
+            return explicit
+        # "_lc" is the suffix IndexingPipeline writes when none is configured.
+        suffix = latechunk_cfg.get("table_suffix", "_lc")
+        return f"{base_table}{suffix}" if suffix and base_table else None
 
     def _get_db_manager(self):
         if self.db_manager is None:
@@ -72,65 +115,64 @@ class RetrievalPipeline:
             self.db_manager = LanceDBManager(db_path=db_path)
         return self.db_manager
 
+    def _query_instruction(self, model_name: str) -> str:
+        """The query-side instruction prefix for this pipeline's embedder.
+
+        Resolution order, most explicit first:
+
+        1. ``config["embedding_instruction"]`` — set it to ``""`` to switch the
+           prefix off for a model whose family would otherwise get one.
+        2. ``EMBEDDING_INSTRUCTION`` env var — same semantics, for A/B runs.
+        3. The model family's official retrieval instruction (Qwen3-Embedding
+           and harrier-oss-v1), or ``""`` for everything else.
+
+        This is the QUERY side only. Documents are embedded by
+        ``IndexingPipeline``, which calls ``select_embedder`` without an
+        instruction, so an index built before this existed remains valid.
+        """
+        configured = self.config.get("embedding_instruction")
+        if configured is not None:
+            return configured
+        env = os.getenv("EMBEDDING_INSTRUCTION")
+        if env is not None:
+            return env
+        return default_query_instruction(model_name)
+
     def _get_text_embedder(self):
         if self.text_embedder is None:
-            from rag_system.indexing.representations import select_embedder
+            model_name = self.config.get("embedding_model_name")
+            if not model_name:
+                raise ValueError(
+                    "Config must contain 'embedding_model_name'. Falling back to a hard-coded "
+                    "default here would silently produce vectors whose dimensionality does not "
+                    "match the index."
+                )
+            instruction = self._query_instruction(model_name)
+            if instruction:
+                print(f"🔧 Query-side embedding instruction active: '{instruction}'")
             self.text_embedder = select_embedder(
-                self.config.get("embedding_model_name", "BAAI/bge-small-en-v1.5"),
+                model_name,
                 self.ollama_config.get("host") if isinstance(self.ollama_config, dict) else None,
+                query_instruction=instruction,
             )
         return self.text_embedder
 
     def _get_dense_retriever(self):
-        """Ensure a dense MultiVectorRetriever is always available unless explicitly disabled."""
+        """Ensure a MultiVectorRetriever is always available unless explicitly disabled."""
         if self.dense_retriever is None:
             # If the config explicitly sets dense.enabled to False, respect it
-            if self.retriever_configs.get("dense", {}).get("enabled", True) is False:
+            if self._retriever_config("dense").get("enabled", True) is False:
                 return None
 
             try:
-                db_manager = self._get_db_manager()
-                text_embedder = self._get_text_embedder()
-                fusion_cfg = self.config.get("fusion", {})
                 self.dense_retriever = MultiVectorRetriever(
-                    db_manager,
-                    text_embedder,
-                    vision_model=None,
-                    fusion_config=fusion_cfg,
+                    self._get_db_manager(),
+                    self._get_text_embedder(),
                 )
             except Exception as e:
                 print(f"❌ Failed to initialise dense retriever: {e}")
                 self.dense_retriever = None
         return self.dense_retriever
-
-    def _get_bm25_retriever(self):
-        if self.bm25_retriever is None and self.retriever_configs.get("bm25", {}).get("enabled"):
-            try:
-                print(f"🔧 Lazily initializing BM25 retriever...")
-                self.bm25_retriever = BM25Retriever(
-                    index_path=self.storage_config["bm25_path"],
-                    index_name=self.retriever_configs["bm25"]["index_name"]
-                )
-                print("✅ BM25 retriever initialized successfully")
-            except Exception as e:
-                print(f"❌ Failed to initialize BM25 retriever on demand: {e}")
-                # Keep it None so we don't try again
-        return self.bm25_retriever
-
-    def _get_graph_retriever(self):
-        if self._graph_retriever is None and self.retriever_configs.get("graph", {}).get("enabled"):
-            self._graph_retriever = GraphRetriever(graph_path=self.storage_config["graph_path"])
-        return self._graph_retriever
-
-    def _get_reranker(self):
-        """Initializes the reranker for hybrid search score fusion."""
-        reranker_config = self.config.get("reranker", {})
-        # This is for the LanceDB internal reranker, not the AI one.
-        if self.reranker is None and reranker_config.get("type") == "linear_combination":
-            rerank_weight = reranker_config.get("weight", 0.5) 
-            self.reranker = lancedb.rerankers.LinearCombinationReranker(weight=rerank_weight)
-            print(f"✅ Initialized LinearCombinationReranker with weight {rerank_weight}")
-        return self.reranker
 
     def _get_ai_reranker(self):
         """Initializes a dedicated AI-based reranker."""
@@ -142,22 +184,34 @@ class RetrievalPipeline:
             with _ai_reranker_init_lock:
                 # Another thread may have completed init while we waited
                 if self.ai_reranker is None:
+                    model_name = reranker_config.get("model_name")
+                    if not model_name:
+                        print("⚠️  Reranking is enabled but 'reranker.model_name' is not configured; skipping reranking.")
+                        return None
                     try:
-                        model_name = reranker_config.get("model_name")
-                        strategy = reranker_config.get("strategy", "qwen")
+                        strategy = reranker_config.get("strategy", "rerankers-lib")
+                        model_type = reranker_config.get("model_type", "cross-encoder")
 
-                        if strategy == "rerankers-lib":
-                            print(f"🔧 Initialising Answer.AI ColBERT reranker ({model_name}) via rerankers lib…")
+                        # Qwen3-Reranker is a causal-LM yes/no-logit scorer, not a
+                        # SequenceClassification model. The rerankers lib silently
+                        # loads it with a randomly-initialised score head, so route
+                        # the whole family to our own scorer — either by explicit
+                        # `reranker.model_type: "qwen3"` or by model name.
+                        if model_type == "qwen3" or is_qwen3_reranker(model_name):
+                            print(f"🔧 Initialising Qwen3 yes/no-logit reranker ({model_name})…")
+                            self.ai_reranker = QwenRerankerScorer(model_name=model_name)
+                        elif strategy == "rerankers-lib":
+                            print(f"🔧 Initialising {model_type} reranker ({model_name}) via rerankers lib…")
                             from rerankers import Reranker
-                            self.ai_reranker = Reranker(model_name, model_type="colbert")
+                            self.ai_reranker = Reranker(model_name, model_type=model_type)
                         else:
-                            print(f"🔧 Lazily initializing Qwen reranker ({model_name})…")
-                            self.ai_reranker = QwenReranker(model_name=model_name)
+                            print(f"🔧 Lazily initializing local cross-encoder reranker ({model_name})…")
+                            self.ai_reranker = CrossEncoderReranker(model_name=model_name)
 
                         print("✅ AI reranker initialized successfully.")
                     except Exception as e:
                         # Leave as None so the pipeline can proceed without reranking
-                        print(f"❌ Failed to initialize AI reranker: {e}")
+                        print(f"⚠️  Could not load reranker '{model_name}' ({e}). Continuing without reranking.")
         return self.ai_reranker
 
     def _get_sentence_pruner(self):
@@ -166,6 +220,113 @@ class RetrievalPipeline:
                 if getattr(self, "_sentence_pruner", None) is None:
                     self._sentence_pruner = SentencePruner()
         return self._sentence_pruner
+
+    # ------------------------------------------------------------------
+    # Evidence-sufficiency retry (roadmap item 2.1)
+    # ------------------------------------------------------------------
+
+    # Candidates from this rank onwards are treated as "background": chunks the
+    # query pulled in because they are documents in this corpus, not because
+    # they answer it. Rank 6 of 20 leaves the plausible answers out of the
+    # background estimate while still averaging over enough rows to be stable.
+    _EVIDENCE_BACKGROUND_FROM = 5
+
+    @classmethod
+    def _dense_evidence_score(cls, docs: List[Dict[str, Any]]) -> Optional[float]:
+        """A 0–1 "did we actually find something" score from the dense leg.
+
+        The naive choice — the raw top cosine similarity — was **measured and
+        rejected**: on the gold set it is *anti*-correlated with success,
+        because absolute similarity mostly encodes how close the query's
+        phrasing sits to the corpus's register, not whether the answer-bearing
+        chunk was found. The three `mixed` first-stage misses all scored a
+        *higher* top cosine than the median successful query.
+
+        What does carry signal is **contrast**: how far the best candidate
+        stands above the background of everything else the query pulled in.
+
+            score = (cos_top − cos_background) / (1 − cos_background)
+
+        where ``cos_background`` is the mean cosine of the candidates from rank
+        ``_EVIDENCE_BACKGROUND_FROM`` down. The denominator rescales against the
+        headroom that is actually reachable for this query, keeping the result
+        in 0–1 and comparable across queries whose background level differs.
+
+        Returns ``None`` when the dense leg did not run (``fts_only``) or the
+        table predates cosine normalization, in which case the caller must not
+        retry — the number would not mean anything. Requires L2-normalized
+        vectors (v4+ tables), where LanceDB's squared-L2 ``_distance`` maps to
+        cosine as ``cos = 1 − d/2``.
+        """
+        sims = []
+        for doc in docs:
+            distance = doc.get("_distance")
+            if distance is None:
+                continue
+            try:
+                sims.append(1.0 - float(distance) / 2.0)
+            except (TypeError, ValueError):
+                continue
+        if len(sims) < 2:
+            return None
+        sims.sort(reverse=True)
+        tail = sims[cls._EVIDENCE_BACKGROUND_FROM:] or sims[1:]
+        background = sum(tail) / len(tail)
+        headroom = 1.0 - background
+        if headroom <= 1e-6:
+            return None
+        return max(0.0, min(1.0, (sims[0] - background) / headroom))
+
+    @staticmethod
+    def _rerank_evidence_score(docs: List[Dict[str, Any]]) -> Optional[float]:
+        """Top reranker score, when the reranker produces a calibrated 0–1 one.
+
+        ``QwenRerankerScorer`` returns P("yes") per candidate, which is directly
+        interpretable. Other backends return arbitrary logits, so anything
+        outside 0–1 is rejected rather than silently compared to a probability
+        threshold.
+        """
+        scores = [d.get("rerank_score") for d in docs if d.get("rerank_score") is not None]
+        if not scores:
+            return None
+        try:
+            top = float(max(scores))
+        except (TypeError, ValueError):
+            return None
+        if not (0.0 <= top <= 1.0):
+            return None
+        return top
+
+    def _reformulate_query(self, query: str) -> Optional[str]:
+        """One rewrite of a query whose first pass found weak evidence.
+
+        Runs on the enrichment (utility) model, not the generation model, and
+        asks for JSON so the "thinking" preamble small models emit cannot leak
+        into the rewritten query.
+        """
+        model = (self.ollama_config.get("enrichment_model")
+                 or self.ollama_config.get("generation_model"))
+        if not model:
+            return None
+        prompt = (
+            "A document search for the question below returned weak matches.\n"
+            "Rewrite it once as a single self-contained search query that uses the "
+            "concrete nouns, technical terms and synonyms a document would actually "
+            "use, instead of the asker's phrasing. Keep every entity, number and "
+            "constraint from the original. Do not answer the question.\n\n"
+            f'Question: "{query}"\n\n'
+            'Respond with JSON: {"query": "<rewritten query>"}'
+        )
+        try:
+            resp = self.ollama_client.generate_completion(model=model, prompt=prompt, format="json")
+            data = json.loads(resp.get("response", "{}"))
+        except Exception as e:
+            print(f"⚠️  Retry reformulation failed ({e}); keeping the original query.")
+            return None
+        rewritten = (data.get("query") or "").strip() if isinstance(data, dict) else ""
+        if not rewritten or rewritten.lower() == query.strip().lower():
+            return None
+        return rewritten
 
     def _get_surrounding_chunks_lancedb(self, chunk: Dict[str, Any], window_size: int) -> List[Dict[str, Any]]:
         """
@@ -256,45 +417,39 @@ ORIGINAL QUESTION: "{query}"
 
         return "".join(answer_parts)
 
-    def run(self, query: str, table_name: str = None, window_size_override: Optional[int] = None, event_callback=None) -> Dict[str, Any]:
+    def _first_stage(self, query: str, base_table: str, retrieval_k: int, retrieval_mode: str,
+                     event_callback=None) -> List[Dict[str, Any]]:
+        """Hybrid/vector/FTS retrieval plus the optional late-chunk table and merge.
+
+        Split out of ``run()`` so the evidence-sufficiency retry can call it a
+        second time with a reformulated query without duplicating any of it.
+        """
         start_time = time.time()
-        retrieval_k = self.config.get("retrieval_k", 10)
-
         logger = logging.getLogger(__name__)
-        logger.debug("--- Running Hybrid Search for query '%s' (table=%s) ---", query, table_name or self.storage_config.get("text_table_name"))
-        
-        # If a custom table_name is provided, propagate it to storage config so helper methods use it
-        if table_name:
-            self.storage_config["text_table_name"] = table_name
-
-        if event_callback:
-            event_callback("retrieval_started", {})
-        # Unified retrieval using the refactored MultiVectorRetriever
         dense_retriever = self._get_dense_retriever()
-        # Get the LanceDB reranker for initial score fusion
-        lancedb_reranker = self._get_reranker()
-        
+
         retrieved_docs = []
         if dense_retriever:
             retrieved_docs = dense_retriever.retrieve(
                 text_query=query,
-                table_name=table_name or self.storage_config["text_table_name"],
+                table_name=base_table,
                 k=retrieval_k,
-                reranker=lancedb_reranker # Pass the reranker to enable hybrid search
+                search_type=retrieval_mode,
             )
 
         # ---------------------------------------------------------------
         # Late-Chunk retrieval (optional)
         # ---------------------------------------------------------------
-        if self.retriever_configs.get("latechunk", {}).get("enabled"):
-            lc_table = self.retriever_configs["latechunk"].get("lancedb_table_name")
+        latechunk_cfg = self._latechunk_config()
+        if dense_retriever and latechunk_cfg.get("enabled"):
+            lc_table = self._latechunk_table_name(latechunk_cfg, base_table)
             if lc_table:
                 try:
                     lc_docs = dense_retriever.retrieve(
                         text_query=query,
                         table_name=lc_table,
                         k=retrieval_k,
-                        reranker=lancedb_reranker,
+                        search_type=retrieval_mode,
                     )
                     retrieved_docs.extend(lc_docs)
                 except Exception as e:
@@ -302,14 +457,13 @@ ORIGINAL QUESTION: "{query}"
 
         if event_callback:
             event_callback("retrieval_done", {"count": len(retrieved_docs)})
-        
-        retrieval_time = time.time() - start_time
-        logger.debug("Retrieved %s chunks in %.2fs", len(retrieved_docs), retrieval_time)
+
+        logger.debug("Retrieved %s chunks in %.2fs", len(retrieved_docs), time.time() - start_time)
 
         # -----------------------------------------------------------
         #  LATE-CHUNK MERGING (merge ±1 sub-vector into central hit)
         # -----------------------------------------------------------
-        if self.retriever_configs.get("latechunk", {}).get("enabled") and retrieved_docs:
+        if latechunk_cfg.get("enabled") and retrieved_docs:
             merged_count = 0
             for doc in retrieved_docs:
                 try:
@@ -336,62 +490,200 @@ ORIGINAL QUESTION: "{query}"
             if merged_count:
                 print(f"🪄 Late-chunk merging applied to {merged_count} retrieved chunks.")
 
-        # --- AI Reranking Step ---
-        ai_reranker = self._get_ai_reranker()
-        if ai_reranker and retrieved_docs:
-            if event_callback:
-                event_callback("rerank_started", {"count": len(retrieved_docs)})
-            print(f"\n--- Reranking top {len(retrieved_docs)} docs with AI model... ---")
-            start_rerank_time = time.time()
+        return retrieved_docs
 
-            rerank_cfg = self.config.get("reranker", {})
-            top_k_cfg = rerank_cfg.get("top_k")
-            top_percent = rerank_cfg.get("top_percent")  # value in range 0–1
+    # ------------------------------------------------------------------
+    # Reranking (roadmap item 2.2: decomposition applies HERE, not first stage)
+    # ------------------------------------------------------------------
 
-            if top_percent is not None:
-                try:
-                    pct = float(top_percent)
-                    assert 0 < pct <= 1
-                    top_k = max(1, int(len(retrieved_docs) * pct))
-                except Exception:
-                    print("⚠️  Invalid top_percent value; falling back to top_k")
-                    top_k = top_k_cfg or len(retrieved_docs)
-            else:
-                top_k = top_k_cfg or len(retrieved_docs)
-
-            strategy = self.config.get("reranker", {}).get("strategy", "qwen")
-
+    @staticmethod
+    def _score_pairs(ai_reranker, strategy: str, query: str, texts: List[str]) -> Dict[int, float]:
+        """Score every candidate against one query. Returns {candidate index: score}."""
+        # Some rerankers-lib backends are not thread-safe; serialise calls.
+        with _rerank_lock:
             if strategy == "rerankers-lib":
-                texts = [d['text'] for d in retrieved_docs]
-                # ColBERT's Rust backend isn't Sync; serialise calls.
-                with _rerank_lock:
-                    ranked = ai_reranker.rank(query=query, docs=texts)
-                # ranked is RankedResults; convert to list of (score, idx)
+                ranked = ai_reranker.rank(query=query, docs=texts)
                 try:
                     pairs = [(r.score, r.document.doc_id) for r in ranked.results]
-                    if any(p[1] is None for p in pairs):
+                    if any(not isinstance(p[1], int) for p in pairs):
                         pairs = [(r.score, i) for i, r in enumerate(ranked.results)]
                 except Exception:
                     pairs = ranked
-                # Keep only top_k results if requested
-                if top_k is not None and len(pairs) > top_k:
-                    pairs = pairs[:top_k]
-                reranked_docs = [retrieved_docs[idx] | {"rerank_score": score} for score, idx in pairs]
             else:
-                try:
-                    reranked_docs = ai_reranker.rerank(query, retrieved_docs, top_k=top_k)
-                except TypeError:
-                    texts = [d['text'] for d in retrieved_docs]
-                    pairs = ai_reranker.rank(query, texts, top_k=top_k)
-                    reranked_docs = [retrieved_docs[idx] | {"rerank_score": score} for score, idx in pairs]
+                pairs = ai_reranker.rank(query, texts)
+        return {int(idx): float(score) for score, idx in pairs}
 
-            rerank_time = time.time() - start_rerank_time
-            print(f"✅ Reranking completed in {rerank_time:.2f}s. Refined to {len(reranked_docs)} docs.")
-            if event_callback:
-                event_callback("rerank_done", {"count": len(reranked_docs)})
+    def _rerank_stage(self, query: str, retrieved_docs: List[Dict[str, Any]],
+                      sub_queries: Optional[List[str]] = None,
+                      event_callback=None) -> List[Dict[str, Any]]:
+        """Reorder the first-stage candidates. No-op when reranking is off.
+
+        When *sub_queries* is supplied (query decomposition is on **and** the
+        reranker is on), each candidate is scored against every sub-query and
+        the per-sub-query scores are aggregated with
+        ``query_decomposition.rerank_aggregate`` (``"mean"``, the default, or
+        ``"max"``). This is the whole of roadmap item 2.2: the first stage
+        always ran on the full original query, because decomposing *there*
+        dilutes the query semantically, while decomposition applied at reranking
+        is where the 2026 evidence puts the win.
+        """
+        ai_reranker = self._get_ai_reranker()
+        if not ai_reranker or not retrieved_docs:
+            return retrieved_docs
+
+        if event_callback:
+            event_callback("rerank_started", {"count": len(retrieved_docs)})
+        print(f"\n--- Reranking top {len(retrieved_docs)} docs with AI model... ---")
+        start_rerank_time = time.time()
+
+        rerank_cfg = self.config.get("reranker", {})
+        top_k_cfg = rerank_cfg.get("top_k")
+        top_percent = rerank_cfg.get("top_percent")  # value in range 0–1
+
+        if top_percent is not None:
+            try:
+                pct = float(top_percent)
+                assert 0 < pct <= 1
+                top_k = max(1, int(len(retrieved_docs) * pct))
+            except Exception:
+                print("⚠️  Invalid top_percent value; falling back to top_k")
+                top_k = top_k_cfg or len(retrieved_docs)
         else:
-            # If no AI reranker, proceed with the initially retrieved docs
-            reranked_docs = retrieved_docs
+            top_k = top_k_cfg or len(retrieved_docs)
+
+        strategy = rerank_cfg.get("strategy", "rerankers-lib")
+        texts = [d["text"] for d in retrieved_docs]
+
+        queries = [q for q in (sub_queries or []) if q and q.strip()] or [query]
+        # "mean" is the default because it measured better than "max" on both
+        # subsets of the item-2.2 A/B (eval/decisions/phase2-pipeline.md §3).
+        aggregate = (self.config.get("query_decomposition", {}) or {}).get(
+            "rerank_aggregate", "mean")
+        if len(queries) > 1:
+            print(f"🔀 Scoring candidates against {len(queries)} sub-queries "
+                  f"(aggregate={aggregate}).")
+
+        per_query = [self._score_pairs(ai_reranker, strategy, q, texts) for q in queries]
+
+        scores: Dict[int, float] = {}
+        for idx in range(len(texts)):
+            values = [m[idx] for m in per_query if idx in m]
+            if not values:
+                continue
+            scores[idx] = (sum(values) / len(values)) if aggregate == "mean" else max(values)
+
+        ordered = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        if top_k is not None and len(ordered) > top_k:
+            ordered = ordered[:top_k]
+        reranked_docs = [retrieved_docs[idx] | {"rerank_score": score} for idx, score in ordered]
+
+        rerank_time = time.time() - start_rerank_time
+        print(f"✅ Reranking completed in {rerank_time:.2f}s. Refined to {len(reranked_docs)} docs.")
+        if event_callback:
+            event_callback("rerank_done", {"count": len(reranked_docs)})
+        return reranked_docs
+
+    # ------------------------------------------------------------------
+
+    def retrieve_candidates(self, query: str, table_name: Optional[str] = None,
+                            sub_queries: Optional[List[str]] = None,
+                            event_callback=None) -> Dict[str, Any]:
+        """First stage + rerank + the evidence-sufficiency retry around both.
+
+        This is the whole candidate-selection path, factored out of ``run()`` so
+        that ``eval/run_eval.py`` measures exactly what ships rather than a
+        reimplementation of it.
+
+        Returns::
+
+            {"first_stage": [...],   # post-retry first-stage ordering
+             "documents":   [...],   # after reranking, or == first_stage
+             "query_used":  str,
+             "retry":       {...} | None}
+        """
+        retrieval_k = self.config.get("retrieval_k", 10)
+        retrieval_mode = self._retrieval_mode()
+        base_table = table_name or self.storage_config["text_table_name"]
+
+        if event_callback:
+            event_callback("retrieval_started", {"mode": retrieval_mode})
+
+        first_stage = self._first_stage(query, base_table, retrieval_k, retrieval_mode,
+                                        event_callback)
+        documents = self._rerank_stage(query, first_stage, sub_queries, event_callback)
+
+        result = {"first_stage": first_stage, "documents": documents,
+                  "query_used": query, "retry": None}
+
+        retry_cfg = self._retry_config()
+        if not retry_cfg.get("enabled") or not first_stage:
+            return result
+
+        # Prefer the reranker's calibrated probability when it produced one;
+        # otherwise fall back to the dense contrast score. RRF ranks are
+        # deliberately never used — they carry no absolute information.
+        score = self._rerank_evidence_score(documents)
+        signal = "rerank"
+        threshold = retry_cfg.get("min_rerank_score", retry_cfg.get("min_top_score"))
+        if score is None:
+            score = self._dense_evidence_score(first_stage)
+            signal = "dense_contrast"
+            threshold = retry_cfg.get("min_top_score")
+        if score is None or threshold is None:
+            # fts_only, or a legacy unnormalized table: no meaningful signal.
+            return result
+
+        if score >= float(threshold):
+            return result
+
+        max_attempts = int(retry_cfg.get("max_attempts", 1) or 0)
+        if max_attempts < 1:
+            return result
+
+        print(f"\n🔁 Evidence-sufficiency retry: {signal} score {score:.3f} "
+              f"< {float(threshold):.3f} — reformulating once.")
+        reformulated = self._reformulate_query(query)
+        info = {"signal": signal, "threshold": float(threshold),
+                "score_before": round(score, 4), "reformulated": reformulated,
+                "attempted": reformulated is not None, "kept": "original",
+                "score_after": None}
+
+        if reformulated:
+            retry_first = self._first_stage(reformulated, base_table, retrieval_k,
+                                            retrieval_mode, event_callback)
+            retry_docs = self._rerank_stage(reformulated, retry_first, sub_queries,
+                                            event_callback)
+            retry_score = (self._rerank_evidence_score(retry_docs) if signal == "rerank"
+                           else self._dense_evidence_score(retry_first))
+            info["score_after"] = None if retry_score is None else round(retry_score, 4)
+            # Keep whichever attempt scored better on the same signal. A retry
+            # that did not improve the evidence is discarded, not merged.
+            if retry_score is not None and retry_score > score:
+                result["first_stage"] = retry_first
+                result["documents"] = retry_docs
+                result["query_used"] = reformulated
+                info["kept"] = "retry"
+
+        result["retry"] = info
+        if event_callback:
+            event_callback("retrieval_retry", info)
+        print(f"🔁 Retry kept the {info['kept']} result set "
+              f"(score_after={info['score_after']}).")
+        return result
+
+    def run(self, query: str, table_name: str = None, window_size_override: Optional[int] = None,
+            event_callback=None, sub_queries: Optional[List[str]] = None) -> Dict[str, Any]:
+        base_table = table_name or self.storage_config["text_table_name"]
+
+        logger = logging.getLogger(__name__)
+        logger.debug("--- Running search for query '%s' (table=%s) ---", query, base_table)
+
+        # If a custom table_name is provided, propagate it to storage config so helper methods use it
+        if table_name:
+            self.storage_config["text_table_name"] = table_name
+
+        candidates = self.retrieve_candidates(query, base_table, sub_queries, event_callback)
+        reranked_docs = candidates["documents"]
 
         window_size = self.config.get("context_window_size", 1)
         if window_size_override is not None:
@@ -509,57 +801,13 @@ ORIGINAL QUESTION: "{query}"
         
         return {"answer": final_answer, "source_documents": final_docs}
 
-    # ------------------------------------------------------------------
-    # Public utility
-    # ------------------------------------------------------------------
-    def list_document_titles(self, max_items: int = 25) -> List[str]:
-        """Return up to *max_items* distinct document titles (or IDs).
-
-        This is used only for prompt-routing, so we favour robustness over
-        perfect recall. If anything goes wrong we return an empty list so
-        the caller can degrade gracefully.
-        """
-        try:
-            tbl_name = self.storage_config.get("text_table_name")
-            if not tbl_name:
-                return []
-
-            tbl = self._get_db_manager().get_table(tbl_name)
-
-            field_name = "document_title" if "document_title" in tbl.schema.names else "document_id"
-
-            # Use a cheap SQL filter to grab distinct values; fall back to a
-            # simple scan if the driver lacks DISTINCT support.
-            try:
-                sql = f"SELECT DISTINCT {field_name} FROM tbl LIMIT {max_items}"
-                rows = tbl.search().where("true").sql(sql).to_list()  # type: ignore
-                titles = [r[field_name] for r in rows if r.get(field_name)]
-            except Exception:
-                # Fallback: scan first N rows
-                rows = tbl.search().select(field_name).limit(max_items * 4).to_list()
-                seen = set()
-                titles = []
-                for r in rows:
-                    val = r.get(field_name)
-                    if val and val not in seen:
-                        titles.append(val)
-                        seen.add(val)
-                        if len(titles) >= max_items:
-                            break
-
-            # Ensure we don't exceed max_items
-            return titles[:max_items]
-        except Exception:
-            # Any issues (missing table, bad schema, etc.) –> just return []
-            return []
-
     # -------------------- Public helper properties --------------------
     @property
     def retriever(self):
-        """Lazily exposes the main (dense) retriever so external components
-        like the ReAct agent tools can call `.retrieve()` directly without
-        reaching into private helpers. If the retriever has not yet been
-        instantiated, it is created on first access via `_get_dense_retriever`."""
+        """Lazily exposes the MultiVectorRetriever so external components can
+        call `.retrieve()` directly without reaching into private helpers. If
+        the retriever has not yet been instantiated, it is created on first
+        access via `_get_dense_retriever`."""
         return self._get_dense_retriever()
 
     def update_embedding_model(self, model_name: str):
