@@ -1,0 +1,226 @@
+{
+ "corpus": "docs",
+ "document": "Documentation/*.md (referenced in place, not copied)",
+ "generator": "hand-selected prose anchors",
+ "note": "This corpus is the repo's own documentation. Anchors are verbatim prose substrings of the named source file after whitespace normalisation (checked by eval/corpora/verify_facts.py). Prose was preferred over table cells and fenced code because the docling markdown converter may reflow those.",
+ "source_glob": "Documentation/*.md",
+ "facts": [
+  {
+   "id": "docs_no_weighted_blend",
+   "topic": "hybrid_retrieval",
+   "source": "retrieval_pipeline.md",
+   "expected": "There is no weighted linear blend",
+   "summary": "Hybrid fusion is pure RRF; there is no weighted linear blend and no dense_weight knob."
+  },
+  {
+   "id": "docs_query_embed_cache",
+   "topic": "hybrid_retrieval",
+   "source": "retrieval_pipeline.md",
+   "expected": "memoised in a 256-entry",
+   "summary": "The query embedding is memoised in a 256-entry lru_cache per retriever."
+  },
+  {
+   "id": "docs_api_single_threaded",
+   "topic": "operations",
+   "source": "retrieval_pipeline.md",
+   "expected": "so requests are handled one at a time",
+   "summary": "The RAG API is a single-threaded TCPServer, so requests are handled one at a time."
+  },
+  {
+   "id": "docs_brute_force_vector",
+   "topic": "vector_index",
+   "source": "retrieval_pipeline.md",
+   "expected": "Vector search is a brute-force scan",
+   "summary": "No ANN index is built, so vector search is an exhaustive scan."
+  },
+  {
+   "id": "docs_reindex_required",
+   "topic": "embedding_model",
+   "source": "retrieval_pipeline.md",
+   "expected": "Changing the embedding model requires re-indexing",
+   "summary": "Changing the embedding model requires re-indexing."
+  },
+  {
+   "id": "docs_no_citation_markers",
+   "topic": "synthesis",
+   "source": "retrieval_pipeline.md",
+   "expected": "There are no inline citation markers",
+   "summary": "There are no inline citation markers; sources come back as source_documents."
+  },
+  {
+   "id": "docs_expansion_filtered_out",
+   "topic": "context_expansion",
+   "source": "retrieval_pipeline.md",
+   "expected": "the freshly added neighbours are filtered back out",
+   "summary": "When the reranker ran, context-expansion neighbours are filtered back out."
+  },
+  {
+   "id": "docs_provence_model",
+   "topic": "pruning",
+   "source": "retrieval_pipeline.md",
+   "expected": "naver/provence-reranker-debertav3-v1",
+   "summary": "Sentence pruning uses naver/provence-reranker-debertav3-v1."
+  },
+  {
+   "id": "docs_pruning_off_by_default",
+   "topic": "pruning",
+   "source": "retrieval_pipeline.md",
+   "expected": "so pruning is off unless a request enables it",
+   "summary": "No shipped profile has a provence block, so pruning is off by default."
+  },
+  {
+   "id": "docs_verifier_context_clamp",
+   "topic": "verifier",
+   "source": "verifier.md",
+   "expected": "clamped to the first 4000 characters",
+   "summary": "The verifier prompt clamps context to the first 4000 characters."
+  },
+  {
+   "id": "docs_verifier_one_call_site",
+   "topic": "verifier",
+   "source": "verifier.md",
+   "expected": "There is exactly one call site in the repository",
+   "summary": "The verifier has exactly one call site."
+  },
+  {
+   "id": "docs_verifier_cost",
+   "topic": "verifier",
+   "source": "verifier.md",
+   "expected": "one extra LLM round-trip per answered query",
+   "summary": "Verification costs one extra utility-model round-trip per answered query."
+  },
+  {
+   "id": "docs_verifier_zero_score",
+   "topic": "verifier",
+   "source": "verifier.md",
+   "expected": "0 is treated as a parse failure",
+   "summary": "A confidence score of 0 is treated as a parse failure and no tag is appended."
+  },
+  {
+   "id": "docs_triage_no_regex",
+   "topic": "triage",
+   "source": "triage_system.md",
+   "expected": "There is no regex or keyword stage in the agent",
+   "summary": "The agent router has no regex or keyword stage."
+  },
+  {
+   "id": "docs_triage_overview_cap",
+   "topic": "triage",
+   "source": "triage_system.md",
+   "expected": "the first 40 loaded overviews",
+   "summary": "The overview router uses the first 40 loaded overviews."
+  },
+  {
+   "id": "docs_triage_no_switch",
+   "topic": "triage",
+   "source": "triage_system.md",
+   "expected": "There is no global triage on/off switch",
+   "summary": "There is no global triage on/off switch and no similarity threshold."
+  },
+  {
+   "id": "docs_triage_utility_model",
+   "topic": "triage",
+   "source": "triage_system.md",
+   "expected": "costs an LLM call, on the utility model",
+   "summary": "Only the agent-side router makes an LLM call (utility model qwen3.5:4b); the gateway gate is pure Python."
+  },
+  {
+   "id": "docs_chunk_size_layering",
+   "topic": "chunking",
+   "source": "indexing_pipeline.md",
+   "expected": "while the HTTP path always sends",
+   "summary": "The CLI path uses the 1500-token code default while the HTTP path always sends 512."
+  },
+  {
+   "id": "docs_txt_bypasses_docling",
+   "topic": "conversion",
+   "source": "indexing_pipeline.md",
+   "expected": "files bypass docling entirely and are wrapped in a fenced code block",
+   "summary": ".txt files bypass docling and are wrapped in a fenced code block."
+  },
+  {
+   "id": "docs_no_overlap_knob",
+   "topic": "chunking",
+   "source": "indexing_pipeline.md",
+   "expected": "the legacy path has no overlap logic at all",
+   "summary": "There is no chunk-overlap knob; the legacy chunker has no overlap logic."
+  },
+  {
+   "id": "docs_embedding_dimensions",
+   "topic": "embedding_model",
+   "source": "indexing_pipeline.md",
+   "expected": "produces 2560-dim vectors",
+   "summary": "Qwen3-Embedding-4B is 2560-dim, the 0.6B is 1024-dim; not interchangeable."
+  },
+  {
+   "id": "docs_no_ann_index",
+   "topic": "vector_index",
+   "source": "indexing_pipeline.md",
+   "expected": "No ANN index is created",
+   "summary": "No ANN/IVF-PQ index is created anywhere in rag_system."
+  },
+  {
+   "id": "docs_indexing_sequential",
+   "topic": "enrichment",
+   "source": "indexing_pipeline.md",
+   "expected": "there is no thread or process pool anywhere in the indexing path",
+   "summary": "Indexing is sequential; batch size controls reporting and memory, not concurrency."
+  },
+  {
+   "id": "docs_enrichment_short_summary",
+   "topic": "enrichment",
+   "source": "indexing_pipeline.md",
+   "expected": "a summary shorter than 5 characters is discarded",
+   "summary": "An enrichment summary under 5 characters is discarded and the chunk is indexed unenriched."
+  },
+  {
+   "id": "docs_overview_truncation",
+   "topic": "overviews",
+   "source": "indexing_pipeline.md",
+   "expected": "truncated to 5000 characters",
+   "summary": "Overview input is the first N chunks truncated to 5000 characters."
+  },
+  {
+   "id": "docs_latechunk_cost",
+   "topic": "late_chunking",
+   "source": "indexing_pipeline.md",
+   "expected": "roughly double the vectors written",
+   "summary": "Late chunking costs a second copy of the embedder and roughly double the vectors."
+  },
+  {
+   "id": "docs_identity_marker",
+   "topic": "index_safety",
+   "source": "system_overview.md",
+   "expected": "records the embedding model that wrote it",
+   "summary": "Each table records its embedding model + normalized flag; mismatch raises EmbedderMismatchError at index and query time."
+  },
+  {
+   "id": "docs_dimension_mismatch_raises",
+   "topic": "vector_index",
+   "source": "indexing_pipeline.md",
+   "expected": "Silently dropping or recreating an index would corrupt it",
+   "summary": "A dimension mismatch is a hard ValueError on purpose."
+  },
+  {
+   "id": "docs_no_hardcoded_model_in_prompt",
+   "topic": "prompts",
+   "source": "prompt_inventory.md",
+   "expected": "No prompt hard-codes a model name",
+   "summary": "No prompt hard-codes a model name; roles resolve through OLLAMA_CONFIG."
+  },
+  {
+   "id": "docs_legacy_example_blocks",
+   "topic": "prompts",
+   "source": "prompt_inventory.md",
+   "expected": "Two legacy example blocks still live in the file",
+   "summary": "Two legacy decomposition example blocks are present but excluded from the assembled prompt."
+  },
+  {
+   "id": "docs_direct_answer_length",
+   "topic": "prompts",
+   "source": "prompt_inventory.md",
+   "expected": "Caps the reply at 1-2 sentences",
+   "summary": "The direct_answer prompt caps the reply at 1-2 sentences."
+  }
+ ]
+}

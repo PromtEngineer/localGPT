@@ -1,0 +1,29 @@
+{
+  "corpus": "atlas7",
+  "document": "atlas7_service_manual.pdf",
+  "generator": "hand-authored PDF (planted-fact test document, 2026-08-08)",
+  "note": "Fictional machine and fictional manufacturer. Every 'expected' string is a verbatim substring of the PDF text after whitespace normalisation (checked by eval/corpora/verify_facts.py).",
+  "facts": [
+    {"id": "atlas_model_revision", "topic": "identification", "expected": "Atlas-7 Dual Boiler (2026 revision C)", "summary": "The model is the Atlas-7 Dual Boiler, 2026 revision C."},
+    {"id": "atlas_manufacturer", "topic": "identification", "expected": "Meridian Coffee Systems, Tacoma WA", "summary": "Made by Meridian Coffee Systems of Tacoma, WA."},
+    {"id": "atlas_brew_pressure", "topic": "specifications", "expected": "pressure of 9.2 bar", "summary": "The brew boiler runs at 9.2 bar during extraction."},
+    {"id": "atlas_steam_pressure", "topic": "specifications", "expected": "steam boiler is maintained at 1.45 bar", "summary": "The steam boiler is held at 1.45 bar."},
+    {"id": "atlas_brew_temperature", "topic": "specifications", "expected": "93.5 degrees Celsius", "summary": "The PID holds brew water at 93.5 C."},
+    {"id": "atlas_temperature_tolerance", "topic": "specifications", "expected": "tolerance of 0.4 degrees", "summary": "Brew temperature tolerance is 0.4 degrees."},
+    {"id": "atlas_pump_rating", "topic": "specifications", "expected": "52 watts continuous duty", "summary": "The vibratory pump is rated 52 W continuous."},
+    {"id": "atlas_descale_interval", "topic": "maintenance", "expected": "every 60 days when water hardness exceeds", "summary": "Descale every 60 days above the hardness threshold."},
+    {"id": "atlas_water_hardness", "topic": "maintenance", "expected": "120 ppm", "summary": "The hardness threshold is 120 ppm."},
+    {"id": "atlas_gasket_part", "topic": "maintenance", "expected": "group head gasket (part MG-311)", "summary": "The group head gasket is part MG-311."},
+    {"id": "atlas_gasket_interval", "topic": "maintenance", "expected": "replaced every 14 months", "summary": "The gasket is replaced every 14 months."},
+    {"id": "atlas_backflush", "topic": "maintenance", "expected": "Backflushing with Cafiza detergent is recommended weekly", "summary": "Weekly backflush with Cafiza."},
+    {"id": "atlas_e11", "topic": "error_codes", "expected": "E11: Brew boiler thermistor open circuit", "summary": "E11 is a brew boiler thermistor open circuit."},
+    {"id": "atlas_e11_part", "topic": "error_codes", "expected": "Replace sensor part TS-71", "summary": "E11 is fixed by replacing sensor TS-71."},
+    {"id": "atlas_e23", "topic": "error_codes", "expected": "Check the OPV calibration at 12 bar", "summary": "E23 is steam overpressure; check OPV calibration at 12 bar."},
+    {"id": "atlas_e42_prime", "topic": "error_codes", "expected": "Prime the pump by running 200 ml", "summary": "E42 is pump cavitation; prime with 200 ml."},
+    {"id": "atlas_e42_procedure", "topic": "error_codes", "expected": "hot water wand, then power cycle the unit", "summary": "Prime via the hot water wand, then power cycle."},
+    {"id": "atlas_e57", "topic": "error_codes", "expected": "Clean the inlet mesh filter", "summary": "E57 is zero flow-meter pulses; clean the inlet mesh filter."},
+    {"id": "atlas_warranty_length", "topic": "warranty", "expected": "36-month parts warranty", "summary": "The parts warranty is 36 months."},
+    {"id": "atlas_warranty_void", "topic": "warranty", "expected": "citric acid above 8 percent concentration", "summary": "Third-party descalers over 8 percent citric acid void the warranty."},
+    {"id": "atlas_serial_location", "topic": "warranty", "expected": "engraved under the drip tray on the left rail", "summary": "The serial number is under the drip tray on the left rail."}
+  ]
+}
