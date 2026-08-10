@@ -100,7 +100,22 @@ Phase 0 blocks everything. Phases 1 and 2 can interleave per-item, but 1.1/1.2
 should conclude before any re-index-requiring release. Phase 3.1 can be drafted
 in parallel at any time.
 
-## Phase 4 — Ideas adopted from agentic-file-search (planned 2026-08-09, not implemented)
+## Phase 4 — Ideas adopted from agentic-file-search (implemented + benchmarked 2026-08-09)
+
+**Phase 4 is complete.** Every item below was implemented flag-gated, benchmarked
+on/off, and decided at the adoption gate. Verdicts (evidence in
+`eval/decisions/phase4-*.md`):
+
+| # | Verdict | One-line reason |
+|---|---------|-----------------|
+| 4.1 | **HOLD** — implemented, off | Directionally positive on fired queries (0/7→2/7 judged) but confounded by a serving-side 8k prompt-truncation bug; the one fire under product defaults was a harm. Re-run the A/B after the context-budget fix. |
+| 4.2 | **Extraction ADOPTED (on); hop REJECTED as a default (off, flag kept)** | Extraction is free, regex-only and index-inert. The hop fires 0/11 at the shipped k=20, hits 0/11 expected sources where forced (target selection is query-blind), and raising `k` beats it at equal context budget in 3 of 4 cells. |
+| 4.3 | **boost HOLD (off); restrict REJECTED** | boost: nDCG@10 0.773→0.879 on the heterogeneous slice but a loss on `mixed` — per-index opt-in candidate, not a default. restrict removed the answer document entirely for 4 queries per corpus (recall@20 1→0). |
+| 4.4 | **ADOPTED** (no flag: inert without a `filters` argument) | Byte-identical behavior when unused (md5-verified); injection refused, both search legs prefiltered. **Correction to the row below: page/date filters did NOT ship** — they live inside the metadata JSON string and need real columns + a re-index. |
+| 4.5 | **ADOPTED (on by default)** | Zero-risk observability; `token_usage` per stage on `/chat` and the SSE `complete` event. |
+| 4.6 | **ADOPTED** (opt-in CLI) | `python -m rag_system.main ask <folder> "<q>"`; ephemeral index, verified cleanup including on SIGTERM. |
+
+Original planning table follows, kept for the evidence trail:
 
 Source: [PromtEngineer/agentic-file-search](https://github.com/PromtEngineer/agentic-file-search)
 (FsExplorer lineage — an agentic filesystem QA agent: three-phase scan/dive/backtrack,

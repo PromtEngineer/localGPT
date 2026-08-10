@@ -31,7 +31,7 @@ Both send `Access-Control-Allow-Origin: *` on every response and answer `OPTIONS
 | `/sessions/<id>` | DELETE | Delete a session and its messages | – | `{ deleted: true }` |
 | `/sessions/<id>/rename` | POST | Rename a session | `{ title }` | `{ message, session }` |
 | `/sessions/<id>/messages` | POST | Session chat (persisted) | [Session chat request](#12-session-chat-request) | `{ response, session, source_documents, used_rag }` |
-| `/sessions/<id>/messages/save` | POST | Persist a completed streamed turn (the browser calls this after `POST :8001/chat/stream` finishes) | `{ user_message, assistant_message, source_documents? }` | `{ session, user_message_id, ai_message_id }` — sources are stored in the assistant message's `metadata.source_documents` |
+| `/sessions/<id>/messages/save` | POST | Persist a completed streamed turn (the browser calls this after `POST :8001/chat/stream` finishes) | `{ user_message, assistant_message, source_documents?, steps? }` | `{ session, user_message_id, ai_message_id }` — sources and steps are stored in the assistant message's `metadata.source_documents` / `metadata.steps` |
 | `/sessions/<id>/documents` | GET | Files uploaded to a session | – | `{ session, files, file_count }` |
 | `/sessions/<id>/upload` | POST | Upload files to a session | multipart, field `files` | `{ message, uploaded_files }` |
 | `/sessions/<id>/index` | POST | Index the session's documents | [Index options](#14-index-options) (optional) | the RAG API `/index` response |
@@ -70,7 +70,10 @@ Both send `Access-Control-Allow-Origin: *` on every response and answer `OPTIONS
   "reranker_top_k": 10,
   "retrieval_mode": "hybrid",     // "hybrid" | "vector_only" | "fts_only" (alias: "search_type")
   "provence_prune": false,
-  "provence_threshold": 0.1
+  "provence_threshold": 0.1,
+  "filters": { }                  // optional metadata filter object, forwarded verbatim and
+                                  // validated by the RAG API (§2.1). A present filter also
+                                  // forces the RAG route, like force_rag.
 }
 ```
 
@@ -177,7 +180,12 @@ Unknown routes return 404 `{ "error": "Not Found" }`.
 
   "retrieval_mode": "hybrid",     // "hybrid" | "vector_only" | "fts_only"; alias "search_type"
   "provence_prune": false,        // optional – sentence-level pruning
-  "provence_threshold": 0.1       // optional – pruning threshold
+  "provence_threshold": 0.1,      // optional – pruning threshold
+
+  "filters": {                    // optional – metadata filter (roadmap 4.4); prefilters BOTH search legs
+    "document_id": { "eq": "07_nda.pdf" },        // also: {"in": [...]}, {"contains": "..."}
+    "chunk_index": { "gte": 0, "lt": 10 }         // also on document_name (contains), chunk_id (eq/in)
+  }
 }
 ```
 
@@ -187,6 +195,7 @@ Notes:
 * An unsupported `retrieval_mode` is rejected with `400 { "error": "Unsupported retrieval mode '…'. Supported: hybrid, vector_only, fts_only." }`.
 * `model` is applied for the duration of the request and then restored. A model id that does not match the active `LLM_BACKEND` (for example an Ollama tag while `LLM_BACKEND=watsonx`) is ignored with a warning.
 * If the table's index metadata records an `embedding_model`, the retrieval pipeline switches to it before searching.
+* `filters` is validated by `rag_system/retrieval/filters.py`: unknown fields/operators, wrong types, empty IN-lists, an empty object, and values containing quoting characters (`'`, `"`, `\`, `;`, backtick, control chars — refused, never escaped) all return `400` with the validator's message. Sending `filters` also skips triage, like `force_rag`. Page/date filtering is not supported (the values live inside the metadata JSON column).
 
 ### 2.2 Chat response
 
@@ -204,9 +213,17 @@ Notes:
       "rerank_score": 0.87,     // present only when reranking ran
       "bm25": 4.21              // present only when the full-text leg matched this chunk
     }
-  ]
+  ],
+  "token_usage": {              // per-query token accounting (roadmap 4.5, always on)
+    "by_stage": { "synthesis": { "prompt_tokens": 1192, "output_tokens": 861, "calls": 1 } },
+    "total": { "prompt_tokens": 1192, "output_tokens": 861, "calls": 1, "total_tokens": 2053 }
+  },
+  "document_escalation": [ ]    // present only when full-document escalation fired (flag-gated, off by default)
 }
 ```
+
+An absent key in `by_stage` means that stage made no LLM call, not that it cost
+zero tokens. Only Ollama reports real counts; watsonx reports zeros.
 
 There is no top-level `confidence` or `reasoning` field. When verification is enabled the confidence is appended to `answer` as `" [Confidence: N%]"`, plus `" [Warning: Low confidence. Groundedness: <bool>]"` when the answer is judged ungrounded or scores below 50. Nothing is appended when the verifier's score parses as 0.
 
@@ -227,6 +244,9 @@ data: {"type": "<event>", "data": <payload>}
 | `decomposition` | `{sub_queries}` | Query decomposition produced sub-queries |
 | `retrieval_started` | `{mode}` or `{count}` | `{mode}` from the retrieval pipeline, `{count}` from the decomposition branch |
 | `retrieval_done` | `{count}` | Retrieval finished |
+| `retrieval_retry` | `{score_before, score_after, kept, …}` | The evidence-sufficiency retry ran (design_rationale §5) |
+| `crossref_hop` | `{targets, chunks_added}` | The cross-reference hop pulled chunks (flag-gated, off by default) |
+| `document_escalation` | `{document_id, document_name, chunks_used, chunks_total, approx_tokens, truncated, signal, score, threshold, token_budget}` | Full-document escalation fired (flag-gated, off by default); never contains the document text |
 | `rerank_started` / `rerank_done` | `{count}` | Reranking |
 | `context_expand_started` / `context_expand_done` | `{count}` | Context expansion |
 | `prune_started` / `prune_done` | `{count}` | Provence pruning (only when enabled) |
@@ -235,7 +255,7 @@ data: {"type": "<event>", "data": <payload>}
 | `sub_query_result` | `{index, query, answer, source_documents}` | A sub-query finished |
 | `single_query_result` | the pipeline result | Decomposition produced exactly one sub-query |
 | `final_answer` | `{answer, source_documents}` | Composed answer ready |
-| `complete` | `{answer, source_documents}` | Final event; clients may close here |
+| `complete` | `{answer, source_documents, token_usage}` | Final event; clients may close here. `token_usage` has the shape shown in §2.2 |
 | `error` | `{error}` | Failure after the stream opened |
 
 > This endpoint does **not** write to SQLite. The browser's default chat path calls it directly and, once the `complete` event arrives, persists the finished turn via `POST :8000/sessions/<id>/messages/save`. Clients that consume the stream directly must do the same if they want the turn in the session history.

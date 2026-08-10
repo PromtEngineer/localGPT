@@ -296,6 +296,44 @@ misses to calibrate against. The firing rate drifted 9.7% → 11.1% as the corpu
 grew, so it is a property of the corpus, not a constant — re-check it after any
 embedder change.
 
+## 5a. Per-query token accounting
+
+**What ships.** Every Ollama completion the agent makes — streaming or not —
+reports `prompt_eval_count` and `eval_count` on its final object. Those are
+aggregated per user query, bucketed by pipeline stage (`triage`,
+`decomposition`, `synthesis`, `verification`), and returned as `token_usage` on
+the `/chat` response body and in the SSE `complete` event. On by default: it
+costs one dict update per LLM call and adds no request.
+
+The aggregation point is a `ContextVar` in `rag_system/utils/ollama_client.py`
+rather than an argument threaded through every call site, because one
+`OllamaClient` is shared by the agent, the retrieval pipeline, the verifier and
+the decomposer. `await` and `asyncio.to_thread` propagate it; the agent's
+parallel sub-query `ThreadPoolExecutor` copies it explicitly.
+
+Three honest gaps: the retry's reformulation call is billed to `synthesis`,
+because it happens inside `RetrievalPipeline.run()` which the agent labels as
+one stage; watsonx reports zeros, because the SDK path in use surfaces no
+per-call counts; and an absent stage key means "no LLM call in that stage",
+not "zero tokens". Evidence: `eval/decisions/phase4-escalation-tokens.md`.
+
+## 5b. Metadata filters and ask-a-folder
+
+**What ships.** `/chat` and `/chat/stream` accept an optional `filters` JSON
+object (document id/name, chunk id, chunk-index ranges) compiled to LanceDB
+where-clauses that prefilter **both** the vector and FTS legs. There is no
+flag: with no `filters` argument the path is byte-identical to not having the
+feature (md5-verified against a pre-change tree). Values containing quoting
+characters are refused, never escaped; a malformed filter is a 400 from the one
+validator in `rag_system/retrieval/filters.py`. Page and date filters are NOT
+shipped — they live inside the metadata JSON string column and need real
+columns plus a re-index.
+
+`python -m rag_system.main ask <folder> "<question>"` builds an ephemeral index
+under a temp directory (fast profile, no enrichment), answers with the standard
+pipeline, and removes everything afterwards — including on SIGTERM.
+Evidence: `eval/decisions/phase4-filters-askfolder.md`.
+
 ## 6. Reranking posture
 
 **What ships.** The `default` profile ships `reranker.enabled = False`
@@ -634,6 +672,18 @@ first — and bring a gold-set number, not a paper.
 | **Deep subagent / parallel fan-out loops** | The pro case (Anthropic's orchestrator-worker, +90.2%) runs at **~15× chat tokens** on frontier models. The 2026 counter-evidence: on repository-level code QA, plain semantic search scored **65.2%** vs deep agentic search **46.2% at >2× cost**, with **41.8% of failures at the planner→subagent hand-off** — "usually silent, ending in a fluent and confident answer that was wrong" ([`component-map-2026.md` §8.6](research/component-map-2026.md)). | Never, for a read-only indexable corpus on a single-user local box. The bounded version of this idea is already shipped: one conditional retry (§5), capped at `max_attempts: 1`. |
 | **RL-trained searchers** (Search-R1 lineage) | On BrowseComp-Plus — a fixed, human-verified corpus that disentangles retriever from agent — **Search-R1 + BM25 scores 3.86%** while GPT-5 + BM25 scores 55.9% and GPT-5 + Qwen3-Embedding-8B scores 70.1%, with *fewer* search calls (ACL 2026 Main, [`component-map-2026.md` §8.3](research/component-map-2026.md)). No out-of-distribution transfer; also mis-calibrates confidence, which would corrupt §5's evidence signal. | A local-training story with demonstrated OOD transfer. §8.2 documents the 2026 lineage if that changes; nothing in it is currently a better use of a laptop GPU than a better embedder. |
 | **Token-level context compression** (LLMLingua-style) | Across thousands of runs on 30,000 queries and three GPU classes: **at most ~18% end-to-end speedup**, and only when prompt length, ratio and hardware align — outside that window "compression overhead dominates and cancels the decoding gains entirely" (ECIR 2026). Fixed ratios reversed **31%** of pairwise model rankings on LongMemEval-S and obscured **80%** of the gain from a reader upgrade; hard compressors leave the answer path incomplete in 34–60% of multi-hop bridge examples. Upstream quiet since Dec 2024 ([`component-map-2026.md` §10.2–10.5](research/component-map-2026.md)). | Not in this shape. The surviving alternative — extractive sentence pruning — is already shipped as §10. If compression is ever profiled here, do it per model/hardware pair and re-run the ablation on every reader upgrade. |
+
+### 13a. Implemented but measured out of the defaults (Phase 4, 2026-08-09)
+
+These three shipped as flag-gated code, were benchmarked on/off, and stay OFF on
+the numbers. The flags exist so the A/Bs can be re-run; the code is not dead, it
+is *disabled by measurement*.
+
+| Flag (both profiles) | Verdict | The number that decided it |
+|---|---|---|
+| `retrieval.document_escalation` (4.1) | **HOLD** | 0/7→2/7 judged wins on fired queries, but the lift is confounded with a serving-side ~8k-token silent front-truncation (the escalated block is appended at the tail and *survives* truncation while top-ranked chunks are discarded), and the one fire under product defaults regressed 4/5→1/5. Re-run `eval/decisions/phase4-escalation-tokens.md` §6 after the context-budget fix. |
+| `retrieval.crossref_hop` (4.2) | **REJECTED as a default** | Fires 0/11 at the shipped k=20; where forced (k=5), 0/11 hopped chunks hit an expected source — target selection is query-blind and lands on hub documents (21/24 hops to 2 documents) — and raising `k` beats the hop at equal context budget in 3 of 4 cells. Index-time `extract_crossrefs` stays ON (free, regex-only, bit-identical text/vectors). `eval/decisions/phase4-retrieval-benchmarks.md`, `phase4-answer-quality.md`. |
+| `retrieval.overview_prefilter` (4.3) | **boost: HOLD · restrict: REJECTED** | boost: +0.106 nDCG@10 on the heterogeneous acquisition slice, −0.021 on `mixed` — a per-index opt-in candidate, not a default. restrict: removed the answer document entirely (recall@20 1→0) for 4 queries per corpus. `eval/decisions/phase4-retrieval-benchmarks.md`. |
 
 ## 14. How to re-litigate a decision
 
