@@ -85,6 +85,34 @@ PIPELINE_CONFIGS = {
                 "enabled": True,
                 "min_top_score": 0.12,
                 "max_attempts": 1
+            },
+            # Full-document escalation (roadmap 4.1). OFF until benchmarked.
+            # When the evidence-sufficiency retry above has already run and the
+            # evidence is STILL below threshold, reassemble the top-ranked
+            # chunk's whole document in chunk_index order and append it to the
+            # synthesis context, capped at token_budget. One document, no loop.
+            # min_evidence defaults to retry.min_top_score when omitted. See
+            # eval/decisions/phase4-escalation-tokens.md.
+            "document_escalation": {
+                "enabled": False,
+                "max_documents": 1,
+                "token_budget": 6000
+            },
+            # Cross-reference hop (roadmap 4.2). OFF: index-time extraction is
+            # free and additive, but the query-time hop appends chunks the
+            # retriever never scored, and it has not been benchmarked yet. See
+            # eval/decisions/phase4-crossref-prefilter.md.
+            "crossref_hop": {
+                "enabled": False,
+                "max_hops": 1,          # referenced documents expanded, no recursion
+                "chunks_per_hop": 3
+            },
+            # Overview prefilter (roadmap 4.3). OFF until benchmarked. "boost"
+            # is the safe mode — it reorders; "restrict" can hide a document.
+            "overview_prefilter": {
+                "enabled": False,
+                "top_documents": 5,
+                "mode": "boost"         # "boost" | "restrict"
             }
         },
         "embedding_model_name": EXTERNAL_MODELS["embedding_model"],
@@ -117,7 +145,11 @@ PIPELINE_CONFIGS = {
         "indexing": {
             "embedding_batch_size": 50,
             "enrichment_batch_size": 10,
-            "enable_progress_tracking": True
+            "enable_progress_tracking": True,
+            # Cross-reference extraction (roadmap 4.2, index-time half). Regex
+            # only, no LLM; writes chunk metadata.crossrefs. Verified inert for
+            # retrieval: text and vector columns are bit-identical with it on.
+            "extract_crossrefs": True
         }
     },
     "fast": {
@@ -132,7 +164,12 @@ PIPELINE_CONFIGS = {
             "dense": {"enabled": True},
             # Off in `fast`: the retry costs one enrichment-model round-trip plus
             # a second retrieval, which is exactly what this profile exists to avoid.
-            "retry": {"enabled": False}
+            "retry": {"enabled": False},
+            # Phase-4 flags (roadmap 4.1–4.3): all off in `fast` for the same
+            # reason — this profile exists to avoid extra work per query.
+            "document_escalation": {"enabled": False},
+            "crossref_hop": {"enabled": False},
+            "overview_prefilter": {"enabled": False}
         },
         "embedding_model_name": EXTERNAL_MODELS["embedding_model"],
         "reranker": {"enabled": False},
@@ -149,7 +186,9 @@ PIPELINE_CONFIGS = {
         "indexing": {
             "embedding_batch_size": 100,
             "enrichment_batch_size": 50,
-            "enable_progress_tracking": False
+            "enable_progress_tracking": False,
+            # Costs nothing even in `fast` (regex over text already in memory).
+            "extract_crossrefs": True
         }
     }
 }
@@ -193,11 +232,49 @@ def main() -> int:
     chat_parser = subparsers.add_parser("chat", help="Answer a single query and print the JSON result.")
     chat_parser.add_argument("query", help="The question to ask.")
     chat_parser.add_argument("--mode", default="default", choices=modes, help="Pipeline profile to use.")
+    chat_parser.add_argument(
+        "--filters", default=None,
+        help='Metadata filter as JSON (roadmap 4.4), e.g. \'{"document_id": "nda.pdf"}\' '
+             'or \'{"document_name": {"contains": "nda"}, "chunk_index": {"lte": 4}}\'.'
+    )
+
+    # Ephemeral "ask a folder" mode (roadmap 4.6).
+    ask_parser = subparsers.add_parser(
+        "ask",
+        help="Index a folder into a throwaway index, answer, then delete it."
+    )
+    ask_parser.add_argument("path", help="Folder (or single file) to ask about.")
+    ask_parser.add_argument("questions", nargs="*", help="One or more questions.")
+    ask_parser.add_argument("--mode", default="fast", choices=modes,
+                            help="Pipeline profile to use (default: fast).")
+    ask_parser.add_argument("--interactive", action="store_true",
+                            help="Keep asking follow-up questions against the same temp index.")
+    ask_parser.add_argument("--agent", action="store_true",
+                            help="Answer through the full agent loop (decomposition, "
+                                 "verification) instead of the retrieval pipeline alone.")
+    ask_parser.add_argument("--filters", default=None,
+                            help="Metadata filter as JSON (see 'chat --filters').")
+    ask_parser.add_argument("--keep", action="store_true",
+                            help="Do not delete the temporary index (debugging).")
 
     api_parser = subparsers.add_parser("api", help="Start the RAG API server.")
     api_parser.add_argument("--port", type=int, default=8001, help="Port to listen on.")
 
     args = parser.parse_args()
+
+    def _parse_filters(raw):
+        """Parse and validate --filters. Returns (compiled_or_None, exit_code_or_None)."""
+        if not raw:
+            return None, None
+        from rag_system.retrieval.filters import FilterError, compile_filters
+        try:
+            return compile_filters(json.loads(raw)), None
+        except json.JSONDecodeError as e:
+            print(f"❌ --filters is not valid JSON: {e}")
+            return None, 2
+        except FilterError as e:
+            print(f"❌ Invalid --filters: {e}")
+            return None, 2
 
     if args.command == "index":
         from rag_system.factory import get_indexing_pipeline
@@ -221,9 +298,26 @@ def main() -> int:
     if args.command == "chat":
         from rag_system.factory import get_agent
 
-        result = get_agent(args.mode).run(args.query)
+        filters, error = _parse_filters(args.filters)
+        if error:
+            return error
+
+        result = get_agent(args.mode).run(args.query, filters=filters)
         print(json.dumps(result, indent=2, ensure_ascii=False))
         return 0
+
+    if args.command == "ask":
+        from rag_system.ask_folder import ask_folder
+
+        filters, error = _parse_filters(args.filters)
+        if error:
+            return error
+
+        return ask_folder(
+            args.path, args.questions, mode=args.mode,
+            interactive=args.interactive, use_agent=args.agent,
+            filters=filters, keep=args.keep,
+        )
 
     if args.command == "api":
         from rag_system.api_server import start_server

@@ -53,6 +53,10 @@ CHAT_OPTIONS: Dict[str, Tuple[Any, Tuple[str, ...]]] = {
     "retrieval_mode": (str, ("retrievalMode", "search_type", "searchType")),
     "provence_prune": (bool, ("provencePrune",)),
     "provence_threshold": (float, ("provenceThreshold",)),
+    # Metadata filter object (roadmap 4.4). Validated by the RAG API, not here:
+    # dict() copies a dict and raises on anything else, so a malformed value
+    # still reaches the one validator and comes back as its 400.
+    "filters": (dict, ()),
 }
 
 INDEX_OPTIONS: Dict[str, Tuple[Any, Tuple[str, ...]]] = {
@@ -505,6 +509,10 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             force_rag = bool(data.get("force_rag", data.get("forceRag", False)))
             if force_rag:
                 options["force_rag"] = True
+            # An explicit metadata filter (roadmap 4.4) is a statement that this
+            # is a document question — gateway twin of the agent-side rule.
+            if options.get("filters"):
+                force_rag = True
             use_rag = should_use_rag(message, idx_ids, force_rag=force_rag)
 
             if use_rag:

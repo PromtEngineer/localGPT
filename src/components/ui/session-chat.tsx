@@ -331,6 +331,23 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 }
                 return { ...m, content: { steps } };
               }
+              if (evt.type === 'document_escalation') {
+                // Roadmap 4.1. Reported on the existing "weak evidence" step
+                // rather than a new one: escalation only ever happens because
+                // the evidence was still weak after the retry, and adding an
+                // array entry would shift the positional step indices the rest
+                // of this handler relies on.
+                const tidx = steps.findIndex(s => s.key === 'retry');
+                if (tidx !== -1) {
+                  const prior = typeof steps[tidx].details === 'string' ? steps[tidx].details : '';
+                  const note = `Escalated to the full document "${evt.data?.document_name}" `
+                    + `(${evt.data?.chunks_used}/${evt.data?.chunks_total} chunks, `
+                    + `~${evt.data?.approx_tokens} tokens${evt.data?.truncated ? ', truncated' : ''}).`;
+                  steps[tidx].status = 'done';
+                  steps[tidx].details = prior ? `${prior} ${note}` : note;
+                }
+                return { ...m, content: { steps } };
+              }
               if (evt.type === 'rerank_started') {
                 const rrxIdx = steps.findIndex(s => s.key === 'rerank');
                 if (rrxIdx !== -1) {
@@ -457,7 +474,12 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 } else {
                   steps[finalIdx].details = {
                     answer: evt.data.answer,
-                    source_documents: evt.data.source_documents || []
+                    source_documents: evt.data.source_documents || [],
+                    // Roadmap 4.5: per-query token counts, carried through the
+                    // steps snapshot into the persisted turn. Nothing renders it
+                    // yet — displaying it is tracked as backlog in
+                    // eval/decisions/phase4-escalation-tokens.md.
+                    token_usage: evt.data.token_usage ?? null,
                   };
                 }
 

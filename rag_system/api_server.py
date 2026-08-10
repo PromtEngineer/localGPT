@@ -18,6 +18,7 @@ if backend_dir not in sys.path:
 from backend.database import ChatDatabase
 from rag_system.factory import get_agent, get_indexing_pipeline
 from rag_system.main import LLM_BACKEND, PIPELINE_CONFIGS, WATSONX_CONFIG
+from rag_system.retrieval.filters import FilterError, compile_filters
 
 logger = logging.getLogger(__name__)
 
@@ -171,13 +172,35 @@ def _resolve_retrieval_mode(data):
     return value, None
 
 
+def _resolve_filters(data):
+    """Compile the optional ``filters`` object (roadmap item 4.4).
+
+    Returns ``(compiled_or_None, error_or_None)``. A filter that cannot be
+    compiled is a 400 and never a silently-unfiltered search: the caller asked
+    to be restricted to part of the corpus, and answering from all of it would
+    be the wrong answer delivered confidently.
+    """
+    raw = data.get('filters')
+    if raw is None:
+        return None, None
+    try:
+        return compile_filters(raw), None
+    except FilterError as e:
+        return None, f"Invalid filters: {e}"
+
+
 def _parse_chat_request(data):
     """Extract the canonical chat options from an already-normalized body."""
     retrieval_mode, error = _resolve_retrieval_mode(data)
     if error:
         return None, error
 
+    filters, error = _resolve_filters(data)
+    if error:
+        return None, error
+
     return {
+        "filters": filters,
         "query": data.get('query'),
         "session_id": data.get('session_id'),
         "table_name": data.get('table_name'),
@@ -386,6 +409,10 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             "retrieval_mode": params["retrieval_mode"],
             "force_rag": params["force_rag"],
         }
+        if params["filters"] is not None:
+            # Only added when present, so an unfiltered request reaches
+            # Agent.run with exactly the arguments it always did.
+            run_kwargs["filters"] = params["filters"]
         if emit is not None:
             run_kwargs["event_callback"] = emit
 
@@ -541,5 +568,14 @@ def start_server(port=8001):
 
 
 if __name__ == "__main__":
-    # To run this server: python -m rag_system.api_server
-    start_server()
+    # To run this server: python -m rag_system.api_server [--port N]
+    #
+    # `--port` is parsed here because it was previously *accepted and ignored*:
+    # `python -m rag_system.api_server --port 8011` silently listened on 8001,
+    # which is how a test ends up talking to somebody else's server.
+    import argparse
+
+    _parser = argparse.ArgumentParser(prog="python -m rag_system.api_server",
+                                      description="Start the RAG API server.")
+    _parser.add_argument("--port", type=int, default=8001, help="Port to listen on.")
+    start_server(port=_parser.parse_args().port)

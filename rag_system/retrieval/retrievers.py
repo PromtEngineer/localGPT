@@ -99,13 +99,27 @@ class MultiVectorRetriever:
                 return (field, value)
         return ("text", row.get("text"))
 
-    def retrieve(self, text_query: str, table_name: str, k: int, search_type: str = "hybrid") -> List[Dict[str, Any]]:
+    def retrieve(self, text_query: str, table_name: str, k: int, search_type: str = "hybrid",
+                 *, where: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Retrieves up to *k* chunks from *table_name*.
 
         `search_type` selects which LanceDB query legs run: "hybrid" (full-text
         + vector, fused with reciprocal rank fusion), "vector_only", or
         "fts_only". Unknown values fall back to "hybrid".
+
+        `where` is a LanceDB SQL predicate applied as a **prefilter to every
+        leg** (roadmap item 4.4). It is keyword-only and defaults to None, in
+        which case not a single extra call is made and the behaviour is exactly
+        what it was before filters existed. It must come from
+        ``rag_system.retrieval.filters.compile_filters`` — nothing here
+        validates or escapes it, and nothing here will repair it.
+
+        Prefiltering (rather than filtering the k results afterwards) is the
+        point: a post-filter would return "up to k, minus whatever the filter
+        removed", so a filter for a rare document would return an empty list
+        while the document sat in the table. Both legs are filtered, so a hybrid
+        query cannot leak an excluded chunk in through the BM25 side.
         """
         mode = (search_type or "hybrid").lower()
         if mode not in RETRIEVAL_MODES:
@@ -113,6 +127,8 @@ class MultiVectorRetriever:
             mode = "hybrid"
 
         print(f"\n--- Performing {mode} retrieval for query: '{text_query}' on table '{table_name}' ---")
+        if where:
+            print(f"🔎 Metadata filter (prefilter, both legs): {where}")
 
         try:
             if table_name is None:
@@ -127,13 +143,19 @@ class MultiVectorRetriever:
             logger = logging.getLogger(__name__)
             logger.debug("Running %s search on table '%s' (k=%s)", mode, table_name, k)
 
+            def _filtered(query_builder):
+                """Apply the metadata prefilter, when there is one."""
+                if where:
+                    return query_builder.where(where, prefilter=True)
+                return query_builder
+
             def _run_fts():
                 # Very short queries often underperform → add fuzzy wildcard
                 fts_query = text_query
                 if len(text_query.split()) == 1:
                     fts_query = f"{text_query}* OR {text_query}~"
                 return (
-                    tbl.search(query=fts_query, query_type="fts")
+                    _filtered(tbl.search(query=fts_query, query_type="fts"))
                        .limit(k)
                        .to_df()
                 )
@@ -143,7 +165,7 @@ class MultiVectorRetriever:
                 if normalize_query:
                     vector = l2_normalize(vector)
                 return (
-                    tbl.search(vector)
+                    _filtered(tbl.search(vector))
                        .limit(k)
                        .to_df()
                 )
@@ -241,6 +263,14 @@ class MultiVectorRetriever:
             # point of the guard is that the user has to see it.
             raise
         except Exception as e:
+            if where:
+                # A filtered search that fails must not look like a filtered
+                # search that matched nothing. The caller asked to be restricted
+                # to part of the corpus; "0 results" and "the restriction did
+                # not run" are different answers and only one of them is safe.
+                print(f"❌ Filtered search failed on table '{table_name}' "
+                      f"(where: {where}): {e}")
+                raise
             print(f"Could not search table '{table_name}': {e}")
             return []
 # endregion

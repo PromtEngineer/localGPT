@@ -1,5 +1,7 @@
 from typing import List, Dict, Any, Optional
 import concurrent.futures
+import contextlib
+import threading
 import time
 import json
 import logging
@@ -9,11 +11,23 @@ import numpy as np
 from threading import Lock
 
 from rag_system.utils.ollama_client import OllamaClient
+from rag_system.retrieval.filters import CompiledFilter, combine, compile_filters
 from rag_system.retrieval.retrievers import MultiVectorRetriever
 from rag_system.indexing.representations import default_query_instruction, select_embedder
-from rag_system.indexing.embedders import LanceDBManager
+from rag_system.indexing.embedders import (
+    EmbedderMismatchError,
+    LanceDBManager,
+    assert_embedder_matches,
+    l2_normalize,
+    read_table_marker,
+)
+from rag_system.indexing.overview_builder import load_overview_vectors, overview_vectors_path
 from rag_system.rerankers.reranker import CrossEncoderReranker, QwenRerankerScorer, is_qwen3_reranker
 from rag_system.rerankers.sentence_pruner import SentencePruner
+
+# Reciprocal-rank-fusion constant, kept identical to the retriever's so a fused
+# ordering produced here is comparable with one produced there.
+_RRF_K = 60
 
 # ---------------------------------------------------------------------------
 # Thread-safety helpers
@@ -50,6 +64,17 @@ class RetrievalPipeline:
         self.dense_retriever = None
         self.ai_reranker = None
 
+        # Overview prefilter (roadmap item 4.3): the sidecar is read once per
+        # pipeline and its absence is reported once, not per query.
+        self._overview_vectors_loaded = False
+        self._overview_vectors_data = None
+
+        # Metadata filter (roadmap item 4.4). Thread-local, because the agent
+        # runs sub-queries of one user question through this same pipeline
+        # object in parallel and one sub-query's filter must not leak into
+        # another's search. Empty unless a caller opened a filter scope.
+        self._filter_local = threading.local()
+
     def _retriever_config(self, name: str, *aliases: str) -> Dict[str, Any]:
         """Look a retriever sub-config up in "retrievers" then "retrieval".
 
@@ -62,6 +87,34 @@ class RetrievalPipeline:
                 if container.get(key):
                     return container[key]
         return {}
+
+    # ------------------------------------------------------------------
+    # Metadata filter scope (roadmap item 4.4)
+    # ------------------------------------------------------------------
+
+    def active_filter(self) -> Optional[CompiledFilter]:
+        """The compiled filter in force on *this thread*, or None."""
+        return getattr(self._filter_local, "compiled", None)
+
+    @contextlib.contextmanager
+    def filter_scope(self, compiled: Optional[CompiledFilter]):
+        """Make *compiled* the active filter for the duration of the block.
+
+        ``run()`` opens this scope rather than threading a ``filters`` argument
+        down through every internal call, for one concrete reason:
+        ``EscalatingRetrievalPipeline`` (roadmap 4.1) overrides
+        ``retrieve_candidates`` with a fixed four-argument signature and calls
+        ``super()`` positionally. Adding a parameter that ``run()`` had to pass
+        would break that subclass. A thread-local scope is invisible to it, and
+        the agent's parallel sub-query fan-out enters ``run()`` **inside** each
+        worker thread, so each worker sets its own.
+        """
+        previous = getattr(self._filter_local, "compiled", None)
+        self._filter_local.compiled = compiled
+        try:
+            yield compiled
+        finally:
+            self._filter_local.compiled = previous
 
     def _retrieval_mode(self) -> str:
         """Query-time search mode: "hybrid" (default), "vector_only" or "fts_only"."""
@@ -81,6 +134,27 @@ class RetrievalPipeline:
             if isinstance(block, dict):
                 merged.update(block)
         return merged
+
+    def _merged_block(self, key: str) -> Dict[str, Any]:
+        """A config block merged across the ``retrieval`` / ``retrievers`` spellings.
+
+        Same layering as ``_retry_config``: a runtime override written by the API
+        under ``retrievers.<key>`` beats the profile's ``retrieval.<key>``.
+        """
+        merged: Dict[str, Any] = {}
+        for container_key in ("retrieval", "retrievers"):
+            block = (self.config.get(container_key) or {}).get(key)
+            if isinstance(block, dict):
+                merged.update(block)
+        return merged
+
+    def _crossref_hop_config(self) -> Dict[str, Any]:
+        """``retrieval.crossref_hop`` (roadmap item 4.2). Default OFF."""
+        return self._merged_block("crossref_hop")
+
+    def _overview_prefilter_config(self) -> Dict[str, Any]:
+        """``retrieval.overview_prefilter`` (roadmap item 4.3). Default OFF."""
+        return self._merged_block("overview_prefilter")
 
     def _latechunk_config(self) -> Dict[str, Any]:
         """Merge the late-chunk block across both container and key spellings.
@@ -357,7 +431,12 @@ class RetrievalPipeline:
         
         # Construct the SQL filter for an efficient metadata-based search
         sql_filter = f"document_id = '{document_id}' AND chunk_index >= {start_index} AND chunk_index <= {end_index}"
-        
+        # A caller's metadata filter (item 4.4) also bounds context expansion:
+        # otherwise a `chunk_index <= 0` filter would still pull chunk 1 back in
+        # as a neighbour, and the guarantee "nothing that fails the filter
+        # reaches synthesis" would be false.
+        sql_filter = combine(sql_filter, self.active_filter())
+
         try:
             # Execute a filter-only search, which is very fast on indexed metadata
             results = tbl.search().where(sql_filter).to_list()
@@ -417,24 +496,265 @@ ORIGINAL QUESTION: "{query}"
 
         return "".join(answer_parts)
 
+    # ------------------------------------------------------------------
+    # Document-scoped search (shared by the cross-reference hop, item 4.2,
+    # and the overview prefilter's "restrict" mode, item 4.3)
+    # ------------------------------------------------------------------
+
+    def _embed_query(self, query: str):
+        """The query vector, reusing the retriever's LRU cache when it exists."""
+        retriever = self._get_dense_retriever()
+        cached = getattr(retriever, "_embed_single", None) if retriever else None
+        if cached is not None:
+            return cached(query)
+        return self._get_text_embedder().create_embeddings([query])[0]
+
+    def _table_normalizes(self, tbl, table_name: str) -> bool:
+        """Whether *tbl* holds L2-normalized vectors; also re-checks the embedder."""
+        marker = read_table_marker(tbl, getattr(self._get_db_manager(), "db_path", None),
+                                   table_name)
+        if marker is None:
+            return False
+        configured = self.config.get("embedding_model_name")
+        if configured:
+            assert_embedder_matches(table_name, marker, configured)
+        return bool(marker["normalized"])
+
+    @staticmethod
+    def _doc_id_filter(doc_ids: List[str]) -> str:
+        quoted = ", ".join("'" + str(d).replace("'", "''") + "'" for d in doc_ids)
+        return f"document_id IN ({quoted})"
+
+    @staticmethod
+    def _row_to_doc(row: Dict[str, Any], score: float) -> Dict[str, Any]:
+        """A LanceDB row in the shape ``MultiVectorRetriever.retrieve`` returns."""
+        raw_metadata = row.get("metadata")
+        if isinstance(raw_metadata, dict):
+            metadata = dict(raw_metadata)
+        else:
+            try:
+                metadata = json.loads(raw_metadata or "{}")
+            except (TypeError, ValueError):
+                metadata = {}
+        metadata.setdefault("document_id", row.get("document_id"))
+        metadata.setdefault("chunk_index", row.get("chunk_index"))
+        doc = {
+            "chunk_id": row.get("chunk_id"),
+            "text": metadata.get("original_text") or row.get("text") or "",
+            "score": score,
+            "document_id": row.get("document_id"),
+            "chunk_index": row.get("chunk_index"),
+            "metadata": metadata,
+        }
+        distance = row.get("_distance")
+        if distance is not None:
+            try:
+                doc["_distance"] = float(distance)
+            except (TypeError, ValueError):
+                pass
+        return doc
+
+    def _search_within_documents(self, query: str, table_name: str, doc_ids: List[str],
+                                 k: int, mode: str = "vector_only") -> List[Dict[str, Any]]:
+        """Retrieve up to *k* chunks, restricted to *doc_ids* with a LanceDB filter.
+
+        ``MultiVectorRetriever.retrieve`` has no filter parameter and belongs to
+        another module, so the document-scoped variant lives here. It mirrors the
+        retriever exactly — same prefiltered legs, same RRF fusion at the same
+        ``_RRF_K``, same output shape — so a chunk pulled by a hop is
+        indistinguishable downstream from one pulled by the first stage.
+        """
+        if not doc_ids or k < 1:
+            return []
+        try:
+            tbl = self._get_db_manager().get_table(table_name)
+            normalize = self._table_normalizes(tbl, table_name)
+        except EmbedderMismatchError:
+            raise
+        except Exception as e:
+            print(f"⚠️  Document-scoped search: cannot open table '{table_name}': {e}")
+            return []
+
+        # A caller's metadata filter (item 4.4) narrows every internally-scoped
+        # search too. The cross-reference hop must not be a way to reach a
+        # document the caller filtered out.
+        where = combine(self._doc_id_filter(doc_ids), self.active_filter())
+        mode = (mode or "vector_only").lower()
+        fts_rows: List[Dict[str, Any]] = []
+        vec_rows: List[Dict[str, Any]] = []
+
+        if mode != "fts_only":
+            try:
+                vector = self._embed_query(query)
+                if normalize:
+                    vector = l2_normalize(vector)
+                vec_rows = (tbl.search(vector).where(where, prefilter=True)
+                            .limit(k).to_pandas().to_dict("records"))
+            except Exception as e:
+                print(f"⚠️  Document-scoped vector search failed: {e}")
+        if mode != "vector_only":
+            try:
+                fts_query = query
+                if len(query.split()) == 1:
+                    fts_query = f"{query}* OR {query}~"
+                fts_rows = (tbl.search(query=fts_query, query_type="fts")
+                            .where(where, prefilter=True)
+                            .limit(k).to_pandas().to_dict("records"))
+            except Exception as e:
+                print(f"⚠️  Document-scoped full-text search failed: {e}")
+
+        fused: Dict[Any, Dict[str, Any]] = {}
+        for rows in (fts_rows, vec_rows):
+            for rank, row in enumerate(rows, start=1):
+                key = row.get("chunk_id") or row.get("text")
+                entry = fused.setdefault(key, {"row": row, "rrf": 0.0})
+                entry["rrf"] += 1.0 / (_RRF_K + rank)
+        ordered = sorted(fused.values(), key=lambda e: e["rrf"], reverse=True)[:k]
+        return [self._row_to_doc(e["row"], e["rrf"]) for e in ordered]
+
+    # ------------------------------------------------------------------
+    # Overview prefilter (roadmap item 4.3)
+    # ------------------------------------------------------------------
+
+    def _overview_vectors(self) -> Optional[Dict[str, Any]]:
+        """The embedded-overview sidecar for this index, or None (logged once).
+
+        Path resolution, most explicit first:
+
+        1. ``retrieval.overview_prefilter.vectors_path``
+        2. ``config["overview_path"]`` with its ``.jsonl`` swapped for
+           ``.vectors.npz`` — this is what ``api_server`` already sets per
+           session, so the HTTP path needs no extra plumbing.
+        3. ``index_store/overviews/<index_id>.vectors.npz``.
+
+        Nothing is guessed beyond that: silently prefiltering a query against
+        *some other index's* overviews would be worse than not prefiltering.
+        """
+        if self._overview_vectors_loaded:
+            return self._overview_vectors_data
+        self._overview_vectors_loaded = True
+
+        cfg = self._overview_prefilter_config()
+        path = cfg.get("vectors_path")
+        if not path:
+            overview_path = (self.config.get("overview_path")
+                             or (self.config.get("overview") or {}).get("path"))
+            if overview_path:
+                path = overview_vectors_path(overview_path)
+        if not path:
+            index_id = cfg.get("index_id") or self.config.get("index_id")
+            if index_id:
+                path = os.path.join("index_store", "overviews", f"{index_id}.vectors.npz")
+        if not path:
+            print("ℹ️  Overview prefilter is on but no overview path is configured "
+                  "(set retrieval.overview_prefilter.vectors_path or overview_path); "
+                  "continuing without it.")
+            return None
+
+        data = load_overview_vectors(path)
+        if data is None:
+            print(f"ℹ️  Overview prefilter is on but no embedded overviews were found at "
+                  f"{path}; continuing without it. Re-index to build the sidecar.")
+            return None
+
+        recorded = (data.get("meta") or {}).get("embedding_model")
+        configured = self.config.get("embedding_model_name")
+        if recorded and configured and recorded != configured:
+            print(f"ℹ️  Overview prefilter disabled: the sidecar at {path} was written by "
+                  f"'{recorded}' but this pipeline uses '{configured}'.")
+            return None
+
+        print(f"🧭 Overview prefilter: {len(data['doc_ids'])} document overview(s) loaded "
+              f"from {path}.")
+        self._overview_vectors_data = data
+        return data
+
+    def _overview_prefilter_documents(self, query: str) -> Optional[List[str]]:
+        """The top-N document ids by query-vs-overview similarity, or None."""
+        cfg = self._overview_prefilter_config()
+        if not cfg.get("enabled"):
+            return None
+        data = self._overview_vectors()
+        if data is None:
+            return None
+        top_n = int(cfg.get("top_documents", 5) or 0)
+        if top_n < 1:
+            return None
+        try:
+            vector = l2_normalize(self._embed_query(query))
+            scores = np.asarray(data["vectors"], dtype="float32") @ np.asarray(vector,
+                                                                               dtype="float32")
+        except Exception as e:
+            print(f"⚠️  Overview prefilter scoring failed ({e}); continuing without it.")
+            return None
+        order = np.argsort(-scores)[:top_n]
+        selected = [data["doc_ids"][int(i)] for i in order]
+        print(f"🧭 Overview prefilter selected {len(selected)} document(s): "
+              f"{', '.join(selected)}")
+        return selected
+
+    @staticmethod
+    def _apply_overview_boost(docs: List[Dict[str, Any]],
+                              prefiltered: List[str]) -> List[Dict[str, Any]]:
+        """Fuse the candidate ordering with the document-overview ordering by RRF.
+
+        A rank bonus rather than a score bonus, and RRF rather than a weighted
+        sum, for the same reason the retriever fuses its two legs that way: the
+        two orderings are not on a common scale and there is no validation split
+        here to tune a weight against (design_rationale §4).
+        """
+        doc_rank = {doc_id: rank for rank, doc_id in enumerate(prefiltered)}
+        scored = []
+        for position, doc in enumerate(docs):
+            fused = 1.0 / (_RRF_K + position + 1)
+            rank = doc_rank.get(doc.get("document_id"))
+            if rank is not None:
+                fused += 1.0 / (_RRF_K + rank + 1)
+                doc["overview_prefilter_rank"] = rank
+            scored.append((fused, position, doc))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return [doc for _, _, doc in scored]
+
     def _first_stage(self, query: str, base_table: str, retrieval_k: int, retrieval_mode: str,
                      event_callback=None) -> List[Dict[str, Any]]:
         """Hybrid/vector/FTS retrieval plus the optional late-chunk table and merge.
 
         Split out of ``run()`` so the evidence-sufficiency retry can call it a
         second time with a reformulated query without duplicating any of it.
+
+        The caller's metadata filter (item 4.4) is read from the thread-local
+        scope rather than passed in, so the retry re-applies it automatically
+        and no existing call site changes.
         """
         start_time = time.time()
         logger = logging.getLogger(__name__)
         dense_retriever = self._get_dense_retriever()
+        active_filter = self.active_filter()
+        filter_where = active_filter.where if active_filter is not None else None
+
+        # Overview prefilter (roadmap item 4.3). Computed here rather than in
+        # retrieve_candidates so the evidence-sufficiency retry re-scores the
+        # documents against its reformulated query too.
+        prefilter_cfg = self._overview_prefilter_config()
+        prefilter_mode = (prefilter_cfg.get("mode") or "boost").lower()
+        prefilter_docs = self._overview_prefilter_documents(query)
+        restrict_docs = prefilter_docs if (prefilter_docs and prefilter_mode == "restrict") else None
 
         retrieved_docs = []
-        if dense_retriever:
+        if restrict_docs:
+            retrieved_docs = self._search_within_documents(
+                query, base_table, restrict_docs, retrieval_k, retrieval_mode)
+            if not retrieved_docs:
+                print("⚠️  Overview prefilter (restrict) matched no chunks; falling back "
+                      "to unrestricted retrieval for this query.")
+                restrict_docs = None
+        if not retrieved_docs and dense_retriever:
             retrieved_docs = dense_retriever.retrieve(
                 text_query=query,
                 table_name=base_table,
                 k=retrieval_k,
                 search_type=retrieval_mode,
+                where=filter_where,
             )
 
         # ---------------------------------------------------------------
@@ -445,12 +765,17 @@ ORIGINAL QUESTION: "{query}"
             lc_table = self._latechunk_table_name(latechunk_cfg, base_table)
             if lc_table:
                 try:
-                    lc_docs = dense_retriever.retrieve(
-                        text_query=query,
-                        table_name=lc_table,
-                        k=retrieval_k,
-                        search_type=retrieval_mode,
-                    )
+                    if restrict_docs:
+                        lc_docs = self._search_within_documents(
+                            query, lc_table, restrict_docs, retrieval_k, retrieval_mode)
+                    else:
+                        lc_docs = dense_retriever.retrieve(
+                            text_query=query,
+                            table_name=lc_table,
+                            k=retrieval_k,
+                            search_type=retrieval_mode,
+                            where=filter_where,
+                        )
                     retrieved_docs.extend(lc_docs)
                 except Exception as e:
                     print(f"⚠️  Late-chunk retrieval failed: {e}")
@@ -489,6 +814,12 @@ ORIGINAL QUESTION: "{query}"
                     print(f"⚠️  Late-chunk merge failed for chunk {doc.get('chunk_id')}: {e}")
             if merged_count:
                 print(f"🪄 Late-chunk merging applied to {merged_count} retrieved chunks.")
+
+        if prefilter_docs and prefilter_mode == "boost" and retrieved_docs:
+            before = [d.get("chunk_id") for d in retrieved_docs[:3]]
+            retrieved_docs = self._apply_overview_boost(retrieved_docs, prefilter_docs)
+            if [d.get("chunk_id") for d in retrieved_docs[:3]] != before:
+                print("🧭 Overview prefilter (boost) reordered the candidate list.")
 
         return retrieved_docs
 
@@ -584,30 +915,160 @@ ORIGINAL QUESTION: "{query}"
         return reranked_docs
 
     # ------------------------------------------------------------------
+    # Cross-reference hop (roadmap item 4.2)
+    # ------------------------------------------------------------------
+
+    # Only the head of the candidate list gets to trigger a hop. A reference
+    # carried by candidate 17 is not evidence that the query is about the
+    # referenced document; it is evidence that candidate 17 is noise.
+    _CROSSREF_TRIGGER_DEPTH = 3
+
+    @staticmethod
+    def _chunk_crossrefs(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """The ``crossrefs`` list on a candidate, at either metadata nesting level.
+
+        ``VectorIndexer`` stores ``json.dumps(chunk)`` in the ``metadata`` column,
+        so what the retriever hands back as ``doc["metadata"]`` is the whole chunk
+        dict with the real metadata nested one level down. Both shapes are
+        accepted so this keeps working if that ever gets straightened out.
+        """
+        metadata = doc.get("metadata")
+        if not isinstance(metadata, dict):
+            return []
+        refs = metadata.get("crossrefs")
+        if refs is None:
+            inner = metadata.get("metadata")
+            if isinstance(inner, dict):
+                refs = inner.get("crossrefs")
+        if not isinstance(refs, list):
+            return []
+        return [r for r in refs if isinstance(r, dict)]
+
+    def _crossref_hop(self, query: str, base_table: str, result: Dict[str, Any],
+                      event_callback=None) -> Dict[str, Any]:
+        """One bounded hop from a top candidate's reference to the referenced doc.
+
+        Runs only when ``retrieval.crossref_hop.enabled`` is true. No LLM, no
+        recursion: chunks pulled by a hop can never trigger another one, so the
+        worst case is ``max_hops`` extra filtered searches per query.
+        """
+        cfg = self._crossref_hop_config()
+        if not cfg.get("enabled"):
+            return result
+
+        documents = result.get("documents") or []
+        max_hops = int(cfg.get("max_hops", 1) or 0)
+        chunks_per_hop = int(cfg.get("chunks_per_hop", 3) or 0)
+        if not documents or max_hops < 1 or chunks_per_hop < 1:
+            return result
+
+        represented = {d.get("document_id") for d in documents}
+        targets: List[Dict[str, Any]] = []
+        for rank, candidate in enumerate(documents[: self._CROSSREF_TRIGGER_DEPTH]):
+            for ref in self._chunk_crossrefs(candidate):
+                target = ref.get("target_doc")
+                if not target or target in represented:
+                    continue
+                if any(t["target_doc"] == target for t in targets):
+                    continue
+                targets.append({
+                    "target_doc": target,
+                    "kind": ref.get("kind"),
+                    "ref": ref.get("ref"),
+                    "from_chunk_id": candidate.get("chunk_id"),
+                    "from_document_id": candidate.get("document_id"),
+                    "from_rank": rank,
+                })
+        targets = targets[:max_hops]
+        if not targets:
+            return result
+
+        hopped: List[Dict[str, Any]] = []
+        for target in targets:
+            # Dense-only on purpose: the hop already knows *which* document it
+            # wants, so all that is left is picking its most on-topic chunks.
+            pulled = self._search_within_documents(
+                query, base_table, [target["target_doc"]], chunks_per_hop,
+                mode="vector_only")
+            for doc in pulled:
+                doc["via_crossref"] = True
+                doc["crossref"] = {k: target[k] for k in
+                                   ("kind", "ref", "from_chunk_id", "from_document_id")}
+                if isinstance(doc.get("metadata"), dict):
+                    doc["metadata"]["via_crossref"] = True
+                    doc["metadata"]["crossref"] = doc["crossref"]
+                hopped.append(doc)
+            target["chunks_added"] = len(pulled)
+
+        info = {"targets": targets, "chunks_added": len(hopped)}
+        if hopped:
+            # A new list: with reranking off, ``documents`` and ``first_stage``
+            # are the same object, and the hop must not rewrite the first stage.
+            result["documents"] = list(documents) + hopped
+        result["crossref_hop"] = info
+        print(f"🔗 Cross-reference hop: pulled {len(hopped)} chunk(s) from "
+              f"{len(targets)} referenced document(s) "
+              f"({', '.join(t['target_doc'] for t in targets)}).")
+        if event_callback:
+            event_callback("crossref_hop", info)
+        return result
+
+    def _post_candidates(self, query: str, base_table: str, result: Dict[str, Any],
+                         event_callback=None) -> Dict[str, Any]:
+        """Tail hook for every ``retrieve_candidates`` exit path.
+
+        ``retrieve_candidates`` returns from five places (the retry has four
+        early outs). Anything that must run on a *final* candidate set goes here
+        once instead of being copy-pasted into each of them.
+        """
+        return self._crossref_hop(query, base_table, result, event_callback)
 
     def retrieve_candidates(self, query: str, table_name: Optional[str] = None,
                             sub_queries: Optional[List[str]] = None,
-                            event_callback=None) -> Dict[str, Any]:
+                            event_callback=None, *,
+                            filters: Any = None) -> Dict[str, Any]:
         """First stage + rerank + the evidence-sufficiency retry around both.
 
         This is the whole candidate-selection path, factored out of ``run()`` so
         that ``eval/run_eval.py`` measures exactly what ships rather than a
         reimplementation of it.
 
+        *filters* (roadmap item 4.4) is **keyword-only with a default**, so the
+        four positional arguments are exactly what they were and
+        ``EscalatingRetrievalPipeline``'s ``super()`` call is unaffected. It
+        accepts a raw filter object or an already-compiled one and raises
+        ``FilterError`` on anything invalid. When omitted, the thread-local
+        scope opened by ``run()`` is used — which is how a filter reaches this
+        method through the escalation subclass at all.
+
         Returns::
 
             {"first_stage": [...],   # post-retry first-stage ordering
              "documents":   [...],   # after reranking, or == first_stage
              "query_used":  str,
-             "retry":       {...} | None}
+             "retry":       {...} | None,
+             # present only when a metadata filter was applied:
+             "filters":     {"spec": {...}, "where": str},
+             # present only when the cross-reference hop actually hopped:
+             "crossref_hop": {"targets": [...], "chunks_added": int}}
         """
         retrieval_k = self.config.get("retrieval_k", 10)
         retrieval_mode = self._retrieval_mode()
         base_table = table_name or self.storage_config["text_table_name"]
 
+        compiled = compile_filters(filters) if filters is not None else self.active_filter()
+
         if event_callback:
             event_callback("retrieval_started", {"mode": retrieval_mode})
 
+        with self.filter_scope(compiled):
+            return self._retrieve_candidates_filtered(
+                query, base_table, sub_queries, event_callback, compiled,
+                retrieval_k, retrieval_mode)
+
+    def _retrieve_candidates_filtered(self, query, base_table, sub_queries, event_callback,
+                                      compiled, retrieval_k, retrieval_mode) -> Dict[str, Any]:
+        """``retrieve_candidates``'s body, with the filter scope already open."""
         first_stage = self._first_stage(query, base_table, retrieval_k, retrieval_mode,
                                         event_callback)
         documents = self._rerank_stage(query, first_stage, sub_queries, event_callback)
@@ -615,9 +1076,20 @@ ORIGINAL QUESTION: "{query}"
         result = {"first_stage": first_stage, "documents": documents,
                   "query_used": query, "retry": None}
 
+        if compiled is not None:
+            # Only present when a filter was actually applied, so an unfiltered
+            # result dict is byte-identical to what it was before item 4.4.
+            result["filters"] = {"spec": compiled.spec, "where": compiled.where}
+            print(f"🔎 Metadata filter applied: {compiled.where} "
+                  f"→ {len(first_stage)} candidate(s).")
+            if event_callback:
+                event_callback("filters_applied",
+                               {"spec": compiled.spec, "where": compiled.where,
+                                "candidates": len(first_stage)})
+
         retry_cfg = self._retry_config()
         if not retry_cfg.get("enabled") or not first_stage:
-            return result
+            return self._post_candidates(query, base_table, result, event_callback)
 
         # Prefer the reranker's calibrated probability when it produced one;
         # otherwise fall back to the dense contrast score. RRF ranks are
@@ -631,14 +1103,14 @@ ORIGINAL QUESTION: "{query}"
             threshold = retry_cfg.get("min_top_score")
         if score is None or threshold is None:
             # fts_only, or a legacy unnormalized table: no meaningful signal.
-            return result
+            return self._post_candidates(query, base_table, result, event_callback)
 
         if score >= float(threshold):
-            return result
+            return self._post_candidates(query, base_table, result, event_callback)
 
         max_attempts = int(retry_cfg.get("max_attempts", 1) or 0)
         if max_attempts < 1:
-            return result
+            return self._post_candidates(query, base_table, result, event_callback)
 
         print(f"\n🔁 Evidence-sufficiency retry: {signal} score {score:.3f} "
               f"< {float(threshold):.3f} — reformulating once.")
@@ -669,10 +1141,11 @@ ORIGINAL QUESTION: "{query}"
             event_callback("retrieval_retry", info)
         print(f"🔁 Retry kept the {info['kept']} result set "
               f"(score_after={info['score_after']}).")
-        return result
+        return self._post_candidates(query, base_table, result, event_callback)
 
     def run(self, query: str, table_name: str = None, window_size_override: Optional[int] = None,
-            event_callback=None, sub_queries: Optional[List[str]] = None) -> Dict[str, Any]:
+            event_callback=None, sub_queries: Optional[List[str]] = None,
+            *, filters: Any = None) -> Dict[str, Any]:
         base_table = table_name or self.storage_config["text_table_name"]
 
         logger = logging.getLogger(__name__)
@@ -682,7 +1155,20 @@ ORIGINAL QUESTION: "{query}"
         if table_name:
             self.storage_config["text_table_name"] = table_name
 
-        candidates = self.retrieve_candidates(query, base_table, sub_queries, event_callback)
+        # Compiled here so an invalid filter raises before any retrieval work,
+        # and opened as a thread-local scope so it reaches `retrieve_candidates`
+        # without changing the positional signature the escalation subclass
+        # overrides. `filters=None` skips both and leaves this path untouched.
+        compiled = compile_filters(filters)
+        with self.filter_scope(compiled) if compiled is not None else contextlib.nullcontext():
+            candidates = self.retrieve_candidates(query, base_table, sub_queries, event_callback)
+            return self._run_after_candidates(query, candidates, window_size_override,
+                                              event_callback)
+
+    def _run_after_candidates(self, query: str, candidates: Dict[str, Any],
+                              window_size_override: Optional[int],
+                              event_callback) -> Dict[str, Any]:
+        """``run()``'s post-candidate half: expansion, pruning and synthesis."""
         reranked_docs = candidates["documents"]
 
         window_size = self.config.get("context_window_size", 1)
@@ -705,6 +1191,13 @@ ORIGINAL QUESTION: "{query}"
                                 # If this is the *central* chunk we already reranked, carry over its score
                                 if cid == seed_chunk.get('chunk_id') and 'rerank_score' in seed_chunk:
                                     surrounding_chunk['rerank_score'] = seed_chunk['rerank_score']
+                                # Same for the cross-reference marker: expansion
+                                # re-reads the row from LanceDB, which knows
+                                # nothing about how the chunk got here.
+                                if cid == seed_chunk.get('chunk_id') and seed_chunk.get('via_crossref'):
+                                    surrounding_chunk['via_crossref'] = True
+                                    if seed_chunk.get('crossref'):
+                                        surrounding_chunk['crossref'] = seed_chunk['crossref']
                                 expanded_chunks[cid] = surrounding_chunk
                     except Exception as e:
                         print(f"Error expanding context for a chunk: {e}")
@@ -730,8 +1223,13 @@ ORIGINAL QUESTION: "{query}"
 
         # Optionally hide non-reranked chunks: if any chunk carries a
         # `rerank_score`, we assume the caller wants to focus on those.
+        # Cross-reference hops are exempt — they are appended *after* reranking
+        # by design (the reranker never saw them, and scoring them against the
+        # query would defeat the point: the referenced document is exactly the
+        # one whose text does not look like the query).
         if any('rerank_score' in d for d in final_docs):
-            final_docs = [d for d in final_docs if 'rerank_score' in d]
+            final_docs = [d for d in final_docs
+                          if 'rerank_score' in d or d.get('via_crossref')]
 
         # ------------------------------------------------------------------
         # Sentence-level pruning (Provence)

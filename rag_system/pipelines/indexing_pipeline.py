@@ -6,6 +6,7 @@ from rag_system.indexing.representations import EmbeddingGenerator, select_embed
 from rag_system.indexing.embedders import LanceDBManager, VectorIndexer
 from rag_system.utils.ollama_client import OllamaClient
 from rag_system.indexing.contextualizer import ContextualEnricher
+from rag_system.indexing.crossref import annotate_chunks
 from rag_system.indexing.overview_builder import OverviewBuilder
 
 
@@ -66,6 +67,13 @@ class IndexingPipeline:
         self.enrichment_batch_size = indexing_config.get("enrichment_batch_size", 10)
         self.enable_progress_tracking = indexing_config.get("enable_progress_tracking", True)
 
+        # Cross-reference extraction (roadmap item 4.2). On by default: it is a
+        # few regexes over text already in memory, adds no LLM call and no second
+        # pass, and only writes chunk metadata — an index built with it is
+        # byte-identical on the `text` and `vector` columns, so nothing
+        # downstream changes until the query-time hop flag is switched on.
+        self.extract_crossrefs = bool(indexing_config.get("extract_crossrefs", True))
+
         # Treat dense retrieval as enabled by default unless explicitly disabled
         dense_cfg = retriever_configs.setdefault("dense", {})
         dense_cfg.setdefault("enabled", True)
@@ -114,6 +122,10 @@ class IndexingPipeline:
         # Document overviews feed the triage router; on by default.
         overview_config = self.config.get("overview", {})
         self.overview_builder = None
+        # Embedded-overview sidecar for the query-time overview prefilter
+        # (roadmap item 4.3). One embedding per *document*, so it is negligible
+        # next to the per-chunk pass that already runs.
+        self.embed_overviews = bool(overview_config.get("embed", True))
         if overview_config.get("enabled", True):
             self.overview_builder = OverviewBuilder(
                 llm_client=self.llm_client,
@@ -227,6 +239,21 @@ class IndexingPipeline:
             print(f"📊 Estimated memory usage: {memory_mb:.1f}MB")
 
             retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})
+            table_name = self._text_table_name(retriever_configs)
+
+            # Step 1b: Cross-reference extraction (roadmap item 4.2)
+            # Runs on the ORIGINAL chunk text, before contextual enrichment
+            # rewrites it — an enriched chunk carries an LLM-written preamble
+            # that can invent or drop a reference.
+            if self.extract_crossrefs:
+                with timer("Cross-reference extraction"):
+                    known = self._existing_document_ids(table_name)
+                    stats = annotate_chunks(doc_chunks_map, known_documents=known)
+                    print(
+                        f"🔗 Cross-references: {stats['refs']} reference(s) in "
+                        f"{stats['chunks_with_refs']} chunk(s); {stats['resolved']} resolved "
+                        f"to {stats['documents_linked']} document(s)."
+                    )
 
             # Step 2: Optional Contextual Enrichment (before indexing for consistency)
             if self.contextual_enricher is not None:
@@ -247,7 +274,6 @@ class IndexingPipeline:
             # Step 3: Embed chunks into LanceDB and build the native FTS index
             if hasattr(self, 'vector_indexer') and hasattr(self, 'embedding_generator'):
                 with timer("Vector Embedding & Indexing"):
-                    table_name = self.config["storage"].get("text_table_name") or retriever_configs.get("dense", {}).get("lancedb_table_name", "default_text_table")
                     print(f"\n--- Generating embeddings with {self.embedding_model_name} ---")
                     
                     embeddings = self.embedding_generator.generate(all_chunks)
@@ -323,9 +349,52 @@ class IndexingPipeline:
 
                             print(f"✅ Late-chunk vectors indexed: {total_lc_vecs}")
 
+            # Step 4: Embedded-overview sidecar (roadmap item 4.3)
+            if (self.overview_builder is not None and self.embed_overviews
+                    and hasattr(self, "embedding_generator")):
+                with timer("Overview Embedding"):
+                    try:
+                        n = self.overview_builder.embed_and_store_vectors(
+                            self.embedding_generator.model,
+                            embedding_model=self.embedding_model_name,
+                        )
+                        if n:
+                            print(f"🧭 Embedded {n} document overview(s) → "
+                                  f"{self.overview_builder.vectors_path}")
+                    except Exception as e:
+                        # A missing sidecar only disables an off-by-default
+                        # query-time feature; it must never fail an index build.
+                        print(f"⚠️  Failed to embed document overviews: {e}")
+
         print("\n--- ✅ Indexing Complete ---")
         self._print_final_statistics(len(file_paths), len(all_chunks))
     
+    def _text_table_name(self, retriever_configs: Dict[str, Any]) -> str:
+        return (
+            self.config["storage"].get("text_table_name")
+            or retriever_configs.get("dense", {}).get("lancedb_table_name", "default_text_table")
+        )
+
+    def _existing_document_ids(self, table_name: str) -> List[str]:
+        """Document ids already in the target table, for cross-reference resolution.
+
+        An incremental add should still be able to resolve "Exhibit B" to a
+        document indexed last week. Best effort only: any failure here just means
+        references resolve against the current batch alone.
+        """
+        if not table_name or not hasattr(self, "lancedb_manager"):
+            return []
+        try:
+            db = self.lancedb_manager.db
+            if hasattr(db, "table_names") and table_name not in db.table_names():
+                return []
+            tbl = self.lancedb_manager.get_table(table_name)
+            arrow = tbl.to_lance().to_table(columns=["document_id"])
+            return sorted({d for d in arrow.column("document_id").to_pylist() if d})
+        except Exception as e:
+            print(f"ℹ️  Cross-reference resolution limited to this batch ({e}).")
+            return []
+
     def _print_final_statistics(self, num_files: int, num_chunks: int):
         """Print final indexing statistics"""
         print(f"\n📈 Final Statistics:")

@@ -4,6 +4,11 @@ import base64
 from io import BytesIO
 from PIL import Image
 
+# The token-usage tracker lives with the Ollama client because that is where the
+# counts originate; watsonx imports it only to report its own (absent) counts as
+# zeros so the per-query summary stays well-formed on either backend.
+from rag_system.utils.ollama_client import record_llm_usage
+
 
 class WatsonXClient:
     """
@@ -115,12 +120,21 @@ class WatsonXClient:
             else:
                 generated_text = str(result)
             
-            return {
+            # roadmap 4.5: the RAG system's token tracker reads Ollama's
+            # `prompt_eval_count` / `eval_count`. watsonx's SDK does not surface
+            # comparable per-call counts through this code path, so report zeros
+            # rather than omitting the keys — a watsonx run then shows an honest
+            # "0 tokens counted" instead of silently looking like a cache hit.
+            payload = {
                 'response': generated_text,
                 'model': model,
-                'done': True
+                'done': True,
+                'prompt_eval_count': 0,
+                'eval_count': 0,
             }
-            
+            record_llm_usage(payload)
+            return payload
+
         except Exception as e:
             print(f"Error generating completion: {e}")
             return {'response': '', 'error': str(e)}
@@ -160,13 +174,19 @@ class WatsonXClient:
         *,
         images: Optional[List[Image.Image]] = None,
         enable_thinking: Optional[bool] = None,
+        stats: Optional[Dict[str, Any]] = None,
         **kwargs
     ):
         """
         Generator that yields partial response strings as they arrive.
-        
+
         Note: Watson X streaming support depends on the SDK version and model.
+
+        *stats* mirrors ``OllamaClient.stream_completion`` (roadmap 4.5). watsonx
+        exposes no per-stream token counts here, so it is filled with zeros.
         """
+        if stats is not None:
+            stats.update({'prompt_eval_count': 0, 'eval_count': 0, 'done': True})
         try:
             gen_params = {}
             if kwargs.get('max_tokens'):
