@@ -82,6 +82,8 @@ rag_system/documents/
 eval/.eval_indexes/
 eval/results/
 !eval/corpora/*.pdf
+# The Phase 4 cross-reference corpus lives one directory deeper.
+!eval/corpora/acquisition/*.pdf
 
 
 # local virtualenv
