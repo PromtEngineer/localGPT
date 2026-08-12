@@ -108,7 +108,7 @@ on/off, and decided at the adoption gate. Verdicts (evidence in
 
 | # | Verdict | One-line reason |
 |---|---------|-----------------|
-| 4.1 | **HOLD** — implemented, off | Directionally positive on fired queries (0/7→2/7 judged) but confounded by a serving-side 8k prompt-truncation bug; the one fire under product defaults was a harm. Re-run the A/B after the context-budget fix. |
+| 4.1 | **REJECTED as default** — implemented, off (was HOLD) | The HOLD's condition was executed 2026-08-12: with the num_ctx fix in place the lift did not survive — the escalation-off baseline on the identical fire subset went 0/9→7/9 (the "lift" was front-truncation favoring the tail-appended document) and both product-default fires were regressions. Flag and code kept. `eval/decisions/phase4-escalation-rerun.md`. |
 | 4.2 | **Extraction ADOPTED (on); hop REJECTED as a default (off, flag kept)** | Extraction is free, regex-only and index-inert. The hop fires 0/11 at the shipped k=20, hits 0/11 expected sources where forced (target selection is query-blind), and raising `k` beats it at equal context budget in 3 of 4 cells. |
 | 4.3 | **boost HOLD (off); restrict REJECTED** | boost: nDCG@10 0.773→0.879 on the heterogeneous slice but a loss on `mixed` — per-index opt-in candidate, not a default. restrict removed the answer document entirely for 4 queries per corpus (recall@20 1→0). |
 | 4.4 | **ADOPTED** (no flag: inert without a `filters` argument) | Byte-identical behavior when unused (md5-verified); injection refused, both search legs prefiltered. **Correction to the row below: page/date filters did NOT ship** — they live inside the metadata JSON string and need real columns + a re-index. |

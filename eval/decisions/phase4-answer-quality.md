@@ -233,6 +233,13 @@ it is logged in §8.
 
 ## 4. 4.1 A/B — arm 2: `acqdocs`, fire subset, n=9 screened / 7 fired
 
+> **VOID — gate note, 2026-08-12.** Every number in this section was measured
+> under the §6 truncation bug and should not be cited: the 0/9 baseline below
+> reads **7/9 on identical inputs** once prompts fit. The re-run this file's §9
+> demanded is `phase4-escalation-rerun.md`; its verdict (reject as default)
+> supersedes this section. §3 (`acq`) is largely unaffected — that corpus's
+> prompts mostly fit even before the fix.
+
 Decomposition off in both arms (§1.3b) so the retrieval query is the gold query.
 `escalation off` vs `escalation on`; nothing else differs.
 
