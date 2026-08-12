@@ -1,5 +1,6 @@
 import requests
 import json
+import os
 from typing import List, Dict, Any, Optional
 import base64
 import contextlib
@@ -8,6 +9,88 @@ import threading
 from io import BytesIO
 from PIL import Image
 import httpx, asyncio
+
+# ---------------------------------------------------------------------------
+# Context-window sizing (fixes silent front-truncation)
+# ---------------------------------------------------------------------------
+# Ollama's server-side window (OLLAMA_CONTEXT_LENGTH, default 4096) is split
+# across parallel slots, and a request that exceeds its slot is FRONT-truncated
+# with no error — measured on this machine as an effective 8194-token ceiling
+# that dropped the top-ranked context chunks from synthesis prompts. The fix is
+# to size the window per request: `options.num_ctx` overrides the server value.
+#
+# Sizing is bucketed (8k/16k/32k) rather than exact, and per-model MONOTONIC:
+# once a model has been granted a window it never shrinks back. Changing
+# num_ctx between calls forces Ollama to reallocate the KV cache (measured:
+# the smoke suite went 363s → 924s when the agent's small triage calls and
+# large synthesis calls alternated buckets; a fixed window ran it in 259s), so
+# the window may only ratchet upward — at most two transitions per model per
+# process. The estimate deliberately overshoots (~3 chars/token vs the ~4
+# typical for English) because undershooting reintroduces the truncation this
+# exists to prevent.
+#
+# Env knobs: OLLAMA_NUM_CTX pins an exact value (skips estimation);
+# OLLAMA_NUM_CTX_MAX caps the bucket (default 32768 — raise it on machines
+# with memory to spare, at the cost of a larger KV cache).
+
+_NUM_CTX_BUCKETS = (8192, 16384, 32768)
+_OUTPUT_HEADROOM_TOKENS = 2048
+_MODEL_CTX_HIGH_WATER: Dict[str, int] = {}
+_MODEL_CTX_LOCK = threading.Lock()
+
+
+def _num_ctx_for(char_count: int) -> int:
+    pinned = os.getenv("OLLAMA_NUM_CTX")
+    if pinned:
+        try:
+            return max(2048, int(pinned))
+        except ValueError:
+            pass
+    try:
+        max_ctx = int(os.getenv("OLLAMA_NUM_CTX_MAX", "32768"))
+    except ValueError:
+        max_ctx = 32768
+    estimated = char_count // 3 + _OUTPUT_HEADROOM_TOKENS
+    for bucket in _NUM_CTX_BUCKETS:
+        if estimated <= bucket <= max_ctx:
+            return bucket
+    return max_ctx
+
+
+def _apply_num_ctx(payload: Dict[str, Any]) -> None:
+    """Set options.num_ctx from the prompt size, preserving caller options.
+
+    Per-model monotonic: the requested window never shrinks below the largest
+    one this process has already used for the model (see module comment).
+    """
+    options = payload.setdefault("options", {})
+    if "num_ctx" in options:
+        return
+    needed = _num_ctx_for(len(payload.get("prompt") or ""))
+    model = str(payload.get("model") or "")
+    with _MODEL_CTX_LOCK:
+        granted = max(needed, _MODEL_CTX_HIGH_WATER.get(model, 0))
+        _MODEL_CTX_HIGH_WATER[model] = granted
+    options["num_ctx"] = granted
+
+
+def _warn_if_truncated(payload: Dict[str, Any], final_response: Dict[str, Any]) -> None:
+    """Detect a filled context window — the signature of front-truncation.
+
+    Best-effort diagnostics only; never raises.
+    """
+    try:
+        num_ctx = int(payload.get("options", {}).get("num_ctx") or 0)
+        used = int(final_response.get("prompt_eval_count") or 0)
+        if num_ctx and used >= num_ctx - 16:
+            print(
+                f"⚠️ Ollama likely FRONT-TRUNCATED this prompt: "
+                f"prompt_eval_count={used} filled num_ctx={num_ctx} "
+                f"(model={payload.get('model')}). Raise OLLAMA_NUM_CTX_MAX or "
+                f"shrink the prompt — the beginning of the prompt was dropped."
+            )
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # Per-query token tracking (roadmap item 4.5)
@@ -165,6 +248,8 @@ class OllamaClient:
             if enable_thinking is not None:
                 payload["think"] = enable_thinking
 
+            _apply_num_ctx(payload)
+
             response = requests.post(
                 f"{self.api_url}/generate",
                 json=payload
@@ -175,6 +260,7 @@ class OllamaClient:
             # roadmap 4.5: `prompt_eval_count` / `eval_count` ride along on this
             # object already; hand them to the per-query tracker if one is bound.
             record_llm_usage(final_response)
+            _warn_if_truncated(payload, final_response)
             return final_response
 
         except requests.exceptions.RequestException as e:
@@ -208,12 +294,15 @@ class OllamaClient:
         if enable_thinking is not None:
             payload["think"] = enable_thinking
 
+        _apply_num_ctx(payload)
+
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(f"{self.api_url}/generate", json=payload)
                 resp.raise_for_status()
                 final_response = json.loads(resp.text.strip().split("\n")[-1])
                 record_llm_usage(final_response)
+                _warn_if_truncated(payload, final_response)
                 return final_response
         except (httpx.HTTPError, asyncio.CancelledError) as e:
             print(f"Async Ollama completion error: {e}")
@@ -250,6 +339,8 @@ class OllamaClient:
         if enable_thinking is not None:
             payload["think"] = enable_thinking
 
+        _apply_num_ctx(payload)
+
         with requests.post(f"{self.api_url}/generate", json=payload, stream=True) as resp:
             resp.raise_for_status()
             for raw_line in resp.iter_lines():
@@ -270,4 +361,5 @@ class OllamaClient:
                     if stats is not None:
                         stats.update(data)
                     record_llm_usage(data)
+                    _warn_if_truncated(payload, data)
                     break

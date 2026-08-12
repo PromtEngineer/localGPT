@@ -6,6 +6,29 @@ from typing import List, Dict, Optional
 
 DEFAULT_GENERATION_MODEL = os.getenv("GENERATION_MODEL", "qwen3.5:9b")
 
+# Context-window sizing: identical scheme to rag_system/utils/ollama_client.py
+# (duplicated because the gateway is a standalone stdlib-only service).
+_NUM_CTX_BUCKETS = (8192, 16384, 32768)
+_OUTPUT_HEADROOM_TOKENS = 2048
+
+
+def _num_ctx_for(char_count: int) -> int:
+    pinned = os.getenv("OLLAMA_NUM_CTX")
+    if pinned:
+        try:
+            return max(2048, int(pinned))
+        except ValueError:
+            pass
+    try:
+        max_ctx = int(os.getenv("OLLAMA_NUM_CTX_MAX", "32768"))
+    except ValueError:
+        max_ctx = 32768
+    estimated = char_count // 3 + _OUTPUT_HEADROOM_TOKENS
+    for bucket in _NUM_CTX_BUCKETS:
+        if estimated <= bucket <= max_ctx:
+            return bucket
+    return max_ctx
+
 
 class OllamaClient:
     def __init__(self, base_url: Optional[str] = None):
@@ -67,14 +90,14 @@ class OllamaClient:
 
         # Add user message to conversation
         messages = conversation_history + [{"role": "user", "content": message}]
-        
+
         try:
             payload = {
                 "model": model,
                 "messages": messages,
                 "stream": False,
             }
-            
+
             # Multiple approaches to disable thinking tokens
             if not enable_thinking:
                 payload.update({
@@ -88,6 +111,15 @@ class OllamaClient:
                 })
             else:
                 payload["think"] = True
+
+            # Size the context window to the conversation: Ollama front-truncates
+            # (silently drops the OLDEST messages/system prompt) when the request
+            # exceeds its server-side slot, so request a window that fits. Same
+            # scheme as rag_system/utils/ollama_client.py: bucketed, env-capped.
+            payload.setdefault("options", {}).setdefault(
+                "num_ctx",
+                _num_ctx_for(sum(len(m.get("content") or "") for m in messages)),
+            )
             
             response = requests.post(
                 f"{self.api_url}/chat",
