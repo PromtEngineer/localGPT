@@ -62,3 +62,38 @@ passage-level citation forcing.
   so all deltas are synthesis-side.
 * `stream_completion` gained an `options` kwarg (temperature verified
   reaching the Ollama payload at the wire).
+
+---
+
+## Arm E — strict compose prompt: TESTED AND REJECTED (2026-08-13)
+
+The compose-gap hypothesis was tested as a single code change on top of the
+shipped arm C: the composer prompt in `loop.py` was given the same hard
+grounding rules as the synthesis prompt (plus removal of its ≤5-sentence
+cap), everything else unchanged. 24 fresh E2E answers, judged by the same
+3-voter Sonnet panel (per-row votes in `synthesis-ab-arm-e-panel.json`).
+
+**Result: 4/24 (single-doc 1/14, crossref 3/10) vs arm C's 7/24 — a
+regression, and an attributable one.** Compose fired on 8/24 rows this run;
+all three rows that flipped pass→fail versus arm C (`rfc_q20`, `rfc_q21`,
+`rfc_q22`, all crossref) were composed rows, while the one gained row and
+the one unrelated loss never touched the composer. Zero gains among the 8
+composed rows. The mandated abstain sentence also fired for the first time
+in the whole experiment (1/24) — the strict rules do change composer
+behavior; they change it for the worse.
+
+**Why, best reading:** the composer's input is already-synthesized
+sub-answer prose, not raw snippets. "Copy character-for-character and write
+nothing not present" is the right contract against raw evidence, but
+against loosely-phrased intermediate prose it makes the composer drop or
+refuse facts the sub-answers actually carried. The old composer prompt
+(softer "use only the sub-answers" + its 5-sentence cap) surfaces the key
+fact more reliably.
+
+The change is reverted; the shipped configuration remains exactly arm C.
+Caveat: decomposition still samples at temperature 1.0, so the composed-row
+*set* differs between runs — the 8-row attribution is clean, but a rerun
+would compose different rows. Remaining 1.9 levers, in order:
+abstain-on-low-verifier-confidence, deterministic decomposition
+(temperature 0 there too, which would also stabilize these comparisons),
+passage-level citation forcing.
