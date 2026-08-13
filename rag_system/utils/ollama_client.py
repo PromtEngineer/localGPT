@@ -319,6 +319,7 @@ class OllamaClient:
         images: List[Image.Image] | None = None,
         enable_thinking: bool | None = None,
         stats: Optional[Dict[str, Any]] = None,
+        options: Optional[Dict[str, Any]] = None,
     ):
         """Generator that yields partial *response* strings as they arrive.
 
@@ -338,6 +339,10 @@ class OllamaClient:
             payload["images"] = [self._image_to_base64(img) for img in images]
         if enable_thinking is not None:
             payload["think"] = enable_thinking
+        if options:
+            # Caller-supplied sampling options (e.g. temperature). Merged
+            # before _apply_num_ctx so an explicit num_ctx here wins.
+            payload["options"] = dict(options)
 
         _apply_num_ctx(payload)
 

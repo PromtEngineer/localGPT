@@ -431,6 +431,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                         for tok in self.llm_client.stream_completion(
                             model=self.ollama_config["generation_model"], prompt=prompt,
                             enable_thinking=False,  # thinking burns the window and can yield an empty answer
+                            options={"temperature": 0},  # greedy decode, matches synthesis (arm C config)
                         ):
                             answer_parts.append(tok)
                             if event_callback:
@@ -638,6 +639,7 @@ FINAL ANSWER:
                                 model=self.ollama_config["generation_model"],
                                 prompt=compose_prompt,
                                 enable_thinking=False,  # thinking burns the window and can yield an empty answer
+                                options={"temperature": 0},  # greedy decode, matches synthesis (arm C config)
                             ):
                                 answer_parts.append(tok)
                                 if event_callback:

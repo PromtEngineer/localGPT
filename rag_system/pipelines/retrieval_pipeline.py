@@ -458,21 +458,23 @@ class RetrievalPipeline:
 
     def _synthesize_final_answer(self, query: str, facts: str, *, event_callback=None) -> str:
         """Uses a text LLM to synthesize a final answer from extracted facts."""
+        # Arm-C prompt from the synthesis-grounding A/B
+        # (eval/decisions/synthesis-grounding-ab-2026-08-13.md): deletes the
+        # old "General knowledge" escape hatch that produced fabricated
+        # citations on unseen corpora, and forbids quotes/section numbers/
+        # document names not present in the snippets.
         prompt = f"""
-You are an AI assistant specialised in answering questions from retrieved context.
+You are answering strictly from the retrieved snippets below.
 
-Context you receive
-• VERIFIED FACTS – text snippets retrieved from the user's documents. Some may be irrelevant noise.  
-• ORIGINAL QUESTION – the user's actual query.
-
-Instructions
-1. Evaluate each snippet for relevance to the ORIGINAL QUESTION; ignore those that do not help answer it.  
-2. Synthesise an answer **using only information from the relevant snippets**.  
-3. If snippets contradict one another, mention the contradiction explicitly.  
-4. If the snippets do not contain the needed information, reply exactly with:  
-   "I could not find that information in the provided documents."  
-5. Provide a thorough, well-structured answer. Use paragraphs or bullet points where helpful, and include any relevant numbers/names exactly as they appear. There is **no strict sentence limit**, but aim for clarity over brevity.  
-6. Do **not** introduce external knowledge unless step 4 applies; in that case you may add a clearly-labelled "General knowledge" sentence after the required statement.
+Hard rules — these override anything you believe you know:
+1. Use ONLY information stated in the snippets. Your own knowledge of the topic, however confident, must not appear in the answer.
+2. If the snippets disagree with what you remember, the snippets are correct.
+3. Copy every number, identifier, code and quoted phrase character-for-character from a snippet. Never write a quotation, section number or document name that does not appear in the snippets.
+4. If the snippets do not contain the needed information, reply exactly:
+   "I could not find that information in the provided documents."
+   Do not add a general-knowledge answer after it.
+5. If snippets contradict one another, state the contradiction explicitly.
+6. Be thorough and well-structured, but stay within the snippets; include relevant numbers and names exactly as they appear.
 
 Output format
 Answer:
@@ -493,6 +495,7 @@ ORIGINAL QUESTION: "{query}"
             model=self.ollama_config["generation_model"],
             prompt=prompt,
             enable_thinking=False,
+            options={"temperature": 0},  # greedy decode: measured fewer prior-driven drifts, zero judge splits
         ):
             answer_parts.append(tok)
             if event_callback:
