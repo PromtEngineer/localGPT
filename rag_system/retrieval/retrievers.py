@@ -150,10 +150,16 @@ class MultiVectorRetriever:
                 return query_builder
 
             def _run_fts():
+                # LanceDB's FTS parser reads double quotes as phrase syntax and
+                # raises on queries it cannot parse — the decomposer emits
+                # quoted sub-queries like `"Extra Fees & Costs" charges`, which
+                # used to kill the whole retrieve() (hybrid included) and return
+                # nothing. Quotes carry no ranking signal we rely on, so strip
+                # them and search the plain terms.
+                fts_query = text_query.replace('"', " ").strip() or text_query
                 # Very short queries often underperform → add fuzzy wildcard
-                fts_query = text_query
-                if len(text_query.split()) == 1:
-                    fts_query = f"{text_query}* OR {text_query}~"
+                if len(fts_query.split()) == 1:
+                    fts_query = f"{fts_query}* OR {fts_query}~"
                 return (
                     _filtered(tbl.search(query=fts_query, query_type="fts"))
                        .limit(k)
@@ -180,7 +186,17 @@ class MultiVectorRetriever:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                     fts_future = executor.submit(_run_fts)
                     vec_future = executor.submit(_run_vec)
-                    fts_df = fts_future.result()
+                    # In hybrid mode a failed FTS leg degrades to dense-only
+                    # instead of failing the whole retrieval — the two legs are
+                    # redundant by design, and "one leg down" must not become
+                    # "0 results". (fts_only mode still propagates, because
+                    # there the caller asked for exactly that leg.)
+                    try:
+                        fts_df = fts_future.result()
+                    except Exception as fts_err:
+                        print(f"⚠️  FTS leg failed ({fts_err}); continuing dense-only.")
+                        logger.warning("FTS leg failed on table '%s': %s", table_name, fts_err)
+                        fts_df = None
                     vec_df = vec_future.result()
 
             def _records(df) -> List[Dict[str, Any]]:

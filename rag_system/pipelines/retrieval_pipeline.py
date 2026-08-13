@@ -484,11 +484,15 @@ Answer:
 
 ORIGINAL QUESTION: "{query}"
 """
-        # Stream the answer token-by-token so the caller can forward them as SSE
+        # Stream the answer token-by-token so the caller can forward them as SSE.
+        # Thinking must be OFF here: with it on, the model spends its window on
+        # chain-of-thought that never enters `response` and can return an empty
+        # answer (measured: prompt 9351 + thinking 7033 = window exactly, "" out).
         answer_parts: list[str] = []
         for tok in self.ollama_client.stream_completion(
             model=self.ollama_config["generation_model"],
             prompt=prompt,
+            enable_thinking=False,
         ):
             answer_parts.append(tok)
             if event_callback:

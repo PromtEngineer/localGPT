@@ -429,7 +429,8 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 def _blocking_stream():
                     with token_stage("synthesis"):
                         for tok in self.llm_client.stream_completion(
-                            model=self.ollama_config["generation_model"], prompt=prompt
+                            model=self.ollama_config["generation_model"], prompt=prompt,
+                            enable_thinking=False,  # thinking burns the window and can yield an empty answer
                         ):
                             answer_parts.append(tok)
                             if event_callback:
@@ -636,6 +637,7 @@ FINAL ANSWER:
                             for tok in self.llm_client.stream_completion(
                                 model=self.ollama_config["generation_model"],
                                 prompt=compose_prompt,
+                                enable_thinking=False,  # thinking burns the window and can yield an empty answer
                             ):
                                 answer_parts.append(tok)
                                 if event_callback:
