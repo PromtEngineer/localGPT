@@ -1,0 +1,193 @@
+﻿
+
+
+
+Internet Engineering Task Force (IETF)                         M. Bishop
+Request for Comments: 9412                                        Akamai
+Category: Standards Track                                      June 2023
+ISSN: 2070-1721
+
+
+                     The ORIGIN Extension in HTTP/3
+
+Abstract
+
+   The ORIGIN frame for HTTP/2 is equally applicable to HTTP/3, but it
+   needs to be separately registered.  This document describes the
+   ORIGIN frame for HTTP/3.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in Section 2 of RFC 7841.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   https://www.rfc-editor.org/info/rfc9412.
+
+Copyright Notice
+
+   Copyright (c) 2023 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (https://trustee.ietf.org/license-info) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Revised BSD License text as described in Section 4.e of the
+   Trust Legal Provisions and are provided without warranty as described
+   in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction
+     1.1.  Notational Conventions
+   2.  The ORIGIN HTTP/3 Frame
+     2.1.  Frame Layout
+   3.  Security Considerations
+   4.  IANA Considerations
+   5.  References
+     5.1.  Normative References
+     5.2.  Informative References
+   Author's Address
+
+1.  Introduction
+
+   Existing RFCs define extensions to HTTP/2 [HTTP/2] that remain useful
+   in HTTP/3.  Appendix A.2 of [HTTP/3] describes the required updates
+   for HTTP/2 frames to be used with HTTP/3.
+
+   [ORIGIN] defines the HTTP/2 ORIGIN frame, which indicates what
+   origins are available on a given connection.  It defines a single
+   HTTP/2 frame type.
+
+1.1.  Notational Conventions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   The frame diagram in this document uses the format defined in
+   Section 1.3 of [QUIC-TRANSPORT] to illustrate the order and size of
+   fields.
+
+2.  The ORIGIN HTTP/3 Frame
+
+   The ORIGIN HTTP/3 frame allows a server to indicate what origin or
+   origins [RFC6454] the server would like the client to consider as one
+   or more members of the Origin Set (Section 2.3 of [ORIGIN]) for the
+   connection within which it occurs.
+
+   The semantics of the frame payload are identical to those of the
+   HTTP/2 frame defined in [ORIGIN].  Where HTTP/2 reserves stream 0 for
+   frames related to the state of the connection, HTTP/3 defines a pair
+   of unidirectional streams called "control streams" for this purpose.
+
+   Where [ORIGIN] indicates that the ORIGIN frame is sent on stream 0,
+   this should be interpreted to mean the HTTP/3 control stream: that
+   is, the ORIGIN frame is sent from servers to clients on the server's
+   control stream.
+
+   HTTP/3 does not define a Flags field in the generic frame layout.  As
+   no flags have been defined for the ORIGIN frame, this specification
+   does not define a mechanism for communicating such flags in HTTP/3.
+
+2.1.  Frame Layout
+
+   The ORIGIN frame has a layout that is nearly identical to the layout
+   used in HTTP/2; the information is restated here for clarity.  The
+   ORIGIN frame type is 0x0c (decimal 12), as in HTTP/2.  The payload
+   contains zero or more instances of the Origin-Entry field.
+
+   HTTP/3 Origin-Entry {
+     Origin-Len (16),
+     ASCII-Origin (..),
+   }
+
+   HTTP/3 ORIGIN Frame {
+     Type (i) = 0x0c,
+     Length (i),
+     Origin-Entry (..) ...,
+   }
+
+                       Figure 1: ORIGIN Frame Layout
+
+   An Origin-Entry is a length-delimited string.  Specifically, it
+   contains two fields:
+
+   Origin-Len:  An unsigned, 16-bit integer indicating the length, in
+      octets, of the ASCII-Origin field.
+
+   ASCII-Origin:  An OPTIONAL sequence of characters containing the
+      ASCII serialization of an origin ([RFC6454], Section 6.2) that the
+      sender asserts this connection is or could be authoritative for.
+
+3.  Security Considerations
+
+   This document introduces no new security considerations beyond those
+   discussed in [ORIGIN] and [HTTP/3].
+
+4.  IANA Considerations
+
+   This document registers a frame type in the "HTTP/3 Frame Types"
+   registry defined by [HTTP/3], located at
+   <https://www.iana.org/assignments/http3-parameters/>.
+
+   Value:  0x0c
+   Frame Type:  ORIGIN
+   Status:  permanent
+   Reference:  Section 2
+   Date:  2023-03-14
+   Change Controller:  IETF
+   Contact:  HTTP WG <ietf-http-wg@w3.org>
+
+5.  References
+
+5.1.  Normative References
+
+   [HTTP/2]   Thomson, M., Ed. and C. Benfield, Ed., "HTTP/2", RFC 9113,
+              DOI 10.17487/RFC9113, June 2022,
+              <https://www.rfc-editor.org/info/rfc9113>.
+
+   [HTTP/3]   Bishop, M., Ed., "HTTP/3", RFC 9114, DOI 10.17487/RFC9114,
+              June 2022, <https://www.rfc-editor.org/info/rfc9114>.
+
+   [ORIGIN]   Nottingham, M. and E. Nygren, "The ORIGIN HTTP/2 Frame",
+              RFC 8336, DOI 10.17487/RFC8336, March 2018,
+              <https://www.rfc-editor.org/info/rfc8336>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+5.2.  Informative References
+
+   [QUIC-TRANSPORT]
+              Iyengar, J., Ed. and M. Thomson, Ed., "QUIC: A UDP-Based
+              Multiplexed and Secure Transport", RFC 9000,
+              DOI 10.17487/RFC9000, May 2021,
+              <https://www.rfc-editor.org/info/rfc9000>.
+
+   [RFC6454]  Barth, A., "The Web Origin Concept", RFC 6454,
+              DOI 10.17487/RFC6454, December 2011,
+              <https://www.rfc-editor.org/info/rfc6454>.
+
+Author's Address
+
+   Mike Bishop
+   Akamai
+   Email: mbishop@evequefou.be

@@ -1,0 +1,507 @@
+
+
+
+
+
+
+Internet Engineering Task Force (IETF)                         S. Friedl
+Request for Comments: 7301                           Cisco Systems, Inc.
+Category: Standards Track                                       A. Popov
+ISSN: 2070-1721                                          Microsoft Corp.
+                                                              A. Langley
+                                                             Google Inc.
+                                                              E. Stephan
+                                                                  Orange
+                                                               July 2014
+
+
+                     Transport Layer Security (TLS)
+            Application-Layer Protocol Negotiation Extension
+
+Abstract
+
+   This document describes a Transport Layer Security (TLS) extension
+   for application-layer protocol negotiation within the TLS handshake.
+   For instances in which multiple application protocols are supported
+   on the same TCP or UDP port, this extension allows the application
+   layer to negotiate which protocol will be used within the TLS
+   connection.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in Section 2 of RFC 5741.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   http://www.rfc-editor.org/info/rfc7301.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Friedl, et al.               Standards Track                    [Page 1]
+
+RFC 7301         TLS App-Layer Protocol Negotiation Ext        July 2014
+
+
+Copyright Notice
+
+   Copyright (c) 2014 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (http://trustee.ietf.org/license-info) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   2
+   2.  Requirements Language . . . . . . . . . . . . . . . . . . . .   3
+   3.  Application-Layer Protocol Negotiation  . . . . . . . . . . .   3
+     3.1.  The Application-Layer Protocol Negotiation Extension  . .   3
+     3.2.  Protocol Selection  . . . . . . . . . . . . . . . . . . .   5
+   4.  Design Considerations . . . . . . . . . . . . . . . . . . . .   6
+   5.  Security Considerations . . . . . . . . . . . . . . . . . . .   6
+   6.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   7
+   7.  Acknowledgements  . . . . . . . . . . . . . . . . . . . . . .   8
+   8.  References  . . . . . . . . . . . . . . . . . . . . . . . . .   8
+     8.1.  Normative References  . . . . . . . . . . . . . . . . . .   8
+     8.2.  Informative References  . . . . . . . . . . . . . . . . .   8
+
+1.  Introduction
+
+   Increasingly, application-layer protocols are encapsulated in the TLS
+   protocol [RFC5246].  This encapsulation enables applications to use
+   the existing, secure communications links already present on port 443
+   across virtually the entire global IP infrastructure.
+
+   When multiple application protocols are supported on a single server-
+   side port number, such as port 443, the client and the server need to
+   negotiate an application protocol for use with each connection.  It
+   is desirable to accomplish this negotiation without adding network
+   round-trips between the client and the server, as each round-trip
+   will degrade an end-user's experience.  Further, it would be
+   advantageous to allow certificate selection based on the negotiated
+   application protocol.
+
+
+
+
+
+
+Friedl, et al.               Standards Track                    [Page 2]
+
+RFC 7301         TLS App-Layer Protocol Negotiation Ext        July 2014
+
+
+   This document specifies a TLS extension that permits the application
+   layer to negotiate protocol selection within the TLS handshake.  This
+   work was requested by the HTTPbis WG to address the negotiation of
+   HTTP/2 ([HTTP2]) over TLS; however, ALPN facilitates negotiation of
+   arbitrary application-layer protocols.
+
+   With ALPN, the client sends the list of supported application
+   protocols as part of the TLS ClientHello message.  The server chooses
+   a protocol and sends the selected protocol as part of the TLS
+   ServerHello message.  The application protocol negotiation can thus
+   be accomplished within the TLS handshake, without adding network
+   round-trips, and allows the server to associate a different
+   certificate with each application protocol, if desired.
+
+2.  Requirements Language
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [RFC2119].
+
+3.  Application-Layer Protocol Negotiation
+
+3.1.  The Application-Layer Protocol Negotiation Extension
+
+   A new extension type ("application_layer_protocol_negotiation(16)")
+   is defined and MAY be included by the client in its "ClientHello"
+   message.
+
+   enum {
+       application_layer_protocol_negotiation(16), (65535)
+   } ExtensionType;
+
+   The "extension_data" field of the
+   ("application_layer_protocol_negotiation(16)") extension SHALL
+   contain a "ProtocolNameList" value.
+
+   opaque ProtocolName<1..2^8-1>;
+
+   struct {
+       ProtocolName protocol_name_list<2..2^16-1>
+   } ProtocolNameList;
+
+   "ProtocolNameList" contains the list of protocols advertised by the
+   client, in descending order of preference.  Protocols are named by
+   IANA-registered, opaque, non-empty byte strings, as described further
+   in Section 6 ("IANA Considerations") of this document.  Empty strings
+   MUST NOT be included and byte strings MUST NOT be truncated.
+
+
+
+
+Friedl, et al.               Standards Track                    [Page 3]
+
+RFC 7301         TLS App-Layer Protocol Negotiation Ext        July 2014
+
+
+   Servers that receive a ClientHello containing the
+   "application_layer_protocol_negotiation" extension MAY return a
+   suitable protocol selection response to the client.  The server will
+   ignore any protocol name that it does not recognize.  A new
+   ServerHello extension type
+   ("application_layer_protocol_negotiation(16)") MAY be returned to the
+   client within the extended ServerHello message.  The "extension_data"
+   field of the ("application_layer_protocol_negotiation(16)") extension
+   is structured the same as described above for the client
+   "extension_data", except that the "ProtocolNameList" MUST contain
+   exactly one "ProtocolName".
+
+   Therefore, a full handshake with the
+   "application_layer_protocol_negotiation" extension in the ClientHello
+   and ServerHello messages has the following flow (contrast with
+   Section 7.3 of [RFC5246]):
+
+   Client                                              Server
+
+   ClientHello                     -------->       ServerHello
+     (ALPN extension &                               (ALPN extension &
+      list of protocols)                              selected protocol)
+                                                   Certificate*
+                                                   ServerKeyExchange*
+                                                   CertificateRequest*
+                                   <--------       ServerHelloDone
+   Certificate*
+   ClientKeyExchange
+   CertificateVerify*
+   [ChangeCipherSpec]
+   Finished                        -------->
+                                                   [ChangeCipherSpec]
+                                   <--------       Finished
+   Application Data                <------->       Application Data
+
+                                 Figure 1
+
+   * Indicates optional or situation-dependent messages that are not
+   always sent.
+
+
+
+
+
+
+
+
+
+
+
+
+Friedl, et al.               Standards Track                    [Page 4]
+
+RFC 7301         TLS App-Layer Protocol Negotiation Ext        July 2014
+
+
+   An abbreviated handshake with the
+   "application_layer_protocol_negotiation" extension has the following
+   flow:
+
+   Client                                              Server
+
+   ClientHello                     -------->       ServerHello
+     (ALPN extension &                               (ALPN extension &
+      list of protocols)                              selected protocol)
+                                                   [ChangeCipherSpec]
+                                   <--------       Finished
+   [ChangeCipherSpec]
+   Finished                        -------->
+   Application Data                <------->       Application Data
+
+                                 Figure 2
+
+   Unlike many other TLS extensions, this extension does not establish
+   properties of the session, only of the connection.  When session
+   resumption or session tickets [RFC5077] are used, the previous
+   contents of this extension are irrelevant, and only the values in the
+   new handshake messages are considered.
+
+3.2.  Protocol Selection
+
+   It is expected that a server will have a list of protocols that it
+   supports, in preference order, and will only select a protocol if the
+   client supports it.  In that case, the server SHOULD select the most
+   highly preferred protocol that it supports and that is also
+   advertised by the client.  In the event that the server supports no
+   protocols that the client advertises, then the server SHALL respond
+   with a fatal "no_application_protocol" alert.
+
+   enum {
+       no_application_protocol(120),
+       (255)
+   } AlertDescription;
+
+   The protocol identified in the
+   "application_layer_protocol_negotiation" extension type in the
+   ServerHello SHALL be definitive for the connection, until
+   renegotiated.  The server SHALL NOT respond with a selected protocol
+   and subsequently use a different protocol for application data
+   exchange.
+
+
+
+
+
+
+
+Friedl, et al.               Standards Track                    [Page 5]
+
+RFC 7301         TLS App-Layer Protocol Negotiation Ext        July 2014
+
+
+4.  Design Considerations
+
+   The ALPN extension is intended to follow the typical design of TLS
+   protocol extensions.  Specifically, the negotiation is performed
+   entirely within the client/server hello exchange in accordance with
+   the established TLS architecture.  The
+   "application_layer_protocol_negotiation" ServerHello extension is
+   intended to be definitive for the connection (until the connection is
+   renegotiated) and is sent in plaintext to permit network elements to
+   provide differentiated service for the connection when the TCP or UDP
+   port number is not definitive for the application-layer protocol to
+   be used in the connection.  By placing ownership of protocol
+   selection on the server, ALPN facilitates scenarios in which
+   certificate selection or connection rerouting may be based on the
+   negotiated protocol.
+
+   Finally, by managing protocol selection in the clear as part of the
+   handshake, ALPN avoids introducing false confidence with respect to
+   the ability to hide the negotiated protocol in advance of
+   establishing the connection.  If hiding the protocol is required,
+   then renegotiation after connection establishment, which would
+   provide true TLS security guarantees, would be a preferred
+   methodology.
+
+5.  Security Considerations
+
+   The ALPN extension does not impact the security of TLS session
+   establishment or application data exchange.  ALPN serves to provide
+   an externally visible marker for the application-layer protocol
+   associated with the TLS connection.  Historically, the application-
+   layer protocol associated with a connection could be ascertained from
+   the TCP or UDP port number in use.
+
+   Implementers and document editors who intend to extend the protocol
+   identifier registry by adding new protocol identifiers should
+   consider that in TLS versions 1.2 and below the client sends these
+   identifiers in the clear.  They should also consider that, for at
+   least the next decade, it is expected that browsers would normally
+   use these earlier versions of TLS in the initial ClientHello.
+
+   Care must be taken when such identifiers may leak personally
+   identifiable information, or when such leakage may lead to profiling
+   or to leaking of sensitive information.  If any of these apply to
+   this new protocol identifier, the identifier SHOULD NOT be used in
+   TLS configurations where it would be visible in the clear, and
+   documents specifying such protocol identifiers SHOULD recommend
+   against such unsafe use.
+
+
+
+
+Friedl, et al.               Standards Track                    [Page 6]
+
+RFC 7301         TLS App-Layer Protocol Negotiation Ext        July 2014
+
+
+6.  IANA Considerations
+
+   The IANA has updated its "ExtensionType Values" registry to include
+   the following entry:
+
+      16 application_layer_protocol_negotiation
+
+   This document establishes a registry for protocol identifiers
+   entitled "Application-Layer Protocol Negotiation (ALPN) Protocol IDs"
+   under the existing "Transport Layer Security (TLS) Extensions"
+   heading.
+
+   Entries in this registry require the following fields:
+
+   o  Protocol: The name of the protocol.
+   o  Identification Sequence: The precise set of octet values that
+      identifies the protocol.  This could be the UTF-8 encoding
+      [RFC3629] of the protocol name.
+   o  Reference: A reference to a specification that defines the
+      protocol.
+
+   This registry operates under the "Expert Review" policy as defined in
+   [RFC5226].  The designated expert is advised to encourage the
+   inclusion of a reference to a permanent and readily available
+   specification that enables the creation of interoperable
+   implementations of the identified protocol.
+
+   The initial set of registrations for this registry is as follows:
+
+   Protocol:  HTTP/1.1
+   Identification Sequence:
+      0x68 0x74 0x74 0x70 0x2f 0x31 0x2e 0x31 ("http/1.1")
+   Reference:  [RFC7230]
+
+   Protocol:  SPDY/1
+   Identification Sequence:
+      0x73 0x70 0x64 0x79 0x2f 0x31 ("spdy/1")
+   Reference:
+      http://dev.chromium.org/spdy/spdy-protocol/spdy-protocol-draft1
+
+   Protocol:  SPDY/2
+   Identification Sequence:
+      0x73 0x70 0x64 0x79 0x2f 0x32 ("spdy/2")
+   Reference:
+      http://dev.chromium.org/spdy/spdy-protocol/spdy-protocol-draft2
+
+
+
+
+
+
+Friedl, et al.               Standards Track                    [Page 7]
+
+RFC 7301         TLS App-Layer Protocol Negotiation Ext        July 2014
+
+
+   Protocol:  SPDY/3
+   Identification Sequence:
+      0x73 0x70 0x64 0x79 0x2f 0x33 ("spdy/3")
+   Reference:
+      http://dev.chromium.org/spdy/spdy-protocol/spdy-protocol-draft3
+
+7.  Acknowledgements
+
+   This document benefitted specifically from the Next Protocol
+   Negotiation (NPN) extension document authored by Adam Langley and
+   from discussions with Tom Wesselman and Cullen Jennings, both of
+   Cisco.
+
+8.  References
+
+8.1.  Normative References
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119, March 1997.
+
+   [RFC3629]  Yergeau, F., "UTF-8, a transformation format of ISO
+              10646", STD 63, RFC 3629, November 2003.
+
+   [RFC5226]  Narten, T. and H. Alvestrand, "Guidelines for Writing an
+              IANA Considerations Section in RFCs", BCP 26, RFC 5226,
+              May 2008.
+
+   [RFC5246]  Dierks, T. and E. Rescorla, "The Transport Layer Security
+              (TLS) Protocol Version 1.2", RFC 5246, August 2008.
+
+   [RFC7230]  Fielding, R. and J. Reschke, "Hypertext Transfer Protocol
+              (HTTP/1.1): Message Syntax and Routing", RFC 7230, June
+              2014.
+
+8.2.  Informative References
+
+   [HTTP2]    Belshe, M., Peon, R., and M. Thomson, "Hypertext Transfer
+              Protocol version 2", Work in Progress, June 2014.
+
+   [RFC5077]  Salowey, J., Zhou, H., Eronen, P., and H. Tschofenig,
+              "Transport Layer Security (TLS) Session Resumption without
+              Server-Side State", RFC 5077, January 2008.
+
+
+
+
+
+
+
+
+
+Friedl, et al.               Standards Track                    [Page 8]
+
+RFC 7301         TLS App-Layer Protocol Negotiation Ext        July 2014
+
+
+Authors' Addresses
+
+   Stephan Friedl
+   Cisco Systems, Inc.
+   170 West Tasman Drive
+   San Jose, CA  95134
+   USA
+
+   Phone: (720)562-6785
+   EMail: sfriedl@cisco.com
+
+
+   Andrei Popov
+   Microsoft Corp.
+   One Microsoft Way
+   Redmond, WA  98052
+   USA
+
+   EMail: andreipo@microsoft.com
+
+
+   Adam Langley
+   Google Inc.
+   USA
+
+   EMail: agl@google.com
+
+
+   Emile Stephan
+   Orange
+   2 avenue Pierre Marzin
+   Lannion  F-22307
+   France
+
+   EMail: emile.stephan@orange.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Friedl, et al.               Standards Track                    [Page 9]
+

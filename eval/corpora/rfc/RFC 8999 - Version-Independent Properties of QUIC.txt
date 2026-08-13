@@ -1,0 +1,441 @@
+﻿
+
+
+
+Internet Engineering Task Force (IETF)                        M. Thomson
+Request for Comments: 8999                                       Mozilla
+Category: Standards Track                                       May 2021
+ISSN: 2070-1721
+
+
+                 Version-Independent Properties of QUIC
+
+Abstract
+
+   This document defines the properties of the QUIC transport protocol
+   that are common to all versions of the protocol.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in Section 2 of RFC 7841.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   https://www.rfc-editor.org/info/rfc8999.
+
+Copyright Notice
+
+   Copyright (c) 2021 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (https://trustee.ietf.org/license-info) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   1.  An Extremely Abstract Description of QUIC
+   2.  Fixed Properties of All QUIC Versions
+   3.  Conventions and Definitions
+   4.  Notational Conventions
+   5.  QUIC Packets
+     5.1.  Long Header
+     5.2.  Short Header
+     5.3.  Connection ID
+     5.4.  Version
+   6.  Version Negotiation
+   7.  Security and Privacy Considerations
+   8.  References
+     8.1.  Normative References
+     8.2.  Informative References
+   Appendix A.  Incorrect Assumptions
+   Author's Address
+
+1.  An Extremely Abstract Description of QUIC
+
+   QUIC is a connection-oriented protocol between two endpoints.  Those
+   endpoints exchange UDP datagrams.  These UDP datagrams contain QUIC
+   packets.  QUIC endpoints use QUIC packets to establish a QUIC
+   connection, which is shared protocol state between those endpoints.
+
+2.  Fixed Properties of All QUIC Versions
+
+   In addition to providing secure, multiplexed transport, QUIC
+   [QUIC-TRANSPORT] allows for the option to negotiate a version.  This
+   allows the protocol to change over time in response to new
+   requirements.  Many characteristics of the protocol could change
+   between versions.
+
+   This document describes the subset of QUIC that is intended to remain
+   stable as new versions are developed and deployed.  All of these
+   invariants are independent of the IP version.
+
+   The primary goal of this document is to ensure that it is possible to
+   deploy new versions of QUIC.  By documenting the properties that
+   cannot change, this document aims to preserve the ability for QUIC
+   endpoints to negotiate changes to any other aspect of the protocol.
+   As a consequence, this also guarantees a minimal amount of
+   information that is made available to entities other than endpoints.
+   Unless specifically prohibited in this document, any aspect of the
+   protocol can change between different versions.
+
+   Appendix A contains a non-exhaustive list of some incorrect
+   assumptions that might be made based on knowledge of QUIC version 1;
+   these do not apply to every version of QUIC.
+
+3.  Conventions and Definitions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   This document defines requirements on future QUIC versions, even
+   where normative language is not used.
+
+   This document uses terms and notational conventions from
+   [QUIC-TRANSPORT].
+
+4.  Notational Conventions
+
+   The format of packets is described using the notation defined in this
+   section.  This notation is the same as that used in [QUIC-TRANSPORT].
+
+   Complex fields are named and then followed by a list of fields
+   surrounded by a pair of matching braces.  Each field in this list is
+   separated by commas.
+
+   Individual fields include length information, plus indications about
+   fixed value, optionality, or repetitions.  Individual fields use the
+   following notational conventions, with all lengths in bits:
+
+   x (A):  Indicates that x is A bits long
+
+   x (A..B):  Indicates that x can be any length from A to B; A can be
+      omitted to indicate a minimum of zero bits, and B can be omitted
+      to indicate no set upper limit; values in this format always end
+      on a byte boundary
+
+   x (L) = C:  Indicates that x has a fixed value of C; the length of x
+      is described by L, which can use any of the length forms above
+
+   x (L) ...:  Indicates that x is repeated zero or more times and that
+      each instance has a length of L
+
+   This document uses network byte order (that is, big endian) values.
+   Fields are placed starting from the high-order bits of each byte.
+
+   Figure 1 shows an example structure:
+
+   Example Structure {
+     One-bit Field (1),
+     7-bit Field with Fixed Value (7) = 61,
+     Arbitrary-Length Field (..),
+     Variable-Length Field (8..24),
+     Repeated Field (8) ...,
+   }
+
+                          Figure 1: Example Format
+
+5.  QUIC Packets
+
+   QUIC endpoints exchange UDP datagrams that contain one or more QUIC
+   packets.  This section describes the invariant characteristics of a
+   QUIC packet.  A version of QUIC could permit multiple QUIC packets in
+   a single UDP datagram, but the invariant properties only describe the
+   first packet in a datagram.
+
+   QUIC defines two types of packet headers: long and short.  Packets
+   with a long header are identified by the most significant bit of the
+   first byte being set; packets with a short header have that bit
+   cleared.
+
+   QUIC packets might be integrity protected, including the header.
+   However, QUIC Version Negotiation packets are not integrity
+   protected; see Section 6.
+
+   Aside from the values described here, the payload of QUIC packets is
+   version specific and of arbitrary length.
+
+5.1.  Long Header
+
+   Long headers take the form described in Figure 2.
+
+   Long Header Packet {
+     Header Form (1) = 1,
+     Version-Specific Bits (7),
+     Version (32),
+     Destination Connection ID Length (8),
+     Destination Connection ID (0..2040),
+     Source Connection ID Length (8),
+     Source Connection ID (0..2040),
+     Version-Specific Data (..),
+   }
+
+                         Figure 2: QUIC Long Header
+
+   A QUIC packet with a long header has the high bit of the first byte
+   set to 1.  All other bits in that byte are version specific.
+
+   The next four bytes include a 32-bit Version field.  Versions are
+   described in Section 5.4.
+
+   The next byte contains the length in bytes of the Destination
+   Connection ID field that follows it.  This length is encoded as an
+   8-bit unsigned integer.  The Destination Connection ID field follows
+   the Destination Connection ID Length field and is between 0 and 255
+   bytes in length.  Connection IDs are described in Section 5.3.
+
+   The next byte contains the length in bytes of the Source Connection
+   ID field that follows it.  This length is encoded as an 8-bit
+   unsigned integer.  The Source Connection ID field follows the Source
+   Connection ID Length field and is between 0 and 255 bytes in length.
+
+   The remainder of the packet contains version-specific content.
+
+5.2.  Short Header
+
+   Short headers take the form described in Figure 3.
+
+   Short Header Packet {
+     Header Form (1) = 0,
+     Version-Specific Bits (7),
+     Destination Connection ID (..),
+     Version-Specific Data (..),
+   }
+
+                        Figure 3: QUIC Short Header
+
+   A QUIC packet with a short header has the high bit of the first byte
+   set to 0.
+
+   A QUIC packet with a short header includes a Destination Connection
+   ID immediately following the first byte.  The short header does not
+   include the Destination Connection ID Length, Source Connection ID
+   Length, Source Connection ID, or Version fields.  The length of the
+   Destination Connection ID is not encoded in packets with a short
+   header and is not constrained by this specification.
+
+   The remainder of the packet has version-specific semantics.
+
+5.3.  Connection ID
+
+   A connection ID is an opaque field of arbitrary length.
+
+   The primary function of a connection ID is to ensure that changes in
+   addressing at lower protocol layers (UDP, IP, and below) do not cause
+   packets for a QUIC connection to be delivered to the wrong QUIC
+   endpoint.  The connection ID is used by endpoints and the
+   intermediaries that support them to ensure that each QUIC packet can
+   be delivered to the correct instance of an endpoint.  At the
+   endpoint, the connection ID is used to identify the QUIC connection
+   for which the packet is intended.
+
+   The connection ID is chosen by each endpoint using version-specific
+   methods.  Packets for the same QUIC connection might use different
+   connection ID values.
+
+5.4.  Version
+
+   The Version field contains a 4-byte identifier.  This value can be
+   used by endpoints to identify a QUIC version.  A Version field with a
+   value of 0x00000000 is reserved for version negotiation; see
+   Section 6.  All other values are potentially valid.
+
+   The properties described in this document apply to all versions of
+   QUIC.  A protocol that does not conform to the properties described
+   in this document is not QUIC.  Future documents might describe
+   additional properties that apply to a specific QUIC version or to a
+   range of QUIC versions.
+
+6.  Version Negotiation
+
+   A QUIC endpoint that receives a packet with a long header and a
+   version it either does not understand or does not support might send
+   a Version Negotiation packet in response.  Packets with a short
+   header do not trigger version negotiation.
+
+   A Version Negotiation packet sets the high bit of the first byte, and
+   thus it conforms with the format of a packet with a long header as
+   defined in Section 5.1.  A Version Negotiation packet is identifiable
+   as such by the Version field, which is set to 0x00000000.
+
+   Version Negotiation Packet {
+     Header Form (1) = 1,
+     Unused (7),
+     Version (32) = 0,
+     Destination Connection ID Length (8),
+     Destination Connection ID (0..2040),
+     Source Connection ID Length (8),
+     Source Connection ID (0..2040),
+     Supported Version (32) ...,
+   }
+
+                    Figure 4: Version Negotiation Packet
+
+   Only the most significant bit of the first byte of a Version
+   Negotiation packet has any defined value.  The remaining 7 bits,
+   labeled "Unused", can be set to any value when sending and MUST be
+   ignored on receipt.
+
+   After the Source Connection ID field, the Version Negotiation packet
+   contains a list of Supported Version fields, each identifying a
+   version that the endpoint sending the packet supports.  A Version
+   Negotiation packet contains no other fields.  An endpoint MUST ignore
+   a packet that contains no Supported Version fields or contains a
+   truncated Supported Version value.
+
+   Version Negotiation packets do not use integrity or confidentiality
+   protection.  Specific QUIC versions might include protocol elements
+   that allow endpoints to detect modification or corruption in the set
+   of supported versions.
+
+   An endpoint MUST include the value from the Source Connection ID
+   field of the packet it receives in the Destination Connection ID
+   field.  The value for the Source Connection ID field MUST be copied
+   from the Destination Connection ID field of the received packet,
+   which is initially randomly selected by a client.  Echoing both
+   connection IDs gives clients some assurance that the server received
+   the packet and that the Version Negotiation packet was not generated
+   by an attacker that is unable to observe packets.
+
+   An endpoint that receives a Version Negotiation packet might change
+   the version that it decides to use for subsequent packets.  The
+   conditions under which an endpoint changes its QUIC version will
+   depend on the version of QUIC that it chooses.
+
+   See [QUIC-TRANSPORT] for a more thorough description of how an
+   endpoint that supports QUIC version 1 generates and consumes a
+   Version Negotiation packet.
+
+7.  Security and Privacy Considerations
+
+   It is possible that middleboxes could observe traits of a specific
+   version of QUIC and assume that when other versions of QUIC exhibit
+   similar traits the same underlying semantic is being expressed.
+   There are potentially many such traits; see Appendix A.  Some effort
+   has been made to either eliminate or obscure some observable traits
+   in QUIC version 1, but many of these remain.  Other QUIC versions
+   might make different design decisions and so exhibit different
+   traits.
+
+   The QUIC version number does not appear in all QUIC packets, which
+   means that reliably extracting information from a flow based on
+   version-specific traits requires that middleboxes retain state for
+   every connection ID they see.
+
+   The Version Negotiation packet described in this document is not
+   integrity protected; it only has modest protection against insertion
+   by attackers.  An endpoint MUST authenticate the semantic content of
+   a Version Negotiation packet if it attempts a different QUIC version
+   as a result.
+
+8.  References
+
+8.1.  Normative References
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+8.2.  Informative References
+
+   [QUIC-TLS] Thomson, M., Ed. and S. Turner, Ed., "Using TLS to Secure
+              QUIC", RFC 9001, DOI 10.17487/RFC9001, May 2021,
+              <https://www.rfc-editor.org/info/rfc9001>.
+
+   [QUIC-TRANSPORT]
+              Iyengar, J., Ed. and M. Thomson, Ed., "QUIC: A UDP-Based
+              Multiplexed and Secure Transport", RFC 9000,
+              DOI 10.17487/RFC9000, May 2021,
+              <https://www.rfc-editor.org/info/rfc9000>.
+
+   [RFC5116]  McGrew, D., "An Interface and Algorithms for Authenticated
+              Encryption", RFC 5116, DOI 10.17487/RFC5116, January 2008,
+              <https://www.rfc-editor.org/info/rfc5116>.
+
+Appendix A.  Incorrect Assumptions
+
+   There are several traits of QUIC version 1 [QUIC-TRANSPORT] that are
+   not protected from observation but are nonetheless considered to be
+   changeable when a new version is deployed.
+
+   This section lists a sampling of incorrect assumptions that might be
+   made about QUIC based on knowledge of QUIC version 1.  Some of these
+   statements are not even true for QUIC version 1.  This is not an
+   exhaustive list; it is intended to be illustrative only.
+
+   *Any and all of the following statements can be false for a given
+   QUIC version:*
+
+   *  QUIC uses TLS [QUIC-TLS], and some TLS messages are visible on the
+      wire.
+
+   *  QUIC long headers are only exchanged during connection
+      establishment.
+
+   *  Every flow on a given 5-tuple will include a connection
+      establishment phase.
+
+   *  The first packets exchanged on a flow use the long header.
+
+   *  The last packet before a long period of quiescence might be
+      assumed to contain only an acknowledgment.
+
+   *  QUIC uses an Authenticated Encryption with Associated Data (AEAD)
+      function (AEAD_AES_128_GCM; see [RFC5116]) to protect the packets
+      it exchanges during connection establishment.
+
+   *  QUIC packet numbers are encrypted and appear as the first
+      encrypted bytes.
+
+   *  QUIC packet numbers increase by one for every packet sent.
+
+   *  QUIC has a minimum size for the first handshake packet sent by a
+      client.
+
+   *  QUIC stipulates that a client speak first.
+
+   *  QUIC packets always have the second bit of the first byte (0x40)
+      set.
+
+   *  A QUIC Version Negotiation packet is only sent by a server.
+
+   *  A QUIC connection ID changes infrequently.
+
+   *  QUIC endpoints change the version they speak if they are sent a
+      Version Negotiation packet.
+
+   *  The Version field in a QUIC long header is the same in both
+      directions.
+
+   *  A QUIC packet with a particular value in the Version field means
+      that the corresponding version of QUIC is in use.
+
+   *  Only one connection at a time is established between any pair of
+      QUIC endpoints.
+
+Author's Address
+
+   Martin Thomson
+   Mozilla
+
+   Email: mt@lowentropy.net
