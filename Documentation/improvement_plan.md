@@ -51,6 +51,8 @@ The previous revision of this file marked five cleanup items ✅ COMPLETED. Two 
 
 ---
 
+> **Chunker data loss — FIXED 2026-08-12, REBUILD INDEXES.** `MarkdownRecursiveChunker._split_text`'s separator-reassembly loop dropped the first and every other body segment of any document large enough to split, so long documents entered the index at ~50% of their content (RFC 9000: 49% retained; `design_rationale.md`: 49%). Found by the unseen-corpus RFC shakedown — the authored eval corpora were too small to trigger the path. Fixed and property-tested lossless (30 randomized structured docs, zero non-whitespace loss; post-fix retention 94–99.8%, remainder is whitespace normalization). **Every index built before this fix under-contains its long documents** — product indexes in `index_store/` and the tracked eval indexes should be rebuilt, and pre-fix retrieval baselines on the `docs` corpus are not comparable to post-fix numbers.
+
 ## 1. Retrieval accuracy & speed
 
 | ID | Item | Rationale | Notes |

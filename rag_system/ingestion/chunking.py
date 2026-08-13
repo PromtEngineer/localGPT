@@ -39,17 +39,21 @@ class MarkdownRecursiveChunker:
             new_chunks = []
             for chunk in chunks_to_process:
                 if self._token_len(chunk) > self.max_chunk_size:
-                    sub_chunks = re.split(f'({sep})', chunk)
+                    # re.split with a capture group interleaves segments and
+                    # separators: [seg0, sep, seg1, sep, seg2, ...]. Reattach
+                    # each separator to the segment that FOLLOWS it, keeping
+                    # every segment. (The previous loop advanced 3 positions
+                    # after consuming 2, silently dropping seg0 and every
+                    # other body segment of any document large enough to
+                    # split — real corpora lost ~half their text.)
+                    sub_chunks = re.split(f'({re.escape(sep)})', chunk)
                     combined = []
-                    i = 0
-                    while i < len(sub_chunks):
-                        if i + 1 < len(sub_chunks) and sub_chunks[i+1] == sep:
-                            combined.append(sub_chunks[i+1] + sub_chunks[i+2])
-                            i += 3
-                        else:
-                            if sub_chunks[i]:
-                                combined.append(sub_chunks[i])
-                            i += 1
+                    if sub_chunks and sub_chunks[0]:
+                        combined.append(sub_chunks[0])
+                    for j in range(1, len(sub_chunks) - 1, 2):
+                        piece = sub_chunks[j] + sub_chunks[j + 1]
+                        if piece:
+                            combined.append(piece)
                     new_chunks.extend(combined)
                 else:
                     new_chunks.append(chunk)
