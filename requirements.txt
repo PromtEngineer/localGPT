@@ -18,3 +18,7 @@ pandas
 rerankers
 # Optional: IBM watsonx.ai backend, enabled with LLM_BACKEND=watsonx
 # ibm-watsonx-ai>=1.3.39
+
+# Optional: Anthropic-API eval judge (eval-only, never in the serving path),
+# enabled with JUDGE_MODEL=claude-<model>
+# anthropic>=0.121.0

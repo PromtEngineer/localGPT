@@ -10,6 +10,17 @@ It runs on the utility model (``qwen3.5:4b`` by default) through the repo's own
 without that, a thinking model puts its JSON in the ``thinking`` field and
 returns an empty ``response``.
 
+A model name starting with ``claude-`` routes to the Anthropic API instead
+(eval-only — the product stays fully local; requires ``pip install anthropic``
+and credentials in the environment). Motivation: the Phase-4 A/Bs showed the
+4b judge returning verdicts its own reasons contradict on exactly the rows
+that decide feature adoption (``eval/decisions/phase4-escalation-rerun.md``
+§6). Select it per run with ``JUDGE_MODEL=claude-sonnet-5``.
+
+Regardless of backend, the verifier's ``[Confidence: N%] [Warning: ...]``
+suffix is stripped from the ANSWER before judging — one judge reason was
+observed citing the confidence figure as grounds for rejection.
+
 Validate before trusting it::
 
     .venv/bin/python eval/judge.py --validate
@@ -136,6 +147,16 @@ def strip_think(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text or "", flags=re.S).strip()
 
 
+# The agent's verifier appends this to every answer it checks. It is metadata
+# about the answer, not part of it, and it measurably perturbs the judge.
+_VERIFIER_SUFFIX = re.compile(
+    r"\s*\[Confidence:\s*\d+%\]\s*(\[Warning:[^\]]*\])?\s*$")
+
+
+def strip_verifier_suffix(text: str) -> str:
+    return _VERIFIER_SUFFIX.sub("", text or "").strip()
+
+
 class GroundednessJudge:
     def __init__(self, model: str = DEFAULT_MODEL, host: str | None = None,
                  version: str = DEFAULT_VERSION):
@@ -143,7 +164,32 @@ class GroundednessJudge:
             raise ValueError(f"unknown prompt version {version!r}; have {sorted(PROMPTS)}")
         self.model = model
         self.version = version
-        self.client = OllamaClient(host=host or os.getenv("OLLAMA_HOST", "http://localhost:11434"))
+        self._use_anthropic = model.startswith("claude-")
+        if self._use_anthropic:
+            import anthropic  # deferred so local-only runs don't need the package
+            self._anthropic = anthropic.Anthropic()
+        else:
+            self.client = OllamaClient(host=host or os.getenv("OLLAMA_HOST", "http://localhost:11434"))
+
+    def _complete_anthropic(self, prompt: str) -> str:
+        """One judgment via the Anthropic API, JSON shape enforced server-side."""
+        response = self._anthropic.messages.create(
+            model=self.model,
+            max_tokens=4096,  # hard cap on thinking + response text together
+            output_config={"format": {"type": "json_schema", "schema": {
+                "type": "object",
+                "properties": {
+                    "grounded": {"type": "boolean"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["grounded", "reason"],
+                "additionalProperties": False,
+            }}},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        if response.stop_reason == "refusal":
+            return ""
+        return next((b.text for b in response.content if b.type == "text"), "")
 
     def judge(self, question: str, answer: str, evidence) -> dict:
         if isinstance(evidence, (list, tuple)):
@@ -152,9 +198,13 @@ class GroundednessJudge:
             evidence_text = str(evidence)
 
         prompt = PROMPTS[self.version].format(
-            evidence=evidence_text, question=question, answer=answer)
-        raw = strip_think((self.client.generate_completion(
-            model=self.model, prompt=prompt, format="json") or {}).get("response", ""))
+            evidence=strip_verifier_suffix(evidence_text), question=question,
+            answer=strip_verifier_suffix(answer))
+        if self._use_anthropic:
+            raw = self._complete_anthropic(prompt)
+        else:
+            raw = strip_think((self.client.generate_completion(
+                model=self.model, prompt=prompt, format="json") or {}).get("response", ""))
 
         try:
             parsed = json.loads(raw)
