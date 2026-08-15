@@ -237,3 +237,36 @@ showed facts get lost — is gone from the decomposition path, and A/B row
 sets are stable run-to-run from here on. Panel records:
 `synthesis-ab-arm-h-panel.json` (first run), `synthesis-ab-arm-h2-panel.json`,
 `synthesis-ab-arm-g2-panel.json`.
+
+---
+
+## Arm I — source-document labels in the synthesis context: ADOPTED (2026-08-15)
+
+Diagnosis of the four crossref failures surviving arm H2 showed two were
+**attribution failures, not fact failures**: rfc_q18 had both Initial-keys
+salts character-for-character correct and rfc_q24 had the parameter name
+and 0x09 identifier correct — both failed only for not naming the source
+RFC. Root cause was ours: the synthesis context was a bare join of chunk
+texts with no source labels, while strict-prompt rule 3 (correctly)
+forbids writing document names not present in the snippets. The corpus
+cross-references by tag ("[QUIC-TLS]"), so the model *could not* say
+"RFC 9001" without breaking its grounding contract — even though the
+pipeline knows every chunk's source file.
+
+Change: every snippet in the synthesis context now opens with
+"[Source document: <document_id>]", and prompt rule 7 tells the model to
+attribute facts via those labels when sourcing matters. Grounding stays
+strict — document names are now *in* the snippets.
+
+**Result: 21/24 (single-doc 12/14, crossref 9/10) vs arm H2's 17/24
+(11/14, 6/10). Gains rfc_q06/q18/q20/q24, zero losses, one split
+(rfc_q20, 2–1 pass).** Identical row set to H2 (deterministic
+decomposition, 6 decomposed queries). +4 with no regressions is well
+outside the 1–2 row noise floor: the first clearly-attributable quality
+win at synthesis since the context-budget fix. rfc_q17 also now includes
+the AEAD_AES_128_GCM computation (retrieval drew the §5.8 chunk this
+run) but stays failed on a nuance; rfc_q10 and rfc_q15 remain the
+single-doc residue.
+
+RFC-corpus arc: 5 → 7 (strict prompt) → 16 (dedupe+budget) → 17–18
+(reranker selection / pooled, tie) → **21 (source labels)**.

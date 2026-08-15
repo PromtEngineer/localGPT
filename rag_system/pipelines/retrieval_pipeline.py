@@ -527,6 +527,7 @@ Hard rules — these override anything you believe you know:
    Do not add a general-knowledge answer after it.
 5. If snippets contradict one another, state the contradiction explicitly.
 6. Be thorough and well-structured, but stay within the snippets; include relevant numbers and names exactly as they appear.
+7. Each snippet starts with a "[Source document: …]" line naming the file it came from. When the question asks where something is defined, or attributing a fact matters, name that source document.
 
 Output format
 Answer:
@@ -1491,7 +1492,15 @@ ORIGINAL QUESTION: "{query}"
                     doc[key] = _clean_val(doc[key])
 
         final_docs = self._budget_synthesis_context(final_docs)
-        context = "\n\n".join([doc['text'] for doc in final_docs])
+        # Label every snippet with its source document (arm I). The strict
+        # synthesis prompt forbids writing document names that are not in the
+        # snippets — correct, but without labels the model *cannot* attribute
+        # a fact to its document even though the pipeline knows the source:
+        # corpora that cross-reference by tag (e.g. "[QUIC-TLS]") left answers
+        # attribution-blind ("the document" instead of the actual name).
+        context = "\n\n".join(
+            f"[Source document: {doc.get('document_id') or 'unknown'}]\n{doc['text']}"
+            for doc in final_docs)
 
         # 👀 DEBUG: Show the exact context passed to the LLM after pruning
         print("\n=== Context passed to LLM (post-pruning) ===")
