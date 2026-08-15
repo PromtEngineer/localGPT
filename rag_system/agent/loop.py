@@ -508,7 +508,11 @@ Respond with JSON: {{"category": "<your_choice>"}}
                         # With reranking off there is no rerank stage, so the
                         # sub-queries go unused and this is plain single-query
                         # retrieval — which is the shipped default.
-                        print("\n--- Decomposition applied at rerank; first stage uses the full query ---")
+                        if query_decomp_config.get("pooled_first_stage"):
+                            print("\n--- Pooled decomposition: per-sub-query retrieval, "
+                                  "single rerank + synthesis ---")
+                        else:
+                            print("\n--- Decomposition applied at rerank; first stage uses the full query ---")
                         if event_callback:
                             event_callback("retrieval_started", {"count": 1})
                         with token_stage("synthesis"):

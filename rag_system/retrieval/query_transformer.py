@@ -265,7 +265,12 @@ Input payload:
         )
 
         # ---- Call the LLM ----
-        response = self.llm_client.generate_completion(self.llm_model, full_prompt, format="json")
+        # Greedy decode: sampled decomposition made the SAME query split
+        # differently run-to-run, which both destabilizes answers and made
+        # every synthesis A/B compare partially-different row sets.
+        response = self.llm_client.generate_completion(
+            self.llm_model, full_prompt, format="json",
+            options={"temperature": 0})
 
         response_text = response.get('response', '{}')
         try:

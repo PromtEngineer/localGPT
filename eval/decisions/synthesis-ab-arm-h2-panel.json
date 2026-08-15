@@ -1,0 +1,399 @@
+{
+  "arm": "H2",
+  "description": "pooled decomposition (per-SQ retrieval, single source-aware rerank+synthesis)",
+  "shared_conditions": "arm G reranker selection + temperature-0 decomposition; identical deterministic row sets (6 decomposed queries, same sub-queries verbatim)",
+  "date": "2026-08-15",
+  "protocol": "v1 prompts, verifier suffix stripped, 3 blind Sonnet subagent voters, 2-of-3 majority",
+  "majority_pass": 17,
+  "n": 24,
+  "single_doc_pass": 11,
+  "crossref_pass": 6,
+  "decomposed_pass": 3,
+  "splits": 0,
+  "rows": [
+    {
+      "id": "rfc_q01",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The default value of 3 and the resulting multiplier of 8 are both stated directly in the evidence.",
+        "The answer's default value of 3 and multiplier of 8 both appear verbatim in the evidence.",
+        "Both the default value (3) and the resulting ACK Delay multiplier (8) match the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q02",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence explicitly states the active_connection_id_limit must be at least 2.",
+        "The evidence explicitly states the value MUST be at least 2, matching the answer's floor claim.",
+        "The stated floor of 2 for active_connection_id_limit matches the evidence's MUST-be-at-least-2 requirement."
+      ]
+    },
+    {
+      "id": "rfc_q03",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence directly names NO_VIABLE_PATH with code 0x10 for this exact scenario.",
+        "The evidence directly names NO_VIABLE_PATH with code 0x10, exactly as the answer states.",
+        "The error code name and value (NO_VIABLE_PATH, 0x10) match the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q04",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence gives 333 milliseconds but never introduces the name 'kInitialRtt', which the answer adds.",
+        "The evidence never names the constant kInitialRtt, so labeling the 333ms value with that identifier is an unsupported addition.",
+        "The evidence never names the value 'kInitialRtt'; that identifier is an unsupported addition not present in the evidence."
+      ]
+    },
+    {
+      "id": "rfc_q05",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence directly supports both the 'at least one ack-eliciting packet' and 'up to two full-sized datagrams' claims.",
+        "Both the 'at least one ack-eliciting packet' MUST and the 'up to two full-sized datagrams' MAY are stated in the evidence.",
+        "The answer restates the evidence's exact figures: at least one ack-eliciting packet, up to two full-sized datagrams."
+      ]
+    },
+    {
+      "id": "rfc_q06",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence gives the 0x30/0x31 codepoints and bit pattern but never states that the low bit is the LEN bit.",
+        "The evidence gives the type values and bit pattern but never states that the low bit is the LEN bit, an unsupported addition.",
+        "The evidence gives the type values 0x30/0x31 but never states the low bit is the 'LEN bit', which is an unsupported addition."
+      ]
+    },
+    {
+      "id": "rfc_q07",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the QUIC v2 version field value exactly as given in the answer.",
+        "The evidence states the version 2 field value as 0x6b3343cf, matching the answer exactly.",
+        "The QUIC version 2 value 0x6b3343cf matches the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q08",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence's generic 0-255 byte range and the version 1 20-byte cap directly support the stated comparison.",
+        "The evidence's unqualified 0-255 byte statement (distinct from the version-1-specific and Version-Negotiation-specific figures) supports the general range claimed.",
+        "The 0-255 byte range and its comparison to version 1's 20-byte cap both match the evidence."
+      ]
+    },
+    {
+      "id": "rfc_q09",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence explicitly forbids port 53 and specifies port 853 as the default, matching the answer.",
+        "The evidence explicitly states DoQ MUST NOT use port 53 and defaults to port 853, matching the answer.",
+        "The prohibition on port 53 and default use of port 853 both match the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q10",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the 1,024 byte minimum flow-control credit verbatim.",
+        "The evidence states the SHOULD value of at least 1,024 bytes, matching the answer exactly.",
+        "The 1,024-byte flow-control credit figure matches the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q11",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence never gives the '0x01' identifier for SETTINGS_QPACK_MAX_TABLE_CAPACITY or the claim about no entries being insertable, both added by the answer.",
+        "The evidence never gives the codepoint (0x01) for the setting nor states that no dynamic table entries may be inserted, both unsupported additions.",
+        "The evidence never gives the setting the identifier 0x01 nor states that no entries may be inserted; both are unsupported additions."
+      ]
+    },
+    {
+      "id": "rfc_q12",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence lists exactly these three header fields as disqualifying for the Capsule Protocol.",
+        "The evidence lists exactly Content-Length, Content-Type, and Transfer-Encoding as the disqualifying headers.",
+        "The three header fields listed match the evidence's list exactly."
+      ]
+    },
+    {
+      "id": "rfc_q13",
+      "requires_crossref": false,
+      "decomposed": true,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence gives the same 0-7 urgency range and default value of 3.",
+        "The evidence states the urgency range of 0-7 in descending priority order and a default of 3, matching the answer.",
+        "The 0-7 urgency range and default of 3 both match the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q14",
+      "requires_crossref": false,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the spin bit location exactly as given in the answer.",
+        "The evidence identifies the spin bit as the third-most-significant bit of the first octet, matching the answer.",
+        "The bit position (third-most-significant bit of the first octet) matches the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q15",
+      "requires_crossref": true,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the three-times anti-amplification limit exactly as claimed.",
+        "The evidence states the anti-amplification limit as three times the data received, matching the answer.",
+        "The three-times-received-data anti-amplification limit matches the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q16",
+      "requires_crossref": true,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The formula in the answer is a direct restatement of the base formula given in the evidence.",
+        "The answer's formula is stated verbatim as the PTO computation in the evidence.",
+        "The stated formula is exactly the base PTO formula given in the evidence."
+      ]
+    },
+    {
+      "id": "rfc_q17",
+      "requires_crossref": true,
+      "decomposed": false,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence states the tag is 128 bits but never mentions AEAD_AES_128_GCM as the computation mechanism, which the answer adds.",
+        "The evidence only states the tag is 128 bits and never mentions AEAD_AES_128_GCM or the pseudo-packet computation, an unsupported addition.",
+        "The evidence states only that the tag is 128 bits; the AEAD_AES_128_GCM computation detail is an unsupported addition."
+      ]
+    },
+    {
+      "id": "rfc_q18",
+      "requires_crossref": true,
+      "decomposed": true,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence gives both salt values but never names the source document as 'RFC 9001', which the answer adds.",
+        "The evidence attributes the original salt to Section 5.2 of [QUIC-TLS], not to 'RFC 9001', an identifier the answer adds without support.",
+        "The evidence never names the original salt's source as 'RFC 9001', only as '[QUIC-TLS]'; that citation is an unsupported addition."
+      ]
+    },
+    {
+      "id": "rfc_q19",
+      "requires_crossref": true,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the alert number 120 directly for no_application_protocol.",
+        "The evidence explicitly gives 120 as the no_application_protocol alert value, matching the answer.",
+        "The numeric alert value 120 matches the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q20",
+      "requires_crossref": true,
+      "decomposed": true,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence explicitly says the policy does not necessarily require 'formal' documentation, contradicting the answer's claim of a formal specification.",
+        "The evidence explicitly says the policy 'does not necessarily require formal documentation,' contradicting the answer's claim that the specification must be 'formal'.",
+        "The evidence explicitly notes formal documentation is not necessarily required, so labeling the specification 'formal' is an unsupported addition."
+      ]
+    },
+    {
+      "id": "rfc_q21",
+      "requires_crossref": true,
+      "decomposed": true,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence directly supports both the RFC8441 origin and the CONNECT-request context for the :protocol pseudo-header.",
+        "The evidence confirms :protocol was first defined in RFC 8441 and may appear on CONNECT request HEADERS, matching the answer.",
+        "The RFC 8441 origin and applicability to CONNECT-method request HEADERS both match the evidence."
+      ]
+    },
+    {
+      "id": "rfc_q22",
+      "requires_crossref": true,
+      "decomposed": true,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence gives the frame type 0xc and Origin-Entry payload contents exactly as stated.",
+        "The evidence gives frame type 0xc (12) carrying zero or more Origin-Entry fields, matching the answer.",
+        "The frame type 0xc and Origin-Entry payload both match the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q23",
+      "requires_crossref": true,
+      "decomposed": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence directly names the DATAGRAM (0x00) Capsule Type.",
+        "The evidence directly states the DATAGRAM (0x00) Capsule Type, matching the answer.",
+        "The DATAGRAM Capsule Type value 0x00 matches the evidence exactly."
+      ]
+    },
+    {
+      "id": "rfc_q24",
+      "requires_crossref": true,
+      "decomposed": true,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence gives the parameter name and 0x09 identifier but never attributes it to 'RFC 9000', which the answer adds.",
+        "The evidence never states that initial_max_streams_uni is 'defined in RFC 9000,' an unsupported added identifier.",
+        "The evidence never states the parameter is 'defined in RFC 9000'; that citation is an unsupported addition."
+      ]
+    }
+  ]
+}

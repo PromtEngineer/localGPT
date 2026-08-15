@@ -139,7 +139,13 @@ PIPELINE_CONFIGS = {
         },
         "query_decomposition": {
             "enabled": True,
-            "compose_from_sub_answers": True
+            # Arm H (2026-08-15): decomposed queries retrieve per-sub-query,
+            # pool + dedupe the candidates, then ONE source-aware rerank pass
+            # and ONE synthesis over the union context — replacing N rerank
+            # passes, N synthesis calls and the compose step (where multi-hop
+            # facts were measurably lost, arm E).
+            "compose_from_sub_answers": False,
+            "pooled_first_stage": True
         },
         "verification": {"enabled": True},
         "retrieval_k": 20,

@@ -906,6 +906,56 @@ ORIGINAL QUESTION: "{query}"
         return retrieved_docs
 
     # ------------------------------------------------------------------
+    def _pooled_first_stage(self, sub_queries: List[str], base_table: str,
+                            retrieval_k: int, retrieval_mode: str,
+                            event_callback=None) -> List[Dict[str, Any]]:
+        """Run the first stage once per sub-query and pool the results.
+
+        Decomposed queries used to run one full pipeline (retrieval + rerank +
+        synthesis) per sub-query and compose the sub-ANSWERS. This pools the
+        per-sub-query *retrievals* instead, so one rerank/selection pass and
+        one synthesis over the union context replace N of each — and the
+        composer (where multi-hop facts were measurably lost, arm E) drops
+        out entirely.
+
+        Each pooled doc is tagged with the indices of the sub-queries that
+        retrieved it (``_source_sqs``, consumed and removed by
+        ``_rerank_stage``), so reranking can score every candidate against
+        exactly the sub-queries that found it — union-of-max, at the same
+        pair cost as the old per-sub-query passes. Pool order interleaves the
+        per-sub-query rankings round-robin so no sub-question monopolizes the
+        front of the list if reranking is off.
+        """
+        per_sq: List[List[Dict[str, Any]]] = []
+        for i, sq in enumerate(sub_queries):
+            try:
+                docs = self._first_stage(sq, base_table, retrieval_k, retrieval_mode, None)
+            except Exception as e:
+                print(f"⚠️  Pooled first stage failed for sub-query {i + 1} ({e}); skipping it.")
+                docs = []
+            per_sq.append(docs)
+
+        pooled: List[Dict[str, Any]] = []
+        by_key: Dict[Any, Dict[str, Any]] = {}
+        for rank in range(max((len(d) for d in per_sq), default=0)):
+            for i, docs in enumerate(per_sq):
+                if rank >= len(docs):
+                    continue
+                doc = docs[rank]
+                key = (doc.get("document_id"), doc.get("chunk_index"))
+                if key in by_key and key != (None, None):
+                    by_key[key].setdefault("_source_sqs", []).append(i)
+                    continue
+                doc["_source_sqs"] = [i]
+                by_key[key] = doc
+                pooled.append(doc)
+
+        print(f"🧺 Pooled first stage: {sum(len(d) for d in per_sq)} docs from "
+              f"{len(sub_queries)} sub-queries → {len(pooled)} unique candidates.")
+        if event_callback:
+            event_callback("retrieval_done", {"count": len(pooled)})
+        return pooled
+
     # Reranking (roadmap item 2.2: decomposition applies HERE, not first stage)
     # ------------------------------------------------------------------
 
@@ -940,6 +990,11 @@ ORIGINAL QUESTION: "{query}"
         dilutes the query semantically, while decomposition applied at reranking
         is where the 2026 evidence puts the win.
         """
+        # Source tags from the pooled first stage (which sub-queries retrieved
+        # each candidate). Consumed here either way so they never leak into
+        # source_documents.
+        source_sqs = [doc.pop("_source_sqs", None) for doc in retrieved_docs]
+
         ai_reranker = self._get_ai_reranker()
         if not ai_reranker or not retrieved_docs:
             return retrieved_docs
@@ -972,16 +1027,35 @@ ORIGINAL QUESTION: "{query}"
                  for d in retrieved_docs]
 
         sub_qs = [q for q in (sub_queries or []) if q and q.strip()]
-        queries = [query] + [q for q in sub_qs if q != query] if sub_qs else [query]
         # "mean" is the default because it measured better than "max" on both
         # subsets of the item-2.2 A/B (eval/decisions/phase2-pipeline.md §3).
         aggregate = (self.config.get("query_decomposition", {}) or {}).get(
             "rerank_aggregate", "mean")
-        if len(queries) > 1:
-            print(f"🔀 Scoring candidates against {len(queries)} sub-queries "
-                  f"(aggregate={aggregate}).")
 
-        per_query = [self._score_pairs(ai_reranker, strategy, q, texts) for q in queries]
+        pooled = any(source_sqs) and bool(sub_queries)
+        if pooled:
+            # Pooled mode: one pass, but each candidate is scored ONLY against
+            # the sub-queries that retrieved it — the same pair count as the
+            # old per-sub-query rerank passes (minus dedupe), not
+            # candidates × queries. Indices in the tags refer to positions in
+            # the *original* sub_queries list, so no filtering/dedup here.
+            queries = list(sub_queries)
+            print(f"🔀 Pooled rerank: scoring each candidate against its source "
+                  f"sub-quer(ies) of {len(queries)} (aggregate={aggregate}).")
+            per_query = []
+            for qi, q in enumerate(queries):
+                idxs = [i for i, tags in enumerate(source_sqs) if tags and qi in tags]
+                if not idxs:
+                    per_query.append({})
+                    continue
+                local = self._score_pairs(ai_reranker, strategy, q, [texts[i] for i in idxs])
+                per_query.append({idxs[li]: s for li, s in local.items()})
+        else:
+            queries = [query] + [q for q in sub_qs if q != query] if sub_qs else [query]
+            if len(queries) > 1:
+                print(f"🔀 Scoring candidates against {len(queries)} sub-queries "
+                      f"(aggregate={aggregate}).")
+            per_query = [self._score_pairs(ai_reranker, strategy, q, texts) for q in queries]
 
         scores: Dict[int, float] = {}
         for idx in range(len(texts)):
@@ -1006,6 +1080,22 @@ ORIGINAL QUESTION: "{query}"
             for idx in scores:
                 union_best[idx] = max(m[idx] for m in per_query if idx in m)
             kept = [(idx, s) for idx, s in ordered if union_best[idx] >= float(min_score)]
+            if pooled:
+                # Every sub-question keeps at least its best candidate, or the
+                # single pooled synthesis silently loses that half of the
+                # question when nothing clears the threshold for it.
+                kept_idx = {idx for idx, _ in kept}
+                for qi in range(len(queries)):
+                    if any(qi in (source_sqs[idx] or ()) for idx in kept_idx):
+                        continue
+                    cands = [(idx, s) for idx, s in ordered
+                             if source_sqs[idx] and qi in source_sqs[idx]]
+                    if cands:
+                        kept.append(cands[0])
+                        kept_idx.add(cands[0][0])
+                        print(f"🛟 Sub-query {qi + 1} kept its top candidate "
+                              f"(score {cands[0][1]:.2f}) despite the threshold.")
+                kept.sort(key=lambda kv: kv[1], reverse=True)
             min_keep = max(1, int(rerank_cfg.get("min_keep", 3)))
             if len(kept) < min_keep:
                 kept = ordered[:min_keep]
@@ -1179,8 +1269,13 @@ ORIGINAL QUESTION: "{query}"
     def _retrieve_candidates_filtered(self, query, base_table, sub_queries, event_callback,
                                       compiled, retrieval_k, retrieval_mode) -> Dict[str, Any]:
         """``retrieve_candidates``'s body, with the filter scope already open."""
-        first_stage = self._first_stage(query, base_table, retrieval_k, retrieval_mode,
-                                        event_callback)
+        pooled = bool((self.config.get("query_decomposition") or {}).get("pooled_first_stage"))
+        if pooled and sub_queries and len(sub_queries) > 1:
+            first_stage = self._pooled_first_stage(sub_queries, base_table, retrieval_k,
+                                                   retrieval_mode, event_callback)
+        else:
+            first_stage = self._first_stage(query, base_table, retrieval_k, retrieval_mode,
+                                            event_callback)
         documents = self._rerank_stage(query, first_stage, sub_queries, event_callback)
 
         result = {"first_stage": first_stage, "documents": documents,

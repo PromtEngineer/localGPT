@@ -189,3 +189,51 @@ cost.** Escape hatches: `reranker.enabled: false` restores arm F;
 unmeasured). The Phase-1 "reranker off by default" call is superseded: it
 predates the context budget, when rank order barely mattered because
 front-truncation discarded the top of the list anyway.
+
+---
+
+## Arms H/H2/G2 — pooled decomposition + deterministic decomposition: ADOPTED (2026-08-15)
+
+**The architecture change (arm H, user-directed):** decomposed queries used
+to run one full pipeline per sub-query (N rerank passes, N synthesis calls)
+and compose the sub-ANSWERS. Now they run per-sub-query *retrieval only*,
+pool + dedupe the candidates (`_pooled_first_stage`, tagging each with its
+source sub-queries), run ONE rerank pass — each candidate scored only
+against the sub-queries that retrieved it (union-of-max, same pair cost as
+the old per-SQ passes) with a per-sub-query floor so no sub-question's
+evidence can be entirely thresholded out — and ONE synthesis against the
+original question. The composer drops out of this path entirely.
+Config: `query_decomposition.{compose_from_sub_answers: false,
+pooled_first_stage: true}`.
+
+**First measurement (arm H vs G, sampled decomposition): 17/24 vs 18/24**
+— but only one loss was attributable to pooling (rfc_q17, an unsupported
+detail the per-SQ context happened to contain); the other flips were on
+the code-identical direct path, i.e. temp-1.0 decomposition noise. That
+noise had polluted three arms of comparisons, so per user decision the
+noise source was fixed first and both arms re-run.
+
+**Deterministic decomposition:** `QueryDecomposer` now decodes greedily
+(`options={"temperature": 0}` via a new `options` kwarg on
+`generate_completion`, wire-verified). Probe: identical splits and
+identical sub-query text across repeat runs. Bonus effect: all 18
+direct-path rows received IDENTICAL panel verdicts across the two re-run
+arms — the first A/B in this project with zero direct-row judge noise.
+(Answers are not byte-identical across arms — the num_ctx ratchet shifts
+decode numerics — but verdicts were.)
+
+**Clean re-run (H2 = pooled, G2 = composer forced via
+`compose_sub_answers=True`, identical deterministic row sets, 6 decomposed
+queries with verbatim-identical sub-queries): 17/24 vs 17/24. Dead tie.**
+Identical subsets (single-doc 11/14, crossref 6/10 both), zero split votes
+across all 144 judgments, decomposed rows 3/6 each (one borderline flip in
+each direction: q20 G-only, q21 H-only). Wall time tied at N=2
+sub-queries (1,494s vs 1,500s).
+
+**Verdict: quality is a true tie; structure decides. ADOPTED pooled +
+temp-0 decomposition:** 24 synthesis calls instead of 32 (scales linearly,
+not multiplicatively, with sub-query count), the composer — where arm E
+showed facts get lost — is gone from the decomposition path, and A/B row
+sets are stable run-to-run from here on. Panel records:
+`synthesis-ab-arm-h-panel.json` (first run), `synthesis-ab-arm-h2-panel.json`,
+`synthesis-ab-arm-g2-panel.json`.

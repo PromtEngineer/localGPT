@@ -231,6 +231,7 @@ class OllamaClient:
         format: str = "",
         images: List[Image.Image] | None = None,
         enable_thinking: bool | None = None,
+        options: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generates a completion, now with optional support for images.
@@ -241,6 +242,8 @@ class OllamaClient:
             format: The format for the response, e.g., "json".
             images: A list of Pillow Image objects to send to the VLM.
             enable_thinking: Optional flag to disable chain-of-thought for Qwen models.
+            options: Ollama options dict (e.g. {"temperature": 0}); an explicit
+                num_ctx here wins over the automatic sizing.
         """
         try:
             payload = {
@@ -250,6 +253,8 @@ class OllamaClient:
             }
             if format:
                 payload["format"] = format
+            if options:
+                payload["options"] = dict(options)
             
             if images:
                 payload["images"] = [self._image_to_base64(img) for img in images]
