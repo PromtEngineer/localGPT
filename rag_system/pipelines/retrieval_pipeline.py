@@ -883,6 +883,12 @@ ORIGINAL QUESTION: "{query}"
                     siblings.sort(key=lambda s: s.get("chunk_index", 0))
                     merged_text = " \n".join(s.get("text", "") for s in siblings)
                     if merged_text:
+                        # The retrieved chunk is what matched the query; the
+                        # siblings are context for synthesis. Keep the core
+                        # text so the reranker can score what actually matched
+                        # (the merged text buries it mid-string, past the
+                        # scorer's truncation point).
+                        meta["core_text"] = doc.get("text")
                         doc["text"] = merged_text
                         meta["latechunk_merged"] = True
                         merged_count += 1
@@ -959,9 +965,14 @@ ORIGINAL QUESTION: "{query}"
             top_k = top_k_cfg or len(retrieved_docs)
 
         strategy = rerank_cfg.get("strategy", "rerankers-lib")
-        texts = [d["text"] for d in retrieved_docs]
+        # Score the chunk that matched retrieval, not the ±1-merged block: the
+        # merge buries the matching chunk mid-string, beyond the scorer's
+        # truncation window, and the siblings dilute its relevance signal.
+        texts = [(d.get("metadata") or {}).get("core_text") or d["text"]
+                 for d in retrieved_docs]
 
-        queries = [q for q in (sub_queries or []) if q and q.strip()] or [query]
+        sub_qs = [q for q in (sub_queries or []) if q and q.strip()]
+        queries = [query] + [q for q in sub_qs if q != query] if sub_qs else [query]
         # "mean" is the default because it measured better than "max" on both
         # subsets of the item-2.2 A/B (eval/decisions/phase2-pipeline.md §3).
         aggregate = (self.config.get("query_decomposition", {}) or {}).get(
@@ -980,6 +991,29 @@ ORIGINAL QUESTION: "{query}"
             scores[idx] = (sum(values) / len(values)) if aggregate == "mean" else max(values)
 
         ordered = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+
+        # Relevance-threshold SELECTION (not just reordering): keep only
+        # candidates whose best score against ANY query clears
+        # ``reranker.min_score`` — union semantics, so a chunk that is
+        # relevant to one sub-query survives even if irrelevant to the rest.
+        # Only meaningful for the Qwen scorer, whose scores are calibrated
+        # P(relevant); raw cross-encoder logits have no fixed scale, so the
+        # threshold is skipped for them. ``min_keep`` floors the selection so
+        # an aggressive threshold can never empty the context.
+        min_score = rerank_cfg.get("min_score")
+        if min_score is not None and isinstance(ai_reranker, QwenRerankerScorer):
+            union_best = {}
+            for idx in scores:
+                union_best[idx] = max(m[idx] for m in per_query if idx in m)
+            kept = [(idx, s) for idx, s in ordered if union_best[idx] >= float(min_score)]
+            min_keep = max(1, int(rerank_cfg.get("min_keep", 3)))
+            if len(kept) < min_keep:
+                kept = ordered[:min_keep]
+            if len(kept) != len(ordered):
+                print(f"🎯 Rerank threshold {min_score}: kept {len(kept)}/{len(ordered)} "
+                      f"candidates (union-of-max across {len(queries)} query/queries).")
+            ordered = kept
+
         if top_k is not None and len(ordered) > top_k:
             ordered = ordered[:top_k]
         reranked_docs = [retrieved_docs[idx] | {"rerank_score": score} for idx, score in ordered]

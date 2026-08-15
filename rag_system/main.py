@@ -116,18 +116,26 @@ PIPELINE_CONFIGS = {
             }
         },
         "embedding_model_name": EXTERNAL_MODELS["embedding_model"],
-        # Reranking is OFF by default. Measured at the Phase 1 gate on the mixed
-        # corpus: this first stage alone scores nDCG@10 0.915; the cheap
-        # cross-encoder (bge-reranker-v2-m3) drops it to 0.892 for ~1.6s/query,
-        # and Qwen3-Reranker-4B lifts it to 0.977 for ~12.7s/query. Neither is a
-        # sensible always-on default, so the toggle (UI "AI reranker" /
-        # reranker.enabled) picks the quality model and loads it lazily.
+        # Reranking is ON with threshold selection (arm G). The Phase 1 "off by
+        # default" call (first stage alone nDCG@10 0.915; bge drops it to 0.892;
+        # Qwen3-Reranker-4B lifts to 0.977 at ~12.7s/query) predates the
+        # synthesis context budget — back then rank order barely mattered
+        # because front-truncation fed synthesis the tail of the list anyway.
+        # Now the budget keeps exactly the top-ranked docs, so ordering AND
+        # selection decide everything the model reads. min_score keeps only
+        # candidates the calibrated Qwen scorer marks relevant to at least one
+        # query (union across sub-queries), instead of a fixed 10.
         "reranker": {
-            "enabled": False,
+            "enabled": True,
             "model_type": "cross-encoder",
             "strategy": "rerankers-lib",
             "model_name": EXTERNAL_MODELS["reranker_model"],
-            "top_k": 10
+            "top_k": 10,
+            # Qwen scorer only (calibrated P(relevant)): candidates below this
+            # against every query are dropped, so easy questions send a small,
+            # clean context instead of a fixed-size one (arm G, 2026-08-14).
+            "min_score": 0.5,
+            "min_keep": 3
         },
         "query_decomposition": {
             "enabled": True,

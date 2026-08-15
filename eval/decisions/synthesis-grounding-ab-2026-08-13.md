@@ -143,3 +143,49 @@ at temp 1.0, composer contract), still on the 1.9 backlog.
 
 +9/24 with a near-unanimous panel is far outside the established 1–2 row
 noise floor. **Adopted; committed.**
+
+---
+
+## Arm G — final-stage reranker with threshold selection: ADOPTED (2026-08-15)
+
+User-directed design: with the budget now controlling *how much* context
+synthesis gets, use a reranker to control *which* and *how many* docs get in
+— relevance-threshold **selection**, not just reordering, so easy questions
+send a small clean context instead of a fixed-size one.
+
+Change on top of arm F (all in-tree):
+
+1. `reranker.enabled: true` by default with **Qwen3-Reranker-4B** (the
+   calibrated yes/no-logit scorer — its P(relevant) makes a threshold
+   meaningful; raw cross-encoder logits would not).
+2. New `reranker.min_score: 0.5` — union-of-max semantics: a candidate is
+   kept if its best score against ANY query (original + sub-queries when
+   present) clears the bar. `min_keep: 3` floors the selection;
+   `top_k: 10` caps it; the 12k budget remains the backstop.
+   Threshold applies only when the scorer is the calibrated Qwen class.
+3. Candidates are scored on their **core chunk text** (preserved in
+   `metadata.core_text` at merge time), not the ±1-merged block — the merge
+   buries the matching chunk mid-string past the scorer's 2,048-token
+   truncation window and dilutes its signal.
+
+Mechanics (32 synthesis calls): selection kept mean 8.8 docs (range 3–10 —
+genuinely adaptive; one query kept 3/36); context mean 37,196 chars (arm F
+40,367); truncation 0; cited-expected-source 24/24. Cost: median query
+45s → 71s, total 1,080s → 2,075s (+92%) — the 4B scorer costs ~25–30s per
+rerank pass on MPS.
+
+**Result: 18/24 (single-doc 11/14, crossref 7/10) vs arm F's 16/24
+(10/14, 6/10).** Gains rfc_q02/q17/q22, loss rfc_q20 (2–1 split; answer
+substantively correct on "permanent, readily available public
+specification" but hedged formality — judge nuance, not a selection
+failure). One split across 72 votes.
+
+**Honest framing: net +2 is within the established 1–2 row noise floor —
+adopted NOT as a claimed quality win but as: user-directed feature, zero
+quality regression with equal-or-better subsets on both categories,
+verified adaptive-selection behavior, at a real and disclosed 2× latency
+cost.** Escape hatches: `reranker.enabled: false` restores arm F;
+`RERANKER_MODEL=Qwen/Qwen3-Reranker-0.6B` would cut latency (quality
+unmeasured). The Phase-1 "reranker off by default" call is superseded: it
+predates the context budget, when rank order barely mattered because
+front-truncation discarded the top of the list anyway.
