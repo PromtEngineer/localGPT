@@ -456,6 +456,58 @@ class RetrievalPipeline:
             # If the query fails for any reason, fall back to the single chunk
             return [chunk]
 
+    def _budget_synthesis_context(self, final_docs):
+        """Fit the synthesis input to an explicit token budget (top-rank first).
+
+        Measured on the rfc corpus before this existed: dual-leg retrieval,
+        enrichment and ±1 sibling merging compounded 20 nominal chunks into
+        ~94k tokens per synthesis call, which the serving layer then silently
+        front-truncated to its slot window — deleting the TOP-ranked evidence
+        and leaving the tail. Packing to a budget hands the model exactly the
+        best-ranked content that fits, and what it sees is what we cite.
+
+        Two mechanisms, both rank-order-preserving:
+        * overlap suppression — a sibling-merged doc covers chunk_index ±1;
+          a later doc whose whole coverage is already included adds nothing
+          and is skipped;
+        * token budget (``retrieval.synthesis_context_tokens``, default
+          12000, chars/3.5 estimate) — packing stops when adding the next
+          doc would exceed it; at least one doc is always kept.
+        """
+        if not final_docs:
+            return final_docs
+        try:
+            budget = int(self._merged_block("synthesis_context") .get("tokens", 0)) or \
+                int((self.config.get("retrieval") or {}).get("synthesis_context_tokens", 0)) or 12000
+        except Exception:
+            budget = 12000
+
+        kept, covered, used = [], set(), 0
+        skipped_overlap = skipped_budget = 0
+        for doc in final_docs:
+            doc_id = doc.get("document_id")
+            cidx = doc.get("chunk_index")
+            merged = bool((doc.get("metadata") or {}).get("latechunk_merged"))
+            if doc_id is not None and cidx is not None and cidx != -1:
+                span = {(doc_id, cidx + off) for off in ((-1, 0, 1) if merged else (0,))}
+            else:
+                span = set()
+            if span and span <= covered:
+                skipped_overlap += 1
+                continue
+            tokens = int(len(doc.get("text") or "") / 3.5) + 1
+            if kept and used + tokens > budget:
+                skipped_budget += 1
+                continue
+            kept.append(doc)
+            covered |= span
+            used += tokens
+        if skipped_overlap or skipped_budget:
+            print(f"✂️  Synthesis context budget: kept {len(kept)}/{len(final_docs)} docs "
+                  f"(~{used} tokens, budget {budget}; {skipped_overlap} overlap-dup, "
+                  f"{skipped_budget} over-budget dropped)")
+        return kept
+
     def _synthesize_final_answer(self, query: str, facts: str, *, event_callback=None) -> str:
         """Uses a text LLM to synthesize a final answer from extracted facts."""
         # Arm-C prompt from the synthesis-grounding A/B
@@ -786,6 +838,23 @@ ORIGINAL QUESTION: "{query}"
                     retrieved_docs.extend(lc_docs)
                 except Exception as e:
                     print(f"⚠️  Late-chunk retrieval failed: {e}")
+
+        # Dedupe across the two legs (improvement_plan 1.5): the base and
+        # late-chunk tables index the same passages, so the same
+        # (document, chunk_index) can arrive twice and occupy two of the
+        # candidate slots. First (higher-ranked) instance wins.
+        if retrieved_docs:
+            seen_keys = set()
+            deduped = []
+            for doc in retrieved_docs:
+                key = (doc.get("document_id"), doc.get("chunk_index"))
+                if key in seen_keys and key != (None, None):
+                    continue
+                seen_keys.add(key)
+                deduped.append(doc)
+            if len(deduped) != len(retrieved_docs):
+                print(f"🔁 Cross-leg dedupe: {len(retrieved_docs)} → {len(deduped)} candidates.")
+            retrieved_docs = deduped
 
         if event_callback:
             event_callback("retrieval_done", {"count": len(retrieved_docs)})
@@ -1292,6 +1361,7 @@ ORIGINAL QUESTION: "{query}"
                 if key in doc:
                     doc[key] = _clean_val(doc[key])
 
+        final_docs = self._budget_synthesis_context(final_docs)
         context = "\n\n".join([doc['text'] for doc in final_docs])
 
         # 👀 DEBUG: Show the exact context passed to the LLM after pruning

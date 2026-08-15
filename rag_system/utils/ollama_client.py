@@ -82,12 +82,27 @@ def _warn_if_truncated(payload: Dict[str, Any], final_response: Dict[str, Any]) 
     try:
         num_ctx = int(payload.get("options", {}).get("num_ctx") or 0)
         used = int(final_response.get("prompt_eval_count") or 0)
+        prompt_chars = len(payload.get("prompt") or "")
         if num_ctx and used >= num_ctx - 16:
             print(
                 f"⚠️ Ollama likely FRONT-TRUNCATED this prompt: "
                 f"prompt_eval_count={used} filled num_ctx={num_ctx} "
                 f"(model={payload.get('model')}). Raise OLLAMA_NUM_CTX_MAX or "
                 f"shrink the prompt — the beginning of the prompt was dropped."
+            )
+        elif used and prompt_chars and used < prompt_chars // 6:
+            # Slot-proof check: the server divides num_ctx across its parallel
+            # slots, so a request can be truncated far BELOW the window we
+            # asked for and the filled-window check above stays silent
+            # (measured: 94k-token prompt, num_ctx 32768, served 16386).
+            # English text runs ~3.5–4.5 chars/token, so evaluating fewer than
+            # chars/6 tokens means part of the prompt never reached the model.
+            print(
+                f"⚠️ Ollama FRONT-TRUNCATED this prompt below the requested window: "
+                f"prompt_eval_count={used} for a {prompt_chars}-char prompt "
+                f"(num_ctx={num_ctx}, model={payload.get('model')}). The served "
+                f"per-request window is num_ctx divided by the server's parallel "
+                f"slots — set OLLAMA_NUM_PARALLEL=1 or shrink the prompt."
             )
     except Exception:
         pass

@@ -97,3 +97,49 @@ would compose different rows. Remaining 1.9 levers, in order:
 abstain-on-low-verifier-confidence, deterministic decomposition
 (temperature 0 there too, which would also stabilize these comparisons),
 passage-level citation forcing.
+
+---
+
+## Arm F — cross-leg dedupe + 12k synthesis context budget: ADOPTED (2026-08-14)
+
+Root cause finally measured, not guessed: every synthesis call was built
+from ~94k tokens of context ("512-token" chunks store at ~823 tokens after
+enrichment prefixes; two retrieval legs returned 20+20 with no dedupe; the
+±1 sibling merge tripled each entry), while Ollama's parallel-slot split
+served only ~16k of window and silently FRONT-truncated — the model saw the
+tail of the ranking, i.e. the *worst* retrieved evidence, on essentially
+every call.
+
+Change under test (on top of shipped arm C, everything else identical):
+
+1. **Cross-leg dedupe** by `(document_id, chunk_index)` at the retrieval
+   union point in `retrieval_pipeline.py` (improvement_plan 1.5).
+2. **`_budget_synthesis_context()`**: rank-ordered packing into an explicit
+   token budget (default 12,000; config-overridable via
+   `synthesis_context_tokens`), sibling-span overlap suppression for
+   latechunk-merged entries, minimum one doc always kept.
+3. **Slot-proof truncation warning** in `ollama_client.py`
+   (`prompt_eval_count < prompt_chars // 6` catches the served-window split
+   the old num_ctx comparison was blind to).
+4. `.env.example`: `OLLAMA_NUM_PARALLEL=1` note.
+
+Mechanics, verified from the run log (32 synthesis calls across 24 queries):
+dedupe 40 → 30–39 per query; budget kept top 4–5 merged docs per call;
+context mean 40,367 chars ≈ 11.5k tokens (max 41,955) vs ~335k chars
+before; **FRONT-TRUNCATED warnings: 0** (previously routine). Runtime
+1,595s → 1,080s total (−32%), median 59s → 45s per query.
+
+**Result: 16/24 (single-doc 10/14, crossref 6/10) vs arm C's 7/24
+(2/14, 5/10).** Per-row votes in `synthesis-ab-arm-f-panel.json`. Panel
+near-unanimous: 1 split across 72 votes (rfc_q21, 2–1 pass). Voter totals
+15/16/16. Mechanical checks equal-or-better: cited-expected-source 24/24
+(arm C 23/24), answer-contains-expected 24/24 both.
+
+The single-doc jump (2/14 → 10/14) is exactly where truncation hurt most:
+those questions had the right chunk ranked #1, and #1 was the first thing
+the front-truncation deleted. Crossref moved less (5/10 → 6/10) —
+multi-hop composition losses are a different failure mode (decomposition
+at temp 1.0, composer contract), still on the 1.9 backlog.
+
++9/24 with a near-unanimous panel is far outside the established 1–2 row
+noise floor. **Adopted; committed.**
