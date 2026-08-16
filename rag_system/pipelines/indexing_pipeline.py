@@ -349,6 +349,21 @@ class IndexingPipeline:
 
                             print(f"✅ Late-chunk vectors indexed: {total_lc_vecs}")
 
+                            # The late-chunk table needs its own FTS index: the
+                            # base-table index above does not cover it, and
+                            # without one the hybrid retriever's FTS leg fails
+                            # on this table and silently degrades to dense-only
+                            # (retrievers.py logs "FTS leg failed").
+                            if total_lc_vecs:
+                                try:
+                                    lc_tbl = self.lancedb_manager.get_table(lc_table_name)
+                                    lc_indices = [idx.name for idx in lc_tbl.list_indices()]
+                                    if not any(n in lc_indices for n in ("text_idx", "fts_text")):
+                                        lc_tbl.create_fts_index("text", use_tantivy=False, replace=False)
+                                        print(f"✅ FTS index created on late-chunk table '{lc_table_name}'.")
+                                except Exception as e:
+                                    print(f"❌ Failed to create/verify FTS index on '{lc_table_name}': {e}")
+
             # Step 4: Embedded-overview sidecar (roadmap item 4.3)
             if (self.overview_builder is not None and self.embed_overviews
                     and hasattr(self, "embedding_generator")):

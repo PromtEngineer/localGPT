@@ -203,8 +203,13 @@ class GroundednessJudge:
         if self._use_anthropic:
             raw = self._complete_anthropic(prompt)
         else:
+            # Temperature 0: sampling noise flipped 11/24 verdicts on
+            # byte-identical answers in the 2026-08-15 ftslc screen
+            # (eval/decisions/ftslc-index-fix-2026-08-15.md); a judge must be
+            # deterministic to be comparable across runs.
             raw = strip_think((self.client.generate_completion(
-                model=self.model, prompt=prompt, format="json") or {}).get("response", ""))
+                model=self.model, prompt=prompt, format="json",
+                options={"temperature": 0}) or {}).get("response", ""))
 
         try:
             parsed = json.loads(raw)
