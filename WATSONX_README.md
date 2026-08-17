@@ -32,11 +32,13 @@ Switched to Watson X:
   otherwise. There is no Watson X embedding path, and `WatsonXClient` exposes no embedding
   method. Point `EMBEDDING_MODEL` at a Hugging Face repo (the default
   `microsoft/harrier-oss-v1-0.6b`) so no Ollama server is needed for indexing.
-- **Reranking** (off by default; `Qwen/Qwen3-Reranker-4B` when switched on) and **Provence
+- **Reranking** (on by default; `Qwen/Qwen3-Reranker-4B`, loaded lazily on the first
+  reranked query) and **Provence
   sentence pruning** — both are local `transformers` models.
 - **The backend gateway's direct-LLM path.** `backend/server.py` answers non-document
-  questions and makes its routing decision with `backend/ollama_client.py`, which always
-  talks to `OLLAMA_HOST`. Watson X only serves requests that reach the RAG API on port
+  questions through `backend/ollama_client.py`, which always
+  talks to `OLLAMA_HOST`. The routing decision itself is the deterministic, no-LLM
+  `should_use_rag` gate. Watson X only serves requests that reach the RAG API on port
   8001.
 
 ## Prerequisites
@@ -158,8 +160,9 @@ as `qwen3.5:9b` is ignored with a warning and `WATSONX_GENERATION_MODEL` is used
 The override is also scoped to that single request and restored afterwards, so one user's
 choice cannot leak into the next request.
 
-The backend gateway also keeps using Ollama for its non-document fast path and for its
-routing decision (see above), so a fully Ollama-free setup means talking to the RAG API on
+The backend gateway also keeps using Ollama for its non-document fast path (its routing
+decision is the deterministic, no-LLM `should_use_rag` gate — see above), so a fully
+Ollama-free setup means talking to the RAG API on
 port 8001 directly.
 
 ## API compatibility

@@ -106,10 +106,11 @@ and it costs 41–57x at indexing and up to ~377x in query tokens
     entirely and pins `rag_query`.
 2.  Non-`direct_answer` queries are checked against the in-process semantic cache
     (cosine similarity ≥ `semantic_cache_threshold`, scoped per session by default).
-3.  If query decomposition is on, `QueryDecomposer` splits the query. With
-    `compose_from_sub_answers` (the profile default) each sub-query gets its own full
-    retrieval in parallel, up to 3 workers; otherwise the first stage runs **once on the
-    full query** and the sub-queries are applied at the rerank stage instead (roadmap 2.2).
+3.  If query decomposition is on, `QueryDecomposer` splits the query. With the shipped
+    default (`compose_from_sub_answers: false`, `pooled_first_stage: true`) the first
+    stage runs per sub-query, the candidates are pooled and de-duplicated, then get one
+    rerank pass and one synthesis; with `compose_from_sub_answers: true` each sub-query
+    gets its own full retrieval in parallel, up to 3 workers, and the answers are composed.
 4.  `RetrievalPipeline.run()` retrieves via `MultiVectorRetriever.retrieve()` in the
     configured mode, optionally also querying the late-chunk table and merging neighbours.
 4b. If `retrieval.retry.enabled` and the first pass found weak evidence — measured as the
@@ -137,7 +138,7 @@ overridable with an environment variable.
 | **Generation** (answers, sub-answer composition) | `qwen3.5:9b` | Ollama | `GENERATION_MODEL` |
 | **Enrichment / utility** (routing, triage, decomposition, contextual enrichment, overviews, verification) | `qwen3.5:4b` | Ollama | `ENRICHMENT_MODEL` |
 | **Embedding** | `microsoft/harrier-oss-v1-0.6b` (MIT, 1024-dim) | `transformers`, in-process | `EMBEDDING_MODEL` |
-| **Reranker** (off by default) | `Qwen/Qwen3-Reranker-4B` | own yes/no-logit scorer, loaded lazily | `RERANKER_MODEL` |
+| **Reranker** (on by default) | `Qwen/Qwen3-Reranker-4B` | own yes/no-logit scorer, loaded lazily | `RERANKER_MODEL` |
 | **Sentence pruning** (optional) | `naver/provence-reranker-debertav3-v1` | `transformers`, in-process | — (hardcoded in `rerankers/sentence_pruner.py`) |
 
 Documented alternatives:

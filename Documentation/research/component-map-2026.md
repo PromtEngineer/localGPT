@@ -1,7 +1,3 @@
-Both agents have returned. Here is the complete deliverable.
-
----
-
 # STATE OF THE ART: LOCAL/SELF-HOSTED AGENTIC RETRIEVAL STACK
 ## Component-by-component map, as of 8 August 2026
 

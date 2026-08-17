@@ -84,8 +84,8 @@ docker compose --profile with-ollama exec ollama ollama pull qwen3.5:4b
 
 The embedding model (`microsoft/harrier-oss-v1-0.6b`) is a HuggingFace download
 inside `rag-api`, not an Ollama model — nothing to pull for it. The reranker
-(`Qwen/Qwen3-Reranker-4B`) is only downloaded if you switch reranking on, which
-is off by default.
+(`Qwen/Qwen3-Reranker-4B`, ~7.5 GB) loads lazily: reranking is on by default, so
+it is downloaded on the first reranked query, not at startup.
 
 ### Step 3: Start Containers
 
@@ -116,8 +116,9 @@ exits 1 with instructions instead of hanging.
 rag-api (healthy)  →  backend (healthy)  →  frontend
 ```
 
-`rag-api` loads the embedding and reranker models before `/health` answers, so its
-check has a 60s start period and `backend` intentionally waits in `created` until
+`rag-api` loads the embedding model before `/health` answers (the reranker loads
+lazily, on the first reranked query), so its
+check has a 120s start period and `backend` intentionally waits in `created` until
 then. `docker compose logs -f rag-api` shows the progress.
 
 ---
@@ -216,9 +217,10 @@ docker compose exec rag-api env | grep -E "OLLAMA|MODEL|DB_PATH|LANCEDB"
 | File | Contents |
 |------|----------|
 | `docker-compose.yml` | `rag-api`, `backend`, `frontend`, plus an optional `ollama` service behind the `with-ollama` profile |
-| `docker-compose.local-ollama.yml` | The same three application services, no optional `ollama` service |
 
-There is no `docker-compose.dev.yml`.
+This is the only compose file (the old `docker-compose.local-ollama.yml` variant
+was removed; `--profile with-ollama` covers that flow). There is no
+`docker-compose.dev.yml`.
 
 ---
 
@@ -384,7 +386,8 @@ docker compose logs [service-name]
 #### `backend` stays in `created`
 That is `depends_on: rag-api: condition: service_healthy` doing its job. Watch
 `docker compose logs -f rag-api` — on a cold start it is downloading and loading
-the embedding and reranker models.
+the embedding model (the reranker loads lazily later, on the first reranked
+query).
 
 #### Ollama Connection Issues
 ```bash
@@ -560,7 +563,8 @@ docker compose --env-file docker.custom.env up -d --build frontend
 
 - **First `up --build`** is slow: it installs the Python dependencies (torch,
   transformers, docling) and builds the Next.js bundle, and `rag-api` then
-  downloads ~10GB of HuggingFace weights before it reports healthy
+  downloads the ~1.2GB embedding model before it reports healthy (the ~7.5GB
+  reranker downloads lazily, on the first reranked query)
 - **Restarting** an existing container is fast. The HuggingFace weights are
   downloaded at runtime into the container's writable layer, and no volume is
   mounted for them, so **recreating** `rag-api` (any `up --build`, `down` + `up`, or

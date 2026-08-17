@@ -152,19 +152,23 @@ document-derived ones — across sessions.
 **Query decomposition.** When enabled, `retrieval/query_transformer.py::QueryDecomposer`
 splits the raw query (plus the last 5 turns for pronoun resolution) into at most
 `query_decomposition.max_sub_queries` (default 10) sub-queries. What happens next depends
-on `compose_from_sub_answers` (default `true`), and this changed at roadmap item 2.2
-(2026-08-09):
+on `compose_from_sub_answers` (default `false`) and `pooled_first_stage` (default `true`
+since arm H, 2026-08-15):
 
+* **`compose_from_sub_answers: false` + `pooled_first_stage: true`** (shipped default) —
+  the first stage runs **per sub-query**, the candidates are pooled and de-duplicated,
+  then get ONE rerank pass and ONE synthesis over the union context
+  (`_pooled_first_stage` in `pipelines/retrieval_pipeline.py`). This replaced N rerank
+  passes, N synthesis calls and the compose step, where multi-hop facts were measurably
+  lost (arm E).
+* **`compose_from_sub_answers: false` + `pooled_first_stage: false`** — the first stage
+  runs **once, on the full original query**, and the sub-queries are applied at the
+  **rerank** stage instead: every candidate is scored against every sub-query and the
+  scores combined with `query_decomposition.rerank_aggregate` (`"mean"` default, or
+  `"max"`). With reranking off there is no rerank stage, so the sub-queries go unused.
 * **`compose_from_sub_answers: true`** — one full `RetrievalPipeline.run()` per sub-query,
   in parallel on up to 3 worker threads, then the generation model composes one answer from
-  the sub-answers. This is the only remaining path that fans the *first stage* out over
-  sub-queries, and it does so because it needs a separate answer per sub-question.
-* **`compose_from_sub_answers: false`** — the first stage runs **once, on the full original
-  query**, and the sub-queries are applied at the **rerank** stage instead: every candidate
-  is scored against every sub-query and the scores combined with
-  `query_decomposition.rerank_aggregate` (`"mean"` default, or `"max"`). Decomposing the
-  first stage dilutes it semantically; the 2026 evidence puts the win at reranking. With
-  reranking off there is no rerank stage, so the sub-queries go unused.
+  the sub-answers. Available as an option; no longer the shipped default.
 * One sub-query after decomposition takes the direct path with the resolved query.
 
 **Verification.** When `verification.enabled` (or the per-request `verify` flag) is true
@@ -267,7 +271,7 @@ so per-request overrides never mutate the master dictionaries.
 | `reranker.model_name` | retrieval | Missing value logs a warning and skips reranking. |
 | `reranker.top_k` / `reranker.top_percent` | retrieval | `top_percent` (0–1) wins when set. |
 | `query_decomposition.enabled` | agent | |
-| `query_decomposition.compose_from_sub_answers` | agent | Default `true`. |
+| `query_decomposition.compose_from_sub_answers` | agent | Default `false`; with `pooled_first_stage: true` (also the default) the first stage runs per sub-query and candidates are pooled for one rerank + one synthesis. |
 | `query_decomposition.max_sub_queries` | agent | Default 10; not present in the shipped profiles. |
 | `query_decomposition.rerank_aggregate` | retrieval | `mean` (default) or `max`; how per-sub-query rerank scores combine. Only read when reranking runs with sub-queries. |
 | `retrieval.retry.enabled` / `.min_top_score` / `.max_attempts` | retrieval | Evidence-sufficiency retry. `true` / `0.12` / `1` in `default`; disabled in `fast`. Also accepted under `retrievers.retry`. |
@@ -394,7 +398,7 @@ Event types: `analyze`, `direct_answer`, `decomposition`, `retrieval_started`,
 | `enable_enrich` | bool | `true` | |
 | `window_size` | int | `2` | Contextual-enrichment window. |
 | `chunk_size` | int | `512` | Token budget per chunk. |
-| `enable_docling_chunk` | bool | `false` | `true` pins `chunker_mode` to `docling`. Passing `false` leaves the pipeline default, which is *also* `docling` — it does not select the legacy chunker. |
+| `enable_docling_chunk` | bool | `true` | `true` pins `chunker_mode` to `docling`. Passing `false` selects the `legacy` chunker. |
 | `retrieval_mode` (alias `search_type`) | string | profile | Validated against the same three values (400 otherwise) and recorded on the index config. The mode only changes behaviour at query time. |
 | `batch_size_embed` | int | `50` | |
 | `batch_size_enrich` | int | `25` | |

@@ -92,8 +92,8 @@ curl http://localhost:8001/health     # RAG API
 ```
 
 The `rag-api` container loads the agent and the embedding model at startup, so its
-health check has a 60s start period and the first `docker compose up` can take
-several minutes before `backend` starts. The reranker (~2 GB) is fetched lazily on
+health check has a 120s start period and the first `docker compose up` can take
+several minutes before `backend` starts. The reranker (~7.5 GB) is fetched lazily on
 the first query that reranks — expect one slow first answer.
 
 ### Step 5: Access Application
@@ -214,9 +214,10 @@ The chat settings panel exposes the same knobs the API does: search type
 window, decomposition, verification, Provence pruning, and "Stream phases".
 
 > **Stream phases is on by default**, and that path streams straight from the RAG
-> API to the browser. Those turns are kept in the agent's memory for follow-up
-> questions but are **not** written to the chat history database. Turn it off if you
-> want the conversation saved.
+> API to the browser. When the stream completes, the UI saves the finished turn
+> through the gateway (`POST /sessions/{id}/messages/save`), so the conversation
+> **is** written to the chat history database. Only direct (non-UI) stream
+> consumers must save the turn themselves.
 
 ---
 

@@ -126,17 +126,19 @@ flowchart TD
     Q["Query"] --> T{"Triage"}
     T -->|direct_answer| DA["Generation model, streamed"]
     T -->|rag_query| DEC{"Query decomposition<br/>(enabled in 'default')"}
-    DEC -->|n sub-queries| PAR["Parallel retrieval (≤3 threads)"]
+    DEC -->|n sub-queries| PAR["Parallel per-sub-query retrieval (≤3 threads),<br/>candidates pooled + deduped (arm H default)"]
     DEC -->|single query| RP["RetrievalPipeline.run"]
-    PAR --> RP
+    PAR --> RR
     RP --> RET["MultiVectorRetriever<br/>FTS + vector, fused with RRF"]
     RET --> LCM["Late-chunk retrieval + ±1 merge (optional)"]
-    LCM --> RR["Reranker (off by default)<br/>Qwen3-Reranker-4B"]
+    LCM --> RR["Reranker (on by default)<br/>Qwen3-Reranker-4B"]
     RR --> CE["Context expansion (±window chunks)"]
     CE --> PR["Provence sentence pruning (opt-in)"]
     PR --> SY["Answer synthesis (generation model, streamed)"]
     SY --> VF["Verifier → appends [Confidence: N%]"]
 ```
+
+With the shipped default (arm H, 2026-08-15) the decomposed path retrieves per sub-query, pools and de-duplicates the candidates, then runs ONE rerank and ONE synthesis over the union context. Sending `compose_sub_answers: true` keeps the older path: answer each sub-query, then compose the final answer from the sub-answers.
 
 Triage order in `Agent._triage_query_async`: the overview router runs first (an LLM call on the enrichment model, grounded in the document overviews loaded for the session); if there is conversation history the query short-circuits to `rag_query`; otherwise a fallback LLM triage picks `rag_query` / `direct_answer`. `force_rag=true` on the RAG API skips triage entirely.
 
@@ -161,7 +163,7 @@ There is no GraphRAG path. `GraphExtractor`, `GraphRetriever`, `GraphQueryTransl
 
 * The **backend** is threaded (`ThreadingTCPServer`, `daemon_threads = True`). `backend/database.py` opens a fresh SQLite connection per call, so concurrent handlers are safe.
 * The **RAG API is single-threaded**. One `/chat`, `/chat/stream` or `/index` request is served at a time; everything else queues. This is deliberate: the process holds one `RAG_AGENT` singleton whose pipeline config is mutated by per-request options.
-* Because that config is shared, per-request retrieval options persist into later requests unless the next request overrides them. The exception is the per-request generation `model`, which is applied through a context manager (`_generation_model_override`) that restores the previous value and rejects model ids that do not match the active `LLM_BACKEND`.
+* Because that config is shared, per-request retrieval options are applied to it — but scoped to the request: the agent snapshots the pipeline config before applying overrides and restores it afterwards, so options no longer leak into later requests. The per-request generation `model` goes through a context manager (`_generation_model_override`) that restores the previous value and rejects model ids that do not match the active `LLM_BACKEND`.
 * `factory.get_pipeline_config()` returns a `copy.deepcopy` of the profile, so the module-level `PIPELINE_CONFIGS` in `rag_system/main.py` is never mutated.
 
 ---
@@ -172,9 +174,8 @@ These are real, current behaviours — not planned work. See [`improvement_plan.
 
 1. **Streamed turns are persisted by a client callback, not by the stream itself.** `POST :8001/chat/stream` writes nothing to SQLite; when the stream completes, the browser posts the finished turn to `POST :8000/sessions/{id}/messages/save`, which stores both messages and derives the session title. A client that consumes the stream directly and skips that call gets no history.
 2. **The RAG API serializes requests.** Concurrency is one in-flight RAG request per process.
-3. **Per-request options leak across requests** on the RAG API (see §4).
-5. **`enable_docling_chunk: false` has no effect.** `rag_system/api_server.py` sets `chunker_mode = "docling"` when the flag is true and leaves it unset otherwise, and `IndexingPipeline` defaults `chunker_mode` to `"docling"`. The Docling chunker always runs over HTTP. (`create_index_script.py` does set `"legacy"`.)
-6. **Service ports are not configurable by environment variable** — only the URLs used to reach them are.
+3. **`enable_docling_chunk` defaults to `true` over HTTP.** `rag_system/api_server.py` maps the flag to `chunker_mode` (`"docling"` when true, `"legacy"` when false), so the Docling chunker runs unless the client sends `false` to select the legacy chunker. (`create_index_script.py` sets `"legacy"` explicitly.)
+4. **Service ports are not configurable by environment variable** — only the URLs used to reach them are.
 
 ---
 

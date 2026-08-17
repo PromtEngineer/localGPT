@@ -78,7 +78,7 @@ Both camelCase and snake_case are accepted; the RAG API normalises to snake_case
 | `session_id` | – | Sets `overview_path` to `index_store/overviews/<session_id>.jsonl`. |
 | `table_name` | resolved from the session's index | Sets `storage.text_table_name` and `retrieval.dense.lancedb_table_name`. |
 | `enable_latechunk` | `false` | Writes a second `<table>_lc` table of late-chunked vectors. |
-| `enable_docling_chunk` | `false` | Sets `chunker_mode: "docling"` when true. See the caveat below. |
+| `enable_docling_chunk` | `true` | Maps to `chunker_mode: "docling"` when true, `"legacy"` when false. See the note below. |
 | `chunk_size` | `512` | Token budget per chunk, for both chunkers. |
 | `retrieval_mode` (alias `search_type`) | – | Validated against `hybrid` / `vector_only` / `fts_only` (HTTP 400 otherwise) and recorded on the index config as `retrieval.search_type`. It cannot change the artifacts written; it takes effect at query time. |
 | `window_size` | `2` | Neighbour window for contextual enrichment. |
@@ -154,7 +154,7 @@ For PDFs, `_pdf_has_text()` opens the file with PyMuPDF and checks for any extra
 |-------|----------------------|----------|
 | 1 | `OcrMacOptions` | macOS only (`platform.system() == "Darwin"`) plus the `ocrmac` package |
 | 2 | `EasyOcrOptions` | `easyocr` |
-| 3 | `RapidOcrOptions` | `rapidocr_onnxruntime` |
+| 3 | `RapidOcrOptions` | `rapidocr` (or the older `rapidocr_onnxruntime` package name — either is accepted) |
 | 4 | `TesseractOcrOptions` | `tesserocr` |
 | 5 | `TesseractCliOcrOptions` | a `tesseract` binary on `PATH` |
 
@@ -166,11 +166,11 @@ Conversion returns `[(markdown, metadata, DoclingDocument)]` for docling paths a
 
 `chunker_mode` defaults to `"docling"` (`indexing_pipeline.py:27`). `MarkdownRecursiveChunker` is reached when `chunker_mode` is anything else, or when `DoclingChunker` construction raises (`:48-54`).
 
-> **Caveat:** the RAG API only ever sets `chunker_mode` when `enable_docling_chunk` is true (`api_server.py:214-215`) — there is no `else` branch. Sending `doclingChunk: false` over HTTP therefore leaves the key unset and the docling default still applies. The legacy chunker is selectable only by setting `chunker_mode: "legacy"` in a pipeline config (which `create_index_script.py:74` does).
+> **Note:** the RAG API maps `enable_docling_chunk` straight to `chunker_mode` — `"docling"` when true, `"legacy"` when false (`api_server.py::_build_index_config_override`), and the HTTP default is `true`. The legacy chunker is also selectable by setting `chunker_mode: "legacy"` in a pipeline config (which `create_index_script.py` does).
 
 **DoclingChunker** (`ingestion/docling_chunker.py`)
 
-* `chunk_document(doc, …)` walks the `DoclingDocument` element tree in reading order (`:88-246`). Tables are emitted as atomic markdown chunks; headings maintain a `heading_path` and are not emitted as content; paragraph text is packed until `max_tokens`.
+* `chunk_document(doc, …)` walks the `DoclingDocument` with docling's `iterate_items()`, which yields `(item, level)` in true reading order — tables included inline. Items labelled `table` are exported to markdown and emitted as atomic chunks where they appear in the flow; items labelled `section_header` (with their `level`) maintain a `heading_path` and are not emitted as content; page numbers are taken from each item's `prov`; paragraph text is token-packed until `max_tokens`. Anything unexpected in the walk falls back to `split_markdown`.
 * A second consolidation pass merges consecutive paragraph chunks that share a page and heading path, up to `max_tokens` (`:199-246`).
 * `split_markdown()` is the fallback when only Markdown is available: it runs the legacy chunker with a 10,000-token ceiling, then repacks sentences to `max_tokens`, carrying `overlap` sentences (default 1) into the next window (`:47-83`).
 * `chunk_document()` is what runs for documents converted by docling; the pipeline picks it via `hasattr(self.chunker, "chunk_document")` (`indexing_pipeline.py:192-195`).
@@ -245,7 +245,7 @@ Chain-of-thought markers (`<think>…</think>`), assistant tags and a leading `A
 | `chunk_id`, `document_id`, `chunk_index` | flattened identifiers used by context expansion |
 | `metadata` | the whole chunk dict as a JSON string, including `original_text` |
 
-Chunks whose vector contains NaN or Inf are skipped with a warning. The table is appended to when it exists and created otherwise, which makes re-running a build idempotent at the table level; `tbl.add(..., on_bad_vectors='drop')` is retried with a zero-fill strategy on failure.
+Chunks whose vector contains NaN or Inf are skipped with a warning. The table is created when it does not exist; when it does, re-indexing a document first deletes that document's existing rows (delete-by-`document_id` before append — `VectorIndexer.index`), so re-running a build **replaces** the previous chunks instead of duplicating them. The `<table>_lc` late-chunk table gets the same treatment. `tbl.add(..., on_bad_vectors='drop')` is retried with a zero-fill strategy on failure.
 
 Immediately after the vector write, the pipeline ensures a Lance native full-text index on the `text` column (`indexing_pipeline.py:264-284`), guarding against both the LanceDB default name `text_idx` and this project's older name `fts_text` so a rebuild does not raise. This index is what the `hybrid` and `fts_only` retrieval modes query — there is no separate BM25 store on disk and no `bm25_path` config key.
 

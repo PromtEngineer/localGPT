@@ -9,7 +9,7 @@ Two HTTP services, both reachable from the browser:
 | Backend gateway | `http://localhost:8000` | `backend/server.py` |
 | RAG API | `http://localhost:8001` | `rag_system/api_server.py` |
 
-Both send `Access-Control-Allow-Origin: *` on every response and answer `OPTIONS` preflights. Neither implements authentication.
+Both send `Access-Control-Allow-Origin: *` on every response (including 404s, which return JSON bodies) and answer `OPTIONS` preflights. Neither sends `Access-Control-Allow-Credentials`, and neither implements authentication.
 
 **Wire format** is snake_case. Both services additionally accept camelCase and normalise it to the same canonical key at parse time, so `rerankerTopK` and `reranker_top_k` are interchangeable. When both spellings are present, the explicit snake_case value wins. The gateway uses an explicit alias table that covers every option it accepts (plus a few legacy names such as `latechunk` and `decompose`); the RAG API converts any camelCase key generically.
 
@@ -62,7 +62,7 @@ Both send `Access-Control-Allow-Origin: *` on every response and answer `OPTIONS
   // Omitted options are not forwarded, so the pipeline profile default applies.
   "compose_sub_answers": true,
   "query_decompose": true,        // alias: "decompose"
-  "ai_rerank": true,              // profile default when omitted is OFF (eval/DECISIONS.md)
+  "ai_rerank": true,              // profile default when omitted is ON (arm G, 2026-08-14; eval/DECISIONS.md)
   "context_expand": true,
   "verify": true,
   "retrieval_k": 20,
@@ -137,12 +137,12 @@ Accepted by `POST /sessions/<id>/index` and `POST /indexes/<id>/build`, normalis
 |--------|------|
 | 400 | Missing required field, invalid JSON, no files in a multipart upload |
 | 404 | Unknown route, unknown session, unknown index |
-| 500 | Unhandled server error, or the RAG API returned a non-200 |
-| 502 | Could not connect to the RAG API (`RAG_API_URL`) |
+| 500 | Unhandled server error |
+| 502 | Could not connect to the RAG API (`RAG_API_URL`), or the RAG API returned a non-200 |
 | 503 | Ollama is not reachable (`POST /chat` only) |
 | 504 | The RAG API did not answer within `RAG_API_TIMEOUT` (chat, default 600 s) or `RAG_API_INDEX_TIMEOUT` (indexing, default 3600 s) |
 
-Error bodies are `{ "error": "..." }`.
+Error bodies are JSON: `{ "error": "..." }`.
 
 ---
 
@@ -169,7 +169,7 @@ Unknown routes return 404 `{ "error": "Not Found" }`.
 
   "compose_sub_answers": true,    // optional – profile default when omitted
   "query_decompose": true,        // optional – profile default when omitted
-  "ai_rerank": true,              // optional – profile default when omitted, which is OFF (eval/DECISIONS.md)
+  "ai_rerank": true,              // optional – profile default when omitted, which is ON (arm G, 2026-08-14; eval/DECISIONS.md)
   "context_expand": true,         // optional – false forces a context window of 0
   "verify": true,                 // optional – profile default when omitted
   "force_rag": false,             // optional – skip triage and go straight to retrieval
@@ -191,7 +191,7 @@ Unknown routes return 404 `{ "error": "Not Found" }`.
 
 Notes:
 
-* Every option, including `retrieval_k`, `context_window_size` and `reranker_top_k`, falls back to the pipeline profile when omitted; only options you actually send override the profile.
+* Every option, including `retrieval_k`, `context_window_size` and `reranker_top_k`, falls back to the pipeline profile when omitted; only options you actually send override the profile, and the override is scoped to that request — the agent snapshots its config before applying request options and restores it afterwards.
 * An unsupported `retrieval_mode` is rejected with `400 { "error": "Unsupported retrieval mode '…'. Supported: hybrid, vector_only, fts_only." }`.
 * `model` is applied for the duration of the request and then restored. A model id that does not match the active `LLM_BACKEND` (for example an Ollama tag while `LLM_BACKEND=watsonx`) is ignored with a warning.
 * If the table's index metadata records an `embedding_model`, the retrieval pipeline switches to it before searching.
@@ -295,7 +295,7 @@ With `LLM_BACKEND=ollama` the generation list comes from `GET {OLLAMA_HOST}/api/
 
 * `session_id` is **optional**. Without it the default LanceDB table is used and overviews go to the global `index_store/overviews/overviews.jsonl` instead of a per-index file.
 * `retrieval_mode` cannot change the artifacts written at index time; it is validated (400 on an unsupported value) and stored in the index config as `retrieval.search_type`. The mode that matters is the one you send at query time.
-* `embedding_model` is applied to this build **and** recorded in the index metadata (when `session_id` is present), which is what makes queries against that index use the same embedder.
+* `embedding_model` is applied to this build **and** recorded in the index metadata when the `session_id` names an actual index (checked by existence); session-scoped builds — whose id is a chat-session UUID with no indexes row — skip the recording. This is what makes queries against that index use the same embedder.
 * `enable_latechunk` defaults to `false` here, so an HTTP build without the flag writes no `<table>_lc` table even though the `default` profile enables late chunking.
 * `enable_docling_chunk` defaults to `true`; sending `false` selects the legacy fixed-size chunker instead of Docling's structure-aware chunker.
 * Unknown fields are ignored silently.

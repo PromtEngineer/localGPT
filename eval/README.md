@@ -20,16 +20,20 @@ The harness calls the shipped pipeline objects directly.
 | `corpora/repo_docs.facts.json` | 31 prose anchors into `Documentation/*.md` — the real, heterogeneous, third corpus. Referenced in place, never copied. |
 | `corpora/acquisition/*.pdf` | 10 interlinked synthetic M&A documents (2 pages each) — the **cross-reference** corpus, added for roadmap Phase 4. Reused verbatim from [PromtEngineer/agentic-file-search](https://github.com/PromtEngineer/agentic-file-search) `data/test_acquisition/`. |
 | `corpora/acquisition.facts.json` | 100 planted facts **plus** a `cross_references` block: the 54 `Document:` / `Exhibit` / `Schedule` pointers between those PDFs, `to: null` for the 2 deliberately dangling ones. |
-| `corpora/verify_facts.py` | Gate 1: asserts every `expected` string exists in its source document, and every cross-reference cue in its `from` document. |
+| `corpora/rfc/*.txt` | 23 interlinked IETF RFCs (QUIC / HTTP-3 family), byte-for-byte from rfc-editor.org — the only corpus whose naming and referencing conventions this project did not author. `corpora/rfc/download.py` re-fetches them and checks the link graph; `corpora/rfc/MANIFEST.md` is the rationale. Sidecar: `corpora/rfc/rfc.facts.json` (26 facts). |
+| `corpora/verify_facts.py` | Gate 1: asserts every `expected` string exists in its source document, and every cross-reference cue in its `from` document. Recurses into subdirectories, so the `rfc` sidecar is covered too. |
 | `corpora/make_hr_handbook.py` | Regenerates the HR PDF and re-checks its sidecar. |
-| `build_goldset.py` | Reverse-generates one query per dimension tuple with `qwen3.5:4b`. One-shot. Covers the three Phase 0 corpora only — `acquisition.jsonl` is hand-authored. |
+| `build_goldset.py` | Reverse-generates one query per dimension tuple with `qwen3.5:4b`. One-shot. Covers the three Phase 0 corpora only — `acquisition.jsonl` and `rfc.jsonl` are hand-authored. |
 | `finalize_goldset.py` | Applies the recorded human verification pass; writes the committed gold set. |
-| `verify_crossref_goldset.py` | Row-level gate for `goldset/acquisition.jsonl`: answer in its named document, no verbatim leak into the query, each answer string unique to one document, `requires_crossref` / `multi_document` consistent with `anchor_doc`. |
-| `goldset/<corpus>.jsonl` | **The gold set of record.** 96 rows: 24 each for `atlas7`, `hr`, `docs` and `acquisition`. |
+| `verify_crossref_goldset.py` | Row-level gate for `goldset/acquisition.jsonl`: answer in its named document, no verbatim leak into the query, each answer string unique to one document, `requires_crossref` / `multi_document` consistent with `anchor_doc`, and `anchor_doc` itself a corpus document. |
+| `verify_rfc_goldset.py` | The same row-level gate ported to `goldset/rfc.jsonl` (normalisation handles the RFCs' 72-column hard wrapping). |
+| `goldset/<corpus>.jsonl` | **The gold set of record.** 120 rows: 24 each for `atlas7`, `hr`, `docs`, `acquisition` and `rfc`. Plus `multiturn.jsonl` (12 hand-authored multi-turn rows) — no runner is wired for it yet. |
 | `goldset/_generated/*.raw.jsonl` | Raw model output, kept for audit. |
-| `run_eval.py` | Retrieval metrics: recall@5/10/20 first stage, nDCG@10 before and after rerank, per-query latency. |
+| `run_eval.py` | Retrieval metrics: recall@5/10/20 first stage, nDCG@10 before and after rerank, the `*_final` family over the list the answer stage actually sees (post-rerank, post-crossref-hop), the `requires_crossref` slices, per-query latency, and the `final == first_stage` invariant check whenever nothing is allowed to reorder or append. |
 | `judge.py` | Binary groundedness judge + its own validation harness. |
 | `judge_validation.jsonl` | 20 hand-built cases, 10 grounded / 10 subtly ungrounded. |
+| `judge_hard_cases.jsonl` | 18 real system answers, hand-adjudicated — the judge screen that decides judge swaps. |
+| `validate_judge_hard.py` | Scores a candidate judge against `judge_hard_cases.jsonl`; majority vote over an odd number of runs, parse errors reported as errors rather than coerced to votes. |
 | `smoke_e2e.py` | Starts both services on temp storage, indexes the Atlas-7 PDF over HTTP, asserts answers/citations/persistence, tears down. |
 | `.eval_indexes/` | Cached LanceDB indexes, keyed by embedder. Git-ignored, safe to delete. |
 | `results/` | Run outputs (JSON + log). Git-ignored. |
@@ -44,15 +48,20 @@ All commands are from the repo root, with the project venv.
 # gate 1 — planted facts really are in the source documents
 .venv/bin/python eval/corpora/verify_facts.py
 
-# gate 2 + retrieval metrics on the shipped defaults, reranking off as shipped
-# (builds/reuses indexes under eval/.eval_indexes/)
+# gate 2 + retrieval metrics on the shipped defaults (reranking ON with
+# threshold selection since arm G — that is what ships, so that is what a bare
+# run measures)
 .venv/bin/python eval/run_eval.py --corpus all \
   --json-out eval/results/shipped_defaults.json
 
-# with a reranker, for the rerank delta — naming one switches the stage on
+# first-stage-only control arm
+.venv/bin/python eval/run_eval.py --corpus all --no-rerank \
+  --json-out eval/results/shipped_defaults_norerank.json
+
+# with a different reranker, for the reranker A/B — naming one swaps the model
 .venv/bin/python eval/run_eval.py --corpus all \
   --reranker Qwen/Qwen3-Reranker-4B \
-  --json-out eval/results/shipped_defaults_rerank.json
+  --json-out eval/results/rerank_ab.json
 
 # judge validation (TPR / TNR / confusion matrix)
 .venv/bin/python eval/judge.py --validate
@@ -62,13 +71,16 @@ All commands are from the repo root, with the project venv.
 ```
 
 `run_eval.py` flags: `--embedder`, `--reranker`,
-`--corpus {atlas7,hr,docs,mixed,acq,acq+docs,all}`, `--k`, `--chunk-size`,
-`--no-rerank`, `--retry {profile,on,off}`, `--decompose`, `--aggregate {max,mean}`,
+`--corpus {atlas7,hr,docs,mixed,acq,acq+docs,rfc,all}`, `--k`, `--chunk-size`,
+`--no-rerank`, `--retry {profile,on,off}`, `--crossref-hop {profile,on,off}`,
+`--overview-prefilter {profile,off,boost,restrict}`, `--overviews {off,on}`,
+`--decompose`, `--aggregate {max,mean}`,
 `--coverage-only`, `--force-reindex`, `--json-out`, `--verbose`.
 
-`acq` and `acq+docs` are the Phase 4 corpora (see below). `mixed` deliberately
-does **not** include them: it is the corpus every Phase 0/1/2 number is quoted
-against and it has to keep meaning the same thing.
+`acq` and `acq+docs` are the Phase 4 corpora (see below); `rfc` is the
+real-document shakedown corpus (`decisions/rfc-shakedown-2026-08-13.md`).
+`mixed` deliberately does **not** include any of them: it is the corpus every
+Phase 0/1/2 number is quoted against and it has to keep meaning the same thing.
 
 Since roadmap Phase 2 the harness drives `RetrievalPipeline.retrieve_candidates()`
 rather than calling `MultiVectorRetriever.retrieve()` itself, so first stage,
@@ -86,10 +98,12 @@ consequences worth knowing:
   split by stage.
 
 `--decompose` runs `QueryDecomposer` once per gold row (cached under
-`eval/.eval_indexes/_subqueries/`, so the on and off arms differ only in whether
-the sub-queries are *used*) and hands them to the **rerank** stage. The first
-stage always uses the full original query — that is the whole of roadmap item
-2.2. Without `--reranker` there is no rerank stage and `--decompose` is a no-op.
+`eval/.eval_indexes/_subqueries/`, keyed by corpus + decomposer model + prompt
+version, so the on and off arms differ only in whether the sub-queries are
+*used*) and hands them to the **rerank** stage. The first stage always uses the
+full original query — that is the whole of roadmap item 2.2. With the rerank
+stage off there is no consumer for sub-queries, so `--decompose` is skipped
+entirely — literally a no-op, not even the LLM calls.
 
 `--embedder` defaults to whatever `EMBEDDING_MODEL` resolves to in
 `rag_system/main.py`, i.e. the shipped default `microsoft/harrier-oss-v1-0.6b`
@@ -97,8 +111,14 @@ unless the env var overrides it. Each embedder gets its own index directory
 (`eval/.eval_indexes/<slug>/`) and the embedder is part of the cache
 fingerprint, so two embedders can neither share nor inherit an index.
 
-The rerank stage is **off unless `--reranker <model>` is given**, matching the
-shipped profile ([`DECISIONS.md`](DECISIONS.md)). `--no-rerank` forces it off.
+The rerank stage follows the shipped profile, which has it **on since arm G
+(2026-08-14)**: `Qwen/Qwen3-Reranker-4B` with `min_score: 0.5` / `min_keep: 3` /
+`top_k: 10` threshold selection ([`DECISIONS.md`](DECISIONS.md) records the
+earlier off-by-default call it supersedes). When the stage is on the harness
+keeps that selection block and overrides only the model name, so the `final`
+metrics describe the list the answer stage actually sees — not the
+reorder-without-selection stack a bare block would measure. `--reranker
+<model>` swaps the model; `--no-rerank` forces the stage off.
 
 Regenerating the gold set (only when the corpora or the dimension table change):
 
@@ -226,11 +246,15 @@ The evidence-sufficiency retry is deliberately **not** in that list — see the
 ## Benchmarking roadmap Phase 4
 
 Phase 4 (`Documentation/research_roadmap.md` § *Ideas adopted from
-agentic-file-search*) is **not implemented**. This section is the protocol its
-A/Bs must follow, written before the code so the comparison cannot be
-retro-fitted to a result. The pre-implementation numbers are already recorded
-in [`BASELINE.md`](BASELINE.md) § *Phase 4 baseline (pre-implementation)*;
-every "off" arm below should reproduce them.
+agentic-file-search*) is **implemented behind profile flags that ship OFF** —
+`retrieval.crossref_hop`, `retrieval.overview_prefilter` and
+`retrieval.document_escalation` are all `enabled: False` in the `default`
+profile. The harness drives them with `--crossref-hop`, `--overview-prefilter`
+and `--overviews`; this section is the protocol the A/Bs follow, written before
+the code so the comparison cannot be retro-fitted to a result. The
+pre-implementation numbers are recorded in [`BASELINE.md`](BASELINE.md) §
+*Phase 4 baseline (pre-implementation)*; every "off" arm below should reproduce
+them.
 
 Ground rules, the same three as every other gate in this harness:
 
@@ -249,8 +273,8 @@ Ground rules, the same three as every other gate in this harness:
 
 The headline Phase 4 A/B, and the one the `acquisition` corpus exists for.
 
-First add the switch to the harness: a `--crossref-hop {profile,on,off}` flag
-that writes `retrieval.crossref_hop.enabled` into the config exactly the way
+The switch is `--crossref-hop {profile,on,off}`: `apply_phase4_settings()`
+writes `retrieval.crossref_hop.enabled` into the config exactly the way
 `apply_retry_setting()` writes the retry block — in `run_eval.py`, not as an
 env var, and not by editing the shipped profile. Then:
 
@@ -274,18 +298,19 @@ itself has to show up as nDCG, not recall.
 
 ### 4.3 — `retrieval.overview_prefilter`
 
-The only Phase 4 item that **cannot reuse the cached indexes**: this harness
-disables document overviews (`cfg["overview"]["enabled"] = False`), and the
-prefilter needs them. Both arms must therefore be run with overviews on, which
-costs one LLM call per document at index time and makes the index build
-nondeterministic.
+The only Phase 4 item that **cannot reuse the cached indexes**: the harness
+disables document overviews unless `--overviews on` is given, and the prefilter
+needs them. Both arms must therefore be run with overviews on, which costs one
+LLM call per document at index time and makes the index build nondeterministic.
+`--overviews on` builds into a separate `_ov` index directory and changes the
+fingerprint, so it cannot clobber the tracked indexes.
 
 ```bash
-# both arms need overviews ON — that is a change to build_config(), not a CLI flag today
-.venv/bin/python eval/run_eval.py --corpus acq+docs --force-reindex \
-  --json-out eval/results/p4_overview_off.json     # overviews built, prefilter off
-.venv/bin/python eval/run_eval.py --corpus acq+docs --force-reindex \
-  --json-out eval/results/p4_overview_on.json      # prefilter on
+# both arms need overviews ON; --overview-prefilter picks the arm
+.venv/bin/python eval/run_eval.py --corpus acq+docs --overviews on --force-reindex \
+  --overview-prefilter off --json-out eval/results/p4_overview_off.json
+.venv/bin/python eval/run_eval.py --corpus acq+docs --overviews on --force-reindex \
+  --overview-prefilter boost --json-out eval/results/p4_overview_on.json
 ```
 
 Do not compare an overview-prefilter arm against the numbers in `BASELINE.md`:

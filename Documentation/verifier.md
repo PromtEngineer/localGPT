@@ -15,7 +15,7 @@ ships**; a local NLI/verifier model is opt-in via `VERIFIER_MODEL` (see
 > model changes where the number comes from, not that caveat.
 
 ## Prompt
-See `prompt_inventory.md` → `verifier.fact_check` (`verifier.py:25-85`). The prompt carries three few-shot examples and then a `# TASK` block into which the query, the context (clamped to the first 4000 characters at `verifier.py:76`) and the answer are injected. It is sent asynchronously with `format="json"` (`verifier.py:86`).
+See `prompt_inventory.md` → `verifier.fact_check` (`verifier.py:25-85`). The prompt carries three few-shot examples and then a `# TASK` block into which the query, the context (clamped to the first 4000 characters at `verifier.py:76`) and the answer are injected. It is sent asynchronously with `format="json"` at `temperature: 0` — deterministic verdicts, the same pin the eval judge got.
 
 Expected response, one line of JSON:
 
@@ -117,8 +117,8 @@ The API response shape is unchanged: `{"answer": ..., "source_documents": [...]}
 
 ## Failure modes
 
-* Invalid JSON or a missing `response` key → the `except (json.JSONDecodeError, AttributeError)` at `verifier.py:95` returns `VerificationResult(False, "Failed async parse", "NOT_SUPPORTED", 0)`, and because the score is 0 no tag is appended — the answer is returned unannotated.
-* If the LLM call itself raises, the exception propagates out of `_run_async` to the API handler, which returns a 500 (or an SSE `error` event on the streaming endpoint). There is no try/except around the `verify_async` call.
+* Invalid JSON, a missing `response` key, or a type-mismatched verdict (a string `"85"`, `null`, the string `"false"`) → the parse/coercion in `verify_async()` fails open to `VerificationResult(False, 0)`, and because the score is 0 no tag is appended — the answer is returned unannotated. Malformed verdict JSON degrades to score 0; it cannot 500.
+* HTTP-layer failures of the LLM call itself (timeout, connection error, non-200 status) are caught inside `generate_completion_async`, which returns `{}` → the same score-0 path, so the answer comes back unannotated with HTTP 200. Only **non-httpx** exceptions (e.g. `VerifierModelUnavailable` from the local-verifier seam) propagate out of `_run_async` to the API handler, which returns a 500 (or an SSE `error` event on the streaming endpoint). There is no try/except around the `verify_async` call itself.
 
 ## Cost
 

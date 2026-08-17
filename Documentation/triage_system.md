@@ -27,7 +27,9 @@ Order of evaluation in `_triage_query_async` (`loop.py:175-223`):
 2. **History short-circuit** — if the overview router returned `None` **and** the session already has chat history, the query is treated as a follow-up and routed to `rag_query` without any LLM call (`loop.py:188-193`).
 3. **LLM fallback triage** — a two-way classifier (`rag_query` / `direct_answer`) on the utility model, defaulting to `rag_query` if the JSON cannot be parsed. `Agent._normalize_triage()` runs on every verdict and collapses anything that is not an explicit `direct_answer` to `rag_query`, so a small model that emits the retired `graph_query` label still lands on the RAG path.
 
-`force_rag=true` skips all three: `query_type` is pinned to `rag_query` (`loop.py:268-270`) while the `verify` / `ai_rerank` / `query_decompose` / `compose_sub_answers` / `context_expand` toggles all still apply.
+`force_rag=true` — or a compiled metadata `filters` object on the request — skips all three: `query_type` is pinned to `rag_query` (`if force_rag or compiled_filters is not None` in `_run_async_inner`) while the `verify` / `ai_rerank` / `query_decompose` / `compose_sub_answers` / `context_expand` toggles all still apply.
+
+Both LLM routing calls run at `temperature: 0` (deterministic routing).
 
 There is no regex or keyword stage in the agent.
 
@@ -46,7 +48,7 @@ The old per-message enrichment-model router (`_route_using_overviews`) and the k
 
 ```mermaid
 flowchart TD
-    Q["Incoming query"] --> FR{force_rag?}
+    Q["Incoming query"] --> FR{force_rag or filters?}
     FR -- yes --> RAG["Retrieval pipeline"]
     FR -- no --> OV{Overviews loaded?}
     OV -- no --> H{Chat history?}
@@ -92,7 +94,7 @@ There is no global triage on/off switch and no similarity threshold. `PIPELINE_C
 |---------|-------|---------|
 | No overviews on disk | `_route_via_overviews` returns `None`; history short-circuit or fallback triage decides | n/a — gateway gate reads no files |
 | Router LLM returns unparseable JSON / unexpected text | defaults to `rag_query` | n/a — gateway gate makes no LLM call |
-| Router LLM call raises | exception propagates to the API handler (500 / SSE `error`) | n/a |
+| Router LLM call fails (timeout / connection / bad status) | the client catches the request error and returns `{}`, so the unparseable-JSON default applies — triage fails closed to `rag_query` | n/a |
 
 ---
 

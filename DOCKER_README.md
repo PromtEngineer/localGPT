@@ -196,7 +196,7 @@ docker compose --env-file docker.env up -d --build frontend
 | Generation | `qwen3.5:9b` (Ollama) | `qwen3.6:27b` (high-end, ~17GB), `qwen3.5:4b` (light) |
 | Enrichment / utility | `qwen3.5:4b` (Ollama) | `qwen3.5:2b` (light) |
 | Embedding | `microsoft/harrier-oss-v1-0.6b` — HuggingFace, MIT, 1024 dims | `Qwen/Qwen3-Embedding-4B` (2560 dims, 32K context), `Qwen/Qwen3-Embedding-0.6B` (1024 dims) |
-| Reranking (**off by default**) | `Qwen/Qwen3-Reranker-4B` — HuggingFace, loaded lazily when switched on | `BAAI/bge-reranker-v2-m3`, `answerdotai/answerai-colbert-small-v1`, `Qwen/Qwen3-Reranker-0.6B` |
+| Reranking (**on by default**) | `Qwen/Qwen3-Reranker-4B` — HuggingFace, loaded lazily on the first reranked query | `BAAI/bge-reranker-v2-m3`, `answerdotai/answerai-colbert-small-v1`, `Qwen/Qwen3-Reranker-0.6B` |
 
 Only the two Ollama models need `ollama pull`. Embedding dimensions are read from
 the loaded model, never hardcoded — **changing `EMBEDDING_MODEL` requires rebuilding
@@ -434,8 +434,8 @@ Your Docker deployment is successful when:
 ### What to Expect
 
 - **First build**: installs torch/transformers/docling and builds the Next.js
-  bundle; then `rag-api` downloads ~10GB of HuggingFace weights before it reports
-  healthy
+  bundle; then `rag-api` downloads the ~1.2GB embedding model before it reports
+  healthy (the ~7.5GB reranker downloads lazily, on the first reranked query)
 - **Restarts**: fast. **Recreating** `rag-api` re-downloads the model weights,
   because no volume is mounted for the HuggingFace cache
 - **Concurrency**: one RAG request at a time

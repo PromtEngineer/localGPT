@@ -28,8 +28,8 @@ literature.** Three times in one week:
 
 | The evidence said | Our eval measured | What shipped |
 |---|---|---|
-| "Cross-encoder rerank: **YES, unconditionally**, +17.2 pp MRR@3" ([`component-map-2026.md` §5.1](research/component-map-2026.md), §6.5) | `bge-reranker-v2-m3` on top of the new first stage: **−0.022 nDCG@10** on `mixed`, **−0.058** on `docs`, for ~1.6 s/query | Reranking **off** by default ([`DECISIONS.md` §1](../eval/DECISIONS.md)) |
-| Decomposition helps when applied at *reranking* rather than first-stage (2026 MultiConIR/SSRB, [`component-map-2026.md` §6.2](research/component-map-2026.md)) | On the 6 queries that genuinely decompose: **−0.046** (`max`) / **−0.012** (`mean`) nDCG@10 | Shape change shipped; sub-query scoring enabled by **no** profile ([`phase2-pipeline.md` §3](../eval/decisions/phase2-pipeline.md)) |
+| "Cross-encoder rerank: **YES, unconditionally**, +17.2 pp MRR@3" ([`component-map-2026.md` §5.1](research/component-map-2026.md), §6.5) | `bge-reranker-v2-m3` on top of the new first stage: **−0.022 nDCG@10** on `mixed`, **−0.058** on `docs`, for ~1.6 s/query | Reranking initially **off** by default ([`DECISIONS.md` §1](../eval/DECISIONS.md)); turned **on** with score-threshold selection in arm G, 2026-08-14 |
+| Decomposition helps when applied at *reranking* rather than first-stage (2026 MultiConIR/SSRB, [`component-map-2026.md` §6.2](research/component-map-2026.md)) | On the 6 queries that genuinely decompose: **−0.046** (`max`) / **−0.012** (`mean`) nDCG@10 | Shape change shipped; sub-query scoring at rerank now applies whenever the reranker is on (arm G), and the pooled first stage is the default decomposition path (arm H, 2026-08-15) ([`phase2-pipeline.md` §3](../eval/decisions/phase2-pipeline.md)) |
 | Bigger instruction-tuned embedders lead the boards; the shipped default was the 8 GB `Qwen3-Embedding-4B` | A 1.2 GB MIT model **dominated** it: mixed nDCG@10 **0.915 vs 0.875**, ~3× lower latency, ~7× less memory | `microsoft/harrier-oss-v1-0.6b` as the default ([`embedder.md` gate section](../eval/decisions/embedder.md)) |
 
 That is the whole method: the literature nominates candidates, our gold set
@@ -336,10 +336,12 @@ Evidence: `eval/decisions/phase4-filters-askfolder.md`.
 
 ## 6. Reranking posture
 
-**What ships.** The `default` profile ships `reranker.enabled = False`
-(`rag_system/main.py::PIPELINE_CONFIGS`), and the UI "AI reranker" toggle
-defaults off to match (`src/components/ui/session-chat.tsx`). When the toggle is
-switched on, it lazily loads `Qwen/Qwen3-Reranker-4B` through the in-repo
+**What ships.** Since arm G (2026-08-14) the `default` profile ships
+`reranker.enabled = True` with threshold selection — `top_k: 10`,
+`min_score: 0.5`, `min_keep: 3` (`rag_system/main.py::PIPELINE_CONFIGS`), and
+the UI "AI reranker" toggle defaults on to match
+(`src/components/ui/session-chat.tsx`). `Qwen/Qwen3-Reranker-4B` is loaded
+lazily on the first reranked query through the in-repo
 `QwenRerankerScorer` (`rag_system/rerankers/reranker.py`), routed either by
 explicit `reranker.model_type: "qwen3"` or by model name
 (`retrieval_pipeline.py::_get_ai_reranker`). Any other model still goes through
@@ -358,9 +360,9 @@ first-stage candidates reordered by each:
 
 | Stack | mixed nDCG@10 | docs nDCG@10 | added latency |
 |---|---|---|---|
-| **harrier-0.6b, first stage only** ← shipped | 0.915 | 0.759 | — |
+| **harrier-0.6b, first stage only** | 0.915 | 0.759 | — |
 | + `BAAI/bge-reranker-v2-m3` | 0.892 | 0.701 | **+1.6 s — net negative** |
-| + `Qwen/Qwen3-Reranker-4B` | 0.977 | 0.932 | +12.7 s |
+| + `Qwen/Qwen3-Reranker-4B` ← shipped since arm G (2026-08-14) | 0.977 | 0.932 | +12.7 s |
 
 Two findings, both load-bearing:
 
@@ -368,11 +370,17 @@ Two findings, both load-bearing:
    `docs` was largely a *repair job on a weak first stage*. Improve the first
    stage and the repair becomes damage. This is exactly why 1.1 and 1.2 could not
    be decided independently and were re-measured jointly in one re-index window.
-2. **The good reranker is a real win and still too slow to default on.** +0.062
+2. **The good reranker is a real win and was initially judged too slow to
+   default on.** +0.062
    nDCG@10 on `mixed`, +0.173 on `docs` — the largest single quality win in this
    repo's eval history — for ~12.7 s per query and 7.5 GB of resident weights on
-   a single-user, single-threaded server. That is worth paying **on demand**, not
-   on every message.
+   a single-user, single-threaded server. Arm G (2026-08-14) reversed the "off by
+   default" call: that call predated the synthesis context budget, when rank
+   order barely mattered because front-truncation fed synthesis the tail of the
+   list anyway. Now the budget keeps exactly the top-ranked documents, so
+   ordering and selection decide everything the model reads — and `min_score`
+   selection sends a small, clean context on easy questions instead of a fixed
+   ten.
 
 `Qwen/Qwen3-Reranker-0.6B` was rejected outright: +0.021 nDCG@10 over bge (one to
 two queries out of 72, inside the noise band) bought with 1.5–2.8× the latency,
@@ -406,18 +414,23 @@ where they get solved.
 
 ## 7. Query decomposition
 
-**What ships.** The first stage **always runs once, on the full original query.**
-Sub-queries are used at the *rerank* stage, where each candidate is scored
-against every sub-query and the scores are aggregated by
+**What ships.** Since arm H (2026-08-15) the `default` profile ships
+`compose_from_sub_answers: false` with `pooled_first_stage: true`: each
+sub-query runs first-stage retrieval, the candidates are pooled and
+de-duplicated, and there is ONE rerank pass and ONE synthesis over the union
+context (`retrieval_pipeline.py::_pooled_first_stage`). Sub-queries are also
+used at the *rerank* stage, where each candidate is scored against every
+sub-query and the scores are aggregated by
 `query_decomposition.rerank_aggregate` (`"mean"` default, `"max"` available) —
-`retrieval_pipeline.py::_rerank_stage`. First-stage fan-out survives only behind
-the pre-existing `compose_from_sub_answers` flag, which the `default` profile
-sets to `true` because that path needs a separate *answer* per sub-question,
-which one shared candidate set cannot produce (`rag_system/agent/loop.py`).
+`retrieval_pipeline.py::_rerank_stage`. The compose path — a separate *answer*
+per sub-question, composed into the final answer — remains available behind
+`compose_from_sub_answers: true` (`rag_system/agent/loop.py`).
 
-Consequence, stated plainly: **no shipped profile enables sub-query scoring at
-rerank.** With `compose_from_sub_answers: true` the aggregation path is never
-reached, and with reranking off there is no rerank stage at all.
+Consequence, stated plainly: the earlier posture — **no shipped profile enables
+sub-query scoring at rerank** — held while the `default` profile kept the
+reranker off and `compose_from_sub_answers: true`. Arm G turned the reranker on
+(2026-08-14), so the aggregation path now runs by default, and arm H
+(2026-08-15) made the pooled first stage the default decomposition path.
 
 **Why.** The evidence puts decomposition at "conditional — multi-hop, applied at
 *rerank*", noting that decomposition at initial retrieval dilutes the query
@@ -434,7 +447,9 @@ the win is query *rewriting*, not decomposition
 The shape change ships anyway because it is a strict reduction in work — the
 aggregate path used to issue N first-stage retrievals and now issues one — and
 because the structural check passed: the first-stage number is byte-identical
-across all three arms, proving decomposition can no longer touch it.
+across all three arms, proving decomposition can no longer touch it. (Arm H's
+pooled first stage later re-introduced per-sub-query retrieval; the reduction it
+keeps is one rerank pass and one synthesis instead of N.)
 
 **What would change the decision.** n_effective = **6 queries on one corpus**.
 That is too small to call the 2026 MultiConIR/SSRB finding wrong; it is big
@@ -563,14 +578,17 @@ drop in performance… at almost no cost"
 ([`component-map-2026.md` §10.1](research/component-map-2026.md)). §10.5's verdict
 is exactly the posture here: "**prune, don't compress.**"
 
-It is off by default because localGPT does *not* currently run a cross-encoder by
-default (§6), so Provence's "zero marginal cost" argument — the entire reason it
-beats token-level compression — does not hold in the shipped configuration. It is
-an extra DeBERTa forward pass, not a free rider. No `eval/` number measures its
-effect on our gold set.
+It was kept off by default because localGPT did *not* run a cross-encoder by
+default at the time (§6), so Provence's "zero marginal cost" argument — the
+entire reason it beats token-level compression — did not hold in the shipped
+configuration: an extra DeBERTa forward pass, not a free rider. Since arm G
+(2026-08-14) the reranker **is** on by default, so that premise no longer holds;
+folding pruning into the rerank stage is now a live candidate, but no `eval/`
+number yet measures its effect on our gold set.
 
-**What would change the decision.** Measure it. If reranking ever returns to the
-default profile, re-evaluate folding pruning in with it. `OpenProvence`
+**What would change the decision.** Measure it. Reranking returned to the
+default profile in arm G (2026-08-14), so re-evaluate folding pruning in with
+it. `OpenProvence`
 (30M–310M, MIT, ModernBERT) is the lighter candidate the evidence points at.
 
 ## 11. Caching and memory

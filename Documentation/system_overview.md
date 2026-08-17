@@ -99,7 +99,7 @@ Triage is two-way since the graph module was removed on 2026-08-09 (roadmap 2.5)
 
 1. **Upload** — files are stored under `shared_uploads/` with a UUID prefix and recorded in SQLite.
 2. **Conversion** — `DocumentConverter` (Docling) produces markdown plus structure. OCR options are chosen by probing which backend is actually installed (OcrMac on macOS, then EasyOCR, RapidOCR, tesserocr, the `tesseract` CLI); when none is available Docling's defaults are used and text-layer PDFs still convert.
-3. **Chunking** — `DoclingChunker` packs sentences up to a token budget (`chunk_size`, default 512 over HTTP) using the embedding model's tokenizer. A legacy `MarkdownRecursiveChunker` exists and is selected by `chunker_mode: "legacy"` (used by `create_index_script.py`; not reachable through the HTTP API — see [§11](#11-known-limitations)).
+3. **Chunking** — `DoclingChunker` packs sentences up to a token budget (`chunk_size`, default 512 over HTTP) using the embedding model's tokenizer. A legacy `MarkdownRecursiveChunker` exists and is selected by `chunker_mode: "legacy"` (used by `create_index_script.py`; over HTTP, `enable_docling_chunk: false` on `POST :8001/index` selects it — the HTTP default is `true`).
 4. **Overviews** — the first *n* chunks of each document (default 5) are summarised by the enrichment model into `index_store/overviews/<id>.jsonl`. The agent's triage router reads these; the gateway gate (§2.1) does not.
 5. **Contextual enrichment** (optional) — the enrichment model summarises a window of surrounding chunks and prepends it to each chunk. The untouched text is kept in `metadata.original_text`.
 6. **Embedding + indexing** — chunks are embedded and written to a LanceDB table; a native FTS index is created on the `text` column.
@@ -111,8 +111,8 @@ The vector width is taken from the embeddings actually produced. If you point an
 
 1. **Query embedding** — the same embedding model used at index time (an LRU cache holds 256 single-query embeddings). Instruction-tuned families (harrier-oss-v1, Qwen3-Embedding) get the query-side `Instruct: … \nQuery: …` prefix their cards require; documents never do. The query vector is L2-normalized when the table's marker says its vectors are, so LanceDB's L2 ordering is the cosine ordering the cards specify.
 2. **Search** — `MultiVectorRetriever.retrieve()` runs LanceDB full-text search and vector search **in parallel** and fuses them with **reciprocal rank fusion** (`1/(60 + rank)` per leg). `search_type` selects `hybrid` (both legs), `vector_only` or `fts_only`; an unrecognised value logs a warning and falls back to `hybrid`. Every returned document carries a finite, higher-is-better `score`.
-3. **Late-chunk leg** (optional) — when late chunking is enabled the same query also runs against `<table>_lc` and those hits are appended. Every retrieved chunk (from either leg) then has its text replaced by the concatenation of its ±1 neighbours in the main table, so a hit on one sub-vector still yields readable context. Hits are not de-duplicated across the two legs.
-4. **Reranking** (**off by default** — `reranker.enabled: False`; the measured reason is in [`../eval/DECISIONS.md`](../eval/DECISIONS.md)) — when switched on, `Qwen/Qwen3-Reranker-4B` goes to the in-repo `QwenRerankerScorer`, and any other model is loaded through the `rerankers` library (`reranker.strategy: "rerankers-lib"`, `reranker.model_type: "cross-encoder"`); any other `strategy` value uses the in-repo `CrossEncoderReranker` (`transformers` `AutoModelForSequenceClassification`). If the model fails to load, a warning is printed and **reranking is skipped** — there is no second reranker to fall back to.
+3. **Late-chunk leg** (optional) — when late chunking is enabled the same query also runs against `<table>_lc` and those hits are appended. Every retrieved chunk (from either leg) then has its text replaced by the concatenation of its ±1 neighbours in the main table, so a hit on one sub-vector still yields readable context. Hits are de-duplicated across the vector/FTS legs on `(document_id, chunk_index)` (shipped 2026-08-14).
+4. **Reranking** (**on by default** since arm G, 2026-08-14 — `reranker.enabled: True` with `min_score: 0.5` / `min_keep: 3` threshold-based selection; the measured reason is in [`../eval/DECISIONS.md`](../eval/DECISIONS.md)) — the default `Qwen/Qwen3-Reranker-4B` goes to the in-repo `QwenRerankerScorer`, and any other model is loaded through the `rerankers` library (`reranker.strategy: "rerankers-lib"`, `reranker.model_type: "cross-encoder"`); any other `strategy` value uses the in-repo `CrossEncoderReranker` (`transformers` `AutoModelForSequenceClassification`). The model is loaded lazily on the first reranked query. If the model fails to load, a warning is printed and **reranking is skipped** — there is no second reranker to fall back to.
 5. **Context expansion** — each surviving chunk is widened to its neighbours within `context_window_size`.
 6. **Sentence pruning** (opt-in, `provence.enabled`) — `naver/provence-reranker-debertav3-v1` drops sentences below `provence.threshold` (default `0.1`); chunks pruned to nothing are removed.
 7. **Synthesis** — the generation model writes the answer, streamed token by token.
@@ -132,7 +132,7 @@ There is no top-level `confidence` field in the response. Responses are `{answer
 
 ### 2.5 Query decomposition
 
-Enabled in the `default` profile. The enrichment model splits the raw user query (plus up to 5 recent turns for pronoun resolution) into sub-queries, capped by `query_decomposition.max_sub_queries` (default 10). Sub-queries are retrieved in parallel with at most 3 worker threads. With `compose_from_sub_answers: true` the generation model composes a final answer from the sub-answers; otherwise the unique source chunks are aggregated and synthesised in one pass. A decomposition that yields a single sub-query skips the parallel machinery.
+Enabled in the `default` profile. The enrichment model splits the raw user query (plus up to 5 recent turns for pronoun resolution) into sub-queries, capped by `query_decomposition.max_sub_queries` (default 10). Sub-queries are retrieved in parallel with at most 3 worker threads. The shipped default (arm H, 2026-08-15) is the **pooled first stage** (`compose_from_sub_answers: false`, `pooled_first_stage: true`): the per-sub-query candidates are pooled and de-duplicated, then get ONE rerank pass and ONE synthesis over the union context. With `compose_from_sub_answers: true` the generation model instead answers each sub-query and composes a final answer from the sub-answers. A decomposition that yields a single sub-query skips the parallel machinery.
 
 ### 2.6 Semantic cache and conversation memory
 
@@ -201,7 +201,7 @@ EXTERNAL_MODELS = {
 | Generation | `qwen3.5:9b` (Ollama) | Final answers, sub-answer composition, direct answers |
 | Enrichment / utility | `qwen3.5:4b` (Ollama) | Agent triage (the only LLM router), query decomposition, contextual enrichment, document overviews, verification |
 | Embedding | `microsoft/harrier-oss-v1-0.6b` (HuggingFace, MIT, 1024 dims) | Index and query embeddings |
-| Reranker | `Qwen/Qwen3-Reranker-4B` (HuggingFace, own yes/no-logit scorer) | Reranking retrieved chunks — **off by default**, loaded lazily only when switched on ([`../eval/DECISIONS.md`](../eval/DECISIONS.md)) |
+| Reranker | `Qwen/Qwen3-Reranker-4B` (HuggingFace, own yes/no-logit scorer) | Reranking retrieved chunks — **on by default** (arm G, 2026-08-14), loaded lazily on the first reranked query ([`../eval/DECISIONS.md`](../eval/DECISIONS.md)) |
 | Sentence pruner | `naver/provence-reranker-debertav3-v1` (HuggingFace) | Opt-in sentence-level pruning |
 
 Approximate footprints published by the model authors (not measured here): `qwen3.5:9b` ≈ 6.6 GB at Q4, `qwen3.5:4b` ≈ 3.4 GB, `qwen3.6:27b` ≈ 17 GB, `microsoft/harrier-oss-v1-0.6b` ≈ 1.2 GB, `Qwen/Qwen3-Embedding-4B` ≈ 8 GB in bf16, `Qwen/Qwen3-Embedding-0.6B` ≈ 1.2 GB, `Qwen/Qwen3-Reranker-4B` ≈ 7.5 GB.
@@ -252,17 +252,29 @@ There is **no** vision model in the configuration and no multimodal path in the 
         "search_type": "hybrid",
         "latechunk": {"enabled": True},
         "dense": {"enabled": True},
-        "retry": {"enabled": True, "min_top_score": 0.12, "max_attempts": 1}
+        "retry": {"enabled": True, "min_top_score": 0.12, "max_attempts": 1},
+        # Phase-4 features, all off until benchmarked:
+        "document_escalation": {"enabled": False, "max_documents": 1, "token_budget": 6000},
+        "crossref_hop": {"enabled": False, "max_hops": 1, "chunks_per_hop": 3},
+        "overview_prefilter": {"enabled": False, "top_documents": 5, "mode": "boost"}
     },
     "embedding_model_name": EXTERNAL_MODELS["embedding_model"],
     "reranker": {
-        "enabled": False,          # see eval/DECISIONS.md
+        "enabled": True,           # arm G, 2026-08-14 — see eval/DECISIONS.md
         "model_type": "cross-encoder",
         "strategy": "rerankers-lib",
         "model_name": EXTERNAL_MODELS["reranker_model"],
-        "top_k": 10
+        "top_k": 10,
+        "min_score": 0.5,
+        "min_keep": 3
     },
-    "query_decomposition": {"enabled": True, "compose_from_sub_answers": True},
+    # Arm H (2026-08-15): pooled first stage is the shipped default — per-sub-query
+    # retrieval, pooled + deduped candidates, ONE rerank + ONE synthesis.
+    "query_decomposition": {
+        "enabled": True,
+        "compose_from_sub_answers": False,
+        "pooled_first_stage": True
+    },
     "verification": {"enabled": True},
     "retrieval_k": 20,
     "context_window_size": 0,
@@ -272,7 +284,7 @@ There is **no** vision model in the configuration and no multimodal path in the 
     "indexing": {
         "embedding_batch_size": 50,
         "enrichment_batch_size": 10,
-        "enable_progress_tracking": True
+        "extract_crossrefs": True
     }
 }
 ```
@@ -299,13 +311,12 @@ There is **no** vision model in the configuration and no multimodal path in the 
     "contextual_enricher": {"enabled": False, "window_size": 1},
     "indexing": {
         "embedding_batch_size": 100,
-        "enrichment_batch_size": 50,
-        "enable_progress_tracking": False
+        "enrichment_batch_size": 50
     }
 }
 ```
 
-Three keys in the blocks above currently have no consumer and are inert: the profile's `description`, `reranker.type` (the loader reads `strategy` and `model_type`), and `indexing.enable_progress_tracking` (assigned to an attribute that is never checked — progress is always tracked).
+One key in the blocks above currently has no consumer and is inert: the profile's `description`. (`indexing.enable_progress_tracking` used to be listed here; it was assigned to an attribute that is never checked — progress is always tracked — and has since been removed from the profiles.)
 
 ### 5.3 Keys read at runtime but absent from the profiles
 
@@ -327,11 +338,11 @@ These have code defaults and can be added to a profile if you want to change the
 | `enrich_model` | enrichment model | Overrides the model used for contextual enrichment |
 | `overview_path` | `index_store/overviews/overviews.jsonl` | Where overviews are written |
 
-### 5.4 Profile values the HTTP API always overrides
+### 5.4 Where the 20/1/10 request defaults come from
 
-`rag_system/api_server.py` always sends `retrieval_k` (default `20`), `context_window_size` (default `1`) and `reranker_top_k` (default `10`) to `Agent.run()`, even when the client omits them. The profile values for those three keys therefore apply only to the CLI and programmatic paths. Everything else (`verify`, `ai_rerank`, `query_decompose`, `compose_sub_answers`, `context_expand`, `retrieval_mode`) is passed as `None` when omitted, so the profile wins.
+The `retrieval_k: 20`, `context_window_size: 1` and `reranker_top_k: 10` defaults are owned by the **frontend** (`src/components/ui/session-chat.tsx`), not by the RAG API. `rag_system/api_server.py` passes `None` for every option the client omits — `verify`, `ai_rerank`, `query_decompose`, `compose_sub_answers`, `context_expand`, `retrieval_mode` and the three values above — so the profile wins.
 
-Note the practical consequence: over HTTP, context expansion of ±1 chunk is on by default even though both profiles set `context_window_size: 0`.
+Note the practical consequence: for UI clients, context expansion of ±1 chunk is on by default even though both profiles set `context_window_size: 0`. A non-UI HTTP client that omits the field gets the profile value (`0`).
 
 ---
 
@@ -341,8 +352,8 @@ There are no benchmarks in this repository, so no latency or throughput figures 
 
 * **Memory** is dominated by the models you load: the Ollama generation model, plus the embedding model and (if enabled) the reranker and Provence pruner, which run in the RAG API process via `transformers`.
 * **Concurrency** is bounded by the RAG API's single-threaded server: one RAG request at a time per process. The backend gateway is threaded, so session and index CRUD stay responsive while a query runs.
-* **Indexing cost** scales with contextual enrichment (one LLM call per chunk batch) and late chunking (a second full encode of every document, plus a second vector table).
-* **Query cost** scales with query decomposition (one retrieval + one synthesis per sub-query), reranking and verification. The `fast` profile turns all of these off.
+* **Indexing cost** scales with contextual enrichment (one LLM call per chunk — the contextualizer loops chunks inside each batch) and late chunking (a second full encode of every document, plus a second vector table).
+* **Query cost** scales with query decomposition (one retrieval per sub-query, then one rerank and one synthesis over the pooled candidates), reranking and verification. The `fast` profile turns all of these off.
 
 Use `python system_health_check.py` to print the resolved configuration, the embedding dimension of the loaded model, and the LanceDB tables that actually exist.
 
@@ -365,7 +376,7 @@ Every variable below is read by this repository's code, except `HF_TOKEN` which 
 | `GENERATION_MODEL` | `qwen3.5:9b` | `rag_system/main.py`, `backend/server.py`, `run_system.py` |
 | `ENRICHMENT_MODEL` | `qwen3.5:4b` | same |
 | `EMBEDDING_MODEL` | `microsoft/harrier-oss-v1-0.6b` | `rag_system/main.py` |
-| `RERANKER_MODEL` | `Qwen/Qwen3-Reranker-4B` (only loaded when reranking is switched on) | `rag_system/main.py` |
+| `RERANKER_MODEL` | `Qwen/Qwen3-Reranker-4B` (loaded lazily on the first reranked query) | `rag_system/main.py` |
 | `RAG_CONFIG_MODE` | `default` | `rag_system/api_server.py` |
 | `LLM_BACKEND` | `ollama` | `rag_system/main.py`, `rag_system/factory.py` |
 | `RAG_API_TIMEOUT` | `600` (seconds) | `backend/server.py` — chat calls |
@@ -477,10 +488,10 @@ Building the automated tests is tracked in [`improvement_plan.md`](improvement_p
 ## 11. Known Limitations
 
 1. **Streamed chat turns are persisted via a follow-up call.** The stream itself (`POST :8001/chat/stream`) writes nothing to SQLite; the UI posts the completed turn to `POST :8000/sessions/{id}/messages/save` when the stream finishes. Direct stream consumers must do the same to get history.
-2. **The RAG API serializes requests** and shares one mutable agent config, so per-request retrieval options persist into subsequent requests.
-5. **`enable_latechunk` defaults to `false` on `POST :8001/index`**, so an HTTP index build without that flag produces no late-chunk table even though the `default` profile enables late chunking. The CLI (`python -m rag_system.main index`) uses the profile value.
-6. **A reranker that fails to load is skipped**, not replaced — there is no fallback reranker.
-7. **`requirements-docker.txt` has drifted** from `requirements.txt` and still lists packages with no importers (see [`improvement_plan.md`](improvement_plan.md) §9).
+2. **The RAG API serializes requests** — one chat or indexing run at a time per process. Per-request option overrides are scoped to the request: the agent snapshots its config before applying them and restores it afterwards, so they no longer leak into subsequent requests.
+3. **`enable_latechunk` defaults to `false` on `POST :8001/index`**, so an HTTP index build without that flag produces no late-chunk table even though the `default` profile enables late chunking. The CLI (`python -m rag_system.main index`) uses the profile value.
+4. **A reranker that fails to load is skipped**, not replaced — there is no fallback reranker.
+5. **`requirements-docker.txt` has drifted** from `requirements.txt` and still lists packages with no importers.
 
 ---
 

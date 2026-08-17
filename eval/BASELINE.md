@@ -1,5 +1,16 @@
 # Phase 0 baseline — measured 2026-08-08
 
+> **Erratum 2026-08-16.** As of arm G (2026-08-14) the shipped `default`
+> profile enables reranking with `min_score: 0.5` / `min_keep: 3` / `top_k: 10`
+> threshold selection, and arm H (2026-08-15) made pooled first-stage
+> decomposition the default. Any repro command on this page that assumes a
+> reranker-off stack must now pass `--no-rerank` explicitly. Also: until this
+> date the harness's `build_config` replaced the profile's reranker block with
+> a bare `top_k: None` one, so `final` metrics from runs before this change
+> described a reorder-only stack that never shipped; the harness now mirrors
+> the shipped selection. The measurements below are unchanged and remain the
+> record of their runs.
+
 > **Historical.** This page describes the stack as it stood on 2026-08-08.
 > The defaults it calls "shipped" (`Qwen/Qwen3-Embedding-4B`,
 > `BAAI/bge-reranker-v2-m3`, reranking on) were replaced at the Phase 1

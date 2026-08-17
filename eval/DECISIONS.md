@@ -1,3 +1,16 @@
+> **Erratum 2026-08-16.** This page's "reranking OFF by default" decision no
+> longer describes the shipped `default` profile: arm G (2026-08-14) turned
+> reranking ON with `min_score: 0.5` / `min_keep: 3` / `top_k: 10` threshold
+> selection, and arm H (2026-08-15) made pooled first-stage decomposition the
+> default (`compose_from_sub_answers: False, pooled_first_stage: True`). Repro
+> commands that assume a reranker-off stack must now pass `--no-rerank`
+> explicitly. Note also that the eval harness's `build_config` replaced the
+> whole reranker block with `top_k: None` until this date, so `final` metrics
+> from runs before this change described a reorder-without-selection stack that
+> never shipped; the harness now keeps the profile's selection and overrides
+> only the model name. The measurements below are unchanged — they are records
+> of their runs.
+
 # Phase 1 component decisions — adopted 2026-08-09
 
 The decision gate the roadmap asks for

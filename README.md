@@ -59,9 +59,9 @@ Watch this [video](https://youtu.be/JTbtGH3secI) to get started with LocalGPT.
 - **Natural Language Queries**: Ask questions in plain English
 - **Source Attribution**: Answers come back with the chunks they were grounded in
 - **Smart Routing**: Chooses between RAG and a direct LLM answer per query
-- **Query Decomposition**: Splits complex questions into sub-questions, answers each, then composes
+- **Query Decomposition**: Splits complex questions into sub-questions, retrieves per sub-question, then pools the candidates for one rerank and one synthesis pass (per-sub-answer composition is available as an option)
 - **Reciprocal Rank Fusion**: Vector and full-text hits are fused with RRF — no weights to tune
-- **Optional Reranking**: A cross-encoder pass over the fused candidate set, off by default — the first stage already outranks it ([`eval/DECISIONS.md`](eval/DECISIONS.md))
+- **Reranking**: A cross-encoder pass over the fused candidate set, on by default with calibrated score-based selection ([`eval/DECISIONS.md`](eval/DECISIONS.md))
 - **Sentence Pruning**: Optional Provence pruning drops irrelevant sentences from each chunk
 - **Semantic Caching**: TTL cache with a 0.98 similarity threshold, scoped to the session
 - **Answer Verification**: A second pass that appends `[Confidence: N%]` to the answer
@@ -151,7 +151,6 @@ pip install -r requirements.txt
 # - lancedb (vector store and full-text search)
 # - rerankers (cross-encoder reranking)
 # - docling (document parsing)
-# - fuzzywuzzy, python-Levenshtein (fuzzy matching helpers)
 
 # Install Node.js dependencies
 npm install
@@ -252,8 +251,8 @@ brew install python@3.11 node docker
 
 Only the two Ollama models need an explicit pull. The embedding model
 (`microsoft/harrier-oss-v1-0.6b`, 1.2 GB) is downloaded from HuggingFace the
-first time it is used; the reranker is only downloaded if you switch reranking
-on, which is off by default.
+first time it is used; the reranker (~7.5 GB) is loaded lazily — downloaded
+on the first reranked query.
 
 ```bash
 # Install Ollama
@@ -283,7 +282,7 @@ with their code defaults.
 | `GENERATION_MODEL` | `qwen3.5:9b` | `rag_system/main.py`, `backend/server.py`, `run_system.py` |
 | `ENRICHMENT_MODEL` | `qwen3.5:4b` | `rag_system/main.py`, `backend/server.py`, `run_system.py` |
 | `EMBEDDING_MODEL` | `microsoft/harrier-oss-v1-0.6b` | `rag_system/main.py` |
-| `RERANKER_MODEL` | `Qwen/Qwen3-Reranker-4B` (only loaded when reranking is switched on) | `rag_system/main.py` |
+| `RERANKER_MODEL` | `Qwen/Qwen3-Reranker-4B` (loaded lazily on the first reranked query) | `rag_system/main.py` |
 | `RAG_CONFIG_MODE` | `default` | `rag_system/api_server.py` (`default` or `fast`) |
 | `RAG_API_TIMEOUT` | `600` | `backend/server.py` (seconds to wait for a chat answer) |
 | `RAG_API_INDEX_TIMEOUT` | `3600` | `backend/server.py` (seconds to wait for an indexing run) |
@@ -428,7 +427,7 @@ overridden with the environment variables listed above.
 | Generation (answers) | `qwen3.5:9b` | `qwen3.6:27b` (high-end, ~17GB), `qwen3.5:4b` (light) |
 | Enrichment / utility (routing, triage, decomposition, verification) | `qwen3.5:4b` | `qwen3.5:2b` (light) |
 | Embedding | `microsoft/harrier-oss-v1-0.6b` (MIT, 1024 dims) | `Qwen/Qwen3-Embedding-4B` (2560 dims, 32K context, for multilingual / long-context corpora), `Qwen/Qwen3-Embedding-0.6B` (1024 dims) |
-| Reranker (off by default) | `Qwen/Qwen3-Reranker-4B` | `BAAI/bge-reranker-v2-m3` (low latency), `answerdotai/answerai-colbert-small-v1`, `Qwen/Qwen3-Reranker-0.6B` |
+| Reranker (on by default) | `Qwen/Qwen3-Reranker-4B` | `BAAI/bge-reranker-v2-m3` (low latency), `answerdotai/answerai-colbert-small-v1`, `Qwen/Qwen3-Reranker-0.6B` |
 
 ```python
 # rag_system/main.py
@@ -469,19 +468,33 @@ pre-processing step, but **they are not integrated today**.
         "search_type": "hybrid",
         "latechunk": {"enabled": True},
         "dense": {"enabled": True},
-        "retry": {"enabled": True, "min_top_score": 0.12, "max_attempts": 1}
+        "retry": {"enabled": True, "min_top_score": 0.12, "max_attempts": 1},
+        # Phase-4 features, all off until benchmarked:
+        "document_escalation": {"enabled": False, "max_documents": 1, "token_budget": 6000},
+        "crossref_hop": {"enabled": False, "max_hops": 1, "chunks_per_hop": 3},
+        "overview_prefilter": {"enabled": False, "top_documents": 5, "mode": "boost"}
     },
     "embedding_model_name": EXTERNAL_MODELS["embedding_model"],
-    # Off by default: the first stage already outranks the cheap cross-encoder,
-    # and the reranker that does win costs ~12.7s/query (eval/DECISIONS.md).
+    # On since arm G (2026-08-14): min_score keeps only candidates the
+    # calibrated Qwen scorer marks relevant (min_keep is the floor).
     "reranker": {
-        "enabled": False,
+        "enabled": True,
         "model_type": "cross-encoder",
         "strategy": "rerankers-lib",
         "model_name": EXTERNAL_MODELS["reranker_model"],
-        "top_k": 10
+        "top_k": 10,
+        "min_score": 0.5,
+        "min_keep": 3
     },
-    "query_decomposition": {"enabled": True, "compose_from_sub_answers": True},
+    # Arm H (2026-08-15): per-sub-query retrieval, pooled + deduped
+    # candidates, ONE rerank + ONE synthesis over the union context. The
+    # compose path (answer each sub-question, then compose) remains
+    # available via compose_from_sub_answers / the UI toggle.
+    "query_decomposition": {
+        "enabled": True,
+        "compose_from_sub_answers": False,
+        "pooled_first_stage": True
+    },
     "verification": {"enabled": True},
     "retrieval_k": 20,
     "context_window_size": 0,
@@ -491,7 +504,7 @@ pre-processing step, but **they are not integrated today**.
     "indexing": {
         "embedding_batch_size": 50,
         "enrichment_batch_size": 10,
-        "enable_progress_tracking": True
+        "extract_crossrefs": True
     }
 }
 ```
@@ -512,8 +525,7 @@ pre-processing step, but **they are not integrated today**.
     "contextual_enricher": {"enabled": False},
     "indexing": {
         "embedding_batch_size": 100,
-        "enrichment_batch_size": 50,
-        "enable_progress_tracking": False
+        "enrichment_batch_size": 50
     }
 }
 ```
@@ -742,7 +754,7 @@ still apply. An unsupported `retrieval_mode` is rejected with HTTP 400.
   "retrieval_mode": "hybrid",
   "enable_enrich": true,
   "enable_latechunk": false,
-  "enable_docling_chunk": false,
+  "enable_docling_chunk": true,
   "embedding_model": "microsoft/harrier-oss-v1-0.6b",
   "enrich_model": "qwen3.5:4b",
   "overview_model_name": "qwen3.5:4b",
@@ -759,7 +771,7 @@ is omitted. Response:
   "message": "Indexing process for 2 file(s) completed successfully.",
   "table_name": "text_pages_<index_id>",
   "latechunk": false,
-  "docling_chunk": false,
+  "docling_chunk": true,
   "indexing_config": {
     "chunk_size": 512,
     "retrieval_mode": "hybrid",
@@ -775,7 +787,9 @@ is omitted. Response:
 ```
 
 `retrieval_mode` at index time is validated and recorded with the index config;
-it takes effect at query time. Indexing is synchronous — the call returns when
+it takes effect at query time. `enable_docling_chunk` defaults to `true`
+(Docling structure-aware chunking); sending `false` selects the legacy chunker.
+Indexing is synchronous — the call returns when
 the pipeline finishes, which is why the backend allows up to
 `RAG_API_INDEX_TIMEOUT` (default 3600s) for it.
 
@@ -810,7 +824,7 @@ graph TB
     Retrieval --> FTS[LanceDB full-text search]
     Vector --> RRF[Reciprocal Rank Fusion]
     FTS --> RRF
-    RRF --> Rerank["Cross-encoder rerank (optional, off by default)"]
+    RRF --> Rerank["Cross-encoder rerank (on by default)"]
 
     Vector --> LanceDB[(LanceDB)]
     FTS --> LanceDB
@@ -847,8 +861,8 @@ graph TD
         R3 -- Miss --> R4{Decomposition enabled?};
 
         R4 -- Yes --> R5[Decompose query]; class R5 llmcall;
-        R5 --> R6{{Run sub-queries through the retrieval pipeline}}; class R6 pipeline;
-        R6 --> R8[Compose final answer]; class R8 llmcall;
+        R5 --> R6{{Retrieve per sub-query, then pool + dedupe the candidates}}; class R6 pipeline;
+        R6 --> R8[One rerank + one synthesis over the pooled context]; class R8 llmcall;
         R8 --> V1(RAG answer);
 
         R4 -- No --> R9[Run single query through the retrieval pipeline]; class R9 pipeline;
@@ -869,8 +883,8 @@ graph TD
 ```
 
 Inside the retrieval pipeline a query runs: embed → hybrid retrieve (vector +
-FTS, fused with RRF) → optional late-chunk leg → optional cross-encoder rerank
-(off by default) → context window expansion → optional Provence sentence
+FTS, fused with RRF) → optional late-chunk leg → cross-encoder rerank (on by
+default) → context window expansion → optional Provence sentence
 pruning → synthesis.
 
 ---

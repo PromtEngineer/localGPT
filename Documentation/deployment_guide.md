@@ -140,8 +140,9 @@ curl http://localhost:11434/api/tags  # Ollama
 rag-api (healthy: GET /health)  ->  backend (healthy: GET /health)  ->  frontend
 ```
 
-`rag-api` loads the embedding and reranker models before it answers `/health`, so
-its check uses a 60s start period. Until it passes, `backend` stays in `created`
+`rag-api` loads the embedding model before it answers `/health` (the reranker
+loads lazily, on the first reranked query), so
+its check uses a 120s start period. Until it passes, `backend` stays in `created`
 and `frontend` after it. This is expected on a cold start, not a hang — watch
 `docker compose logs -f rag-api`.
 
@@ -173,11 +174,9 @@ docker compose exec rag-api python -c "print('hello')"
 | File | Contents |
 |------|----------|
 | `docker-compose.yml` | The full stack: `rag-api`, `backend`, `frontend`, and an optional `ollama` service behind the `with-ollama` profile |
-| `docker-compose.local-ollama.yml` | The same three application services without the optional `ollama` service |
 
-`docker-compose.yml` already defaults to host Ollama and only adds the `ollama`
-container when you pass `--profile with-ollama`, so the second file is a
-convenience, not a requirement.
+`docker-compose.yml` is the only compose file: it defaults to host Ollama and
+adds the `ollama` container when you pass `--profile with-ollama`.
 
 ---
 
@@ -316,7 +315,7 @@ graph TB
   for a single concurrent user of the RAG API, or put a queue in front of it.
 - The backend allows `RAG_API_TIMEOUT` (default 600s) for a chat call and
   `RAG_API_INDEX_TIMEOUT` (default 3600s) for indexing, returning 504 on timeout
-  and 502 when the RAG API is unreachable.
+  and 502 when the RAG API is unreachable — both with a JSON error body.
 
 ---
 
@@ -338,7 +337,7 @@ Every variable below is read by code; the value shown is the default when unset.
 | `GENERATION_MODEL` | `qwen3.5:9b` | `rag_system/main.py`, `backend/server.py`, `run_system.py` |
 | `ENRICHMENT_MODEL` | `qwen3.5:4b` | same |
 | `EMBEDDING_MODEL` | `microsoft/harrier-oss-v1-0.6b` | `rag_system/main.py` |
-| `RERANKER_MODEL` | `Qwen/Qwen3-Reranker-4B` (only loaded when reranking is switched on) | `rag_system/main.py` |
+| `RERANKER_MODEL` | `Qwen/Qwen3-Reranker-4B` (loaded lazily on the first reranked query) | `rag_system/main.py` |
 | `RAG_CONFIG_MODE` | `default` | `rag_system/api_server.py` |
 | `RAG_API_TIMEOUT` | `600` | `backend/server.py` |
 | `RAG_API_INDEX_TIMEOUT` | `3600` | `backend/server.py` |
@@ -393,7 +392,7 @@ Defaults live in `rag_system/main.py` and are overridable by environment variabl
 | Generation | `qwen3.5:9b` | `qwen3.6:27b` (high-end, ~17GB), `qwen3.5:4b` (light) |
 | Enrichment / utility | `qwen3.5:4b` | `qwen3.5:2b` (light) |
 | Embedding | `microsoft/harrier-oss-v1-0.6b` (MIT, 1024 dims, ~1.2 GB) | `Qwen/Qwen3-Embedding-4B` (2560 dims, 32K context — multilingual / long-context corpora), `Qwen/Qwen3-Embedding-0.6B` (1024 dims) |
-| Reranker (**off by default**) | `Qwen/Qwen3-Reranker-4B` | `BAAI/bge-reranker-v2-m3` (low latency), `answerdotai/answerai-colbert-small-v1`, `Qwen/Qwen3-Reranker-0.6B` |
+| Reranker (**on by default**) | `Qwen/Qwen3-Reranker-4B` | `BAAI/bge-reranker-v2-m3` (low latency), `answerdotai/answerai-colbert-small-v1`, `Qwen/Qwen3-Reranker-0.6B` |
 
 `GET /models` on either service reports what is actually selectable:
 Ollama tags are split into generation and embedding lists by a substring match
@@ -444,8 +443,8 @@ for the CLI. Individual toggles (`ai_rerank`, `verify`, `query_decompose`,
 `context_expand`, `retrieval_k`, `reranker_top_k`) can also be sent per request.
 
 **Memory** — the embedding model stays resident in the RAG API process
-(`microsoft/harrier-oss-v1-0.6b`, ~1.2 GB). The reranker is **not loaded at all**
-unless reranking is switched on, and switching it on pulls ~7.5 GB of
+(`microsoft/harrier-oss-v1-0.6b`, ~1.2 GB). Reranking is on by default, but the
+reranker loads lazily: the first reranked query pulls ~7.5 GB of
 `Qwen/Qwen3-Reranker-4B` weights alongside it — see
 [`../eval/DECISIONS.md`](../eval/DECISIONS.md) for the quality/latency trade that
 decision rests on. Enabling late chunking loads a second copy of the embedding
@@ -576,7 +575,8 @@ ollama pull qwen3.5:4b
 ```
 
 #### **Backend returns 502/504 for every chat**
-The backend could not reach the RAG API. Check `RAG_API_URL` (must be
+The backend could not reach the RAG API (502) or the call timed out (504) — both
+come back as JSON error bodies. Check `RAG_API_URL` (must be
 `http://rag-api:8001` inside Docker, not `localhost`) and that `rag-api` is
 healthy.
 
@@ -590,7 +590,8 @@ docker stats      # containers
 
 # Options:
 # 1. Switch to RAG_CONFIG_MODE=fast
-# 2. Leave reranking off (the default) so no reranker weights are loaded
+# 2. Switch reranking off (ai_rerank=false) — it is on by default and lazily
+#    loads ~7.5 GB of reranker weights on the first reranked query
 # 3. Use a smaller generation model (GENERATION_MODEL=qwen3.5:4b)
 # 4. Disable late chunking so a second embedding model is not loaded
 ```
@@ -650,7 +651,7 @@ Throughput depends on hardware and model size, so treat these as shape rather th
 guarantees:
 
 - Cold start is dominated by model downloads and the RAG API loading the embedding
-  and reranker models
+  model (the reranker loads lazily, on the first reranked query)
 - Indexing is dominated by contextual enrichment (one LLM call per chunk)
 - Query latency is dominated by generation; `fast` mode removes reranking,
   decomposition and verification

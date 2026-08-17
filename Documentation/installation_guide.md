@@ -39,8 +39,9 @@ LocalGPT using either Docker or a direct development install.
 
 Disk budget for the defaults: `qwen3.5:9b` and `qwen3.5:4b` in Ollama, plus
 `microsoft/harrier-oss-v1-0.6b` (~1.2GB) in the HuggingFace cache
-(`~/.cache/huggingface`). Reranking is off by default, so no reranker weights
-are fetched unless you switch it on (`Qwen/Qwen3-Reranker-4B`, ~7.5GB).
+(`~/.cache/huggingface`). Reranking is on by default, but the reranker loads
+lazily — `Qwen/Qwen3-Reranker-4B` (~7.5GB) is fetched on the first reranked
+query, not at startup.
 
 ### 1.2 Common Dependencies
 
@@ -167,7 +168,8 @@ curl http://localhost:11434/api/tags
 ```
 
 The first build compiles the frontend and installs the Python dependencies, and
-`rag-api` loads the embedding and reranker models before it reports healthy. The
+`rag-api` loads the embedding model before it reports healthy (the reranker loads
+lazily, on the first reranked query). The
 `backend` service has `depends_on: rag-api: service_healthy`, so it deliberately
 waits. Expect several minutes on a cold start.
 
@@ -313,7 +315,7 @@ the same list.
 | `GENERATION_MODEL` | `qwen3.5:9b` | `rag_system/main.py`, `backend/server.py`, `run_system.py` |
 | `ENRICHMENT_MODEL` | `qwen3.5:4b` | same |
 | `EMBEDDING_MODEL` | `microsoft/harrier-oss-v1-0.6b` | `rag_system/main.py` |
-| `RERANKER_MODEL` | `Qwen/Qwen3-Reranker-4B` (only loaded when reranking is switched on) | `rag_system/main.py` |
+| `RERANKER_MODEL` | `Qwen/Qwen3-Reranker-4B` (loaded lazily on the first reranked query) | `rag_system/main.py` |
 | `RAG_CONFIG_MODE` | `default` | `rag_system/api_server.py` (`default` or `fast`) |
 | `RAG_API_TIMEOUT` | `600` | `backend/server.py` |
 | `RAG_API_INDEX_TIMEOUT` | `3600` | `backend/server.py` |
@@ -353,7 +355,7 @@ they are build-time settings. In Docker they are passed as build args in
 | Generation | `qwen3.5:9b` | `qwen3.6:27b` (high-end, ~17GB), `qwen3.5:4b` (light) |
 | Enrichment / utility | `qwen3.5:4b` | `qwen3.5:2b` (light) |
 | Embedding | `microsoft/harrier-oss-v1-0.6b` (MIT, 1024 dims) | `Qwen/Qwen3-Embedding-4B` (2560 dims, 32K context), `Qwen/Qwen3-Embedding-0.6B` (1024 dims) |
-| Reranker (**off by default**) | `Qwen/Qwen3-Reranker-4B`, loaded lazily by the in-repo `QwenRerankerScorer` | `BAAI/bge-reranker-v2-m3`, `answerdotai/answerai-colbert-small-v1`, `Qwen/Qwen3-Reranker-0.6B` |
+| Reranker (**on by default**) | `Qwen/Qwen3-Reranker-4B`, loaded lazily by the in-repo `QwenRerankerScorer` | `BAAI/bge-reranker-v2-m3`, `answerdotai/answerai-colbert-small-v1`, `Qwen/Qwen3-Reranker-0.6B` |
 
 Notes:
 - Embedding dimensions are read from the loaded model, never hardcoded.
@@ -508,7 +510,8 @@ npm install
 #### **Scanned PDFs produce no text:**
 A PDF with no text layer is re-run through Docling's OCR pipeline, but only with an
 engine that is actually installed. `rag_system/ingestion/document_converter.py`
-probes, in order: `ocrmac` (macOS only), `easyocr`, `rapidocr_onnxruntime`,
+probes, in order: `ocrmac` (macOS only), `easyocr`, `rapidocr` (or the older
+`rapidocr_onnxruntime` package name — either is accepted),
 `tesserocr`, then the `tesseract` binary. Install whichever suits your platform —
 `pip install ocrmac` on macOS (it is listed in `rag_system/requirements.txt` but not
 in the root `requirements.txt`), or `pip install easyocr` / `apt install tesseract-ocr`
@@ -619,8 +622,9 @@ are not mid-write.
 Numbers depend heavily on hardware, model size and document length. On a machine
 matching the recommended requirements, expect:
 
-- First startup dominated by model downloads (Ollama tags + ~10GB of HuggingFace
-  weights); subsequent startups load from cache
+- First startup dominated by model downloads (Ollama tags + the ~1.2GB embedding
+  model from HuggingFace); subsequent startups load from cache. The reranker
+  (~7.5GB) is downloaded separately, lazily on the first reranked query
 - Indexing dominated by contextual enrichment — it runs one LLM call per chunk, so
   turn it off (`enable_enrich: false`) for the fastest ingest
 - Query latency dominated by generation; `RAG_CONFIG_MODE=fast` removes reranking,

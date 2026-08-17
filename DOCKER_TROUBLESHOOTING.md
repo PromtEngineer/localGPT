@@ -42,7 +42,8 @@ rag-api (healthy: GET /health)  →  backend (healthy: GET /health)  →  fronte
 ```
 
 `backend` has `depends_on: rag-api: condition: service_healthy`, and `rag-api` only
-answers `/health` once the agent, the embedding model and the reranker have loaded.
+answers `/health` once the agent and the embedding model have loaded (the reranker
+loads lazily, on the first reranked query).
 On a cold start that is a multi-minute HuggingFace download. **`backend` sitting in
 `created` is usually patience, not a bug** — confirm with
 `docker compose logs -f rag-api`.
@@ -157,17 +158,19 @@ OLLAMA_HOST=http://$(ipconfig getifaddr en0):11434 ./start-docker.sh
 
 ### 3. Backend / RAG API Wiring
 
-#### Problem: every chat answers "Could not connect to the RAG API server"
+#### Problem: every chat fails with 502 "Could not connect to the RAG API server"
 
 The backend builds `/chat` and `/index` from `RAG_API_URL`. Inside compose that
 must be `http://rag-api:8001` — `localhost` there refers to the backend container.
+Chat failures come back as JSON error bodies: 502 when the RAG API is unreachable,
+504 when the call times out.
 
 ```bash
 docker compose exec backend env | grep RAG_API_URL
 docker compose exec backend curl -s http://rag-api:8001/health
 ```
 
-#### Problem: chat returns 504 "did not complete within 600s"
+#### Problem: chat returns 504 "did not respond within 600s"
 
 The RAG API is single-threaded, so a chat request queued behind an indexing run can
 exceed the timeout. Watch `docker compose logs -f rag-api`, and raise the limits if
