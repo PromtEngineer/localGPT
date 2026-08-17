@@ -3,7 +3,7 @@ import json
 import os
 import re
 from threading import Lock
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from rag_system.utils.ollama_client import OllamaClient
 
@@ -13,11 +13,48 @@ _local_verifier_lock: Lock = Lock()
 
 
 class VerificationResult:
-    def __init__(self, is_grounded: bool, reasoning: str, verdict: str, confidence_score: int):
+    # The prompt still elicits `verdict`/`reasoning` strings, but nothing ever
+    # read them off this object — only these two consumed fields are stored.
+    def __init__(self, is_grounded: bool, confidence_score: int):
         self.is_grounded = is_grounded
-        self.reasoning = reasoning
-        self.verdict = verdict
         self.confidence_score = confidence_score
+
+
+def _coerce_grounded(value: Any) -> bool:
+    """JSON ``true`` (or the string "true", any case) → True; anything else False.
+
+    A verdict string of ``"false"`` must not end up truthy.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return False
+
+
+def _coerce_confidence(value: Any) -> int:
+    """Coerce a verdict's confidence_score to int; 0 for anything malformed.
+
+    Accepts int/float (but not bool — ``True`` is not a score) and numeric
+    strings via float(); null, arrays, objects and garbage all fail open to 0,
+    which the caller treats as "verifier unusable — return the answer
+    unannotated".
+    """
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        number = value
+    elif isinstance(value, str):
+        try:
+            number = float(value)
+        except ValueError:
+            return 0
+    else:
+        return 0
+    try:
+        return int(number)
+    except (OverflowError, ValueError):  # NaN / inf survive lenient JSON parsing
+        return 0
 
 
 class VerifierModelUnavailable(RuntimeError):
@@ -135,10 +172,6 @@ class LocalNLIVerifier:
         grounded = probability >= self.threshold
         return VerificationResult(
             is_grounded=grounded,
-            reasoning=(f"{self.model_name}: weakest answer sentence scored "
-                       f"{probability:.3f} against the retrieved evidence "
-                       f"(threshold {self.threshold})."),
-            verdict="SUPPORTED" if grounded else "NOT_SUPPORTED",
             confidence_score=int(round(probability * 100)),
         )
 
@@ -246,7 +279,15 @@ class Verifier:
         </QUERY>
         <CONTEXT>
         """
-        prompt += context[:4000]  # Clamp to avoid huge prompts
+        # Clamp to avoid huge prompts, and neutralize the prompt's own
+        # delimiter tags inside the retrieved evidence: an indexed document
+        # containing "</CONTEXT>" followed by a forged "<OUTPUT>" blob could
+        # otherwise steer the verdict (prompt injection via the corpus). The
+        # prompt structure itself is eval-tuned and must not change.
+        safe_context = context[:4000]
+        for tag in ("QUERY", "CONTEXT", "ANSWER", "OUTPUT"):
+            safe_context = safe_context.replace(f"<{tag}>", f"< {tag}>").replace(f"</{tag}>", f"< /{tag}>")
+        prompt += safe_context
         prompt += """
         </CONTEXT>
         <ANSWER>
@@ -256,14 +297,17 @@ class Verifier:
         </ANSWER>
         <OUTPUT>
         """
-        resp = await self.llm_client.generate_completion_async(self.llm_model, prompt, format="json")
+        resp = await self.llm_client.generate_completion_async(
+            self.llm_model, prompt, format="json",
+            options={"temperature": 0},  # deterministic verdicts (same pin the eval judge got in ebcc88b)
+        )
         try:
-            data = json.loads(resp.get("response", "{}"))
+            data = json.loads(resp.get("response") or "{}")
+            # Coerce defensively: a type-mismatched verdict (string "85", null,
+            # the string "false") must fail open — never raise out of here.
             return VerificationResult(
-                is_grounded=data.get("is_grounded", False),
-                reasoning=data.get("reasoning", "async parse error"),
-                verdict=data.get("verdict", "NOT_SUPPORTED"),
-                confidence_score=data.get('confidence_score', 0)
+                is_grounded=_coerce_grounded(data.get("is_grounded", False)),
+                confidence_score=_coerce_confidence(data.get("confidence_score", 0))
             )
         except (json.JSONDecodeError, AttributeError):
-            return VerificationResult(False, "Failed async parse", "NOT_SUPPORTED", 0)
+            return VerificationResult(False, 0)

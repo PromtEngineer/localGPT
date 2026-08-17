@@ -1,4 +1,3 @@
-# from rag_system.indexing.representations import BM25Generator
 import lancedb
 import os
 import pyarrow as pa
@@ -264,6 +263,21 @@ class VectorIndexer:
         # Incremental indexing: append to existing table if present, otherwise create it
         if existing_tbl is not None:
             tbl = existing_tbl
+            # Re-indexing must replace, not duplicate: drop the rows a previous
+            # build wrote for these document_ids before appending the new ones.
+            doc_ids = sorted({row["document_id"] for row in data})
+            for doc_id in doc_ids:
+                if "'" in doc_id:
+                    # Refuse, don't escape (see rag_system/retrieval/filters.py).
+                    raise ValueError(
+                        f"Refusing to delete rows for document_id containing a single quote: {doc_id!r}"
+                    )
+            if doc_ids:
+                quoted = ", ".join(f"'{d}'" for d in doc_ids)
+                result = tbl.delete(f"document_id IN ({quoted})")
+                deleted = getattr(result, "num_deleted_rows", None)
+                if deleted:
+                    print(f"🗑️  Removed {deleted} stale row(s) for {len(doc_ids)} document(s) from '{table_name}'.")
             print(f"Appending {len(data)} vectors to existing table '{table_name}'.")
         else:
             print(f"Creating table '{table_name}' (new) and adding {len(data)} vectors...")
@@ -291,10 +305,6 @@ class VectorIndexer:
             except Exception as e2:
                 print(f"❌ Failed to add data even with NaN fill: {e2}")
                 raise
-
-# BM25Indexer is no longer needed as we are moving to LanceDB's native FTS.
-# class BM25Indexer:
-#     ...
 
 if __name__ == '__main__':
     print("embedders.py updated for contextual enrichment.")

@@ -102,9 +102,10 @@ class MarkdownRecursiveChunker:
             test_chunk = current_chunk + chunk_text if current_chunk else chunk_text
             if not current_chunk or self._token_len(test_chunk) <= self.max_chunk_size:
                 current_chunk = test_chunk
-            elif self._token_len(current_chunk) < self.min_chunk_size:
-                 current_chunk = test_chunk
             else:
+                # An undersized current_chunk is emitted as-is when merging it
+                # forward would push the result past max_chunk_size — a merge
+                # must never overshoot the token budget.
                 merged_chunks_text.append(current_chunk)
                 current_chunk = chunk_text
         if current_chunk:
@@ -130,8 +131,20 @@ class MarkdownRecursiveChunker:
 def create_contextual_window(all_chunks: List[Dict[str, Any]], chunk_index: int, window_size: int = 1) -> str:
     if not (0 <= chunk_index < len(all_chunks)):
         raise ValueError("chunk_index is out of bounds.")
-    start = max(0, chunk_index - window_size)
-    end = min(len(all_chunks), chunk_index + window_size + 1)
+
+    def _doc_id(chunk: Dict[str, Any]):
+        metadata = chunk.get("metadata") or {}
+        return metadata.get("document_id", chunk.get("document_id"))
+
+    # The flat list spans many documents; clamp the window to chunks of the
+    # same document so one document's context never leaks into another's.
+    doc_id = _doc_id(all_chunks[chunk_index])
+    start = chunk_index
+    while start > 0 and chunk_index - (start - 1) <= window_size and _doc_id(all_chunks[start - 1]) == doc_id:
+        start -= 1
+    end = chunk_index + 1
+    while end < len(all_chunks) and end - chunk_index <= window_size and _doc_id(all_chunks[end]) == doc_id:
+        end += 1
     context_chunks = all_chunks[start:end]
     return " ".join([chunk['text'] for chunk in context_chunks])
 

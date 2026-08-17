@@ -63,8 +63,6 @@ logs/
 
 # SQLite or other database files
 *.db
-#backend/*.db
-# backend/chat_history.db
 backend/chroma_db/
 backend/chroma_db/**
 
@@ -75,7 +73,6 @@ rag_system/documents/
 # Ensure docker.env and .env.example remain tracked
 !docker.env
 !.env.example
-!backend/chat_data.db
 
 # Phase 0 evaluation harness (eval/) — rebuildable artefacts only.
 # The corpora, gold set, scripts and BASELINE.md are tracked.
@@ -88,3 +85,6 @@ eval/results/
 
 # local virtualenv
 .venv/
+
+# agent worktree / session state
+.claude/

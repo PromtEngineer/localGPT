@@ -14,6 +14,8 @@ does:
   5. ``requires_crossref`` is exactly
      ``anchor_doc is not None and any(source != anchor_doc)``
   6. ``multi_document`` is exactly ``len(set(expected_sources)) > 1``
+  7. every ``anchor_doc`` names one of the ten documents (``expected_sources``
+     entries already fail check 1 when they name no document)
 
     .venv/bin/python eval/verify_crossref_goldset.py
 
@@ -93,6 +95,8 @@ def main() -> int:
                 problems.append(f"{row['id']}: fact id {fact_id!r} does not match the sidecar")
 
         anchor = row["anchor_doc"]
+        if anchor is not None and anchor not in texts:
+            problems.append(f"{row['id']}: anchor_doc {anchor!r} is not a corpus document")
         expected_crossref = anchor is not None and any(s != anchor for s in sources)
         if row["dimensions"]["requires_crossref"] is expected_crossref:
             tally["crossref_flag_consistent"] += 1

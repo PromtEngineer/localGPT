@@ -82,7 +82,12 @@ class OllamaClient:
             return False
     
     def chat(self, message: str, model: str = None, conversation_history: List[Dict] = None, enable_thinking: bool = True) -> str:
-        """Send a chat message to Ollama"""
+        """Send a chat message to Ollama.
+
+        Raises requests.exceptions.RequestException (Timeout, ConnectionError,
+        HTTPError) on failure — the gateway maps those to 504/502 instead of
+        embedding error text in a 200 OK answer.
+        """
         if model is None:
             model = DEFAULT_GENERATION_MODEL
         if conversation_history is None:
@@ -130,20 +135,22 @@ class OllamaClient:
             if response.status_code == 200:
                 result = response.json()
                 response_text = result["message"]["content"]
-                
+
                 # Additional cleanup: remove any thinking tokens that might slip through
                 if not enable_thinking:
                     # Remove common thinking token patterns
                     response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL | re.IGNORECASE)
                     response_text = re.sub(r'<thinking>.*?</thinking>', '', response_text, flags=re.DOTALL | re.IGNORECASE)
                     response_text = response_text.strip()
-                
+
                 return response_text
             else:
-                return f"Error: {response.status_code} - {response.text}"
-                
-        except requests.exceptions.RequestException as e:
-            return f"Connection error: {e}"
+                # Not answer text: raise so the gateway maps it to a 502.
+                response.raise_for_status()
+
+        except requests.exceptions.RequestException:
+            # Timeout / ConnectionError / HTTPError propagate to the caller.
+            raise
     
 def main():
     """Test the Ollama client"""

@@ -278,7 +278,9 @@ class ServiceManager:
             if config.env:
                 env.update(config.env)
 
-            # Start process
+            # Start process in its own session/process group (POSIX; ignored on
+            # Windows) so _stop_service can signal the whole tree — wrappers
+            # like npm spawn the real server as a child.
             process = subprocess.Popen(
                 config.command,
                 cwd=config.cwd,
@@ -287,7 +289,8 @@ class ServiceManager:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                universal_newlines=True
+                universal_newlines=True,
+                start_new_session=True
             )
             
             self.processes[service_name] = process
@@ -611,28 +614,43 @@ class ServiceManager:
         self.logger.info("✅ All services stopped")
 
 
+    def _signal_process_tree(self, process: subprocess.Popen, sig: int):
+        """Signal the service's whole process group (POSIX), else just the child."""
+        if os.name == 'posix':
+            try:
+                os.killpg(process.pid, sig)
+            except ProcessLookupError:
+                pass  # process group already gone
+        elif sig == signal.SIGTERM:
+            process.terminate()
+        else:
+            process.kill()
+
     def _stop_service(self, service_name: str):
         """Stop a single service."""
         if service_name not in self.processes:
             return
-        
+
         process = self.processes[service_name]
         self.logger.info(f"🔄 Stopping {service_name}...")
-        
+
         try:
-            # Try graceful shutdown first
-            process.terminate()
-            
+            # Try graceful shutdown first. Services are spawned with
+            # start_new_session=True, so signal the process GROUP: terminate()
+            # alone would kill only the direct child (e.g. npm) and orphan the
+            # real server it spawned.
+            self._signal_process_tree(process, signal.SIGTERM)
+
             # Wait up to 10 seconds for graceful shutdown
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 # Force kill if graceful shutdown fails
-                process.kill()
+                self._signal_process_tree(process, signal.SIGKILL)
                 process.wait()
-            
+
             self.logger.info(f"✅ {service_name} stopped")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error stopping {service_name}: {e}")
         finally:

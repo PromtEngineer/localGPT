@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gateway-routing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: pip install requests python-dotenv
+
+      # Plain-script test (no pytest/unittest cases); exits non-zero on failure.
+      # backend/server.py guards its rag_system import, so only the two light
+      # dependencies above are needed.
+      - name: Run gateway routing test
+        run: python backend/test_gateway_routing.py

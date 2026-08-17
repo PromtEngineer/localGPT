@@ -232,6 +232,7 @@ class OllamaClient:
         images: List[Image.Image] | None = None,
         enable_thinking: bool | None = None,
         options: Optional[Dict[str, Any]] = None,
+        timeout: int = 60,
     ) -> Dict[str, Any]:
         """
         Generates a completion, now with optional support for images.
@@ -244,6 +245,9 @@ class OllamaClient:
             enable_thinking: Optional flag to disable chain-of-thought for Qwen models.
             options: Ollama options dict (e.g. {"temperature": 0}); an explicit
                 num_ctx here wins over the automatic sizing.
+            timeout: Seconds before the HTTP call gives up (same default the
+                async variant uses) — a hung Ollama must not stall index
+                builds, which call this once per chunk.
         """
         try:
             payload = {
@@ -272,7 +276,8 @@ class OllamaClient:
 
             response = requests.post(
                 f"{self.api_url}/generate",
-                json=payload
+                json=payload,
+                timeout=timeout
             )
             response.raise_for_status()
             response_lines = response.text.strip().split('\n')
@@ -300,12 +305,21 @@ class OllamaClient:
         images: List[Image.Image] | None = None,
         enable_thinking: bool | None = None,
         timeout: int = 60,
+        options: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Asynchronous version of generate_completion using httpx."""
+        """Asynchronous version of generate_completion using httpx.
+
+        *options* is an Ollama options dict (e.g. {"temperature": 0}); an
+        explicit num_ctx here wins over the automatic sizing.
+        """
 
         payload = {"model": model, "prompt": prompt, "stream": False}
         if format:
             payload["format"] = format
+        if options:
+            # Caller-supplied sampling options (e.g. temperature). Merged
+            # before _apply_num_ctx so an explicit num_ctx here wins.
+            payload["options"] = dict(options)
         if images:
             payload["images"] = [self._image_to_base64(img) for img in images]
 
@@ -324,7 +338,12 @@ class OllamaClient:
                 record_llm_usage(final_response)
                 _warn_if_truncated(payload, final_response)
                 return final_response
-        except (httpx.HTTPError, asyncio.CancelledError) as e:
+        except asyncio.CancelledError:
+            # Cancellation is control flow, not an LLM failure — never swallow
+            # it into the {} fail-open below (that fail-open is documented
+            # behaviour for httpx errors only).
+            raise
+        except httpx.HTTPError as e:
             print(f"Async Ollama completion error: {e}")
             return {}
 

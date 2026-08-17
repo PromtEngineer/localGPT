@@ -49,8 +49,13 @@ Usage (see eval/README.md):
     .venv/bin/python eval/run_eval.py --corpus all                     # shipped defaults
     EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B .venv/bin/python eval/run_eval.py --corpus all
 
-The rerank stage follows the shipped "default" profile, which has reranking off
-(eval/DECISIONS.md). Pass ``--reranker <model>`` to switch it on for a run.
+The rerank stage follows the shipped "default" profile, which has reranking ON
+with threshold selection since arm G (2026-08-14): ``top_k: 10`` plus
+``min_score: 0.5`` / ``min_keep: 3`` pruning of whatever the Qwen scorer marks
+irrelevant to every query. The harness keeps that selection when the stage is
+on, so the ``final`` metrics describe the list the answer stage actually sees.
+Pass ``--reranker <model>`` to swap the model, ``--no-rerank`` to force the
+stage off for the first-stage-only control arm.
 """
 
 import argparse
@@ -84,6 +89,20 @@ SEED = 20260808
 INDEX_ROOT = os.path.join(EVAL_DIR, ".eval_indexes")
 RESULTS_DIR = os.path.join(EVAL_DIR, "results")
 GOLDSET_DIR = os.path.join(EVAL_DIR, "goldset")
+
+# Index-time code version, mixed into the index fingerprint. The fingerprint
+# otherwise covers only file size/mtime and flags — NOT this repo's code — so a
+# change to anything that alters what lands in the index (chunker, converter,
+# crossref stamping, normalization…) must bump this, or cached indexes built by
+# the old code are silently reused (the manual cache deletion in BASELINE.md §
+# "Why the rebuild" is what this automates).
+INDEX_CODE_VERSION = "2026-08-16.1"
+
+# Decomposition-prompt version, part of the sub-query cache key. Bump when the
+# QueryDecomposer prompt or its parameters change; combined with the resolved
+# model name in the cache filename, stale decompositions are then never
+# silently reused across models or prompt edits.
+SUBQUERY_PROMPT_VERSION = "2026-08-16.1"
 
 # Excluded from the docs corpus on purpose: these two files are the planning
 # documents this harness is tracked in, so every eval-related edit would change
@@ -121,6 +140,17 @@ CORPORA = {
         "glob": [os.path.join(EVAL_DIR, "corpora", "acquisition", "*.pdf"),
                  os.path.join(REPO_ROOT, "Documentation", "*.md")],
         "goldset_of": ["acquisition", "docs"],
+    },
+    # Real third-party documents whose naming and referencing conventions this
+    # project did not invent — 23 IETF RFCs (the QUIC / HTTP-3 family), fetched
+    # verbatim from rfc-editor.org by corpora/rfc/download.py (plain text, 1.44
+    # MiB). The honest test of the index-time crossref extractor: it resolves 0
+    # of 1403 references here (corpora/rfc/MANIFEST.md,
+    # decisions/rfc-shakedown-2026-08-13.md). Deliberately NOT in `mixed`, for
+    # the same reason as `acq`.
+    "rfc": {
+        "label": "23 interlinked IETF RFCs, plain text (QUIC / HTTP-3 family)",
+        "glob": os.path.join(EVAL_DIR, "corpora", "rfc", "*.txt"),
     },
     # Every corpus in one table. The two planted-fact PDFs are only a handful of
     # chunks each, so in isolation k=20 sweeps the whole document and recall@k
@@ -253,13 +283,15 @@ def build_config(corpus: str, embedder: str, reranker: str, db_path: str, table:
     cfg["verification"] = {"enabled": False}
     cfg["context_window_size"] = 0
     cfg["retrieval_k"] = k
-    cfg["reranker"] = {
-        "enabled": rerank_enabled,
-        "model_type": "cross-encoder",
-        "strategy": "rerankers-lib",
-        "model_name": reranker,
-        "top_k": None,  # rank the whole candidate list; we truncate for nDCG@10
-    }
+    # Keep the shipped profile's reranker block and override only the model:
+    # since arm G the profile selects (min_score / min_keep) and truncates
+    # (top_k), it does not just reorder, and the pipeline only applies that
+    # threshold selection when min_score is present. Replacing the block with a
+    # bare one would make the `final` metrics describe a reorder-only stack
+    # that no longer ships — `final` is supposed to be the list the answer
+    # stage actually sees.
+    cfg["reranker"]["enabled"] = rerank_enabled
+    cfg["reranker"]["model_name"] = reranker
     return cfg
 
 
@@ -316,6 +348,9 @@ def index_fingerprint(corpus: str, embedder: str, chunk_size: int,
         # (eval/DECISIONS.md). Carrying it here invalidates every index built
         # before that, exactly once, instead of silently reusing them.
         "normalized": True,
+        # Code, not data: size/mtime cannot see a chunker or crossref-stamping
+        # fix, so the fingerprint carries the harness's index-code version.
+        "index_code_version": INDEX_CODE_VERSION,
         "files": [
             {"path": os.path.relpath(f, REPO_ROOT), "size": os.path.getsize(f),
              "mtime": round(os.path.getmtime(f), 3)}
@@ -413,24 +448,35 @@ def decomposition_sub_queries(pipeline: RetrievalPipeline, gold: list, args,
                               log_path: str) -> dict:
     """Sub-queries per gold row for the roadmap-2.2 A/B, or ``{}`` when off.
 
-    `QueryDecomposer` is an LLM call, so the result is cached per corpus and
-    reused: the decomposition-on and decomposition-off arms must differ only in
-    whether the sub-queries are *used*, never in what they are. The first stage
-    never sees them — item 2.2's whole point is that they apply at reranking.
+    `QueryDecomposer` is an LLM call, so the result is cached and reused: the
+    decomposition-on and decomposition-off arms must differ only in whether the
+    sub-queries are *used*, never in what they are. The cache filename names
+    the corpus, the resolved decomposer model and SUBQUERY_PROMPT_VERSION, so
+    switching ENRICHMENT_MODEL or editing the prompt can never silently reuse
+    another run's decompositions. The first stage never sees the sub-queries —
+    item 2.2's whole point is that they apply at reranking — which is also why
+    a rerank-less run skips the work entirely: they would have no consumer.
     """
     if not args.decompose:
         return {}
+    if not rerank_settings(args)[0]:
+        print("  decompose              skipped — rerank stage is off, sub-queries "
+              "would have no consumer")
+        return {}
     os.makedirs(SUBQUERY_CACHE, exist_ok=True)
-    path = os.path.join(SUBQUERY_CACHE, f"{corpus_slug(args.corpus_being_run)}.json")
-    cache = {}
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as fh:
-            cache = json.load(fh)
 
     from rag_system.retrieval.query_transformer import QueryDecomposer  # noqa: E402
     llm_client, llm_config = _build_llm_client()
     model = llm_config.get("enrichment_model") or llm_config["generation_model"]
     decomposer = QueryDecomposer(llm_client, model)
+
+    path = os.path.join(
+        SUBQUERY_CACHE,
+        f"{corpus_slug(args.corpus_being_run)}.{slug(model)}.{SUBQUERY_PROMPT_VERSION}.json")
+    cache = {}
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as fh:
+            cache = json.load(fh)
 
     missing = [row for row in gold if row["id"] not in cache]
     if missing:
@@ -452,10 +498,12 @@ def decomposition_sub_queries(pipeline: RetrievalPipeline, gold: list, args,
 def rerank_settings(args) -> tuple:
     """(enabled, model_name) for this run.
 
-    The shipped "default" profile turns reranking off (eval/DECISIONS.md), and a
-    bare eval run must measure what ships. Naming a model with ``--reranker``
-    switches it back on, which is what the A/B commands in eval/decisions/*.md
-    do; ``--no-rerank`` always wins.
+    The shipped "default" profile has reranking ON since arm G (2026-08-14),
+    with threshold selection (``min_score`` / ``min_keep`` / ``top_k``), and a
+    bare eval run must measure what ships — including that selection, which
+    ``build_config`` preserves. Naming a model with ``--reranker`` keeps the
+    stage on but swaps the model, which is what the A/B commands in
+    eval/decisions/*.md do; ``--no-rerank`` always wins.
     """
     profile_default = bool(
         get_pipeline_config("default").get("reranker", {}).get("enabled", False)
@@ -845,8 +893,9 @@ def main() -> int:
     parser.add_argument("--embedder", default=EXTERNAL_MODELS["embedding_model"],
                         help="HF embedding model; defaults to EMBEDDING_MODEL / the repo default")
     parser.add_argument("--reranker", default=None,
-                        help="reranker model name; naming one enables the rerank stage "
-                             "(off by default, matching the shipped profile)")
+                        help="reranker model name; defaults to the shipped profile's "
+                             "reranker model (the stage itself follows the profile — "
+                             "ON since arm G — unless --no-rerank is given)")
     parser.add_argument("--k", type=int, default=20, help="first-stage candidates per query")
     parser.add_argument("--chunk-size", type=int, default=512,
                         help="token budget per chunk (512 = what the HTTP path sends)")
@@ -921,7 +970,13 @@ def main() -> int:
     print(f"  crossref   {hop_desc}   max_hops {hop_cfg.get('max_hops')} "
           f"chunks_per_hop {hop_cfg.get('chunks_per_hop')}")
     print(f"  prefilter  {pre_desc}   top_documents {pre_cfg.get('top_documents')}")
-    print(f"  decompose  {'on — applied at rerank only, aggregate=' + args.aggregate if args.decompose else 'off'}")
+    if args.decompose and not rerank_enabled:
+        decompose_desc = "skipped — rerank stage is off"
+    elif args.decompose:
+        decompose_desc = "on — applied at rerank only, aggregate=" + args.aggregate
+    else:
+        decompose_desc = "off"
+    print(f"  decompose  {decompose_desc}")
     print(f"  k          {args.k}   chunk_size {args.chunk_size}")
     print(f"  enrichment OFF   overviews {args.overviews.upper()}   latechunk OFF   "
           f"context-expansion OFF")
@@ -953,8 +1008,9 @@ def main() -> int:
             "crossref_hop_config": hop_cfg,
             "overview_prefilter": pre_desc,
             "overview_prefilter_config": pre_cfg,
-            "decompose_at_rerank": bool(args.decompose),
-            "rerank_aggregate": args.aggregate if args.decompose else None,
+            "decompose_at_rerank": bool(args.decompose) and rerank_enabled,
+            "rerank_aggregate": (args.aggregate
+                                 if args.decompose and rerank_enabled else None),
             "k": args.k,
             "chunk_size": args.chunk_size,
             "enrichment": False,

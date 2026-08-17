@@ -132,20 +132,17 @@ class QwenEmbedder(EmbeddingModel):
 
         # Convert to numpy and validate
         embeddings_np = embeddings.float().cpu().numpy()
-        
-        # Check for NaN or infinite values
+
+        # Warn only — do NOT zero-fill. An all-zero vector would pass the
+        # NaN/Inf filter in VectorIndexer.index() and be indexed as a real
+        # row; leaving the invalid values in place lets that filter skip the
+        # affected chunks instead.
         if np.isnan(embeddings_np).any():
-            print(f"⚠️ Warning: NaN values detected in embeddings from {self.model_name}")
-            # Replace NaN values with zeros
-            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
-            print(f"🔄 Replaced NaN values with zeros")
-        
+            print(f"⚠️ Warning: NaN values detected in embeddings from {self.model_name}; affected chunks will be skipped at indexing time")
+
         if np.isinf(embeddings_np).any():
-            print(f"⚠️ Warning: Infinite values detected in embeddings from {self.model_name}")
-            # Replace infinite values with zeros
-            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
-            print(f"🔄 Replaced infinite values with zeros")
-        
+            print(f"⚠️ Warning: Infinite values detected in embeddings from {self.model_name}; affected chunks will be skipped at indexing time")
+
         return embeddings_np
 
 class EmbeddingGenerator:
@@ -207,20 +204,17 @@ class OllamaEmbedder(EmbeddingModel):
         texts = apply_query_instruction(texts, self.query_instruction)
         vectors = [self._embed_single(t) for t in texts]
         embeddings_np = np.vstack(vectors)
-        
-        # Check for NaN or infinite values
+
+        # Warn only — do NOT zero-fill. An all-zero vector would pass the
+        # NaN/Inf filter in VectorIndexer.index() and be indexed as a real
+        # row; leaving the invalid values in place lets that filter skip the
+        # affected chunks instead.
         if np.isnan(embeddings_np).any():
-            print(f"⚠️ Warning: NaN values detected in Ollama embeddings from {self.model_name}")
-            # Replace NaN values with zeros
-            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
-            print(f"🔄 Replaced NaN values with zeros")
-        
+            print(f"⚠️ Warning: NaN values detected in Ollama embeddings from {self.model_name}; affected chunks will be skipped at indexing time")
+
         if np.isinf(embeddings_np).any():
-            print(f"⚠️ Warning: Infinite values detected in Ollama embeddings from {self.model_name}")
-            # Replace infinite values with zeros
-            embeddings_np = np.nan_to_num(embeddings_np, nan=0.0, posinf=0.0, neginf=0.0)
-            print(f"🔄 Replaced infinite values with zeros")
-        
+            print(f"⚠️ Warning: Infinite values detected in Ollama embeddings from {self.model_name}; affected chunks will be skipped at indexing time")
+
         return embeddings_np
 
 def select_embedder(model_name: str, ollama_host: str | None = None,

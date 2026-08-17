@@ -1,4 +1,5 @@
 from typing import List, Dict, Any
+import hashlib
 import os
 from rag_system.ingestion.document_converter import DocumentConverter
 from rag_system.ingestion.chunking import MarkdownRecursiveChunker
@@ -65,7 +66,6 @@ class IndexingPipeline:
         indexing_config = self.config.get("indexing", {})
         self.embedding_batch_size = indexing_config.get("embedding_batch_size", 50)
         self.enrichment_batch_size = indexing_config.get("enrichment_batch_size", 10)
-        self.enable_progress_tracking = indexing_config.get("enable_progress_tracking", True)
 
         # Cross-reference extraction (roadmap item 4.2). On by default: it is a
         # few regexes over text already in memory, adds no LLM call and no second
@@ -181,10 +181,18 @@ class IndexingPipeline:
             doc_chunks_map = {}
             with timer("Document Processing & Chunking"):
                 file_tracker = ProgressTracker(len(file_paths), "Document Processing")
-                
+                seen_document_ids = set()
+
                 for file_path in file_paths:
                     try:
                         document_id = os.path.basename(file_path)
+                        if document_id in seen_document_ids:
+                            # Two files share a basename: disambiguate with a
+                            # deterministic suffix of the full path so their
+                            # document_id / chunk_id namespaces can't collide.
+                            suffix = hashlib.sha1(file_path.encode("utf-8")).hexdigest()[:8]
+                            document_id = f"{document_id}#{suffix}"
+                        seen_document_ids.add(document_id)
                         print(f"Processing: {document_id}")
                         
                         pages_data = self.document_converter.convert_to_markdown(file_path)

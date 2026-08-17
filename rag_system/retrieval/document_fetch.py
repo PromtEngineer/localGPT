@@ -21,11 +21,14 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 # Chunks are a few hundred tokens each; this is a hard stop on how many rows we
-# will pull for one document, not an expected value.
+# will pull for one document, not an expected value. When the cap engages the
+# reassembly is flagged ``truncated`` — silently pretending the document was
+# whole would be worse than saying part of it is missing.
 _MAX_CHUNKS_SCANNED = 2000
 
 _CHARS_PER_TOKEN = 4
@@ -104,11 +107,17 @@ def _document_name(document_id: str, rows: List[Dict[str, Any]]) -> str:
         source = inner.get("source") or meta.get("source")
         if isinstance(source, str) and source.strip():
             return os.path.basename(source.strip())
-    # document_id is "<uuid>_<filename>" for files uploaded through the UI.
-    if "_" in document_id:
-        tail = document_id.split("_", 1)[1]
-        if tail:
+    # document_id is "<uuid>_<filename>" for files uploaded through the UI,
+    # but the plain basename for CLI-indexed files — and a basename can itself
+    # contain underscores ("07_nda.pdf"). Strip the prefix only when it is
+    # actually a UUID; otherwise the whole id is the best name we have.
+    prefix, sep, tail = document_id.partition("_")
+    if sep and tail:
+        try:
+            uuid.UUID(prefix)
             return tail
+        except ValueError:
+            pass
     return document_id
 
 
@@ -152,6 +161,11 @@ def fetch_document(
 
     if not rows:
         return None
+
+    # Hitting the scan cap means the document may hold more chunks than we
+    # pulled; the reassembly is then truncated even when the token budget
+    # below never engages.
+    hit_scan_cap = len(rows) >= _MAX_CHUNKS_SCANNED
 
     # Order is the whole point of this module: no order, no escalation.
     ordered: Dict[int, Dict[str, Any]] = {}
@@ -211,7 +225,7 @@ def fetch_document(
         chunks_used=len(used_indices),
         chunks_total=chunks_total,
         approx_tokens=approximate_token_count(body),
-        truncated=truncated,
+        truncated=truncated or hit_scan_cap,
         chunk_indices=used_indices,
     )
 

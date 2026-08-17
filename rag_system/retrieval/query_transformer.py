@@ -58,7 +58,8 @@ class QueryDecomposer:
         if chat_history:
             recent_turns = chat_history[-5:]
             for turn in recent_turns:
-                history_snippets.append(str(turn.get("query", turn)))
+                history_snippets.append(
+                    str(turn.get("query", turn)) if isinstance(turn, dict) else str(turn))
             last_assistant_answer = " ".join(
                 str(recent_turns[-1].get("answer", "") or "").split()) if isinstance(recent_turns[-1], dict) else ""
             if len(last_assistant_answer) > 300:
@@ -67,7 +68,7 @@ class QueryDecomposer:
         # Serialize chat_history for the prompt (single string)
         chat_history_text = " | ".join(history_snippets)
 
-        # ---- Build the new SYSTEM prompt with added legacy examples ----
+        # ---- Build the SYSTEM prompt ----
         system_prompt = """
 You are an expert at query decomposition for a Retrieval-Augmented Generation (RAG) system.
 
@@ -258,63 +259,9 @@ query: “What are the limitations of GPT-4o and what are the recommended mitiga
 }
 """
 
-        # ---- Append legacy examples that already existed in the old prompt ----
-        legacy_examples_header = """
-⸻
-
-Additional legacy examples
-"""
-
-        legacy_examples_body = """
-**Example 1: Multi-Part Query**
-Query: "What were the main findings of the aiconfig report and how do they compare to the results from the RAG paper?"
-JSON Output:
-{
-  "reasoning": "The query asks for two distinct pieces of information: the findings from one report and a comparison to another. This requires two separate retrieval steps.",
-  "sub_queries": [
-    "What were the main findings of the aiconfig report?",
-    "How do the findings of the aiconfig report compare to the results from the RAG paper?"
-  ]
-}
-
-**Example 2: Simple Query**
-Query: "Summarize the contributions of the DeepSeek-V3 paper."
-JSON Output:
-{
-  "reasoning": "This is a direct request for a summary of a single document and does not contain multiple parts.",
-  "sub_queries": [
-    "Summarize the contributions of the DeepSeek-V3 paper."
-  ]
-}
-
-**Example 3: Comparative Query**
-Query: "Did Microsoft or Google make more money last year?"
-JSON Output:
-{
-  "reasoning": "This is a comparative query that requires fetching the profit for each company before a comparison can be made.",
-  "sub_queries": [
-    "How much profit did Microsoft make last year?",
-    "How much profit did Google make last year?"
-  ]
-}
-
-**Example 4: Comparative Query with different phrasing**
-Query: "Who has more siblings, Jamie or Sansa?"
-JSON Output:
-{
-  "reasoning": "This comparative query needs the sibling count for both individuals to be answered.",
-  "sub_queries": [
-    "How many siblings does Jamie have?",
-    "How many siblings does Sansa have?"
-  ]
-}
-"""
-
         full_prompt = (
             system_prompt
             + new_examples
-            # + legacy_examples_header
-            # + legacy_examples_body
             + """
 
 ⸻
@@ -349,10 +296,6 @@ Input payload:
 
             print(f"Query Decomposition Reasoning: {reasoning}")
 
-            # Fallback: ensure at least the resolved_query if sub_queries empty
-            if not sub_queries:
-                sub_queries = [data.get('resolved_query', query)]
-
             # Deduplicate while preserving order
             sub_queries = list(dict.fromkeys(sub_queries))
 
@@ -366,34 +309,18 @@ Input payload:
 # academic-evidence-2026.md §6 — GraphRAG loses on single-hop, its multi-hop
 # gains are contested, and it costs 41–57x at indexing and up to ~377x in query
 # tokens. Nothing in this repo ever armed it.
-    def _decompose_single_turn(self, query: str, chat_history: List[Dict[str, Any]] | None = None, max_sub_queries: int = 10) -> List[str]:
+    def _decompose_single_turn(self, query: str, max_sub_queries: int = 10) -> List[str]:
         """Decompose *query* into standalone sub-queries.
 
         Parameters
         ----------
         query : str
             The latest user message.
-        chat_history : list[dict] | None
-            Recent conversation turns (each item should contain at least the original
-            user query under the key ``"query"``). Only the **last 5** turns are
-            included to keep the prompt short.
         max_sub_queries : int
             Hard cap on the returned sub-queries (``query_decomposition.max_sub_queries``).
         """
 
-        # ---- Limit history to last 5 user turns and extract the queries ----
-        history_snippets: List[str] = []
-        if chat_history:
-            # Keep only the last 5 turns
-            recent_turns = chat_history[-5:]
-            # Extract user queries (fallback: full dict as string if key missing)
-            for turn in recent_turns:
-                history_snippets.append(str(turn.get("query", turn)))
-
-        # Serialize chat_history for the prompt (single string)
-        chat_history_text = " | ".join(history_snippets)
-
-        # ---- Build the new SYSTEM prompt with added legacy examples ----
+        # ---- Build the SYSTEM prompt ----
         system_prompt = """
 You are an expert at query decomposition for a Retrieval-Augmented Generation (RAG) system.
 
@@ -554,63 +481,9 @@ query: “What are the limitations of GPT-4o and what are the recommended mitiga
 }
 """
 
-        # ---- Append legacy examples that already existed in the old prompt ----
-        legacy_examples_header = """
-⸻
-
-Additional legacy examples
-"""
-
-        legacy_examples_body = """
-**Example 1: Multi-Part Query**
-Query: "What were the main findings of the aiconfig report and how do they compare to the results from the RAG paper?"
-JSON Output:
-{
-  "reasoning": "The query asks for two distinct pieces of information: the findings from one report and a comparison to another. This requires two separate retrieval steps.",
-  "sub_queries": [
-    "What were the main findings of the aiconfig report?",
-    "How do the findings of the aiconfig report compare to the results from the RAG paper?"
-  ]
-}
-
-**Example 2: Simple Query**
-Query: "Summarize the contributions of the DeepSeek-V3 paper."
-JSON Output:
-{
-  "reasoning": "This is a direct request for a summary of a single document and does not contain multiple parts.",
-  "sub_queries": [
-    "Summarize the contributions of the DeepSeek-V3 paper."
-  ]
-}
-
-**Example 3: Comparative Query**
-Query: "Did Microsoft or Google make more money last year?"
-JSON Output:
-{
-  "reasoning": "This is a comparative query that requires fetching the profit for each company before a comparison can be made.",
-  "sub_queries": [
-    "How much profit did Microsoft make last year?",
-    "How much profit did Google make last year?"
-  ]
-}
-
-**Example 4: Comparative Query with different phrasing**
-Query: "Who has more siblings, Jamie or Sansa?"
-JSON Output:
-{
-  "reasoning": "This comparative query needs the sibling count for both individuals to be answered.",
-  "sub_queries": [
-    "How many siblings does Jamie have?",
-    "How many siblings does Sansa have?"
-  ]
-}
-"""
-
         full_prompt = (
             system_prompt
             + new_examples
-            # + legacy_examples_header
-            # + legacy_examples_body
             + """
 
 ⸻
@@ -619,7 +492,7 @@ Now process
 
 Input payload:
 
-""" + json.dumps({"query": query, "chat_history": chat_history_text}, indent=2) + """
+""" + json.dumps({"query": query, "chat_history": ""}, indent=2) + """
 """
         )
 
@@ -643,10 +516,6 @@ Input payload:
             reasoning = data.get('reasoning', 'No reasoning provided.')
 
             print(f"Query Decomposition Reasoning: {reasoning}")
-
-            # Fallback: ensure at least the resolved_query if sub_queries empty
-            if not sub_queries:
-                sub_queries = [data.get('resolved_query', query)]
 
             # Deduplicate while preserving order
             sub_queries = list(dict.fromkeys(sub_queries))

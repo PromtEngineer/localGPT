@@ -1,6 +1,9 @@
 from typing import Dict, Any, Optional
+import contextlib
 import contextvars
+import copy
 import json
+import re
 import time, asyncio, os
 import numpy as np
 import concurrent.futures
@@ -15,6 +18,23 @@ from rag_system.agent.escalation import EscalatingRetrievalPipeline
 from rag_system.agent.verifier import Verifier
 from rag_system.retrieval.filters import compile_filters
 from rag_system.retrieval.query_transformer import QueryDecomposer
+
+# Per-session history cap, in turns. The LRUCache on chat_histories bounds
+# session COUNT; nothing else bounded turns within a session.
+_MAX_HISTORY_TURNS = 40
+
+# The verifier's answer suffixes: " [Confidence: 85%]" plus the optional
+# low-confidence warning. Per-response UX only — they must not be stored in
+# history, where they would leak into later prompts (and into the
+# decomposer's last_assistant_answer).
+_ANSWER_TAGS_RE = re.compile(
+    r"\s*\[Confidence: \d+%\](\s*\[Warning: Low confidence\. Groundedness: [^\]]*\])?\s*$"
+)
+
+
+def _strip_answer_tags(answer: str) -> str:
+    """Return *answer* without the verifier's trailing confidence/warning tags."""
+    return _ANSWER_TAGS_RE.sub("", answer) if answer else answer
 
 
 def _in_copied_context(fn):
@@ -259,7 +279,8 @@ User query: "{query}"
 Respond with JSON: {{"category": "<your_choice>"}}
 """
         resp = self.llm_client.generate_completion(
-            model=self._utility_model(), prompt=prompt, format="json"
+            model=self._utility_model(), prompt=prompt, format="json",
+            options={"temperature": 0},  # deterministic routing (same pin the eval judge got in ebcc88b)
         )
         try:
             data = json.loads(resp.get("response", "{}"))
@@ -284,13 +305,59 @@ Respond with JSON: {{"category": "<your_choice>"}}
         return asyncio.run(self._run_async(query, table_name, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, retrieval_mode, force_rag, event_callback, filters=filters))
 
     # ---------------- Per-query bookkeeping wrapper -----------------------------------
-    async def _run_async(self, *args, **kwargs) -> Dict[str, Any]:
-        """Wraps one user query in its token-usage and escalation scopes.
+    @contextlib.contextmanager
+    def _pipeline_config_overrides(self, *, ai_rerank: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, retrieval_mode: Optional[str] = None):
+        """Apply per-request retrieval overrides, then restore the shared config.
 
-        Both are per-*query*, not per-retrieval, which is why they live out here
-        rather than inside the pipeline: a decomposed query runs the pipeline
-        several times and must still report one token total and escalate at most
-        one document (roadmap 4.1 / 4.5).
+        The retrieval pipeline is a process-wide singleton, so writing these
+        straight into ``pipeline.config`` made one request's toggle sticky for
+        every later request. Snapshot the affected subtrees, apply, and restore
+        in ``finally`` — the same pattern as ``_generation_model_override`` in
+        api_server.py. Snapshot/restore is safe because the RAG API server is
+        single-threaded by design; a concurrent server would need a lock.
+        """
+        config = self.retrieval_pipeline.config
+        missing = object()
+        snapshot = {}
+        for key in ("reranker", "retrieval", "retrieval_k", "context_window_size"):
+            value = config.get(key, missing)
+            snapshot[key] = copy.deepcopy(value) if value is not missing else value
+
+        if ai_rerank is not None:
+            rr_cfg = config.setdefault("reranker", {})
+            rr_cfg["enabled"] = bool(ai_rerank)
+        if retrieval_k is not None:
+            config["retrieval_k"] = retrieval_k
+            print(f"🔍 Retrieval K set to: {retrieval_k}")
+        if context_window_size is not None:
+            config["context_window_size"] = context_window_size
+            print(f"🔍 Context window size set to: {context_window_size}")
+        if reranker_top_k is not None:
+            rr_cfg = config.setdefault("reranker", {})
+            rr_cfg["top_k"] = reranker_top_k
+            print(f"🔍 Reranker top K set to: {reranker_top_k}")
+        if retrieval_mode is not None:
+            retrieval_cfg = config.setdefault("retrieval", {})
+            retrieval_cfg["search_type"] = retrieval_mode
+            print(f"🔍 Retrieval mode set to: {retrieval_mode}")
+
+        try:
+            yield
+        finally:
+            for key, value in snapshot.items():
+                if value is missing:
+                    config.pop(key, None)
+                else:
+                    config[key] = value
+
+    async def _run_async(self, query: str, table_name: str = None, session_id: str = None, compose_sub_answers: Optional[bool] = None, query_decompose: Optional[bool] = None, ai_rerank: Optional[bool] = None, context_expand: Optional[bool] = None, verify: Optional[bool] = None, retrieval_k: Optional[int] = None, context_window_size: Optional[int] = None, reranker_top_k: Optional[int] = None, retrieval_mode: Optional[str] = None, force_rag: bool = False, event_callback: Optional[callable] = None, *, filters: Any = None) -> Dict[str, Any]:
+        """Wraps one user query in its token-usage, config-override and escalation scopes.
+
+        All three are per-*query*, not per-retrieval, which is why they live out
+        here rather than inside the pipeline: a decomposed query runs the
+        pipeline several times and must still report one token total, see one
+        set of runtime overrides and escalate at most one document
+        (roadmap 4.1 / 4.5).
         """
         tracker = TokenUsageTracker()
         pipeline = self.retrieval_pipeline
@@ -300,7 +367,14 @@ Respond with JSON: {{"category": "<your_choice>"}}
             if can_escalate:
                 pipeline.begin_escalation_request()
             try:
-                result = await self._run_async_inner(*args, **kwargs)
+                with self._pipeline_config_overrides(
+                    ai_rerank=ai_rerank,
+                    retrieval_k=retrieval_k,
+                    context_window_size=context_window_size,
+                    reranker_top_k=reranker_top_k,
+                    retrieval_mode=retrieval_mode,
+                ):
+                    result = await self._run_async_inner(query, table_name, session_id, compose_sub_answers, query_decompose, ai_rerank, context_expand, verify, retrieval_k, context_window_size, reranker_top_k, retrieval_mode, force_rag, event_callback, filters=filters)
             finally:
                 budget = pipeline.end_escalation_request() if can_escalate else None
 
@@ -332,19 +406,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
         
         # 🚀 NEW: Get conversation history
         history = self.chat_histories.get(session_id, []) if session_id else []
-        
-        # 🔄 Refresh overviews for this session if available
-        # if session_id and session_id != getattr(self, "_current_overview_session", None):
-        #     candidate_path = os.path.join("index_store", "overviews", f"{session_id}.jsonl")
-        #     if os.path.exists(candidate_path):
-        #         self._load_overviews(candidate_path)
-        #         self._current_overview_session = session_id
-        #     else:
-        #         # Fall back to global overviews if per-session file not found
-        #         if self._current_overview_session != "GLOBAL":
-        #             self._load_overviews(self._global_overview_path)
-        #             self._current_overview_session = "GLOBAL"
-        
+
         if force_rag or compiled_filters is not None:
             # A metadata filter is an instruction to search a named part of the
             # corpus (roadmap 4.4). Letting triage answer it from the model's
@@ -364,29 +426,10 @@ Respond with JSON: {{"category": "<your_choice>"}}
         contextual_query = self._format_query_with_history(query, history)
         raw_query = query.strip()
 
-        # --- Apply runtime AI reranker override (must happen before any retrieval calls) ---
-        if ai_rerank is not None:
-            rr_cfg = self.retrieval_pipeline.config.setdefault("reranker", {})
-            rr_cfg["enabled"] = bool(ai_rerank)
-
-        # --- Apply runtime retrieval configuration overrides ---
-        if retrieval_k is not None:
-            self.retrieval_pipeline.config["retrieval_k"] = retrieval_k
-            print(f"🔍 Retrieval K set to: {retrieval_k}")
-
-        if context_window_size is not None:
-            self.retrieval_pipeline.config["context_window_size"] = context_window_size
-            print(f"🔍 Context window size set to: {context_window_size}")
-
-        if reranker_top_k is not None:
-            rr_cfg = self.retrieval_pipeline.config.setdefault("reranker", {})
-            rr_cfg["top_k"] = reranker_top_k
-            print(f"🔍 Reranker top K set to: {reranker_top_k}")
-
-        if retrieval_mode is not None:
-            retrieval_cfg = self.retrieval_pipeline.config.setdefault("retrieval", {})
-            retrieval_cfg["search_type"] = retrieval_mode
-            print(f"🔍 Retrieval mode set to: {retrieval_mode}")
+        # Runtime retrieval overrides (ai_rerank, retrieval_k, context_window_size,
+        # reranker_top_k, retrieval_mode) are applied around this whole method by
+        # _run_async's _pipeline_config_overrides scope and rolled back there, so
+        # everything below already sees this request's config.
 
         query_embedding = None
         # 🚀 OPTIMIZED: Semantic Cache Check
@@ -407,8 +450,8 @@ Respond with JSON: {{"category": "<your_choice>"}}
                 if cached_result:
                     # Update history even on cache hit
                     if session_id:
-                        history.append({"query": query, "answer": cached_result.get('answer', 'Cached answer not found.')})
-                        self.chat_histories[session_id] = history
+                        history.append({"query": query, "answer": _strip_answer_tags(cached_result.get('answer', 'Cached answer not found.'))})
+                        self.chat_histories[session_id] = history[-_MAX_HISTORY_TURNS:]
                     return cached_result
 
         if query_type == "direct_answer":
@@ -467,15 +510,18 @@ Respond with JSON: {{"category": "<your_choice>"}}
                     event_callback("decomposition", {"sub_queries": sub_queries})
                 print(f"Original query: '{query}' (Contextual: '{contextual_query}')")
                 print(f"Decomposed into {len(sub_queries)} sub-queries: {sub_queries}")
-                
-                # Emit retrieval_started event before any retrievals
-                if event_callback:
-                    event_callback("retrieval_started", {"count": len(sub_queries)})
-                
+
+                # retrieval_started is emitted per branch below, with the count
+                # that branch actually retrieves with — 1 for the single and
+                # pooled paths, N for compose. One agent-level event per
+                # logical retrieval, so the frontend never sees contradictory
+                # counts (the pipeline emits its own retrieval_started too).
                 # If decomposition produced only a single sub-query, skip the
                 # parallel/composition machinery for efficiency.
                 if len(sub_queries) == 1:
                     print("--- Only one sub-query after decomposition; using direct retrieval path ---")
+                    if event_callback:
+                        event_callback("retrieval_started", {"count": 1})
                     with token_stage("synthesis"):
                         result = self.retrieval_pipeline.run(
                             sub_queries[0],
@@ -539,6 +585,11 @@ Respond with JSON: {{"category": "<your_choice>"}}
                         sub_answers = []
                         all_source_docs = []
                         citations_seen = set()
+
+                        # One retrieval_started for the whole fan-out: each
+                        # sub-query runs a full retrieval below.
+                        if event_callback:
+                            event_callback("retrieval_started", {"count": len(sub_queries)})
 
                         # Emit rerank_started before the parallel retrievals (each sub-query reranks).
                         if event_callback:
@@ -604,6 +655,15 @@ Respond with JSON: {{"category": "<your_choice>"}}
 
                         print(f"🚀 Parallel processing completed in {time.time() - start_time_inner:.2f}s")
 
+                        # Every sub-query raised: composing from "[]" would dress
+                        # total failure up as a 200. Fail the way the single-query
+                        # path does (raise -> 500 / SSE error); a partial failure
+                        # stays best-effort.
+                        if not sub_answers:
+                            raise RuntimeError(
+                                f"All {len(sub_queries)} sub-queries failed for query: '{raw_query}'"
+                            )
+
                         if event_callback:
                             event_callback("retrieval_done", {"count": len(sub_queries)})
                             event_callback("rerank_done", {"count": len(sub_queries)})
@@ -638,16 +698,20 @@ FINAL ANSWER:
                         # --- Stream composition answer token-by-token ---
                         answer_parts: list[str] = []
 
-                        with token_stage("synthesis"):
-                            for tok in self.llm_client.stream_completion(
-                                model=self.ollama_config["generation_model"],
-                                prompt=compose_prompt,
-                                enable_thinking=False,  # thinking burns the window and can yield an empty answer
-                                options={"temperature": 0},  # greedy decode, matches synthesis (arm C config)
-                            ):
-                                answer_parts.append(tok)
-                                if event_callback:
-                                    event_callback("token", {"text": tok})
+                        def _blocking_compose_stream():
+                            with token_stage("synthesis"):
+                                for tok in self.llm_client.stream_completion(
+                                    model=self.ollama_config["generation_model"],
+                                    prompt=compose_prompt,
+                                    enable_thinking=False,  # thinking burns the window and can yield an empty answer
+                                    options={"temperature": 0},  # greedy decode, matches synthesis (arm C config)
+                                ):
+                                    answer_parts.append(tok)
+                                    if event_callback:
+                                        event_callback("token", {"text": tok})
+
+                        # Run the blocking generator in a thread so the event loop stays responsive
+                        await asyncio.to_thread(_blocking_compose_stream)
 
                         final_answer = "".join(answer_parts) or "Unable to generate an answer."
 
@@ -687,10 +751,12 @@ FINAL ANSWER:
         else:
             print("🚀 Skipping verification for speed or lack of sources")
         
-        # 🚀 NEW: Update history
+        # 🚀 NEW: Update history — store the answer WITHOUT the verifier's
+        # confidence tags; they are per-response UX and would otherwise leak
+        # into later prompts (and the decomposer's last_assistant_answer).
         if session_id:
-            history.append({"query": query, "answer": result['answer']})
-            self.chat_histories[session_id] = history
+            history.append({"query": query, "answer": _strip_answer_tags(result['answer'])})
+            self.chat_histories[session_id] = history[-_MAX_HISTORY_TURNS:]
             
         # 🚀 OPTIMIZED: Cache the result for future queries
         if query_type != "direct_answer" and query_embedding is not None:
@@ -739,7 +805,8 @@ If C → {{"category": "rag_query"}}
 Response:"""
 
         resp = self.llm_client.generate_completion(
-            model=self._utility_model(), prompt=router_prompt, format="json"
+            model=self._utility_model(), prompt=router_prompt, format="json",
+            options={"temperature": 0},  # deterministic routing (same pin the eval judge got in ebcc88b)
         )
         try:
             raw_response = resp.get("response", "{}")

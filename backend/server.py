@@ -38,6 +38,10 @@ RAG_API_INDEX_TIMEOUT = float(os.getenv("RAG_API_INDEX_TIMEOUT", "3600"))
 GENERATION_MODEL = os.getenv("GENERATION_MODEL") or OLLAMA_CONFIG.get("generation_model") or "qwen3.5:9b"
 ENRICHMENT_MODEL = os.getenv("ENRICHMENT_MODEL") or OLLAMA_CONFIG.get("enrichment_model") or "qwen3.5:4b"
 
+# Multipart uploads are parsed fully in memory, so cap the declared body size
+# (default 200 MB) and answer 413 beyond it instead of reading unbounded data.
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(200 * 1024 * 1024)))
+
 # Canonical snake_case option name -> (caster, accepted aliases).
 # The frontend historically sent camelCase, so both spellings map to one key.
 CHAT_OPTIONS: Dict[str, Tuple[Any, Tuple[str, ...]]] = {
@@ -87,6 +91,18 @@ def normalize_options(data: dict, spec: Dict[str, Tuple[Any, Tuple[str, ...]]]) 
                 options[canonical] = data[key]
             break
     return options
+
+
+class ChatBackendError(Exception):
+    """An upstream chat failure (RAG API or Ollama) carrying its HTTP status.
+
+    Raised instead of embedding failure text in a 200 OK answer, so clients
+    can distinguish an error from a real response: timeout → 504, unreachable
+    or non-200 upstream → 502.
+    """
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 # ---------------------------------------------------------------------------
@@ -281,8 +297,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             session_id = parsed_path.path.split('/')[-1]
             self.handle_get_session(session_id)
         else:
-            self.send_response(404)
-            self.end_headers()
+            self.send_json_response({"error": "Not found"}, status_code=404)
     
     def do_POST(self):
         """Handle POST requests"""
@@ -302,6 +317,11 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.handle_build_index(index_id)
         elif parsed_path.path.startswith('/sessions/') and '/indexes/' in parsed_path.path:
             parts = parsed_path.path.split('/')
+            if len(parts) != 5 or parts[3] != 'indexes' or not parts[2] or not parts[4]:
+                self.send_json_response({
+                    "error": "Malformed path: expected /sessions/<session_id>/indexes/<index_id>"
+                }, status_code=400)
+                return
             session_id = parts[2]
             index_id = parts[4]
             self.handle_link_index_to_session(session_id, index_id)
@@ -321,8 +341,7 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             session_id = parsed_path.path.split('/')[-2]
             self.handle_rename_session(session_id)
         else:
-            self.send_response(404)
-            self.end_headers()
+            self.send_json_response({"error": "Not found"}, status_code=404)
 
     def do_DELETE(self):
         """Handle DELETE requests"""
@@ -335,16 +354,15 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             index_id = parsed_path.path.split('/')[-1]
             self.handle_delete_index(index_id)
         else:
-            self.send_response(404)
-            self.end_headers()
+            self.send_json_response({"error": "Not found"}, status_code=404)
     
     def handle_chat(self):
         """Handle legacy chat requests (without sessions)"""
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-            
+            data = self.read_required_json_body()
+            if data is None:
+                return
+
             message = data.get('message', '')
             model = data.get('model', GENERATION_MODEL)
             conversation_history = data.get('conversation_history', [])
@@ -375,6 +393,19 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({
                 "error": "Invalid JSON"
             }, status_code=400)
+        except requests.exceptions.Timeout:
+            self.send_json_response({
+                "error": "The Ollama backend did not respond in time."
+            }, status_code=504)
+        except requests.exceptions.ConnectionError:
+            self.send_json_response({
+                "error": "Could not connect to Ollama. Please ensure it is running."
+            }, status_code=502)
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else "unknown"
+            self.send_json_response({
+                "error": f"Ollama request failed (HTTP {status})."
+            }, status_code=502)
         except Exception as e:
             self.send_json_response({
                 "error": f"Server error: {str(e)}"
@@ -451,10 +482,10 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
     def handle_create_session(self):
         """Create a new chat session"""
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
-            
+            data = self.read_required_json_body()
+            if data is None:
+                return
+
             title = data.get('title', 'New Chat')
             model = data.get('model', GENERATION_MODEL)
 
@@ -486,9 +517,9 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json_response({"error": "Session not found"}, status_code=404)
                 return
             
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
+            data = self.read_required_json_body()
+            if data is None:
+                return
             message = data.get('message', '')
 
             if not message:
@@ -551,6 +582,10 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.send_json_response({
                 "error": "Invalid JSON"
             }, status_code=400)
+        except ChatBackendError as e:
+            # Upstream RAG/direct-LLM failure: answer with a real error status
+            # so clients can distinguish failure from an answer.
+            self.send_json_response({"error": str(e)}, status_code=e.status_code)
         except Exception as e:
             print(f"❌ Server error in session chat: {str(e)}")
             try:
@@ -566,6 +601,10 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
 
         Returns:
             tuple: (response_text, empty_source_docs)
+
+        Raises:
+            ChatBackendError: on Ollama timeout (504) or connection/non-200
+            failure (502), so the chat handler answers with a real error status.
         """
         try:
             # Get conversation history for context
@@ -581,9 +620,19 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 conversation_history=conversation_history,
                 enable_thinking=False  # ⚡ DISABLE THINKING FOR SPEED
             )
-            
+
             return response_text, []  # No source docs for direct LLM
-            
+
+        except requests.exceptions.Timeout:
+            print("❌ Direct LLM request to Ollama timed out.")
+            raise ChatBackendError("The Ollama backend did not respond in time.", 504)
+        except requests.exceptions.ConnectionError:
+            print("❌ Could not connect to Ollama.")
+            raise ChatBackendError("Could not connect to Ollama. Please ensure it is running.", 502)
+        except requests.exceptions.HTTPError as e:
+            status = e.response.status_code if e.response is not None else "unknown"
+            print(f"❌ Ollama returned HTTP {status}.")
+            raise ChatBackendError(f"Ollama request failed (HTTP {status}).", 502)
         except Exception as e:
             print(f"❌ Direct LLM error: {e}")
             return f"Error processing query: {str(e)}", []
@@ -594,12 +643,18 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
 
         Returns:
             tuple[str, List[dict]]: (response_text, source_documents)
+
+        Raises:
+            ChatBackendError: on RAG API timeout (504), connection failure or
+            non-200 response (502) — never embedded in a 200 OK answer.
         """
         # Defaults
         response_text = ""
         source_docs: List[dict] = []
 
-        # Build payload for RAG API
+        # Build payload for RAG API. The active index is the LAST linked one —
+        # same convention as the RAG API's table/embedder resolution
+        # (see ChatDatabase.get_indexes_for_session).
         rag_api_url = f"{RAG_API_URL}/chat"
         table_name = f"text_pages_{idx_ids[-1]}" if idx_ids else None
         payload: Dict[str, Any] = {
@@ -613,22 +668,21 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
 
         try:
             rag_response = requests.post(rag_api_url, json=payload, timeout=RAG_API_TIMEOUT)
-            if rag_response.status_code == 200:
-                rag_data = rag_response.json()
-                response_text = rag_data.get("answer", "No answer found.")
-                source_docs = rag_data.get("source_documents", [])
-            else:
-                response_text = f"Error from RAG API ({rag_response.status_code}): {rag_response.text}"
-                print(f"❌ RAG API error: {response_text}")
         except requests.exceptions.Timeout:
-            response_text = f"The RAG API did not respond within {RAG_API_TIMEOUT:.0f}s."
             print(f"❌ RAG API request timed out after {RAG_API_TIMEOUT:.0f}s ({rag_api_url}).")
+            raise ChatBackendError(f"The RAG API did not respond within {RAG_API_TIMEOUT:.0f}s.", 504)
         except requests.exceptions.ConnectionError:
-            response_text = f"Could not connect to the RAG API server at {RAG_API_URL}. Please ensure it is running."
             print(f"❌ Connection to RAG API failed ({rag_api_url}).")
-        except Exception as e:
-            response_text = f"Error processing RAG query: {str(e)}"
-            print(f"❌ RAG processing error: {e}")
+            raise ChatBackendError(f"Could not connect to the RAG API server at {RAG_API_URL}. Please ensure it is running.", 502)
+
+        if rag_response.status_code == 200:
+            rag_data = rag_response.json()
+            response_text = rag_data.get("answer", "No answer found.")
+            source_docs = rag_data.get("source_documents", [])
+        else:
+            # A non-200 is an upstream failure, not an answer.
+            print(f"❌ RAG API error ({rag_response.status_code}): {rag_response.text}")
+            raise ChatBackendError(f"RAG API request failed (HTTP {rag_response.status_code}).", 502)
 
         # Strip any <think>/<thinking> tags that might slip through
         response_text = re.sub(r'<(think|thinking)>.*?</\1>', '', response_text, flags=re.DOTALL | re.IGNORECASE).strip()
@@ -646,10 +700,12 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             self.send_json_response({'error': str(e)}, status_code=500)
     
-    def parse_multipart_files(self, field_name: str = 'files') -> List[Tuple[str, bytes]]:
+    def parse_multipart_files(self, field_name: str = 'files') -> Optional[List[Tuple[str, bytes]]]:
         """Parse a multipart/form-data body and return (filename, content) for one field.
 
         Uses the stdlib email parser; `cgi` was removed from Python 3.13.
+        Returns None after sending a 413 response when the declared body
+        exceeds MAX_UPLOAD_BYTES; callers must treat None as "response sent".
         """
         content_type = self.headers.get('Content-Type', '') or ''
         if not content_type.lower().startswith('multipart/form-data'):
@@ -658,6 +714,11 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get('Content-Length', 0) or 0)
         if length <= 0:
             return []
+        if length > MAX_UPLOAD_BYTES:
+            self.send_json_response({
+                "error": f"Upload too large: body of {length} bytes exceeds the {MAX_UPLOAD_BYTES}-byte limit"
+            }, status_code=413)
+            return None
 
         body = self.rfile.read(length)
         prologue = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode('utf-8')
@@ -684,6 +745,8 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         """Handle file uploads, save them, and associate with the session."""
         uploaded_files = []
         incoming = self.parse_multipart_files('files')
+        if incoming is None:
+            return  # 413 already sent
         if incoming:
             upload_dir = "shared_uploads"
             os.makedirs(upload_dir, exist_ok=True)
@@ -722,6 +785,23 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
+    def read_required_json_body(self) -> Optional[dict]:
+        """Read a required JSON request body.
+
+        Returns None after sending a 400 when Content-Length is missing or
+        invalid; a JSONDecodeError still propagates so callers keep their
+        existing "Invalid JSON" 400 handling.
+        """
+        try:
+            content_length = int(self.headers.get('Content-Length') or 0)
+        except (TypeError, ValueError):
+            self.send_json_response({"error": "Missing or invalid Content-Length"}, status_code=400)
+            return None
+        if content_length <= 0:
+            self.send_json_response({"error": "Request body required"}, status_code=400)
+            return None
+        return json.loads(self.rfile.read(content_length).decode('utf-8'))
+
     def handle_index_documents(self, session_id: str):
         """Triggers indexing for all documents in a session."""
         print(f"🔥 Received request to index documents for session {session_id[:8]}...")
@@ -742,16 +822,22 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
 
             if rag_response.status_code == 200:
                 print("✅ RAG API successfully indexed documents.")
-                # Merge key config values into index metadata
+                # Merge key config values into index metadata. Session-scoped
+                # builds name the table after the chat session, which has no
+                # row in the indexes table — only merge when the id is a real
+                # index, otherwise the update would raise "Index not found".
                 idx_meta: Dict[str, Any] = {
                     "session_linked": True,
                     "retrieval_mode": options.get("retrieval_mode", "hybrid"),
                 }
                 idx_meta.update({k: v for k, v in options.items() if k != "retrieval_mode"})
-                try:
-                    db.update_index_metadata(session_id, idx_meta)  # session_id used as index_id in text table naming
-                except Exception as e:
-                    print(f"⚠️ Failed to update index metadata for session index: {e}")
+                if db.get_index(session_id):
+                    try:
+                        db.update_index_metadata(session_id, idx_meta)
+                    except Exception as e:
+                        print(f"⚠️ Failed to update index metadata for session index: {e}")
+                else:
+                    print(f"ℹ️ Skipping index metadata update: {session_id[:8]}... is a session, not an index")
                 self.send_json_response(rag_response.json())
             else:
                 error_info = rag_response.text
@@ -830,9 +916,9 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
     
     def handle_create_index(self):
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
+            data = self.read_required_json_body()
+            if data is None:
+                return
             name = data.get('name')
             description = data.get('description')
             metadata = data.get('metadata', {})
@@ -864,6 +950,8 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         """Reuse file upload logic but store docs under index."""
         uploaded_files=[]
         incoming = self.parse_multipart_files('files')
+        if incoming is None:
+            return  # 413 already sent
         if incoming:
             upload_dir='shared_uploads'
             os.makedirs(upload_dir, exist_ok=True)
@@ -922,20 +1010,10 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                     **meta_updates
                 })
             else:
-                # Gracefully handle scenario where table already exists (idempotent build)
-                try:
-                    err_json = rag_resp.json()
-                except Exception:
-                    err_json = {}
-                err_text = err_json.get('error') if isinstance(err_json, dict) else rag_resp.text
-                if err_text and 'already exists' in err_text:
-                    # Treat as non-fatal; return message indicating index previously built
-                    self.send_json_response({
-                        "message": "Index already built – skipping rebuild.",
-                        "note": err_text
-                })
-                else:
-                    self.send_json_response({"error":f"RAG indexing failed: {rag_resp.text}"}, status_code=500)
+                # The pipeline replaces rows on rebuild (delete-before-add), so
+                # a non-200 here is always a real failure, never a table-exists
+                # conflict.
+                self.send_json_response({"error":f"RAG indexing failed: {rag_resp.text}"}, status_code=500)
         except requests.exceptions.Timeout:
             self.send_json_response({
                 "error": f"Indexing did not complete within {RAG_API_INDEX_TIMEOUT:.0f}s."
@@ -1070,7 +1148,8 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
             self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-            self.send_header('Access-Control-Allow-Credentials', 'true')
+            # No Access-Control-Allow-Credentials: the spec forbids combining
+            # credentialed requests with a '*' origin, and nothing here needs it.
             self.end_headers()
         
             response_bytes = json.dumps(data, indent=2).encode('utf-8')

@@ -115,7 +115,14 @@ class BatchProcessor:
                     tracker.update(len(batch))
                     
                 except Exception as e:
-                    logger.error(f"Error in batch {batch_num}: {e}")
+                    # Loud, not silent: a skipped batch means its items are
+                    # MISSING from the results (for enrichment, those chunks
+                    # get indexed without context; for embeddings they surface
+                    # later as a length-mismatch ValueError).
+                    logger.warning(
+                        f"⚠️ {operation_name}: batch {batch_num}/{total_batches} FAILED — "
+                        f"{len(batch)} item(s) dropped from the results. Error: {e}"
+                    )
                     tracker.update(len(batch), errors=len(batch))
                     # Continue processing other batches
                     continue

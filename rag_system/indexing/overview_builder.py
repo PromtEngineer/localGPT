@@ -89,12 +89,17 @@ def write_overview_vectors(vectors_path: str, doc_ids: List[str], vectors,
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
     meta = json.dumps({"embedding_model": embedding_model, "normalized": True})
-    np.savez(
-        vectors_path,
-        doc_ids=np.array(doc_ids, dtype=object).astype("U"),
-        vectors=np.asarray(vectors, dtype="float32"),
-        meta=np.array(meta),
-    )
+    # Write to a temp file in the same directory, then os.replace: a crash
+    # mid-savez must not leave a truncated sidecar behind.
+    tmp_path = vectors_path + ".tmp"
+    with open(tmp_path, "wb") as fh:
+        np.savez(
+            fh,
+            doc_ids=np.array(doc_ids, dtype=object).astype("U"),
+            vectors=np.asarray(vectors, dtype="float32"),
+            meta=np.array(meta),
+        )
+    os.replace(tmp_path, vectors_path)
 
 
 class OverviewBuilder:
@@ -135,8 +140,20 @@ class OverviewBuilder:
         except Exception as e:
             summary = f"Failed to generate overview: {e}"
         record = {"doc_id": doc_id, "overview": summary.strip()}
-        with open(self.out_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        # Atomic append: rewrite the JSONL through a temp file + os.replace so
+        # a crash mid-write can never leave a truncated file. One line per
+        # document is preserved, so the last-line-wins read semantics are
+        # unchanged.
+        tmp_path = f"{self.out_path}.{os.getpid()}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as tmp:
+            try:
+                with open(self.out_path, "r", encoding="utf-8") as src:
+                    for existing in src:
+                        tmp.write(existing)
+            except OSError:
+                pass  # first write: no existing JSONL yet
+            tmp.write(json.dumps(record, ensure_ascii=False) + "\n")
+        os.replace(tmp_path, self.out_path)
 
         logger.info(f"📄 Overview generated for {doc_id} (stored in {self.out_path})")
 

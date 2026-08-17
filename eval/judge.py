@@ -15,7 +15,9 @@ A model name starting with ``claude-`` routes to the Anthropic API instead
 and credentials in the environment). Motivation: the Phase-4 A/Bs showed the
 4b judge returning verdicts its own reasons contradict on exactly the rows
 that decide feature adoption (``eval/decisions/phase4-escalation-rerun.md``
-§6). Select it per run with ``JUDGE_MODEL=claude-sonnet-5``.
+§6). Select it per run with ``JUDGE_MODEL=claude-sonnet-5``. Both backends are
+pinned to temperature 0 — a judge must be deterministic to be comparable
+across runs.
 
 Regardless of backend, the verifier's ``[Confidence: N%] [Warning: ...]``
 suffix is stripped from the ANSWER before judging — one judge reason was
@@ -176,6 +178,10 @@ class GroundednessJudge:
         response = self._anthropic.messages.create(
             model=self.model,
             max_tokens=4096,  # hard cap on thinking + response text together
+            # Same pin as the Ollama path below (sampling noise flipped 11/24
+            # verdicts in the ftslc screen): a judge must be deterministic to
+            # be comparable across runs — the API default is temperature 1.0.
+            temperature=0,
             output_config={"format": {"type": "json_schema", "schema": {
                 "type": "object",
                 "properties": {

@@ -1,6 +1,6 @@
 from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification, AutoTokenizer
 import torch
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Optional, Tuple
 
 class CrossEncoderReranker:
     """
@@ -23,27 +23,34 @@ class CrossEncoderReranker:
         
         print("Cross-encoder reranker loaded successfully.")
 
-    def rerank(self, query: str, documents: List[Dict[str, Any]], top_k: int = 5, *, early_exit: bool = True, margin: float = 0.4, min_scored: int = 8, batch_size: int = 8) -> List[Dict[str, Any]]:
-        """
-        Reranks a list of documents based on their relevance to a query.
+    def rank(self, query: str, texts: List[str], *, early_exit: bool = True, margin: float = 0.4, min_scored: int = 8, batch_size: int = 8) -> List[Tuple[float, int]]:
+        """Score every text against *query*.
 
-        If *early_exit* is True the cross-encoder scores documents in mini-batches and
-        stops once the best-so-far score beats the worst-so-far by *margin* after at
-        least *min_scored* docs have been processed.  This accelerates "easy" queries
-        where strong positives dominate.
+        Returns ``[(score, original_index), …]`` sorted by score, descending —
+        the same interface ``QwenRerankerScorer.rank`` and the `rerankers` lib
+        branch expose, so ``RetrievalPipeline._score_pairs`` can call any of
+        them. Scores are raw logits.
+
+        If *early_exit* is True the cross-encoder scores documents in
+        mini-batches and stops once the best-so-far score beats the
+        worst-so-far by *margin* after at least *min_scored* docs have been
+        processed. The margin is compared on **sigmoid-normalized** scores:
+        raw logits routinely spread wider than the default margin after a
+        single batch, which made the check fire immediately and cut scoring
+        off after one batch. This accelerates "easy" queries where strong
+        positives dominate.
         """
-        if not documents:
+        if not texts:
             return []
 
-        # Sort by the upstream (hybrid) score so that the strongest candidates are evaluated first.
-        docs_sorted = sorted(documents, key=lambda d: d.get('score', 0.0), reverse=True)
-
-        scored_pairs: List[tuple[float, Dict[str, Any]]] = []
+        # Candidates arrive in upstream (hybrid) rank order, so the strongest
+        # are evaluated first and the early exit actually saves work.
+        scored_pairs: List[Tuple[float, int]] = []
+        normed_scores: List[float] = []
 
         with torch.no_grad():
-            for start in range(0, len(docs_sorted), batch_size):
-                batch_docs = docs_sorted[start : start + batch_size]
-                batch_pairs = [[query, d['text']] for d in batch_docs]
+            for start in range(0, len(texts), batch_size):
+                batch_pairs = [[query, text] for text in texts[start : start + batch_size]]
 
                 inputs = self.tokenizer(
                     batch_pairs,
@@ -53,28 +60,18 @@ class CrossEncoderReranker:
                     max_length=512,
                 ).to(self.device)
 
-                logits = self.model(**inputs).logits.view(-1)
-                batch_scores = logits.float().cpu().tolist()
+                logits = self.model(**inputs).logits.view(-1).float()
+                scored_pairs.extend(zip(logits.cpu().tolist(),
+                                        range(start, start + len(batch_pairs))))
+                normed_scores.extend(torch.sigmoid(logits).cpu().tolist())
 
-                scored_pairs.extend(zip(batch_scores, batch_docs))
-
-                # --- Early-exit check ---
+                # --- Early-exit check (on the normalized scores) ---
                 if early_exit and len(scored_pairs) >= min_scored:
-                    # Current best and worst among *already* scored docs
-                    best_score = max(scored_pairs, key=lambda x: x[0])[0]
-                    worst_score = min(scored_pairs, key=lambda x: x[0])[0]
-                    if best_score - worst_score >= margin:
+                    if max(normed_scores) - min(normed_scores) >= margin:
                         break
 
-        # Sort final set and attach scores
-        sorted_by_score = sorted(scored_pairs, key=lambda x: x[0], reverse=True)
-        reranked_docs: List[Dict[str, Any]] = []
-        for score, doc in sorted_by_score[:top_k]:
-            doc_with_score = doc.copy()
-            doc_with_score['rerank_score'] = score
-            reranked_docs.append(doc_with_score)
-
-        return reranked_docs
+        scored_pairs.sort(key=lambda pair: pair[0], reverse=True)
+        return scored_pairs
 
 def is_qwen3_reranker(model_name: str) -> bool:
     """True for the Qwen3-Reranker family (causal-LM yes/no scorers)."""
@@ -193,34 +190,26 @@ class QwenRerankerScorer:
         out = [(score, idx) for idx, score in pairs]
         return out[:top_k] if top_k else out
 
-    def rerank(self, query: str, documents: List[Dict[str, Any]], top_k: int = 5,
-               **_ignored) -> List[Dict[str, Any]]:
-        """Dict-in/dict-out form, matching ``CrossEncoderReranker.rerank``."""
-        if not documents:
-            return []
-        pairs = self.rank(query, [d["text"] for d in documents], top_k=top_k)
-        return [documents[idx] | {"rerank_score": score} for score, idx in pairs]
-
 
 if __name__ == '__main__':
     # This test requires an internet connection to download the models.
     try:
         reranker = CrossEncoderReranker(model_name="BAAI/bge-reranker-v2-m3")
-        
+
         query = "What is the capital of France?"
         documents = [
-            {'text': "Paris is the capital of France.", 'metadata': {'doc_id': 'a'}},
-            {'text': "The Eiffel Tower is in Paris.", 'metadata': {'doc_id': 'b'}},
-            {'text': "France is a country in Europe.", 'metadata': {'doc_id': 'c'}},
+            "Paris is the capital of France.",
+            "The Eiffel Tower is in Paris.",
+            "France is a country in Europe.",
         ]
-        
-        reranked_documents = reranker.rerank(query, documents)
-        
+
+        ranked = reranker.rank(query, documents)
+
         print("\n--- Verification ---")
         print(f"Query: {query}")
         print("Reranked documents:")
-        for doc in reranked_documents:
-            print(f"  - Score: {doc['rerank_score']:.4f}, Text: {doc['text']}")
+        for score, idx in ranked:
+            print(f"  - Score: {score:.4f}, Text: {documents[idx]}")
 
     except Exception as e:
         print(f"\nAn error occurred during the CrossEncoderReranker test: {e}")

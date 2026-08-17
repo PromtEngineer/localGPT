@@ -20,6 +20,12 @@ Teardown (children killed, temp dirs removed) runs even when an assertion fails
 or the run is interrupted. Exit code 0 = every assertion passed, 1 = at least one
 failed or the services never came up.
 
+Pre-flight: if :8000 or :8001 is already accepting connections (e.g. the
+developer's own stack), the run aborts before spawning anything — otherwise the
+health checks would 200 against that pre-existing service and the smoke run
+would POST uploads/builds/messages into the REAL ``backend/chat_data.db`` and
+``./lancedb``.
+
     .venv/bin/python eval/smoke_e2e.py
 """
 
@@ -29,6 +35,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -86,6 +93,15 @@ class Results:
         return 1 if self.failed else 0
 
 
+def port_accepting_connections(port: int, host: str = "localhost") -> bool:
+    """True when something is already listening on this port."""
+    try:
+        with socket.create_connection((host, port), timeout=2):
+            return True
+    except OSError:
+        return False
+
+
 def wait_for(url: str, timeout: float, proc: subprocess.Popen, log_path: str) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -94,7 +110,13 @@ def wait_for(url: str, timeout: float, proc: subprocess.Popen, log_path: str) ->
             return False
         try:
             if requests.get(url, timeout=3).status_code == 200:
-                return True
+                # A 200 while the child is dead means the port belongs to someone
+                # else's service — never declare that healthy.
+                if proc.poll() is None:
+                    return True
+                print(f"    health 200 but the child exited with code "
+                      f"{proc.returncode} — something else owns this port")
+                return False
         except requests.RequestException:
             pass
         time.sleep(1.0)
@@ -264,6 +286,18 @@ def main() -> int:
     if not os.path.exists(TEST_PDF):
         print(f"missing test PDF: {TEST_PDF}")
         return 1
+
+    # Pre-flight, BEFORE any child is spawned: if either port is already serving,
+    # the health checks would pass against that pre-existing service and the run
+    # would drive uploads/builds/messages into the developer's REAL
+    # backend/chat_data.db and ./lancedb.
+    for name, port in (("backend", 8000), ("rag-api", 8001)):
+        if port_accepting_connections(port):
+            print(f"❌ port {port} is already accepting connections — is your own "
+                  f"{name} stack running? The smoke run would POST into IT, not "
+                  f"into its throwaway children. Stop whatever listens on :{port} "
+                  f"and re-run.")
+            return 1
 
     temp_root = tempfile.mkdtemp(prefix="localgpt-smoke-")
     log_dir = os.path.join(temp_root, "logs")

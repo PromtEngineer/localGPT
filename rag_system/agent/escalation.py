@@ -153,9 +153,13 @@ class EscalatingRetrievalPipeline(RetrievalPipeline):
     # -------------------------------------------------------------- hooks
 
     def retrieve_candidates(self, query, table_name=None, sub_queries=None,
-                            event_callback=None):
+                            event_callback=None, *, filters=None):
+        # `filters` (roadmap 4.4) restores signature parity with the base
+        # class: keyword-only and passed straight through — the base compiles
+        # it and opens its filter_scope around the retrieval. None keeps the
+        # thread-local scope opened by run(), so the default path is unchanged.
         result = super().retrieve_candidates(query, table_name, sub_queries,
-                                             event_callback)
+                                             event_callback, filters=filters)
         self._escalation_local.pending = None
         if self._escalation_budget is None:
             return result

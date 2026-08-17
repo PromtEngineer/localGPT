@@ -23,7 +23,7 @@ export const generateUUID = () => {
 export interface Step {
   key: string;
   label: string;
-  status: 'pending' | 'active' | 'done';
+  status: 'pending' | 'active' | 'done' | 'error';
   details: any;
 }
 
@@ -407,7 +407,9 @@ class ChatAPI {
     overviewModel?: string;
     batchSizeEmbed?: number;
     batchSizeEnrich?: number;
-  } = {}): Promise<{ message: string }> {
+  // The gateway returns { response, ...meta } on a fresh build and
+  // { message, note } only on the idempotent already-built path.
+  } = {}): Promise<{ response: unknown; [key: string]: unknown } | { message: string; note?: string }> {
     try {
       const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/build`, {
         method: 'POST',
@@ -546,7 +548,14 @@ class ChatAPI {
     });
 
     if (!resp.ok || !resp.body) {
-      throw new Error(`Stream request failed: ${resp.status}`);
+      // The gateway answers chat failures with JSON {"error": ...} and a proper
+      // status (502 unreachable / 504 timeout) — surface the server's message.
+      let detail = `Stream request failed: ${resp.status}`;
+      try {
+        const errData = await resp.json();
+        if (errData && typeof errData.error === 'string') detail = errData.error;
+      } catch { /* non-JSON error body */ }
+      throw new Error(detail);
     }
 
     const reader = resp.body.getReader();
@@ -569,7 +578,7 @@ class ChatAPI {
         try {
           const evt = JSON.parse(jsonStr);
           onEvent(evt);
-          if (evt.type === 'complete') {
+          if (evt.type === 'complete' || evt.type === 'error') {
             // Gracefully close the stream so the caller unblocks
             try { await reader.cancel(); } catch {}
             streamClosed = true;

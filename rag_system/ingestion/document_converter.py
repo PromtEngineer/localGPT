@@ -1,6 +1,11 @@
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Union
 import os
 import platform
+
+# Conversion result rows: the docling paths return
+# (markdown, metadata, docling_document) triples; the plain-text path returns
+# (markdown, metadata) pairs. Callers must handle both lengths.
+ConversionResults = List[Union[Tuple[str, Dict[str, Any]], Tuple[str, Dict[str, Any], Any]]]
 
 # torch.compile's inductor backend has no MPS support; docling's layout model
 # calls it and crashes on Apple Silicon unless dynamo is disabled up front.
@@ -118,7 +123,7 @@ class DocumentConverter:
             print(f"Error initializing docling PDF converter (ocr={do_ocr}): {e}")
             return None
 
-    def convert_to_markdown(self, file_path: str) -> List[Tuple[str, Dict[str, Any]]]:
+    def convert_to_markdown(self, file_path: str) -> ConversionResults:
         """
         Converts a document to a single Markdown string, preserving layout and tables.
         Supports PDF, DOCX, HTML, and other formats.
@@ -137,15 +142,20 @@ class DocumentConverter:
         else:
             return self._convert_general_to_markdown(file_path, input_format)
 
-    def _convert_pdf_to_markdown(self, pdf_path: str) -> List[Tuple[str, Dict[str, Any]]]:
+    def _convert_pdf_to_markdown(self, pdf_path: str) -> ConversionResults:
         """Convert PDF with OCR detection logic."""
-        # Quick heuristic: if the PDF already contains a text layer, skip OCR for speed
+        # Quick heuristic: skip OCR for speed when the PDF mostly has a text
+        # layer. A *majority* of pages must carry text — accepting any single
+        # text page let mixed text/scanned PDFs skip OCR and silently lose
+        # their scanned pages.
         def _pdf_has_text(path: str) -> bool:
             try:
                 doc = fitz.open(path)
-                for page in doc:
-                    if page.get_text("text").strip():
-                        return True
+                total = doc.page_count
+                if total == 0:
+                    return False
+                with_text = sum(1 for page in doc if page.get_text("text").strip())
+                return with_text * 2 > total
             except Exception:
                 pass
             return False
@@ -164,7 +174,7 @@ class DocumentConverter:
         print(f"Converting {pdf_path} to Markdown using docling {ocr_msg}...")
         return self._perform_conversion(pdf_path, converter, ocr_msg)
 
-    def _convert_txt_to_markdown(self, file_path: str) -> List[Tuple[str, Dict[str, Any]]]:
+    def _convert_txt_to_markdown(self, file_path: str) -> ConversionResults:
         """Convert plain text files to markdown by reading content directly."""
         print(f"Converting {file_path} (TXT) to Markdown...")
         try:
@@ -180,7 +190,7 @@ class DocumentConverter:
             print(f"Error processing TXT file {file_path}: {e}")
             return []
     
-    def _convert_general_to_markdown(self, file_path: str, input_format: InputFormat) -> List[Tuple[str, Dict[str, Any]]]:
+    def _convert_general_to_markdown(self, file_path: str, input_format: InputFormat) -> ConversionResults:
         """Convert non-PDF formats using general converter."""
         if self.converter_general is None:
             print(f"General docling converter not available. Skipping {file_path}.")
@@ -188,7 +198,7 @@ class DocumentConverter:
         print(f"Converting {file_path} ({input_format.name}) to Markdown using docling...")
         return self._perform_conversion(file_path, self.converter_general, f"({input_format.name})")
     
-    def _perform_conversion(self, file_path: str, converter, format_msg: str) -> List[Tuple[str, Dict[str, Any]]]:
+    def _perform_conversion(self, file_path: str, converter, format_msg: str) -> ConversionResults:
         """Perform the actual conversion using the specified converter."""
         pages_data = []
         try:

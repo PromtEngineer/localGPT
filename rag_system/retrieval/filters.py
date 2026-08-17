@@ -113,11 +113,6 @@ _FIELD_BY_NAME = {name: (column, kind, ops) for name, column, kind, ops in _FIEL
 _COMPARISON_SQL = {"gt": ">", "gte": ">=", "lt": "<", "lte": "<="}
 
 
-def supported_fields() -> Dict[str, List[str]]:
-    """``{field: [operator, ...]}`` — used verbatim in the API's 400 messages."""
-    return {name: list(ops) for name, _column, _kind, ops in _FIELDS}
-
-
 def _describe_support() -> str:
     return "; ".join(f"{name} ({', '.join(ops)})" for name, _c, _k, ops in _FIELDS)
 

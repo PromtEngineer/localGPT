@@ -163,7 +163,7 @@ class MultiVectorRetriever:
                 return (
                     _filtered(tbl.search(query=fts_query, query_type="fts"))
                        .limit(k)
-                       .to_df()
+                       .to_pandas()
                 )
 
             def _run_vec():
@@ -173,7 +173,7 @@ class MultiVectorRetriever:
                 return (
                     _filtered(tbl.search(vector))
                        .limit(k)
-                       .to_df()
+                       .to_pandas()
                 )
 
             fts_df = None
@@ -214,7 +214,9 @@ class MultiVectorRetriever:
             for rank, row in enumerate(fts_rows, start=1):
                 entry = fused.setdefault(self._dedup_key(row), {"row": row, "rrf": 0.0, "bm25": None, "distance": None})
                 entry["rrf"] += 1.0 / (_RRF_K + rank)
-                entry["bm25"] = _finite(row.get("score"))
+                # LanceDB FTS scores come back as `_score` (lancedb 0.36), not
+                # `score` — reading the latter left bm25 permanently None.
+                entry["bm25"] = _finite(row.get("_score"))
             for rank, row in enumerate(vec_rows, start=1):
                 entry = fused.setdefault(self._dedup_key(row), {"row": row, "rrf": 0.0, "bm25": None, "distance": None})
                 entry["rrf"] += 1.0 / (_RRF_K + rank)

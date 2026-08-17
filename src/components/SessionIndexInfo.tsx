@@ -17,11 +17,12 @@ export default function SessionIndexInfo({ sessionId, onClose }: Props) {
     (async () => {
       try {
         const data = await chatAPI.getSessionIndexes(sessionId);
-        const first = data.indexes[0];
-        if(first){
-          setSession(first.session??{...first, title:first.name, model_used:first.model_used||''});
-          setFiles(first.documents?.map((d:any)=>d.filename) || []);
-          setIndexMeta(first.metadata || {});
+        // Chat queries run against the LAST linked index — show that one.
+        const last = data.indexes[data.indexes.length - 1];
+        if(last){
+          setSession(last.session??{...last, title:last.name, model_used:last.model_used||''});
+          setFiles(last.documents?.map((d:any)=>d.filename) || []);
+          setIndexMeta(last.metadata || {});
         } else {
           setError('No indexes linked to this chat');
         }

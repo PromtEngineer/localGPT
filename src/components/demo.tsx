@@ -20,19 +20,27 @@ export function Demo() {
 
     useEffect(() => {
         console.log('Demo component mounted')
-        checkBackendHealth()
-    }, [])
-
-    const checkBackendHealth = async () => {
-        try {
-            const health = await chatAPI.checkHealth()
-            setBackendStatus('connected')
-            console.log('Backend connected:', health)
-        } catch (error) {
-            console.error('Backend health check failed:', error)
-            setBackendStatus('error')
+        let stopped = false
+        // Poll until the backend answers so a backend that starts after the
+        // frontend still clears the "Backend offline" banner.
+        let interval: ReturnType<typeof setInterval> | null = null
+        const checkBackendHealth = async () => {
+            try {
+                const health = await chatAPI.checkHealth()
+                if (stopped) return
+                setBackendStatus('connected')
+                console.log('Backend connected:', health)
+                if (interval) clearInterval(interval)
+            } catch (error) {
+                if (stopped) return
+                console.error('Backend health check failed:', error)
+                setBackendStatus('error')
+            }
         }
-    }
+        checkBackendHealth()
+        interval = setInterval(checkBackendHealth, 5000)
+        return () => { stopped = true; if (interval) clearInterval(interval) }
+    }, [])
 
     const handleSessionSelect = (sessionId: string) => {
         setCurrentSessionId(sessionId)
@@ -154,11 +162,17 @@ export function Demo() {
                 {showIndexPicker && (
                   <IndexPicker onClose={()=>setShowIndexPicker(false)} onSelect={async (idxId)=>{
                     // create session and link index then open chat
-                    const session = await chatAPI.createSession()
-                    await chatAPI.linkIndexToSession(session.id, idxId)
-                    setShowIndexPicker(false)
-                    setHomeMode('CHAT_EXISTING')
-                    handleSessionSelect(session.id)
+                    try {
+                      const session = await chatAPI.createSession()
+                      await chatAPI.linkIndexToSession(session.id, idxId)
+                      setShowIndexPicker(false)
+                      setHomeMode('CHAT_EXISTING')
+                      handleSessionSelect(session.id)
+                    } catch (error) {
+                      console.error('Failed to start chat with index:', error)
+                      setShowIndexPicker(false)
+                      alert('Could not start a chat with that index. Is the backend running?')
+                    }
                   }} />
                 )}
             </div>

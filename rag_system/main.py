@@ -159,7 +159,6 @@ PIPELINE_CONFIGS = {
         "indexing": {
             "embedding_batch_size": 50,
             "enrichment_batch_size": 10,
-            "enable_progress_tracking": True,
             # Cross-reference extraction (roadmap 4.2, index-time half). Regex
             # only, no LLM; writes chunk metadata.crossrefs. Verified inert for
             # retrieval: text and vector columns are bit-identical with it on.
@@ -200,7 +199,6 @@ PIPELINE_CONFIGS = {
         "indexing": {
             "embedding_batch_size": 100,
             "enrichment_batch_size": 50,
-            "enable_progress_tracking": False,
             # Costs nothing even in `fast` (regex over text already in memory).
             "extract_crossrefs": True
         }

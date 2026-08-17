@@ -2,9 +2,10 @@
 
 import * as React from "react"
 import { useState, useRef } from "react"
-import { ArrowUp, Settings as SettingsIcon, X, FileText } from "lucide-react"
+import { ArrowUp, Settings as SettingsIcon, X, FileText, Paperclip } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AttachedFile } from "@/lib/types"
+import { generateUUID } from "@/lib/api"
 
 interface ChatInputProps {
   onSendMessage: (message: string, attachedFiles?: AttachedFile[]) => Promise<void>
@@ -103,7 +104,7 @@ export function ChatInput({
           file.name.toLowerCase().endsWith('.md') ||
           file.name.toLowerCase().endsWith('.txt')) {
         newFiles.push({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           name: file.name,
           size: file.size,
           type: file.type,
@@ -163,7 +164,7 @@ export function ChatInput({
         )}
 
         <div className="bg-white/5 backdrop-blur border border-white/10 rounded-2xl px-5 pt-4 pb-3 space-y-2">
-          {/* Hidden file input (kept for future use) */}
+          {/* Hidden file input, opened via the attach button below */}
           <input ref={fileInputRef} type="file" accept=".pdf,.docx,.doc,.html,.htm,.md,.txt" multiple onChange={handleFileChange} className="hidden" />
 
           {/* Textarea */}
@@ -182,6 +183,15 @@ export function ChatInput({
           {/* Action row */}
           <div className="mt-1 flex items-center justify-between">
             <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={handleFileAttach}
+                disabled={disabled || isLoading}
+                className="flex items-center gap-1 p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Attach files"
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
               <button
                 type="button"
                 onClick={()=>onOpenSettings && onOpenSettings()}

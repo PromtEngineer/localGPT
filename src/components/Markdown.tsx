@@ -1,5 +1,3 @@
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-nocheck
 'use client'
 
 import dynamic from 'next/dynamic'
@@ -7,7 +5,7 @@ import React, { useMemo } from 'react'
 import remarkGfm from 'remark-gfm'
 
 // Dynamically import react-markdown to avoid SSR issues
-const ReactMarkdown: any = dynamic(() => import('react-markdown') as any, { ssr: false })
+const ReactMarkdown = dynamic(() => import('react-markdown'), { ssr: false })
 
 interface MarkdownProps {
   text: string
@@ -18,7 +16,6 @@ export default function Markdown({ text, className = '' }: MarkdownProps) {
   const plugins = useMemo(() => [remarkGfm], [])
   return (
     <div className={`prose prose-invert max-w-none ${className}`}>
-      {/* @ts-ignore – react-markdown type doesn't recognise remarkPlugins array */}
     <ReactMarkdown
         remarkPlugins={plugins}
         components={{
@@ -31,4 +28,4 @@ export default function Markdown({ text, className = '' }: MarkdownProps) {
     </ReactMarkdown>
     </div>
   )
-} 
+}

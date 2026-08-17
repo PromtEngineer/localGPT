@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRef, useEffect, useState } from "react"
+import { useRef, useEffect, useState, useCallback } from "react"
 import {
   ChatBubbleAvatar,
 } from "@/components/ui/chat-bubble"
@@ -40,8 +40,12 @@ function Citation({doc, idx}: {doc:any, idx:number}){
 
 // NEW: Expandable list of citations per assistant message
 function CitationsBlock({docs}:{docs:any[]}){
-  const scored = docs.filter(d => d.rerank_score || d.score || d._distance)
-  scored.sort((a, b) => (b.rerank_score ?? b.score ?? 1/b._distance) - (a.rerank_score ?? a.score ?? 1/a._distance))
+  // != null (not truthiness) so a perfect-match _distance of exactly 0 keeps the doc
+  const scored = docs.filter(d => d.rerank_score != null || d.score != null || d._distance != null)
+  // Total-order sort key — rerank_score > score > inverted distance (smaller
+  // distance = better). The epsilon keeps _distance 0 finite (no Infinity/NaN).
+  const rankOf = (d: any) => d.rerank_score ?? d.score ?? (d._distance != null ? 1 / (d._distance + 1e-9) : 0)
+  scored.sort((a, b) => rankOf(b) - rankOf(a))
   const [expanded, setExpanded] = useState(false);
 
   if (scored.length === 0) return null;
@@ -139,7 +143,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
       {visibleSteps.map((step: any, index: number) => {
         if (step.key && step.label) {
           const borderCls = statusBorder[step.status] || statusBorder['pending']
-          const statusClass = `timeline-card card my-1 py-2 pl-3 pr-2 bg-[#0d0d0d] rounded border-l-2 ${borderCls}`
+          const statusClass = `my-1 py-2 pl-3 pr-2 bg-[#0d0d0d] rounded border-l-2 ${borderCls}`
           
           return (
             <div key={step.key} className={statusClass}>
@@ -196,6 +200,108 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
   );
 }
 
+// Normalize the various message content shapes to plain text (copy/paste,
+// action callbacks). String → as-is; array → text/answer parts joined with a
+// real newline; { steps } → the final answer text.
+function messageContentToText(content: ChatMessage['content']): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map((s: any) => s?.text || s?.answer || '').filter(Boolean).join('\n');
+  }
+  if (content && typeof content === 'object' && Array.isArray((content as any).steps)) {
+    const steps = (content as any).steps as any[];
+    const finalStep = steps.find((s: any) => s.key === 'final') ?? steps[steps.length - 1];
+    const details = finalStep?.details;
+    if (typeof details === 'string') return details;
+    if (details && typeof details === 'object' && typeof details.answer === 'string') return details.answer;
+    return '';
+  }
+  return '';
+}
+
+interface MessageBubbleProps {
+  message: ChatMessage
+  onAction: (action: string, messageId: string, messageContent: ChatMessage['content']) => void
+}
+
+// Memoized: during streaming, only the bubble whose message object actually
+// changed re-renders — previously-rendered messages no longer re-parse their
+// Markdown on every token.
+const MessageBubble = React.memo(function MessageBubble({ message, onAction }: MessageBubbleProps) {
+  const isUser = message.sender === "user"
+
+  return (
+    <div className="w-full group">
+      <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
+        {!isUser && (
+          <ChatBubbleAvatar
+            fallback="AI"
+            className="mt-1 flex-shrink-0 text-black"
+          />
+        )}
+
+        <div className={`flex flex-col space-y-2 ${isUser ? 'items-end' : 'items-start'} max-w-full md:max-w-3xl min-w-0`}>
+          <div
+            className={`rounded-2xl px-5 py-4 ${
+              isUser
+                ? "bg-white text-black"
+                : "bg-gray-800 text-gray-100"
+            }`}
+          >
+            {message.isLoading ? (
+              <div className="flex items-center space-x-2">
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                </div>
+              </div>
+            ) : (
+              <div className="whitespace-pre-wrap break-words text-base leading-relaxed">
+                {typeof message.content === 'string'
+                    ? <ThinkingText text={normalizeWhitespace(message.content)} />
+                    : <StructuredMessageBlock content={message.content} />
+                }
+              </div>
+            )}
+          </div>
+
+          {!isUser && !message.isLoading && (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              {actionIcons.map(({ icon: Icon, type, action }) => (
+                <button
+                  key={action}
+                  onClick={() => onAction(action, message.id, message.content)}
+                  className="p-1.5 hover:bg-gray-700 rounded-md transition-colors text-gray-400 hover:text-gray-200"
+                  title={type}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Global citations only for plain-string messages */}
+          {(!isUser &&
+            !message.isLoading &&
+            typeof message.content === 'string' &&
+            Array.isArray((message as any).metadata?.source_documents) &&
+            (message as any).metadata.source_documents.length > 0) && (
+              <CitationsBlock docs={(message as any).metadata.source_documents} />
+          )}
+        </div>
+
+        {isUser && (
+          <ChatBubbleAvatar
+            className="mt-1 flex-shrink-0 text-black"
+            fallback="User"
+          />
+        )}
+      </div>
+    </div>
+  )
+})
+
 export function ConversationPage({ 
   messages, 
   isLoading = false,
@@ -249,29 +355,27 @@ export function ConversationPage({
     }, 100)
   }
 
-  const handleAction = (action: string, messageId: string, messageContent: string) => {
-    if (onAction) {
-      // For structured messages, we'll just join the text parts for copy/paste
-      let contentToPass: string;
-      if (typeof messageContent === 'string') {
-        contentToPass = messageContent;
-      } else if (Array.isArray(messageContent)) {
-        contentToPass = (messageContent as any[]).map((s: any) => s.text || s.answer || '').join('\n');
-      } else if (messageContent && typeof messageContent === 'object' && Array.isArray((messageContent as any).steps)) {
-        // For {steps: Step[]} structure
-        contentToPass = (messageContent as any).steps.map((s: any) => s.label + (s.details ? (typeof s.details === 'string' ? (': ' + s.details) : '') : '')).join('\n');
-      } else {
-        contentToPass = '';
-      }
-      onAction(action, messageId, contentToPass)
+  // Keep the latest onAction in a ref so handleAction below stays referentially
+  // stable (memoized bubbles would otherwise re-render on every parent render)
+  // while always dispatching to the freshest handler.
+  const onActionRef = useRef(onAction)
+  useEffect(() => {
+    onActionRef.current = onAction
+  }, [onAction])
+
+  const handleAction = useCallback((action: string, messageId: string, messageContent: ChatMessage['content']) => {
+    const contentToPass = messageContentToText(messageContent)
+    const handler = onActionRef.current
+    if (handler) {
+      handler(action, messageId, contentToPass)
       return
     }
-    
+
     console.log(`Action ${action} clicked for message ${messageId}`)
     // Handle different actions here
     switch (action) {
       case 'copy':
-        navigator.clipboard.writeText(messageContent)
+        navigator.clipboard.writeText(contentToPass)
         break
       case 'regenerate':
         // Regenerate AI response
@@ -289,90 +393,15 @@ export function ConversationPage({
         // Show more options
         break
     }
-  }
+  }, [])
 
   return (
     <div className={`flex flex-col h-full bg-black relative overflow-hidden ${className}`}>
       <ScrollArea ref={scrollAreaRef} className="flex-1 h-full px-4 pt-4 pb-6 min-h-0">
         <div className="max-w-4xl mx-auto space-y-6">
-          {messages.map((message) => {
-            const isUser = message.sender === "user"
-            
-            return (
-              <div key={message.id} className="w-full group">
-                <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                  {!isUser && (
-                    <ChatBubbleAvatar 
-                      fallback="AI" 
-                      className="mt-1 flex-shrink-0 text-black"
-                    />
-                  )}
-                  
-                  <div className={`flex flex-col space-y-2 ${isUser ? 'items-end' : 'items-start'} max-w-full md:max-w-3xl min-w-0`}>
-                    <div
-                      className={`rounded-2xl px-5 py-4 ${
-                        isUser 
-                          ? "bg-white text-black" 
-                          : "bg-gray-800 text-gray-100"
-                      }`}
-                    >
-                      {message.isLoading ? (
-                        <div className="flex items-center space-x-2">
-                          <div className="flex space-x-1">
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="whitespace-pre-wrap break-words text-base leading-relaxed">
-                          {typeof message.content === 'string' 
-                              ? <ThinkingText text={normalizeWhitespace(message.content)} />
-                              : <StructuredMessageBlock content={message.content} />
-                          }
-                        </div>
-                      )}
-                    </div>
-                    
-                    {!isUser && !message.isLoading && (
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        {actionIcons.map(({ icon: Icon, type, action }) => (
-                          <button
-                            key={action}
-                            onClick={() => {
-                              const content = typeof message.content === 'string' ? message.content : (message.content as any[]).map(s => s.text || s.answer).join('\\n');
-                              handleAction(action, message.id, content)
-                            }}
-                            className="p-1.5 hover:bg-gray-700 rounded-md transition-colors text-gray-400 hover:text-gray-200"
-                            title={type}
-                          >
-                            <Icon className="w-3.5 h-3.5" />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Global citations only for plain-string messages */}
-                    {(!isUser &&
-                      !message.isLoading &&
-                      typeof message.content === 'string' &&
-                      Array.isArray((message as any).metadata?.source_documents) &&
-                      (message as any).metadata.source_documents.length > 0) && (
-                        <CitationsBlock docs={(message as any).metadata.source_documents} />
-                    )}
-                  </div>
-
-                  {isUser && (
-                    <ChatBubbleAvatar 
-                      className="mt-1 flex-shrink-0 text-black"
-                      src="https://i.pravatar.cc/40?u=user"
-                      fallback="User"
-                    />
-                  )}
-                </div>
-              </div>
-            )
-          })}
+          {messages.map((message) => (
+            <MessageBubble key={message.id} message={message} onAction={handleAction} />
+          ))}
           
           {/* Loading indicator for new message */}
           {isLoading && (

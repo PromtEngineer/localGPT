@@ -89,10 +89,19 @@ class WatsonXClient:
         """
         try:
             gen_params = {}
-            
+
+            # Ollama-style options dict (interface parity): only `temperature`
+            # maps onto TextGenParameters; the rest (num_ctx, …) are
+            # Ollama-specific and accepted-and-ignored.
+            options = kwargs.pop('options', None)
+            if options and options.get('temperature') is not None:
+                kwargs.setdefault('temperature', options['temperature'])
+
             if kwargs.get('max_tokens'):
                 gen_params['max_new_tokens'] = kwargs['max_tokens']
-            if kwargs.get('temperature'):
+            # `is not None` so an explicit temperature=0 (the deterministic
+            # pin) is applied instead of dropped as falsy.
+            if kwargs.get('temperature') is not None:
                 gen_params['temperature'] = kwargs['temperature']
             if kwargs.get('top_p'):
                 gen_params['top_p'] = kwargs['top_p']
@@ -110,9 +119,7 @@ class WatsonXClient:
             
             if images:
                 print("Warning: Image support in Watson X may vary by model")
-                result = model_inference.generate(prompt=prompt)
-            else:
-                result = model_inference.generate(prompt=prompt)
+            result = model_inference.generate(prompt=prompt)
             
             generated_text = ""
             if isinstance(result, dict):
@@ -148,22 +155,28 @@ class WatsonXClient:
         images: Optional[List[Image.Image]] = None,
         enable_thinking: Optional[bool] = None,
         timeout: int = 60,
+        options: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
         Asynchronous version of generate_completion.
-        
+
         Note: IBM Watson X SDK may not have native async support,
         so this is a wrapper around the sync version.
+
+        *options* mirrors OllamaClient's; the sync method translates
+        `temperature` into watsonx generation params and ignores the rest.
         """
         import asyncio
-        
-        loop = asyncio.get_event_loop()
+
+        # Inside a coroutine a loop is always running; get_event_loop() is
+        # deprecated here and can raise when no loop has been set.
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             lambda: self.generate_completion(
                 model, prompt, format=format, images=images,
-                enable_thinking=enable_thinking, **kwargs
+                enable_thinking=enable_thinking, options=options, **kwargs
             )
         )
 
@@ -217,8 +230,10 @@ class WatsonXClient:
                 yield generated_text
                 
         except Exception as e:
+            # Yielding "" made a failure look like a valid empty content
+            # chunk; log and stop the iteration instead.
             print(f"Error in stream_completion: {e}")
-            yield ""
+            return
 
 
 if __name__ == '__main__':

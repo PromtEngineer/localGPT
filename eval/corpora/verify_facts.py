@@ -30,16 +30,19 @@ def pdf_text(path: str) -> str:
         doc.close()
 
 
-def source_text_for(sidecar: dict) -> dict:
+def source_text_for(sidecar: dict, sidecar_path: str) -> dict:
     """Return {source_label: normalised_text} for one sidecar file.
 
     Three shapes, keyed off which field the sidecar carries rather than off the
-    corpus name, so a new corpus needs no edit here:
+    corpus name, so a new corpus needs no edit here. Relative paths resolve
+    against the sidecar's own directory:
 
     * ``source_glob``  — markdown files under the repo root (the ``docs`` corpus)
-    * ``documents_dir`` — every PDF in a directory next to this script (``acq``)
-    * ``document``     — one PDF next to this script (``atlas7``, ``hr``)
+    * ``documents_dir`` — every PDF or plain-text file in that directory
+      (``acq`` PDFs; the ``rfc`` corpus's 23 RFC Editor .txt files)
+    * ``document``     — one PDF next to its sidecar (``atlas7``, ``hr``)
     """
+    here = os.path.dirname(sidecar_path)
     if "source_glob" in sidecar:
         texts = {}
         for path in sorted(glob.glob(os.path.join(REPO_ROOT, sidecar["source_glob"]))):
@@ -47,10 +50,14 @@ def source_text_for(sidecar: dict) -> dict:
                 texts[os.path.basename(path)] = normalise(fh.read())
         return texts
     if "documents_dir" in sidecar:
-        directory = os.path.join(HERE, sidecar["documents_dir"])
-        return {os.path.basename(p): normalise(pdf_text(p))
-                for p in sorted(glob.glob(os.path.join(directory, "*.pdf")))}
-    path = os.path.join(HERE, sidecar["document"])
+        directory = os.path.join(here, sidecar["documents_dir"])
+        texts = {os.path.basename(p): normalise(pdf_text(p))
+                 for p in sorted(glob.glob(os.path.join(directory, "*.pdf")))}
+        for path in sorted(glob.glob(os.path.join(directory, "*.txt"))):
+            with open(path, "r", encoding="utf-8", errors="replace") as fh:
+                texts[os.path.basename(path)] = normalise(fh.read())
+        return texts
+    path = os.path.join(here, sidecar["document"])
     return {sidecar["document"]: normalise(pdf_text(path))}
 
 
@@ -93,10 +100,11 @@ def main() -> int:
     failures = 0
     total = 0
     xref_failures = 0
-    for sidecar_path in sorted(glob.glob(os.path.join(HERE, "*.facts.json"))):
+    for sidecar_path in sorted(glob.glob(os.path.join(HERE, "**", "*.facts.json"),
+                                         recursive=True)):
         with open(sidecar_path, "r", encoding="utf-8") as fh:
             sidecar = json.load(fh)
-        texts = source_text_for(sidecar)
+        texts = source_text_for(sidecar, sidecar_path)
         joined = " || ".join(texts.values())
         print(f"\n{os.path.basename(sidecar_path)} — corpus '{sidecar['corpus']}', "
               f"{len(sidecar['facts'])} facts over {len(texts)} source file(s)")

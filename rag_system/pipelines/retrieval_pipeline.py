@@ -62,6 +62,9 @@ class RetrievalPipeline:
         self.db_manager = None
         self.text_embedder = None
         self.dense_retriever = None
+        # Set once dense-retriever construction has failed: without it every
+        # query retried the failing constructor and reprinted the error.
+        self._dense_retriever_error = None
         self.ai_reranker = None
 
         # Overview prefilter (roadmap item 4.3): the sidecar is read once per
@@ -232,11 +235,25 @@ class RetrievalPipeline:
         return self.text_embedder
 
     def _get_dense_retriever(self):
-        """Ensure a MultiVectorRetriever is always available unless explicitly disabled."""
+        """Ensure a MultiVectorRetriever is always available unless explicitly disabled.
+
+        A failed construction is cached in ``_dense_retriever_error``: the first
+        failure logs and returns None (the pipeline proceeds without dense, as
+        before), while every later call re-raises a concise error instead of
+        retrying the failing constructor and reprinting the error per query.
+        ``update_embedding_model`` clears the cache so a model switch can retry.
+        """
         if self.dense_retriever is None:
             # If the config explicitly sets dense.enabled to False, respect it
             if self._retriever_config("dense").get("enabled", True) is False:
                 return None
+
+            if self._dense_retriever_error is not None:
+                raise RuntimeError(
+                    "Dense retriever initialisation previously failed "
+                    f"({self._dense_retriever_error}); not retrying the constructor "
+                    "on every query. Fix the cause or switch embedding model."
+                )
 
             try:
                 self.dense_retriever = MultiVectorRetriever(
@@ -245,7 +262,7 @@ class RetrievalPipeline:
                 )
             except Exception as e:
                 print(f"❌ Failed to initialise dense retriever: {e}")
-                self.dense_retriever = None
+                self._dense_retriever_error = e
         return self.dense_retriever
 
     def _get_ai_reranker(self):
@@ -392,7 +409,9 @@ class RetrievalPipeline:
             'Respond with JSON: {"query": "<rewritten query>"}'
         )
         try:
-            resp = self.ollama_client.generate_completion(model=model, prompt=prompt, format="json")
+            resp = self.ollama_client.generate_completion(
+                model=model, prompt=prompt, format="json",
+                options={"temperature": 0})  # greedy decode: the retry must be reproducible
             data = json.loads(resp.get("response", "{}"))
         except Exception as e:
             print(f"⚠️  Retry reformulation failed ({e}); keeping the original query.")
@@ -402,9 +421,21 @@ class RetrievalPipeline:
             return None
         return rewritten
 
-    def _get_surrounding_chunks_lancedb(self, chunk: Dict[str, Any], window_size: int) -> List[Dict[str, Any]]:
+    def _get_surrounding_chunks_lancedb(self, chunk: Dict[str, Any], window_size: int,
+                                        *, table_name: Optional[str] = None,
+                                        active_filter: Optional[CompiledFilter] = None
+                                        ) -> List[Dict[str, Any]]:
         """
         Retrieves a window of chunks around a central chunk using LanceDB.
+
+        *table_name* overrides the configured text table; ``run()`` passes the
+        table it resolved so a per-call table no longer has to be smuggled
+        through shared config. The default keeps direct callers on the config
+        table. *active_filter* is the caller's compiled metadata filter,
+        captured in the submitting thread: this method also runs on
+        ThreadPoolExecutor workers, which do not inherit the caller's
+        thread-local filter scope. None means "read the thread-local scope",
+        which is correct for direct (same-thread) callers.
         """
         db_manager = self._get_db_manager()
         if not db_manager:
@@ -418,7 +449,16 @@ class RetrievalPipeline:
         if document_id is None or chunk_index is None or chunk_index == -1:
             return [chunk]
 
-        table_name = self.config["storage"]["text_table_name"]
+        # document_id derives from upload filenames and is interpolated into a
+        # SQL literal below. Refuse ids that could terminate the literal rather
+        # than escaping them (the filters.py / document_fetch.py standard) and
+        # fail closed to the single chunk, exactly like the query-failure path.
+        if "'" in document_id or "\\" in document_id:
+            print(f"⚠️  Refusing context expansion for document id with quoting "
+                  f"characters: {document_id!r}")
+            return [chunk]
+
+        table_name = table_name or self.config["storage"]["text_table_name"]
         try:
             tbl = db_manager.get_table(table_name)
         except Exception:
@@ -435,7 +475,8 @@ class RetrievalPipeline:
         # otherwise a `chunk_index <= 0` filter would still pull chunk 1 back in
         # as a neighbour, and the guarantee "nothing that fails the filter
         # reaches synthesis" would be false.
-        sql_filter = combine(sql_filter, self.active_filter())
+        sql_filter = combine(sql_filter, active_filter if active_filter is not None
+                             else self.active_filter())
 
         try:
             # Execute a filter-only search, which is very fast on indexed metadata
@@ -615,7 +656,7 @@ ORIGINAL QUESTION: "{query}"
         return doc
 
     def _search_within_documents(self, query: str, table_name: str, doc_ids: List[str],
-                                 k: int, mode: str = "vector_only") -> List[Dict[str, Any]]:
+                                 k: int, mode: str = "vector_only") -> Optional[List[Dict[str, Any]]]:
         """Retrieve up to *k* chunks, restricted to *doc_ids* with a LanceDB filter.
 
         ``MultiVectorRetriever.retrieve`` has no filter parameter and belongs to
@@ -623,6 +664,12 @@ ORIGINAL QUESTION: "{query}"
         retriever exactly — same prefiltered legs, same RRF fusion at the same
         ``_RRF_K``, same output shape — so a chunk pulled by a hop is
         indistinguishable downstream from one pulled by the first stage.
+
+        Returns ``None`` — not an empty list — when the search could not run at
+        all (table cannot be opened, or every leg the mode asked for failed),
+        so the caller can tell "the restriction did not run" apart from "the
+        restriction matched nothing". Only the latter may be widened into an
+        unrestricted search.
         """
         if not doc_ids or k < 1:
             return []
@@ -633,7 +680,7 @@ ORIGINAL QUESTION: "{query}"
             raise
         except Exception as e:
             print(f"⚠️  Document-scoped search: cannot open table '{table_name}': {e}")
-            return []
+            return None
 
         # A caller's metadata filter (item 4.4) narrows every internally-scoped
         # search too. The cross-reference hop must not be a way to reach a
@@ -642,6 +689,8 @@ ORIGINAL QUESTION: "{query}"
         mode = (mode or "vector_only").lower()
         fts_rows: List[Dict[str, Any]] = []
         vec_rows: List[Dict[str, Any]] = []
+        leg_ran = False
+        leg_failed = False
 
         if mode != "fts_only":
             try:
@@ -650,18 +699,29 @@ ORIGINAL QUESTION: "{query}"
                     vector = l2_normalize(vector)
                 vec_rows = (tbl.search(vector).where(where, prefilter=True)
                             .limit(k).to_pandas().to_dict("records"))
+                leg_ran = True
             except Exception as e:
+                leg_failed = True
                 print(f"⚠️  Document-scoped vector search failed: {e}")
         if mode != "vector_only":
             try:
-                fts_query = query
-                if len(query.split()) == 1:
-                    fts_query = f"{query}* OR {query}~"
+                # Same quote-stripping as MultiVectorRetriever._run_fts:
+                # LanceDB's FTS parser reads double quotes as phrase syntax and
+                # raises on quoted decomposer output, which would kill this leg.
+                fts_query = query.replace('"', " ").strip() or query
+                if len(fts_query.split()) == 1:
+                    fts_query = f"{fts_query}* OR {fts_query}~"
                 fts_rows = (tbl.search(query=fts_query, query_type="fts")
                             .where(where, prefilter=True)
                             .limit(k).to_pandas().to_dict("records"))
+                leg_ran = True
             except Exception as e:
+                leg_failed = True
                 print(f"⚠️  Document-scoped full-text search failed: {e}")
+
+        if leg_failed and not leg_ran:
+            # Every leg the mode asked for failed: the restriction never ran.
+            return None
 
         fused: Dict[Any, Dict[str, Any]] = {}
         for rows in (fts_rows, vec_rows):
@@ -801,14 +861,24 @@ ORIGINAL QUESTION: "{query}"
         restrict_docs = prefilter_docs if (prefilter_docs and prefilter_mode == "restrict") else None
 
         retrieved_docs = []
+        restrict_failed = False
         if restrict_docs:
-            retrieved_docs = self._search_within_documents(
+            restricted = self._search_within_documents(
                 query, base_table, restrict_docs, retrieval_k, retrieval_mode)
-            if not retrieved_docs:
+            if restricted is None:
+                # The restricted search never ran; do NOT widen that into an
+                # unrestricted retrieval. "Search failed" and "matched nothing"
+                # are different answers and only the second is safe to widen.
+                print("⚠️  Overview prefilter (restrict) search failed; not falling "
+                      "back to unrestricted retrieval for this query.")
+                restrict_failed = True
+            elif restricted:
+                retrieved_docs = restricted
+            else:
                 print("⚠️  Overview prefilter (restrict) matched no chunks; falling back "
                       "to unrestricted retrieval for this query.")
                 restrict_docs = None
-        if not retrieved_docs and dense_retriever:
+        if not retrieved_docs and not restrict_failed and dense_retriever:
             retrieved_docs = dense_retriever.retrieve(
                 text_query=query,
                 table_name=base_table,
@@ -827,7 +897,8 @@ ORIGINAL QUESTION: "{query}"
                 try:
                     if restrict_docs:
                         lc_docs = self._search_within_documents(
-                            query, lc_table, restrict_docs, retrieval_k, retrieval_mode)
+                            query, lc_table, restrict_docs, retrieval_k,
+                            retrieval_mode) or []
                     else:
                         lc_docs = dense_retriever.retrieve(
                             text_query=query,
@@ -878,7 +949,8 @@ ORIGINAL QUESTION: "{query}"
                     if doc_id is None or cidx is None or cidx == -1:
                         continue
                     # Fetch neighbouring late-chunks inside same document (±1)
-                    siblings = self._get_surrounding_chunks_lancedb(doc, window_size=1)
+                    siblings = self._get_surrounding_chunks_lancedb(
+                        doc, window_size=1, table_name=base_table)
                     # Keep only same document_id and ordered by chunk_index
                     siblings = [s for s in siblings if s.get("document_id") == doc_id]
                     siblings.sort(key=lambda s: s.get("chunk_index", 0))
@@ -1012,9 +1084,13 @@ ORIGINAL QUESTION: "{query}"
         if top_percent is not None:
             try:
                 pct = float(top_percent)
-                assert 0 < pct <= 1
+                if not 0 < pct <= 1:
+                    # Real validation, not an assert — asserts vanish under
+                    # `python -O` and a bad top_percent would slip through.
+                    raise ValueError(
+                        f"reranker.top_percent must be in (0, 1], got {top_percent!r}.")
                 top_k = max(1, int(len(retrieved_docs) * pct))
-            except Exception:
+            except (TypeError, ValueError):
                 print("⚠️  Invalid top_percent value; falling back to top_k")
                 top_k = top_k_cfg or len(retrieved_docs)
         else:
@@ -1077,10 +1153,15 @@ ORIGINAL QUESTION: "{query}"
         # an aggressive threshold can never empty the context.
         min_score = rerank_cfg.get("min_score")
         if min_score is not None and isinstance(ai_reranker, QwenRerankerScorer):
+            try:
+                min_score_value = float(min_score)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"reranker.min_score must be a number, got {min_score!r}.")
             union_best = {}
             for idx in scores:
                 union_best[idx] = max(m[idx] for m in per_query if idx in m)
-            kept = [(idx, s) for idx, s in ordered if union_best[idx] >= float(min_score)]
+            kept = [(idx, s) for idx, s in ordered if union_best[idx] >= min_score_value]
             if pooled:
                 # Every sub-question keeps at least its best candidate, or the
                 # single pooled synthesis silently loses that half of the
@@ -1099,7 +1180,14 @@ ORIGINAL QUESTION: "{query}"
                 kept.sort(key=lambda kv: kv[1], reverse=True)
             min_keep = max(1, int(rerank_cfg.get("min_keep", 3)))
             if len(kept) < min_keep:
-                kept = ordered[:min_keep]
+                # Union the floor with what survived — including the
+                # per-sub-query rescues above — instead of replacing it:
+                # `ordered[:min_keep]` alone would silently drop a rescued
+                # candidate that sits below the global top-min_keep.
+                floor_idx = {idx for idx, _ in kept}
+                kept = kept + [(idx, s) for idx, s in ordered[:min_keep]
+                               if idx not in floor_idx]
+                kept.sort(key=lambda kv: kv[1], reverse=True)
             if len(kept) != len(ordered):
                 print(f"🎯 Rerank threshold {min_score}: kept {len(kept)}/{len(ordered)} "
                       f"candidates (union-of-max across {len(queries)} query/queries).")
@@ -1190,7 +1278,7 @@ ORIGINAL QUESTION: "{query}"
             # wants, so all that is left is picking its most on-topic chunks.
             pulled = self._search_within_documents(
                 query, base_table, [target["target_doc"]], chunks_per_hop,
-                mode="vector_only")
+                mode="vector_only") or []
             for doc in pulled:
                 doc["via_crossref"] = True
                 doc["crossref"] = {k: target[k] for k in
@@ -1357,9 +1445,10 @@ ORIGINAL QUESTION: "{query}"
         logger = logging.getLogger(__name__)
         logger.debug("--- Running search for query '%s' (table=%s) ---", query, base_table)
 
-        # If a custom table_name is provided, propagate it to storage config so helper methods use it
-        if table_name:
-            self.storage_config["text_table_name"] = table_name
+        # A custom table_name is passed down the call chain (base_table goes to
+        # retrieve_candidates and _run_after_candidates) instead of being
+        # written back into self.storage_config: mutating shared config was
+        # sticky across queries and raced the agent's parallel sub-query fan-out.
 
         # Compiled here so an invalid filter raises before any retrieval work,
         # and opened as a thread-local scope so it reaches `retrieve_candidates`
@@ -1369,73 +1458,90 @@ ORIGINAL QUESTION: "{query}"
         with self.filter_scope(compiled) if compiled is not None else contextlib.nullcontext():
             candidates = self.retrieve_candidates(query, base_table, sub_queries, event_callback)
             return self._run_after_candidates(query, candidates, window_size_override,
-                                              event_callback)
+                                              event_callback, base_table)
 
     def _run_after_candidates(self, query: str, candidates: Dict[str, Any],
                               window_size_override: Optional[int],
-                              event_callback) -> Dict[str, Any]:
+                              event_callback,
+                              base_table: Optional[str] = None) -> Dict[str, Any]:
         """``run()``'s post-candidate half: expansion, pruning and synthesis."""
         reranked_docs = candidates["documents"]
+
+        # Focus on the reranked chunks when the reranker ran — applied to the
+        # SEED set, BEFORE expansion. Filtering the expanded set afterwards
+        # (the old behaviour) deleted every expanded neighbour, because only
+        # seeds carry a `rerank_score`, and silently nullified context
+        # expansion whenever the reranker was on. The cross-reference
+        # exemption is preserved: hops are appended *after* reranking by
+        # design (the reranker never saw them, and scoring them against the
+        # query would defeat the point: the referenced document is exactly
+        # the one whose text does not look like the query).
+        if any('rerank_score' in d for d in reranked_docs):
+            seed_docs = [d for d in reranked_docs
+                         if 'rerank_score' in d or d.get('via_crossref')]
+        else:
+            seed_docs = reranked_docs
 
         window_size = self.config.get("context_window_size", 1)
         if window_size_override is not None:
             window_size = window_size_override
-        if window_size > 0 and reranked_docs:
+        if window_size > 0 and seed_docs:
             if event_callback:
-                event_callback("context_expand_started", {"count": len(reranked_docs)})
-            print(f"\n--- Expanding context for {len(reranked_docs)} top documents (window size: {window_size})... ---")
-            expanded_chunks = {}
+                event_callback("context_expand_started", {"count": len(seed_docs)})
+            print(f"\n--- Expanding context for {len(seed_docs)} top documents (window size: {window_size})... ---")
+            # Capture the active metadata filter HERE, in the submitting
+            # thread: the executor's workers do not inherit thread-locals, so
+            # reading it inside the worker would silently drop the caller's
+            # filter (item 4.4) from the expansion queries.
+            active_filter = self.active_filter()
+            expanded_by_seed: Dict[int, List[Dict[str, Any]]] = {}
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future_to_chunk = {executor.submit(self._get_surrounding_chunks_lancedb, chunk, window_size): chunk for chunk in reranked_docs}
-                for future in concurrent.futures.as_completed(future_to_chunk):
+                future_to_seed = {
+                    executor.submit(self._get_surrounding_chunks_lancedb, chunk,
+                                    window_size, table_name=base_table,
+                                    active_filter=active_filter): i
+                    for i, chunk in enumerate(seed_docs)
+                }
+                for future in concurrent.futures.as_completed(future_to_seed):
+                    seed_index = future_to_seed[future]
                     try:
-                        seed_chunk = future_to_chunk[future]
-                        surrounding_chunks = future.result()
-                        for surrounding_chunk in surrounding_chunks:
-                            cid = surrounding_chunk['chunk_id']
-                            if cid not in expanded_chunks:
-                                # If this is the *central* chunk we already reranked, carry over its score
-                                if cid == seed_chunk.get('chunk_id') and 'rerank_score' in seed_chunk:
-                                    surrounding_chunk['rerank_score'] = seed_chunk['rerank_score']
-                                # Same for the cross-reference marker: expansion
-                                # re-reads the row from LanceDB, which knows
-                                # nothing about how the chunk got here.
-                                if cid == seed_chunk.get('chunk_id') and seed_chunk.get('via_crossref'):
-                                    surrounding_chunk['via_crossref'] = True
-                                    if seed_chunk.get('crossref'):
-                                        surrounding_chunk['crossref'] = seed_chunk['crossref']
-                                expanded_chunks[cid] = surrounding_chunk
+                        expanded_by_seed[seed_index] = future.result()
                     except Exception as e:
                         print(f"Error expanding context for a chunk: {e}")
+                        # Keep the seed itself rather than dropping the evidence.
+                        expanded_by_seed[seed_index] = [seed_docs[seed_index]]
 
-            final_docs = list(expanded_chunks.values())
-            # Sort by reranker score if present, otherwise by raw score/distance
-            if any('rerank_score' in d for d in final_docs):
-                final_docs.sort(key=lambda c: c.get('rerank_score', -1), reverse=True)
-            elif any('_distance' in d for d in final_docs):
-                # For vector search smaller distance is better
-                final_docs.sort(key=lambda c: c.get('_distance', 1e9))
-            elif any('score' in d for d in final_docs):
-                final_docs.sort(key=lambda c: c.get('score', 0), reverse=True)
-            else:
-                # Fallback to document order
-                final_docs.sort(key=lambda c: (c.get('document_id', ''), c.get('chunk_index', 0)))
+            # Deterministic assembly: seeds in their incoming (rerank) score
+            # order, each seed's neighbours adjacent to it in chunk_index
+            # order. The first seed to claim a chunk_id wins the dedupe, so
+            # executor completion order never leaks into the result.
+            final_docs = []
+            seen_chunk_ids = set()
+            for seed_index, seed_chunk in enumerate(seed_docs):
+                for surrounding_chunk in expanded_by_seed.get(seed_index, [seed_chunk]):
+                    cid = surrounding_chunk.get('chunk_id')
+                    if cid is not None:
+                        if cid in seen_chunk_ids:
+                            continue
+                        seen_chunk_ids.add(cid)
+                    is_seed = cid is not None and cid == seed_chunk.get('chunk_id')
+                    # If this is the *central* chunk we already reranked, carry over its score
+                    if is_seed and 'rerank_score' in seed_chunk:
+                        surrounding_chunk['rerank_score'] = seed_chunk['rerank_score']
+                    # Same for the cross-reference marker: expansion re-reads
+                    # the row from LanceDB, which knows nothing about how the
+                    # chunk got here.
+                    if is_seed and seed_chunk.get('via_crossref'):
+                        surrounding_chunk['via_crossref'] = True
+                        if seed_chunk.get('crossref'):
+                            surrounding_chunk['crossref'] = seed_chunk['crossref']
+                    final_docs.append(surrounding_chunk)
 
             print(f"Expanded to {len(final_docs)} unique chunks for synthesis.")
             if event_callback:
                 event_callback("context_expand_done", {"count": len(final_docs)})
         else:
-            final_docs = reranked_docs
-
-        # Optionally hide non-reranked chunks: if any chunk carries a
-        # `rerank_score`, we assume the caller wants to focus on those.
-        # Cross-reference hops are exempt — they are appended *after* reranking
-        # by design (the reranker never saw them, and scoring them against the
-        # query would defeat the point: the referenced document is exactly the
-        # one whose text does not look like the query).
-        if any('rerank_score' in d for d in final_docs):
-            final_docs = [d for d in final_docs
-                          if 'rerank_score' in d or d.get('via_crossref')]
+            final_docs = seed_docs
 
         # ------------------------------------------------------------------
         # Sentence-level pruning (Provence)
@@ -1532,3 +1638,4 @@ ORIGINAL QUESTION: "{query}"
         # Reset caches so new instances are built on demand
         self.text_embedder = None
         self.dense_retriever = None
+        self._dense_retriever_error = None

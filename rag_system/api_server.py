@@ -118,15 +118,21 @@ def _generation_model_override(requested_model):
 
 
 def _apply_index_embedding_model(idx_ids):
-    """Ensure the retrieval pipeline uses the embedding model stored with the first index."""
+    """Ensure the retrieval pipeline uses the embedding model of the active index.
+
+    The active index is the LAST linked one (``idx_ids[-1]``), matching the
+    gateway, which builds the retrieval table name from the same element.
+    ``get_indexes_for_session`` returns links oldest-first, so the last entry
+    is the most recently linked index.
+    """
     if not idx_ids:
         logger.debug("No index IDs provided; keeping the configured embedding model.")
         return
     try:
-        idx = db.get_index(idx_ids[0])
+        idx = db.get_index(idx_ids[-1])
         model = (idx.get("metadata") or {}).get("embedding_model")
         if not model:
-            logger.debug("Index %s has no embedding_model metadata.", idx_ids[0])
+            logger.debug("Index %s has no embedding_model metadata.", idx_ids[-1])
             return
         rp = RAG_AGENT.retrieval_pipeline
         logger.info(
@@ -149,7 +155,9 @@ def _get_table_name_for_session(session_id):
             logger.info("No indexes for session %s; using default table '%s'.", session_id, DEFAULT_TEXT_TABLE)
             return DEFAULT_TEXT_TABLE
 
-        idx = db.get_index(idx_ids[0])
+        # The active index is the LAST linked one, same as the gateway's
+        # table-name resolution and _apply_index_embedding_model above.
+        idx = db.get_index(idx_ids[-1])
         if idx and idx.get('vector_table_name'):
             table_name = idx['vector_table_name']
             logger.info("Using table '%s' for session %s.", table_name, session_id)
@@ -472,10 +480,16 @@ class AdvancedRagApiHandler(http.server.BaseHTTPRequestHandler):
             temp_pipeline.run(file_paths)
 
             if options["embedding_model"] and session_id:
-                try:
-                    db.update_index_metadata(session_id, {"embedding_model": options["embedding_model"]})
-                except Exception as e:
-                    logger.warning("Could not update embedding_model metadata: %s", e)
+                # session_id is a chat-session UUID for session-scoped builds,
+                # which has no row in the indexes table; only merge metadata
+                # when it actually names an index.
+                if db.get_index(session_id):
+                    try:
+                        db.update_index_metadata(session_id, {"embedding_model": options["embedding_model"]})
+                    except Exception as e:
+                        logger.warning("Could not update embedding_model metadata: %s", e)
+                else:
+                    logger.debug("Skipping embedding_model metadata update: %s is not an index.", session_id)
 
             self.send_json_response({
                 "message": f"Indexing process for {len(file_paths)} file(s) completed successfully.",
