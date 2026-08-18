@@ -503,6 +503,58 @@ class ChatAPI {
   }
 
   // -------------------- Streaming (SSE-over-fetch) --------------------
+  // SSE variant of sendMessage: raw LLM chat through the gateway, token by
+  // token. Same event framing as streamSessionMessage (token/complete/error
+  // objects on data: lines), so both parsers behave identically.
+  async streamChatMessage(
+    params: { message: string; conversation_history?: any[]; model?: string },
+    onEvent: (event: { type: string; data: any }) => void,
+  ): Promise<void> {
+    const resp = await fetch(`${API_BASE_URL}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: params.message,
+        conversation_history: params.conversation_history ?? [],
+        ...(params.model && { model: params.model }),
+      }),
+    });
+
+    if (!resp.ok || !resp.body) {
+      let detail = `Stream request failed: ${resp.status}`;
+      try {
+        const errData = await resp.json();
+        if (errData && typeof errData.error === 'string') detail = errData.error;
+      } catch { /* non-JSON error body */ }
+      throw new Error(detail);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let streamClosed = false;
+    while (!streamClosed) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() || '';
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith('data:')) continue;
+        try {
+          const evt = JSON.parse(line.replace(/^data:\s*/, ''));
+          onEvent(evt);
+          if (evt.type === 'complete' || evt.type === 'error') {
+            try { await reader.cancel(); } catch {}
+            streamClosed = true;
+            break;
+          }
+        } catch { /* noop */ }
+      }
+    }
+  }
+
   async streamSessionMessage(
     params: {
       query: string;

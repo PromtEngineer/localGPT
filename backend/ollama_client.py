@@ -151,7 +151,60 @@ class OllamaClient:
         except requests.exceptions.RequestException:
             # Timeout / ConnectionError / HTTPError propagate to the caller.
             raise
-    
+
+    def chat_stream(self, message: str, model: str = None, conversation_history: List[Dict] = None, enable_thinking: bool = False):
+        """Streaming sibling of chat(): yields response-content deltas.
+
+        Same request shape as chat() but with stream=True; Ollama answers with
+        one JSON object per line, each carrying a message.content delta.
+        Connection-level failures (Timeout/ConnectionError/HTTPError) raise
+        before the first yield so the gateway can still answer 502/504;
+        anything after the first yield raises mid-iteration and the caller —
+        already committed to a 200 SSE response — must emit an error event.
+        """
+        if model is None:
+            model = DEFAULT_GENERATION_MODEL
+        if conversation_history is None:
+            conversation_history = []
+
+        messages = conversation_history + [{"role": "user", "content": message}]
+        payload = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+        }
+        if not enable_thinking:
+            payload.update({
+                "think": False,
+                "options": {"think": False, "thinking": False, "temperature": 0.7, "top_p": 0.9},
+            })
+        else:
+            payload["think"] = True
+        payload.setdefault("options", {}).setdefault(
+            "num_ctx",
+            _num_ctx_for(sum(len(m.get("content") or "") for m in messages)),
+        )
+
+        response = requests.post(
+            f"{self.api_url}/chat",
+            json=payload,
+            timeout=60,
+            stream=True,
+        )
+        response.raise_for_status()
+        for line in response.iter_lines():
+            if not line:
+                continue
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            delta = (chunk.get("message") or {}).get("content") or ""
+            if delta:
+                yield delta
+            if chunk.get("done"):
+                break
+
 def main():
     """Test the Ollama client"""
     client = OllamaClient()

@@ -294,7 +294,7 @@ const MessageBubble = React.memo(function MessageBubble({ message, onAction }: M
         {isUser && (
           <ChatBubbleAvatar
             className="mt-1 flex-shrink-0 text-black"
-            fallback="User"
+            fallback="U"
           />
         )}
       </div>

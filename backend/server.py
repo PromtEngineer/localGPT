@@ -305,6 +305,8 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
         
         if parsed_path.path == '/chat':
             self.handle_chat()
+        elif parsed_path.path == '/chat/stream':
+            self.handle_chat_stream()
         elif parsed_path.path == '/sessions':
             self.handle_create_session()
         elif parsed_path.path == '/indexes':
@@ -411,6 +413,87 @@ class ChatHandler(http.server.BaseHTTPRequestHandler):
                 "error": f"Server error: {str(e)}"
             }, status_code=500)
     
+    def handle_chat_stream(self):
+        """SSE variant of /chat: stream token deltas from Ollama.
+
+        Same event shape as the RAG API's /chat/stream ("token" / "complete" /
+        "error" objects on data: lines) so the frontend shares one parser.
+        Pre-stream failures still answer real HTTP errors; once the SSE header
+        is out, failures become a terminal "error" event.
+        """
+        try:
+            data = self.read_required_json_body()
+            if data is None:
+                return
+
+            message = data.get('message', '')
+            model = data.get('model', GENERATION_MODEL)
+            conversation_history = data.get('conversation_history', [])
+
+            if not message:
+                self.send_json_response({"error": "Message is required"}, status_code=400)
+                return
+            if not self.ollama_client.is_ollama_running():
+                self.send_json_response({
+                    "error": "Ollama is not running. Please start Ollama first."
+                }, status_code=503)
+                return
+
+            try:
+                token_iter = self.ollama_client.chat_stream(message, model, conversation_history)
+                first = next(token_iter, None)
+            except requests.exceptions.Timeout:
+                self.send_json_response({"error": "The Ollama backend did not respond in time."}, status_code=504)
+                return
+            except requests.exceptions.ConnectionError:
+                self.send_json_response({"error": "Could not connect to Ollama. Please ensure it is running."}, status_code=502)
+                return
+            except requests.exceptions.HTTPError as e:
+                status = e.response.status_code if e.response is not None else "unknown"
+                self.send_json_response({"error": f"Ollama request failed (HTTP {status})."}, status_code=502)
+                return
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection', 'close')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            self.end_headers()
+
+            def emit(evt_type, payload):
+                frame = f"data: {json.dumps({'type': evt_type, 'data': payload})}\n\n"
+                self.wfile.write(frame.encode('utf-8'))
+                self.wfile.flush()
+
+            parts = []
+            try:
+                if first:
+                    parts.append(first)
+                    emit('token', {'text': first})
+                for delta in token_iter:
+                    parts.append(delta)
+                    emit('token', {'text': delta})
+                emit('complete', {
+                    'response': ''.join(parts),
+                    'model': model,
+                    'message_count': len(conversation_history) + 1,
+                })
+            except (BrokenPipeError, ConnectionResetError):
+                return  # client went away mid-stream; nothing to answer
+            except Exception as e:
+                # Mid-stream upstream failure: the 200 is already committed, so
+                # report through the stream like the RAG API does.
+                try:
+                    emit('error', {'error': f'Ollama stream failed: {e}'})
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+        except json.JSONDecodeError:
+            self.send_json_response({"error": "Invalid JSON"}, status_code=400)
+        except Exception as e:
+            self.send_json_response({"error": f"Server error: {str(e)}"}, status_code=500)
+
     def handle_get_sessions(self):
         """Get all chat sessions"""
         try:

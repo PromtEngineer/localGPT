@@ -17,7 +17,11 @@ export function ChatBubbleAvatar({
   return (
     <Avatar className={cn("h-8 w-8", className)}>
       {src && <AvatarImage src={src} />}
-      <AvatarFallback>{fallback}</AvatarFallback>
+      {/* Explicit light scheme: the shadcn default (bg-muted + text-black) is
+          invisible in this app's dark theme once there is no image on top. */}
+      <AvatarFallback className="bg-white text-black text-xs font-medium">
+        {fallback}
+      </AvatarFallback>
     </Avatar>
   )
 }

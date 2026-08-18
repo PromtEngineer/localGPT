@@ -100,15 +100,43 @@ export function QuickChat({ sessionId: externalSessionId, onSessionChange, class
 
     try {
       const history = api.messagesToHistory(messages);
-      const resp = await api.sendMessage({ message: content, conversation_history: history, model: selectedModel });
 
-      const assistantMsg: ChatMessage = {
-        id: generateUUID(),
-        content: resp.response,
+      // Stream token-by-token. The placeholder is appended first and each
+      // token event replaces it with a NEW message object — the memoized
+      // bubbles re-render only when their message identity changes.
+      const assistantId = generateUUID();
+      setMessages((prev) => [...prev, {
+        id: assistantId,
+        content: '',
         sender: 'assistant',
         timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
+      }]);
+
+      let finalText = '';
+      let streamError: string | null = null;
+      await api.streamChatMessage(
+        { message: content, conversation_history: history, model: selectedModel },
+        (evt) => {
+          if (evt.type === 'token') {
+            const tok: string = evt.data?.text || '';
+            if (!tok) return;
+            finalText += tok;
+            const snapshot = finalText;
+            setMessages((prev) => prev.map((m) =>
+              m.id === assistantId ? { ...m, content: snapshot } : m));
+          } else if (evt.type === 'complete') {
+            const answer = typeof evt.data?.response === 'string' && evt.data.response
+              ? evt.data.response : finalText;
+            finalText = answer;
+            setMessages((prev) => prev.map((m) =>
+              m.id === assistantId ? { ...m, content: answer } : m));
+          } else if (evt.type === 'error') {
+            streamError = typeof evt.data?.error === 'string' ? evt.data.error : 'Quick chat failed';
+          }
+        },
+      );
+      if (streamError) throw new Error(streamError);
+      const resp = { response: finalText };
 
       // /chat itself persists nothing — save the turn against the session so it
       // survives reloads and shows up in the sidebar. Skip gracefully if the
