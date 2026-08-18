@@ -114,7 +114,7 @@ function ThinkingText({ text }: { text: string }) {
         </details>
       )}
       {visibleText.trim() && (
-        <Markdown text={normalizeWhitespace(visibleText)} className="whitespace-pre-wrap break-words" />
+        <Markdown text={normalizeWhitespace(visibleText)} className="break-words" />
       )}
     </>
   );
@@ -154,7 +154,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
               {/* Details for each step */}
               {step.key === 'final' && step.details && typeof step.details === 'object' && !Array.isArray(step.details) ? (
                 <div className="space-y-3">
-                  <div className="whitespace-pre-wrap break-words text-gray-100">
+                  <div className="break-words text-gray-100">
                     <ThinkingText text={normalizeWhitespace(step.details.answer)} />
                   </div>
                   {!hasSubAnswers && step.details.source_documents && step.details.source_documents.length > 0 && (
@@ -162,7 +162,7 @@ function StructuredMessageBlock({ content }: { content: Array<Record<string, any
                   )}
                 </div>
               ) : step.key === 'final' && step.details && typeof step.details === 'string' ? (
-                <div className="whitespace-pre-wrap break-words text-gray-100">
+                <div className="break-words text-gray-100">
                   <ThinkingText text={normalizeWhitespace(step.details)} />
                 </div>
               ) : Array.isArray(step.details) ? (
@@ -257,7 +257,7 @@ const MessageBubble = React.memo(function MessageBubble({ message, onAction }: M
                 </div>
               </div>
             ) : (
-              <div className="whitespace-pre-wrap break-words text-base leading-relaxed">
+              <div className="break-words text-base leading-relaxed">
                 {typeof message.content === 'string'
                     ? <ThinkingText text={normalizeWhitespace(message.content)} />
                     : <StructuredMessageBlock content={message.content} />
