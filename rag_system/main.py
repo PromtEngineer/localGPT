@@ -68,8 +68,14 @@ PIPELINE_CONFIGS = {
         },
         "retrieval": {
             "search_type": "hybrid",
+            # OFF by default since the 2026-08-18 component ablation
+            # (eval/decisions/component-ablation-2026-08-18.md): removing the
+            # late-chunk leg measured -2/120 (noise floor, churn 9 down/7 up)
+            # while the leg doubles vectors written at indexing and adds a
+            # second table per index. Opt back in per config; the same flag
+            # governs both the index-time build and the query-time leg.
             "latechunk": {
-                "enabled": True
+                "enabled": False
             },
             "dense": {
                 "enabled": True
@@ -147,7 +153,10 @@ PIPELINE_CONFIGS = {
             "compose_from_sub_answers": False,
             "pooled_first_stage": True
         },
-        "verification": {"enabled": True},
+        # OFF by default since the 2026-08-18 component ablation: verdicts were
+        # byte-identical on all 120 gold rows with it off (it annotates, never
+        # changes answers) and it costs one utility-model call per query.
+        "verification": {"enabled": False},
         "retrieval_k": 20,
         "context_window_size": 0,
         "semantic_cache_threshold": 0.98,
