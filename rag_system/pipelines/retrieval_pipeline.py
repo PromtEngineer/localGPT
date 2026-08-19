@@ -291,6 +291,10 @@ class RetrievalPipeline:
                         if model_type == "qwen3" or is_qwen3_reranker(model_name):
                             print(f"🔧 Initialising Qwen3 yes/no-logit reranker ({model_name})…")
                             self.ai_reranker = QwenRerankerScorer(model_name=model_name)
+                        elif strategy == "maxsim":
+                            print(f"🔧 Initialising MaxSim late-interaction rescorer ({model_name}) via sidecar…")
+                            from rag_system.rerankers.reranker import MaxSimRerankerScorer
+                            self.ai_reranker = MaxSimRerankerScorer()
                         elif strategy == "rerankers-lib":
                             print(f"🔧 Initialising {model_type} reranker ({model_name}) via rerankers lib…")
                             from rerankers import Reranker

@@ -505,6 +505,7 @@ Respond with JSON: {{"category": "<your_choice>"}}
                         raw_query,
                         recent_history,
                         max_sub_queries=query_decomp_config.get("max_sub_queries", 10),
+                        resolve_only=bool(query_decomp_config.get("resolve_only", False)),
                     )
                 if event_callback:
                     event_callback("decomposition", {"sub_queries": sub_queries})

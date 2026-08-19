@@ -7,7 +7,7 @@ class QueryDecomposer:
         self.llm_client = llm_client
         self.llm_model = llm_model
 
-    def decompose(self, query: str, chat_history: List[Dict[str, Any]] | None = None, max_sub_queries: int = 10) -> List[str]:
+    def decompose(self, query: str, chat_history: List[Dict[str, Any]] | None = None, max_sub_queries: int = 10, resolve_only: bool = False) -> List[str]:
         """Decompose *query* into standalone sub-queries.
 
         Two prompt variants, selected on whether conversation history exists:
@@ -26,10 +26,12 @@ class QueryDecomposer:
           turn's question (m1 arm, 11/12).
         """
         if chat_history:
-            return self._decompose_multi_turn(query, chat_history, max_sub_queries)
-        return self._decompose_single_turn(query, max_sub_queries=max_sub_queries)
+            return self._decompose_multi_turn(query, chat_history, max_sub_queries,
+                                              resolve_only=resolve_only)
+        return self._decompose_single_turn(query, max_sub_queries=max_sub_queries,
+                                           resolve_only=resolve_only)
 
-    def _decompose_multi_turn(self, query: str, chat_history: List[Dict[str, Any]], max_sub_queries: int = 10) -> List[str]:
+    def _decompose_multi_turn(self, query: str, chat_history: List[Dict[str, Any]], max_sub_queries: int = 10, resolve_only: bool = False) -> List[str]:
         """Decompose *query* into standalone sub-queries.
 
         Parameters
@@ -296,6 +298,15 @@ Input payload:
 
             print(f"Query Decomposition Reasoning: {reasoning}")
 
+            # Resolve-only mode (component ablation 2026-08-18: splitting
+            # single-turn queries measured +3-real WORSE than not splitting,
+            # while context resolution is what the multi-turn fix needs):
+            # keep the same LLM call, use only its resolved_query.
+            if resolve_only:
+                resolved = str(data.get('resolved_query') or '').strip() or query
+                print(f"Resolve-only: using resolved query '{resolved}'")
+                return [resolved]
+
             # Deduplicate while preserving order
             sub_queries = list(dict.fromkeys(sub_queries))
 
@@ -309,7 +320,7 @@ Input payload:
 # academic-evidence-2026.md §6 — GraphRAG loses on single-hop, its multi-hop
 # gains are contested, and it costs 41–57x at indexing and up to ~377x in query
 # tokens. Nothing in this repo ever armed it.
-    def _decompose_single_turn(self, query: str, max_sub_queries: int = 10) -> List[str]:
+    def _decompose_single_turn(self, query: str, max_sub_queries: int = 10, resolve_only: bool = False) -> List[str]:
         """Decompose *query* into standalone sub-queries.
 
         Parameters
@@ -516,6 +527,15 @@ Input payload:
             reasoning = data.get('reasoning', 'No reasoning provided.')
 
             print(f"Query Decomposition Reasoning: {reasoning}")
+
+            # Resolve-only mode (component ablation 2026-08-18: splitting
+            # single-turn queries measured +3-real WORSE than not splitting,
+            # while context resolution is what the multi-turn fix needs):
+            # keep the same LLM call, use only its resolved_query.
+            if resolve_only:
+                resolved = str(data.get('resolved_query') or '').strip() or query
+                print(f"Resolve-only: using resolved query '{resolved}'")
+                return [resolved]
 
             # Deduplicate while preserving order
             sub_queries = list(dict.fromkeys(sub_queries))

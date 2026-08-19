@@ -151,7 +151,11 @@ PIPELINE_CONFIGS = {
             # passes, N synthesis calls and the compose step (where multi-hop
             # facts were measurably lost, arm E).
             "compose_from_sub_answers": False,
-            "pooled_first_stage": True
+            "pooled_first_stage": True,
+            # Resolve-only candidate (component ablation 2026-08-18): use the
+            # decomposer's context resolution but never split. OFF pending its
+            # own A/B + multiturn gate.
+            "resolve_only": False
         },
         # OFF by default since the 2026-08-18 component ablation: verdicts were
         # byte-identical on all 120 gold rows with it off (it annotates, never

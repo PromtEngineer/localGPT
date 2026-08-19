@@ -214,3 +214,34 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"\nAn error occurred during the CrossEncoderReranker test: {e}")
         print("Please ensure you have an internet connection for model downloads.")
+
+
+class MaxSimRerankerScorer:
+    """Late-interaction (ColBERT/MaxSim) rescorer via a local scoring sidecar.
+
+    Experimental (component ablation follow-up, 2026-08-18): a 149M
+    multi-vector model (lightonai/LateOn) as a drop-in replacement for the 4B
+    cross-encoder. Runs OUT OF PROCESS: SentenceTransformers v6 requires
+    transformers 5.x / torch >= 2.5, which conflicts with this repo's pinned
+    MPS stack, so the model lives in its own venv behind a localhost endpoint
+    (scratch maxsim/server.py during the experiment).
+
+    Interface matches the non-library branch of ``_score_pairs``:
+    ``rank(query, docs)`` returns ``[(score, original_index)]`` sorted by
+    score, descending. Scores are raw MaxSim sums (rank-meaningful, NOT
+    calibrated probabilities), so the pipeline's ``min_score`` threshold —
+    gated on ``isinstance(..., QwenRerankerScorer)`` — deliberately does not
+    apply; selection is plain top_k.
+    """
+
+    def __init__(self, endpoint: str | None = None):
+        import os
+        self.endpoint = endpoint or os.getenv("MAXSIM_ENDPOINT", "http://127.0.0.1:8765")
+
+    def rank(self, query: str, docs):
+        import requests as _requests
+        resp = _requests.post(self.endpoint, json={"query": query, "docs": list(docs)}, timeout=120)
+        resp.raise_for_status()
+        scores = resp.json()["scores"]
+        pairs = sorted(((float(s), i) for i, s in enumerate(scores)), reverse=True)
+        return pairs
