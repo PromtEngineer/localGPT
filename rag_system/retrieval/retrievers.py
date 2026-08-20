@@ -208,8 +208,14 @@ class MultiVectorRetriever:
 
             # EXPERIMENTAL (see _mv_sidecar_search): with MV_RRF_LEG set, the
             # multi-vector sidecar runs as a THIRD RRF leg next to FTS and
-            # dense; without it, it REPLACES the dense leg.
-            mv_as_third_leg = bool(os.environ.get("MV_RRF_LEG"))
+            # dense; without it, it REPLACES the dense leg. MV_UNION implies
+            # the third leg but skips the top-k cut after fusion: the FULL
+            # candidate union goes downstream so the reranker arbitrates
+            # between legs instead of reciprocal-rank fusion — a disagreeing
+            # leg can then only add candidates, never push another leg's
+            # find out of the pool.
+            mv_union = bool(os.environ.get("MV_UNION"))
+            mv_as_third_leg = mv_union or bool(os.environ.get("MV_RRF_LEG"))
 
             def _run_vec():
                 if not mv_as_third_leg:
@@ -280,7 +286,9 @@ class MultiVectorRetriever:
                 entry = fused.setdefault(self._dedup_key(row), {"row": row, "rrf": 0.0, "bm25": None, "distance": None})
                 entry["rrf"] += 1.0 / (_RRF_K + rank)
 
-            ordered = sorted(fused.values(), key=lambda e: e["rrf"], reverse=True)[:k]
+            ordered = sorted(fused.values(), key=lambda e: e["rrf"], reverse=True)
+            if not mv_union:
+                ordered = ordered[:k]
 
             logger.debug(
                 "%s search (fts=%s, vec=%s) → %s unique chunks",
