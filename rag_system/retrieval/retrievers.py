@@ -1,4 +1,6 @@
 import json
+import os
+import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 import logging
 import math
@@ -99,6 +101,44 @@ class MultiVectorRetriever:
                 return (field, value)
         return ("text", row.get("text"))
 
+    @staticmethod
+    def _mv_sidecar_search(text_query: str, table_name: str, k: int,
+                           where: Optional[str]):
+        """EXPERIMENTAL: multi-vector (late-interaction) replacement for the
+        dense leg, gated on the ``MV_RETRIEVAL_ENDPOINT`` env var.
+
+        The sidecar (an isolated SentenceTransformers-v6 process — ST6 needs
+        transformers 5.x / torch 2.5+, incompatible with this repo's pinned
+        MPS stack) holds pre-encoded token embeddings for the table and
+        returns the top-k rows by MaxSim. Returns None when the env var is
+        unset (normal operation: not a single extra call is made). When it IS
+        set, any failure raises rather than silently degrading to the dense
+        leg — a benchmark arm that quietly reverted to the control would
+        produce numbers indistinguishable from "no effect".
+
+        Metadata prefilters are not implemented on this path for the same
+        reason: raising beats silently ignoring the filter.
+        """
+        endpoint = os.environ.get("MV_RETRIEVAL_ENDPOINT")
+        if not endpoint:
+            return None
+        if where:
+            raise RuntimeError(
+                "MV_RETRIEVAL_ENDPOINT is set but this query carries a "
+                "metadata prefilter, which the multi-vector sidecar does not "
+                "implement.")
+        payload = json.dumps({"table": table_name, "query": text_query,
+                              "k": k}).encode()
+        req = urllib.request.Request(
+            endpoint.rstrip("/") + "/search", data=payload,
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read())
+        if "rows" not in data:
+            raise RuntimeError(f"MV sidecar error: {data}")
+        import pandas as pd
+        return pd.DataFrame(data["rows"])
+
     def retrieve(self, text_query: str, table_name: str, k: int, search_type: str = "hybrid",
                  *, where: Optional[str] = None) -> List[Dict[str, Any]]:
         """
@@ -167,6 +207,9 @@ class MultiVectorRetriever:
                 )
 
             def _run_vec():
+                mv_df = self._mv_sidecar_search(text_query, table_name, k, where)
+                if mv_df is not None:
+                    return mv_df
                 vector = self._embed_single(text_query)
                 if normalize_query:
                     vector = l2_normalize(vector)
