@@ -206,10 +206,16 @@ class MultiVectorRetriever:
                        .to_pandas()
                 )
 
+            # EXPERIMENTAL (see _mv_sidecar_search): with MV_RRF_LEG set, the
+            # multi-vector sidecar runs as a THIRD RRF leg next to FTS and
+            # dense; without it, it REPLACES the dense leg.
+            mv_as_third_leg = bool(os.environ.get("MV_RRF_LEG"))
+
             def _run_vec():
-                mv_df = self._mv_sidecar_search(text_query, table_name, k, where)
-                if mv_df is not None:
-                    return mv_df
+                if not mv_as_third_leg:
+                    mv_df = self._mv_sidecar_search(text_query, table_name, k, where)
+                    if mv_df is not None:
+                        return mv_df
                 vector = self._embed_single(text_query)
                 if normalize_query:
                     vector = l2_normalize(vector)
@@ -250,6 +256,12 @@ class MultiVectorRetriever:
             fts_rows = _records(fts_df)
             vec_rows = _records(vec_df)
 
+            mv_rows: List[Dict[str, Any]] = []
+            if mv_as_third_leg and mode != "fts_only":
+                mv_df = self._mv_sidecar_search(text_query, table_name, k, where)
+                if mv_df is not None:
+                    mv_rows = _records(mv_df)
+
             # Reciprocal rank fusion: each leg contributes 1/(_RRF_K + rank).
             # A single-leg run keeps its native ordering because RRF is
             # monotonically decreasing in rank.
@@ -264,6 +276,9 @@ class MultiVectorRetriever:
                 entry = fused.setdefault(self._dedup_key(row), {"row": row, "rrf": 0.0, "bm25": None, "distance": None})
                 entry["rrf"] += 1.0 / (_RRF_K + rank)
                 entry["distance"] = _finite(row.get("_distance"))
+            for rank, row in enumerate(mv_rows, start=1):
+                entry = fused.setdefault(self._dedup_key(row), {"row": row, "rrf": 0.0, "bm25": None, "distance": None})
+                entry["rrf"] += 1.0 / (_RRF_K + rank)
 
             ordered = sorted(fused.values(), key=lambda e: e["rrf"], reverse=True)[:k]
 

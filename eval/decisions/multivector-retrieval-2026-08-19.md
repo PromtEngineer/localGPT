@@ -69,3 +69,30 @@ mvB fixing rfc_q24 while the control misses it shows MV retrieval surfaces genui
 different candidates. If anything comes of this, it is a **third RRF leg**
 (FTS + dense + MV) rather than a replacement — untested, and only worth trying with
 storage/process costs solved.
+
+## Addendum (same day, user-directed): the third-RRF-leg experiment — also NOT adopted
+
+Arm `rrf3`: FTS + dense + LFM2.5-ColBERT MaxSim fused as THREE RRF legs
+(`MV_RRF_LEG=1` alongside `MV_RETRIEVAL_ENDPOINT`; dense leg verified still firing
+plus exactly one sidecar call per retrieval). Judged per user direction with
+**Sonnet, not the 4b model** — both arms bulk-judged by 5 blind Sonnet agents
+(one per corpus), flips panel-verified by 3 more.
+
+| arm | Sonnet bulk | panel-corrected |
+|-----|-------------|-----------------|
+| control (current defaults) | 100/120 | — |
+| rrf3 | 100/120 | **net −1** (+2 real: acq_q01, acq_q11; −3 real: docs_d05, docs_d07, docs_d22; 36/36 panel votes unanimous; docs_d20 flip dissolved — both arms ungrounded) |
+
+The third leg trades rows ~1:1 instead of adding recall: RRF dilution shifts fused
+rankings everywhere at once. The rfc_q24 gain from replacement mode did NOT survive
+dilution to a third leg (rfc identical 20/24 both arms). Verdict: not adopted; both
+env-gated modes stay as documented experimental hooks.
+
+Calibration note: the same 120 control answers score 90/120 under the deterministic
+4b judge and 100/120 under Sonnet — the 4b bulk judge under-credits ~10 rows/120,
+consistent with every panel correction to date. Ordering conclusions survive; exact
+4b totals should not be quoted as absolute quality.
+
+Ops: the sidecar now persists document token-embeddings to disk
+(`mvretrieval/emb_cache/`, keyed by model + exact corpus content), so encodings are
+computed once per model+table and restarts reload from disk.
