@@ -1,44 +1,46 @@
 "use client";
 
 import { useState, useEffect } from "react"
-import { LocalGPTChat } from "@/components/ui/localgpt-chat"
 import { SessionSidebar } from "@/components/ui/session-sidebar"
 import { SessionChat } from '@/components/ui/session-chat'
 import { chatAPI, ChatSession } from "@/lib/api"
 import { LandingMenu } from "@/components/LandingMenu";
 import { IndexForm } from "@/components/IndexForm";
-import SessionIndexInfo from "@/components/SessionIndexInfo";
 import IndexPicker from "@/components/IndexPicker";
 import { QuickChat } from '@/components/ui/quick-chat'
 
 export function Demo() {
     const [currentSessionId, setCurrentSessionId] = useState<string | undefined>()
-    const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
     const [showConversation, setShowConversation] = useState(false)
     const [backendStatus, setBackendStatus] = useState<'checking' | 'connected' | 'error'>('checking')
     const [sidebarRef, setSidebarRef] = useState<{ refreshSessions: () => Promise<void> } | null>(null)
     const [homeMode, setHomeMode] = useState<'HOME' | 'INDEX' | 'CHAT_EXISTING' | 'QUICK_CHAT'>('HOME')
-    const [showIndexInfo, setShowIndexInfo] = useState(false)
     const [showIndexPicker, setShowIndexPicker] = useState(false)
     const [sidebarOpen, setSidebarOpen] = useState(true)
 
-    console.log('Demo component rendering...')
-
     useEffect(() => {
         console.log('Demo component mounted')
-        checkBackendHealth()
-    }, [])
-
-    const checkBackendHealth = async () => {
-        try {
-            const health = await chatAPI.checkHealth()
-            setBackendStatus('connected')
-            console.log('Backend connected:', health)
-        } catch (error) {
-            console.error('Backend health check failed:', error)
-            setBackendStatus('error')
+        let stopped = false
+        // Poll until the backend answers so a backend that starts after the
+        // frontend still clears the "Backend offline" banner.
+        let interval: ReturnType<typeof setInterval> | null = null
+        const checkBackendHealth = async () => {
+            try {
+                const health = await chatAPI.checkHealth()
+                if (stopped) return
+                setBackendStatus('connected')
+                console.log('Backend connected:', health)
+                if (interval) clearInterval(interval)
+            } catch (error) {
+                if (stopped) return
+                console.error('Backend health check failed:', error)
+                setBackendStatus('error')
+            }
         }
-    }
+        checkBackendHealth()
+        interval = setInterval(checkBackendHealth, 5000)
+        return () => { stopped = true; if (interval) clearInterval(interval) }
+    }, [])
 
     const handleSessionSelect = (sessionId: string) => {
         setCurrentSessionId(sessionId)
@@ -49,14 +51,11 @@ export function Demo() {
     const handleNewSession = () => {
         // Reset state and return to landing page so user can choose chat type
         setCurrentSessionId(undefined)
-        setCurrentSession(null)
         setShowConversation(false)  // Hide conversation view & sidebar
         setHomeMode('HOME')         // Show landing selector (Create index / Chat with index / LLM Chat)
     }
 
     const handleSessionChange = async (session: ChatSession) => {
-        setCurrentSession(session)
-
         // Update the current session ID if it changed (e.g., brand-new session)
         if (session.id !== currentSessionId) {
             setCurrentSessionId(session.id)
@@ -72,16 +71,6 @@ export function Demo() {
         if (currentSessionId === deletedSessionId) {
             // Stay in conversation mode but show empty state
             setCurrentSessionId(undefined)
-            setCurrentSession(null)
-        }
-    }
-
-    const handleStartConversation = () => {
-        if (backendStatus === 'connected') {
-            // Just show empty state, don't create session yet
-            handleNewSession()
-        } else {
-            setShowConversation(true)
         }
     }
 
@@ -163,23 +152,27 @@ export function Demo() {
                 </main>
 
                 {homeMode==='INDEX' && (
-                  <div className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-50">
-                    <IndexForm onClose={()=>setHomeMode('HOME')} onIndexed={(s)=>{setHomeMode('CHAT_EXISTING'); handleSessionSelect(s.id);}} />
+                  <div className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-50 p-4">
+                    <div className="max-h-[92vh] overflow-y-auto">
+                      <IndexForm onClose={()=>setHomeMode('HOME')} onIndexed={(s)=>{setHomeMode('CHAT_EXISTING'); handleSessionSelect(s.id);}} />
+                    </div>
                   </div>
-                )}
-
-                {showIndexInfo && currentSessionId && (
-                  <SessionIndexInfo sessionId={currentSessionId} onClose={()=>setShowIndexInfo(false)} />
                 )}
 
                 {showIndexPicker && (
                   <IndexPicker onClose={()=>setShowIndexPicker(false)} onSelect={async (idxId)=>{
                     // create session and link index then open chat
-                    const session = await chatAPI.createSession()
-                    await chatAPI.linkIndexToSession(session.id, idxId)
-                    setShowIndexPicker(false)
-                    setHomeMode('CHAT_EXISTING')
-                    handleSessionSelect(session.id)
+                    try {
+                      const session = await chatAPI.createSession()
+                      await chatAPI.linkIndexToSession(session.id, idxId)
+                      setShowIndexPicker(false)
+                      setHomeMode('CHAT_EXISTING')
+                      handleSessionSelect(session.id)
+                    } catch (error) {
+                      console.error('Failed to start chat with index:', error)
+                      setShowIndexPicker(false)
+                      alert('Could not start a chat with that index. Is the backend running?')
+                    }
                   }} />
                 )}
             </div>

@@ -1,0 +1,227 @@
+
+
+
+
+
+
+Internet Engineering Task Force (IETF)                          B. Leiba
+Request for Comments: 8174                           Huawei Technologies
+BCP: 14                                                         May 2017
+Updates: 2119
+Category: Best Current Practice
+ISSN: 2070-1721
+
+
+       Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words
+
+Abstract
+
+   RFC 2119 specifies common key words that may be used in protocol
+   specifications.  This document aims to reduce the ambiguity by
+   clarifying that only UPPERCASE usage of the key words have the
+   defined special meanings.
+
+Status of This Memo
+
+   This memo documents an Internet Best Current Practice.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   BCPs is available in Section 2 of RFC 7841.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   http://www.rfc-editor.org/info/rfc8174.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Leiba                     Best Current Practice                 [Page 1]
+
+RFC 8174                 RFC 2119 Clarification                 May 2017
+
+
+Copyright Notice
+
+   Copyright (c) 2017 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (http://trustee.ietf.org/license-info) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   2
+   2.  Clarifying Capitalization of Key Words  . . . . . . . . . . .   3
+   3.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   4
+   4.  Security Considerations . . . . . . . . . . . . . . . . . . .   4
+   5.  Normative References  . . . . . . . . . . . . . . . . . . . .   4
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .   4
+
+1.  Introduction
+
+   RFC 2119 specifies common key words, such as "MUST", "SHOULD", and
+   "MAY", that may be used in protocol specifications.  It says that the
+   key words "are often capitalized," which has caused confusion about
+   how to interpret non-capitalized words such as "must" and "should".
+
+   This document updates RFC 2119 by clarifying that only UPPERCASE
+   usage of the key words have the defined special meanings.  This
+   document is part of BCP 14.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Leiba                     Best Current Practice                 [Page 2]
+
+RFC 8174                 RFC 2119 Clarification                 May 2017
+
+
+2.  Clarifying Capitalization of Key Words
+
+   The following change is made to [RFC2119]:
+
+   === OLD ===
+   In many standards track documents several words are used to signify
+   the requirements in the specification.  These words are often
+   capitalized.  This document defines these words as they should be
+   interpreted in IETF documents.  Authors who follow these guidelines
+   should incorporate this phrase near the beginning of their document:
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in RFC 2119.
+
+
+   === NEW ===
+   In many IETF documents, several words, when they are in all capitals
+   as shown below, are used to signify the requirements in the
+   specification.  These capitalized words can bring significant clarity
+   and consistency to documents because their meanings are well defined.
+   This document defines how those words are interpreted in IETF
+   documents when the words are in all capitals.
+
+   o  These words can be used as defined here, but using them is not
+      required.  Specifically, normative text does not require the use
+      of these key words.  They are used for clarity and consistency
+      when that is what's wanted, but a lot of normative text does not
+      use them and is still normative.
+
+   o  The words have the meanings specified herein only when they are in
+      all capitals.
+
+   o  When these words are not capitalized, they have their normal
+      English meanings and are not affected by this document.
+
+   Authors who follow these guidelines should incorporate this phrase
+   near the beginning of their document:
+
+      The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL
+      NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED",
+      "MAY", and "OPTIONAL" in this document are to be interpreted as
+      described in BCP 14 [RFC2119] [RFC8174] when, and only when, they
+      appear in all capitals, as shown here.
+
+   === END ===
+
+
+
+
+
+Leiba                     Best Current Practice                 [Page 3]
+
+RFC 8174                 RFC 2119 Clarification                 May 2017
+
+
+3.  IANA Considerations
+
+   This document does not require any IANA actions.
+
+4.  Security Considerations
+
+   This document is purely procedural; there are no related security
+   considerations.
+
+5.  Normative References
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <http://www.rfc-editor.org/info/rfc2119>.
+
+Author's Address
+
+   Barry Leiba
+   Huawei Technologies
+
+   Phone: +1 646 827 0648
+   Email: barryleiba@computer.org
+   URI:   http://internetmessagingtechnology.org/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Leiba                     Best Current Practice                 [Page 4]
+

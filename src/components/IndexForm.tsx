@@ -4,7 +4,7 @@ import { GlassInput } from '@/components/ui/GlassInput';
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { AccordionGroup } from '@/components/ui/AccordionGroup';
 import { ModelSelect } from '@/components/ModelSelect';
-import { chatAPI, ChatSession } from '@/lib/api';
+import { chatAPI, ChatSession, DEFAULT_ENRICHMENT_MODEL } from '@/lib/api';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 
 interface Props {
@@ -16,16 +16,14 @@ export function IndexForm({ onClose, onIndexed }: Props) {
   const [files, setFiles] = useState<FileList | null>(null);
   const [indexName, setIndexName] = useState('');
   const [chunkSize, setChunkSize] = useState(512);
-  const [chunkOverlap, setChunkOverlap] = useState(64);
   const [windowSize, setWindowSize] = useState(5);
   const [enableEnrich, setEnableEnrich] = useState(true);
-  const [retrievalMode, setRetrievalMode] = useState<'hybrid' | 'vector' | 'fts'>('hybrid');
+  const [retrievalMode, setRetrievalMode] = useState<'hybrid' | 'vector_only' | 'fts_only'>('hybrid');
   const [embeddingModel, setEmbeddingModel] = useState<string>();
-  const DEFAULT_LLM = 'qwen3:0.6b';
-  const [enrichModel, setEnrichModel] = useState<string>(DEFAULT_LLM);
-  const [overviewModel, setOverviewModel] = useState<string>(DEFAULT_LLM);
-  const [batchSizeEmbed, setBatchSizeEmbed] = useState(64);
-  const [batchSizeEnrich, setBatchSizeEnrich] = useState(64);
+  const [enrichModel, setEnrichModel] = useState<string>(DEFAULT_ENRICHMENT_MODEL);
+  const [overviewModel, setOverviewModel] = useState<string>(DEFAULT_ENRICHMENT_MODEL);
+  const [batchSizeEmbed, setBatchSizeEmbed] = useState(50);
+  const [batchSizeEnrich, setBatchSizeEnrich] = useState(25);
   const [loading, setLoading] = useState(false);
   const [enableLateChunk, setEnableLateChunk] = useState(false);
   const [enableDoclingChunk, setEnableDoclingChunk] = useState(true);
@@ -45,8 +43,7 @@ export function IndexForm({ onClose, onIndexed }: Props) {
         latechunk: enableLateChunk, 
         doclingChunk: enableDoclingChunk,
         chunkSize: chunkSize,
-        chunkOverlap: chunkOverlap,
-        retrievalMode: retrievalMode==='fts' ? 'bm25' : retrievalMode,
+        retrievalMode: retrievalMode,
         windowSize: windowSize,
         enableEnrich: enableEnrich,
         embeddingModel: embeddingModel,
@@ -108,8 +105,8 @@ export function IndexForm({ onClose, onIndexed }: Props) {
         <div>
           <label className="flex items-center gap-1 text-xs uppercase tracking-wide text-gray-300 mb-1">Retrieval mode <InfoTooltip text="Choose how chunks are found. Hybrid combines full-text search with vectors; FTS uses textual matching only; Vector relies purely on dense similarity." /></label>
           <div className="flex gap-3">
-            {(['hybrid','vector','fts'] as const).map((m)=>(
-              <button key={m} onClick={()=>setRetrievalMode(m)} className={`px-3 py-1 rounded text-xs font-sans ${retrievalMode===m?'bg-white/20':'bg-white/10 hover:bg-white/20'}`}>{m==='fts' ? 'FTS' : m}</button>
+            {([['hybrid','hybrid'],['vector_only','vector'],['fts_only','FTS']] as const).map(([m,label])=>(
+              <button key={m} onClick={()=>setRetrievalMode(m)} className={`px-3 py-1 rounded text-xs font-sans ${retrievalMode===m?'bg-white/20':'bg-white/10 hover:bg-white/20'}`}>{label}</button>
             ))}
           </div>
           <div className="grid grid-cols-2 gap-4 mt-3">
@@ -126,14 +123,6 @@ export function IndexForm({ onClose, onIndexed }: Props) {
             <div>
               <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Chunk size <InfoTooltip text="Maximum token length for each chunk. Both legacy and high-recall modes now use token-based sizing." size={12} /></label>
               <GlassInput type="number" value={chunkSize} onChange={(e) => setChunkSize(parseInt(e.target.value))} />
-            </div>
-            <div>
-              <label className="flex items-center gap-1 text-xs mb-1 text-gray-400">Chunk overlap <InfoTooltip text="Tokens reused between adjacent chunks to preserve context." size={12} /></label>
-              <GlassInput
-                type="number"
-                value={chunkOverlap}
-                onChange={(e) => setChunkOverlap(parseInt(e.target.value))}
-              />
             </div>
           </div>
 

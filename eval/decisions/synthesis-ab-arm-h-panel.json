@@ -1,0 +1,372 @@
+{
+  "arm": "H",
+  "description": "pooled decomposition, first run (decomposition still sampled at temp 1.0)",
+  "date": "2026-08-15",
+  "protocol": "v1 prompts, verifier suffix stripped, 3 blind Sonnet subagent voters, 2-of-3 majority",
+  "majority_pass": 17,
+  "n": 24,
+  "splits": 0,
+  "note": "superseded by the deterministic H2/G2 comparison in the same decision file",
+  "rows": [
+    {
+      "id": "rfc_q01",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The answer's default value of 3 and multiplier of 8 both appear verbatim in the evidence.",
+        "The evidence states the default is 3 and that this indicates a multiplier of 8, matching the answer exactly.",
+        "Evidence states the default of 3 and the multiplier of 8, matching the answer exactly."
+      ]
+    },
+    {
+      "id": "rfc_q02",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence explicitly states the value MUST be at least 2, matching the answer's floor claim.",
+        "The evidence states active_connection_id_limit MUST be at least 2, which is exactly what the answer claims.",
+        "Evidence states the active_connection_id_limit MUST be at least 2, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q03",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence names NO_VIABLE_PATH with code 0x10 exactly as stated in the answer.",
+        "The evidence names NO_VIABLE_PATH with code 0x10 as the error for a network path incapable of supporting QUIC, matching the answer.",
+        "Evidence names NO_VIABLE_PATH with code 0x10 exactly as the answer states."
+      ]
+    },
+    {
+      "id": "rfc_q04",
+      "requires_crossref": false,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence gives 333 milliseconds but never names this value \"kInitialRtt\", so the answer adds an unstated identifier.",
+        "The evidence gives 333 milliseconds but never names the constant kInitialRtt, so that label is an unsupported addition.",
+        "The evidence gives the 333 ms value but never names it 'kInitialRtt', an identifier the answer adds without support."
+      ]
+    },
+    {
+      "id": "rfc_q05",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states at least one ack-eliciting packet and up to two full-sized datagrams, matching the answer exactly.",
+        "The evidence states at least one ack-eliciting packet MUST be sent and up to two full-sized datagrams MAY be sent, matching the answer.",
+        "Evidence states at least one ack-eliciting packet and up to two full-sized datagrams, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q06",
+      "requires_crossref": false,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence gives the type values 0x30/0x31 and the bit pattern but never states that the low bit is the LEN bit, an added unstated claim.",
+        "The evidence gives the bit pattern 0b0011000X but never states that the low bit is the LEN bit, so that claim is unsupported.",
+        "Evidence gives the 0x30/0x31 codepoints but never identifies the low bit as the 'LEN bit', an unsupported added claim."
+      ]
+    },
+    {
+      "id": "rfc_q07",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the QUIC v2 version field is 0x6b3343cf, matching the answer.",
+        "The evidence states the QUIC v2 version field value is 0x6b3343cf, exactly matching the answer.",
+        "Evidence explicitly states the version 2 field value is 0x6b3343cf, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q08",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the field is between 0 and 255 bytes generally, versus 20 bytes for version 1, matching the answer.",
+        "The evidence states the field is between 0 and 255 bytes generally, wider than version 1's 20-byte cap, matching the answer.",
+        "Evidence states the field is between 0 and 255 bytes and that version 1 caps it at 20 bytes, matching the answer's framing."
+      ]
+    },
+    {
+      "id": "rfc_q09",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence explicitly states DoQ connections MUST NOT use UDP port 53 and defaults to port 853, matching the answer.",
+        "The evidence states DoQ uses UDP port 853 by default and MUST NOT use port 53, matching the answer.",
+        "Evidence states DoQ uses port 853 by default and MUST NOT use port 53, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q10",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states at least 1,024 bytes of flow-control credit per unidirectional stream, matching the answer exactly.",
+        "The evidence states at least 1,024 bytes of flow-control credit SHOULD be provided per unidirectional stream, matching the answer exactly.",
+        "Evidence states at least 1,024 bytes of flow-control credit per unidirectional stream, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q11",
+      "requires_crossref": false,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence never states the setting's identifier 0x01 nor that no dynamic table entries may be inserted, both added claims.",
+        "The evidence never gives the identifier 0x01 for the setting nor states that no dynamic table entries may be inserted, both of which are added claims.",
+        "Evidence never gives the setting identifier 0x01 for SETTINGS_QPACK_MAX_TABLE_CAPACITY, an unsupported added detail."
+      ]
+    },
+    {
+      "id": "rfc_q12",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence lists exactly Content-Length, Content-Type, and Transfer-Encoding as disqualifying headers, matching the answer.",
+        "The evidence lists exactly Content-Length, Content-Type, and Transfer-Encoding as disqualifying headers, matching the answer.",
+        "Evidence lists exactly Content-Length, Content-Type, and Transfer-Encoding as disqualifying headers."
+      ]
+    },
+    {
+      "id": "rfc_q13",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states urgency ranges 0 to 7 descending with a default of 3, matching the answer.",
+        "The evidence states urgency ranges 0 to 7 descending in priority with a default of 3, matching the answer.",
+        "Evidence states urgency ranges 0 to 7 with default of 3, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q14",
+      "requires_crossref": false,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the spin bit is the third-most-significant bit of byte 0, matching the answer.",
+        "The evidence states the spin bit is the third-most-significant bit of the first octet of the short header, matching the answer.",
+        "Evidence states the spin bit is the third-most-significant bit of byte 0 of the short header, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q15",
+      "requires_crossref": true,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states no more than three times the data received, matching the answer exactly.",
+        "The evidence states a sender MUST limit data to unvalidated addresses to three times the amount received, matching the answer.",
+        "Evidence states the anti-amplification limit is three times the data received, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q16",
+      "requires_crossref": true,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the PTO formula exactly as smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay, matching the answer.",
+        "The evidence explicitly gives the formula PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay, matching the answer.",
+        "Evidence gives the exact formula PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay as stated in the answer."
+      ]
+    },
+    {
+      "id": "rfc_q17",
+      "requires_crossref": true,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence only states the tag is 128 bits and never mentions AEAD_AES_128_GCM or the Retry pseudo-packet computation, an added claim.",
+        "The evidence only states the tag is 128 bits and says nothing about it being computed via AEAD_AES_128_GCM, which is an unsupported addition.",
+        "Evidence only states the tag is 128 bits and does not mention AEAD_AES_128_GCM or a Retry pseudo-packet computation."
+      ]
+    },
+    {
+      "id": "rfc_q18",
+      "requires_crossref": true,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence explicitly says the original version 1 salt value is not provided in the snippets, contradicting the answer's fabricated salt value.",
+        "The evidence explicitly states the original version 1 salt value is not provided in the snippets, so the fabricated hex value for it is unsupported.",
+        "Evidence explicitly says the original version 1 salt value is not provided in the snippets, contradicting the answer's specific hex value."
+      ]
+    },
+    {
+      "id": "rfc_q19",
+      "requires_crossref": true,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence explicitly states the information could not be found, contradicting the answer's specific value of 120.",
+        "The evidence explicitly states this information could not be found in the documents, so asserting the value 120 is unsupported.",
+        "Evidence explicitly states the alert number could not be found, contradicting the answer's claim of 120."
+      ]
+    },
+    {
+      "id": "rfc_q20",
+      "requires_crossref": true,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence describes the additional requirement as a permanent, readily available public specification, matching the answer.",
+        "The evidence describes Specification Required as Expert Review plus a stable, permanent, readily available public specification, matching the answer.",
+        "Evidence states Specification Required is Expert Review plus a formal, permanent, readily available specification, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q21",
+      "requires_crossref": true,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the pseudo-header was defined in RFC 8441 and may appear on request HEADERS for CONNECT, matching the answer.",
+        "The evidence states the :protocol pseudo-header was first defined for the HTTP/2 CONNECT method extension and may appear on request HEADERS, matching the answer.",
+        "Evidence states :protocol was defined in RFC 8441 and may appear on request HEADERS for CONNECT, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q22",
+      "requires_crossref": true,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the frame type is 0xc (decimal 12) with zero or more Origin-Entry instances, matching the answer.",
+        "The evidence states the HTTP/2 ORIGIN frame is type 0xc carrying zero or more Origin-Entry fields, matching the answer.",
+        "Evidence states the HTTP/2 ORIGIN frame is type 0xc (12) carrying zero or more Origin-Entry fields, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q23",
+      "requires_crossref": true,
+      "votes": [
+        true,
+        true,
+        true
+      ],
+      "majority_pass": true,
+      "reasons": [
+        "The evidence states the DATAGRAM Capsule Type has value 0x00, matching the answer exactly.",
+        "The evidence states the Capsule Protocol defines the DATAGRAM (0x00) Capsule Type, matching the answer.",
+        "Evidence states the DATAGRAM Capsule Type has value 0x00, matching the answer."
+      ]
+    },
+    {
+      "id": "rfc_q24",
+      "requires_crossref": true,
+      "votes": [
+        false,
+        false,
+        false
+      ],
+      "majority_pass": false,
+      "reasons": [
+        "The evidence never attributes the initial_max_streams_uni parameter to RFC 9000, an added unstated claim.",
+        "The evidence never states that initial_max_streams_uni is defined in RFC 9000, making that attribution an unsupported addition.",
+        "Evidence never attributes the 0x09 parameter to RFC 9000, an unsupported identifier added by the answer."
+      ]
+    }
+  ]
+}

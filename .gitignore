@@ -63,8 +63,6 @@ logs/
 
 # SQLite or other database files
 *.db
-#backend/*.db
-# backend/chat_history.db
 backend/chroma_db/
 backend/chroma_db/**
 
@@ -72,7 +70,21 @@ backend/chroma_db/**
 rag_system/documents/
 *.pdf
 
-# Ensure docker.env remains tracked
+# Ensure docker.env and .env.example remain tracked
 !docker.env
-!backend/chat_data.db
+!.env.example
 
+# Phase 0 evaluation harness (eval/) — rebuildable artefacts only.
+# The corpora, gold set, scripts and BASELINE.md are tracked.
+eval/.eval_indexes/
+eval/results/
+!eval/corpora/*.pdf
+# The Phase 4 cross-reference corpus lives one directory deeper.
+!eval/corpora/acquisition/*.pdf
+
+
+# local virtualenv
+.venv/
+
+# agent worktree / session state
+.claude/

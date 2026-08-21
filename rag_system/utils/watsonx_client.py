@@ -4,6 +4,11 @@ import base64
 from io import BytesIO
 from PIL import Image
 
+# The token-usage tracker lives with the Ollama client because that is where the
+# counts originate; watsonx imports it only to report its own (absent) counts as
+# zeros so the per-query summary stays well-formed on either backend.
+from rag_system.utils.ollama_client import record_llm_usage
+
 
 class WatsonXClient:
     """
@@ -58,27 +63,6 @@ class WatsonXClient:
         image.save(buffered, format="PNG")
         return base64.b64encode(buffered.getvalue()).decode('utf-8')
 
-    def generate_embedding(self, model: str, text: str) -> List[float]:
-        """
-        Generate embeddings using Watson X embedding models.
-        Note: This requires using Watson X embedding models through the embeddings API.
-        """
-        try:
-            from ibm_watsonx_ai.foundation_models import Embeddings
-            
-            embedding_model = Embeddings(
-                model_id=model,
-                credentials=self.credentials,
-                project_id=self.project_id
-            )
-            
-            result = embedding_model.embed_query(text)
-            return result if isinstance(result, list) else []
-            
-        except Exception as e:
-            print(f"Error generating embedding: {e}")
-            return []
-
     def generate_completion(
         self,
         model: str,
@@ -105,10 +89,19 @@ class WatsonXClient:
         """
         try:
             gen_params = {}
-            
+
+            # Ollama-style options dict (interface parity): only `temperature`
+            # maps onto TextGenParameters; the rest (num_ctx, …) are
+            # Ollama-specific and accepted-and-ignored.
+            options = kwargs.pop('options', None)
+            if options and options.get('temperature') is not None:
+                kwargs.setdefault('temperature', options['temperature'])
+
             if kwargs.get('max_tokens'):
                 gen_params['max_new_tokens'] = kwargs['max_tokens']
-            if kwargs.get('temperature'):
+            # `is not None` so an explicit temperature=0 (the deterministic
+            # pin) is applied instead of dropped as falsy.
+            if kwargs.get('temperature') is not None:
                 gen_params['temperature'] = kwargs['temperature']
             if kwargs.get('top_p'):
                 gen_params['top_p'] = kwargs['top_p']
@@ -126,9 +119,7 @@ class WatsonXClient:
             
             if images:
                 print("Warning: Image support in Watson X may vary by model")
-                result = model_inference.generate(prompt=prompt)
-            else:
-                result = model_inference.generate(prompt=prompt)
+            result = model_inference.generate(prompt=prompt)
             
             generated_text = ""
             if isinstance(result, dict):
@@ -136,12 +127,21 @@ class WatsonXClient:
             else:
                 generated_text = str(result)
             
-            return {
+            # roadmap 4.5: the RAG system's token tracker reads Ollama's
+            # `prompt_eval_count` / `eval_count`. watsonx's SDK does not surface
+            # comparable per-call counts through this code path, so report zeros
+            # rather than omitting the keys — a watsonx run then shows an honest
+            # "0 tokens counted" instead of silently looking like a cache hit.
+            payload = {
                 'response': generated_text,
                 'model': model,
-                'done': True
+                'done': True,
+                'prompt_eval_count': 0,
+                'eval_count': 0,
             }
-            
+            record_llm_usage(payload)
+            return payload
+
         except Exception as e:
             print(f"Error generating completion: {e}")
             return {'response': '', 'error': str(e)}
@@ -155,22 +155,28 @@ class WatsonXClient:
         images: Optional[List[Image.Image]] = None,
         enable_thinking: Optional[bool] = None,
         timeout: int = 60,
+        options: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """
         Asynchronous version of generate_completion.
-        
+
         Note: IBM Watson X SDK may not have native async support,
         so this is a wrapper around the sync version.
+
+        *options* mirrors OllamaClient's; the sync method translates
+        `temperature` into watsonx generation params and ignores the rest.
         """
         import asyncio
-        
-        loop = asyncio.get_event_loop()
+
+        # Inside a coroutine a loop is always running; get_event_loop() is
+        # deprecated here and can raise when no loop has been set.
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             lambda: self.generate_completion(
                 model, prompt, format=format, images=images,
-                enable_thinking=enable_thinking, **kwargs
+                enable_thinking=enable_thinking, options=options, **kwargs
             )
         )
 
@@ -181,13 +187,19 @@ class WatsonXClient:
         *,
         images: Optional[List[Image.Image]] = None,
         enable_thinking: Optional[bool] = None,
+        stats: Optional[Dict[str, Any]] = None,
         **kwargs
     ):
         """
         Generator that yields partial response strings as they arrive.
-        
+
         Note: Watson X streaming support depends on the SDK version and model.
+
+        *stats* mirrors ``OllamaClient.stream_completion`` (roadmap 4.5). watsonx
+        exposes no per-stream token counts here, so it is filled with zeros.
         """
+        if stats is not None:
+            stats.update({'prompt_eval_count': 0, 'eval_count': 0, 'done': True})
         try:
             gen_params = {}
             if kwargs.get('max_tokens'):
@@ -218,8 +230,10 @@ class WatsonXClient:
                 yield generated_text
                 
         except Exception as e:
+            # Yielding "" made a failure look like a valid empty content
+            # chunk; log and stop the iteration instead.
             print(f"Error in stream_completion: {e}")
-            yield ""
+            return
 
 
 if __name__ == '__main__':

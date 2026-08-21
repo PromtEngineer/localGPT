@@ -3,9 +3,10 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (sqlite3 CLI is used for database troubleshooting)
 RUN apt-get update && apt-get install -y \
     curl \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies (using Docker-specific requirements)
@@ -16,8 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY rag_system/ ./rag_system/
 
-# Create necessary directories and initialize database
-RUN mkdir -p shared_uploads logs backend
+# Create necessary directories
+RUN mkdir -p shared_uploads index_store lancedb logs
 
 # Expose port
 EXPOSE 8000
@@ -26,6 +27,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the backend server
-WORKDIR /app/backend
-CMD ["python", "server.py"]  
+# Run the backend server from the repo root so relative paths
+# (shared_uploads/, index_store/, lancedb/) match local development
+CMD ["python", "backend/server.py"]

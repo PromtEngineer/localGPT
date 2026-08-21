@@ -1,0 +1,189 @@
+{
+  "corpus": "rfc",
+  "documents_dir": ".",
+  "description": "Answer-bearing verbatim anchors into the 23 RFCs of the `rfc` corpus. Strings that span a hard line break in the RFC's 72-column layout are written on one line here; every gate compares whitespace-normalised text, which is also how eval/run_eval.py scores chunk relevance.",
+  "facts": [
+    {
+      "id": "q9000_ack_delay_exponent_default",
+      "topic": "transport_parameters",
+      "source": "RFC 9000 - QUIC A UDP-Based Multiplexed and Secure Transport.txt",
+      "expected": "default value of 3 is assumed (indicating a multiplier of 8).",
+      "summary": "An absent ack_delay_exponent is taken to be 3, i.e. ACK Delay scales by 8."
+    },
+    {
+      "id": "q9000_active_cid_limit_floor",
+      "topic": "transport_parameters",
+      "source": "RFC 9000 - QUIC A UDP-Based Multiplexed and Secure Transport.txt",
+      "expected": "active_connection_id_limit parameter MUST be at least 2.",
+      "summary": "The advertised active_connection_id_limit may not be below 2."
+    },
+    {
+      "id": "q9000_no_viable_path",
+      "topic": "error_codes",
+      "source": "RFC 9000 - QUIC A UDP-Based Multiplexed and Secure Transport.txt",
+      "expected": "NO_VIABLE_PATH (0x10):  An endpoint has determined that the network",
+      "summary": "Transport error code 0x10 is NO_VIABLE_PATH."
+    },
+    {
+      "id": "q9000_anti_amplification",
+      "topic": "address_validation",
+      "source": "RFC 9000 - QUIC A UDP-Based Multiplexed and Secure Transport.txt",
+      "expected": "to the unvalidated address to three times the amount of data received",
+      "summary": "Before address validation an endpoint may send at most 3x what it received."
+    },
+    {
+      "id": "q9000_initial_max_streams_uni",
+      "topic": "transport_parameters",
+      "source": "RFC 9000 - QUIC A UDP-Based Multiplexed and Secure Transport.txt",
+      "expected": "initial_max_streams_uni (0x09):  The initial maximum unidirectional",
+      "summary": "Transport parameter 0x09 bounds the peer's unidirectional streams."
+    },
+    {
+      "id": "q9001_retry_integrity_tag",
+      "topic": "packet_protection",
+      "source": "RFC 9001 - Using TLS to Secure QUIC.txt",
+      "expected": "The Retry Integrity Tag is a 128-bit field that is computed as the",
+      "summary": "The Retry Integrity Tag is 128 bits wide."
+    },
+    {
+      "id": "q9001_initial_salt_v1",
+      "topic": "key_derivation",
+      "source": "RFC 9001 - Using TLS to Secure QUIC.txt",
+      "expected": "initial_salt = 0x38762cf7f55934b34d179ae6a4c80cadccbb7f0a",
+      "summary": "The QUIC version 1 Initial-keys HKDF salt."
+    },
+    {
+      "id": "q9002_initial_rtt",
+      "topic": "loss_recovery",
+      "source": "RFC 9002 - QUIC Loss Detection and Congestion Control.txt",
+      "expected": "SHOULD be set to 333 milliseconds.  This results in handshakes",
+      "summary": "kInitialRtt defaults to 333 ms before any RTT sample exists."
+    },
+    {
+      "id": "q9002_pto_probe_count",
+      "topic": "loss_recovery",
+      "source": "RFC 9002 - QUIC Loss Detection and Congestion Control.txt",
+      "expected": "MAY send up to two full-sized datagrams containing ack-eliciting",
+      "summary": "On PTO expiry a sender may send up to two full-sized probe datagrams."
+    },
+    {
+      "id": "q9002_pto_formula",
+      "topic": "loss_recovery",
+      "source": "RFC 9002 - QUIC Loss Detection and Congestion Control.txt",
+      "expected": "PTO = smoothed_rtt + max(4*rttvar, kGranularity) + max_ack_delay",
+      "summary": "The Probe Timeout formula."
+    },
+    {
+      "id": "q9221_datagram_frame_types",
+      "topic": "datagram_extension",
+      "source": "RFC 9221 - An Unreliable Datagram Extension to QUIC.txt",
+      "expected": "form 0b0011000X (or the values 0x30 and 0x31).  The least significant",
+      "summary": "DATAGRAM frame types are 0x30 and 0x31."
+    },
+    {
+      "id": "q9369_version_number",
+      "topic": "version_negotiation",
+      "source": "RFC 9369 - QUIC Version 2.txt",
+      "expected": "The Version field of long headers is 0x6b3343cf.  This was generated",
+      "summary": "QUIC version 2's long-header version number."
+    },
+    {
+      "id": "q9369_initial_salt_v2",
+      "topic": "key_derivation",
+      "source": "RFC 9369 - QUIC Version 2.txt",
+      "expected": "initial_salt = 0x0dede3def700a6db819381be6e269dcbf9bd2ed9",
+      "summary": "The QUIC version 2 Initial-keys HKDF salt."
+    },
+    {
+      "id": "q8999_cid_length_range",
+      "topic": "invariants",
+      "source": "RFC 8999 - Version-Independent Properties of QUIC.txt",
+      "expected": "the Destination Connection ID Length field and is between 0 and 255",
+      "summary": "Version-independently, a Destination Connection ID is 0-255 bytes."
+    },
+    {
+      "id": "q9250_no_port_53",
+      "topic": "transport",
+      "source": "RFC 9250 - DNS over Dedicated QUIC Connections.txt",
+      "expected": "DoQ connections MUST NOT use UDP port 53.",
+      "summary": "DNS over QUIC is forbidden on UDP port 53."
+    },
+    {
+      "id": "q9114_uni_stream_credit",
+      "topic": "stream_setup",
+      "source": "RFC 9114 - HTTP3.txt",
+      "expected": "provide at least 1,024 bytes of flow-control credit to each",
+      "summary": "HTTP/3 endpoints should grant >=1024 bytes of credit per unidirectional stream."
+    },
+    {
+      "id": "q9114_three_uni_streams",
+      "topic": "stream_setup",
+      "source": "RFC 9114 - HTTP3.txt",
+      "expected": "Therefore, the transport parameters sent by both clients and servers MUST allow the peer to create at least three",
+      "summary": "HTTP/3 needs transport parameters permitting at least three unidirectional streams."
+    },
+    {
+      "id": "q9204_qpack_capacity_default",
+      "topic": "settings",
+      "source": "RFC 9204 - QPACK Field Compression for HTTP3.txt",
+      "expected": "SETTINGS_QPACK_MAX_TABLE_CAPACITY (0x01):  The default value is zero.",
+      "summary": "QPACK dynamic table capacity defaults to zero."
+    },
+    {
+      "id": "q9297_capsule_forbidden_headers",
+      "topic": "capsule_protocol",
+      "source": "RFC 9297 - HTTP Datagrams and the Capsule Protocol.txt",
+      "expected": "The Capsule Protocol MUST NOT be used with messages that contain Content-Length, Content-Type, or Transfer-Encoding header fields.",
+      "summary": "Those three header fields disqualify a message from the Capsule Protocol."
+    },
+    {
+      "id": "q9297_datagram_capsule_type",
+      "topic": "capsule_protocol",
+      "source": "RFC 9297 - HTTP Datagrams and the Capsule Protocol.txt",
+      "expected": "This document defines the DATAGRAM (0x00) Capsule Type.",
+      "summary": "Capsule Type 0x00 is DATAGRAM."
+    },
+    {
+      "id": "q9218_urgency_default",
+      "topic": "priority_parameters",
+      "source": "RFC 9218 - Extensible Prioritization Scheme for HTTP.txt",
+      "expected": "between 0 and 7 inclusive, in descending order of priority.  The default is 3.",
+      "summary": "Urgency runs 0-7 and defaults to 3."
+    },
+    {
+      "id": "q9312_spin_bit_position",
+      "topic": "observability",
+      "source": "RFC 9312 - Manageability of the QUIC Transport Protocol.txt",
+      "expected": "latency spin bit:  The third-most-significant bit of the first octet",
+      "summary": "The latency spin bit is the third-most-significant bit of byte 0."
+    },
+    {
+      "id": "q7301_alpn_alert_value",
+      "topic": "alpn",
+      "source": "RFC 7301 - TLS Application-Layer Protocol Negotiation Extension.txt",
+      "expected": "no_application_protocol(120),",
+      "summary": "The no_application_protocol TLS alert description is 120."
+    },
+    {
+      "id": "q8126_specification_required",
+      "topic": "registration_policies",
+      "source": "RFC 8126 - Guidelines for Writing an IANA Considerations Section in RFCs.txt",
+      "expected": "This policy is the same as Expert Review, with the additional requirement of a formal public specification.",
+      "summary": "Specification Required = Expert Review plus a permanent public specification."
+    },
+    {
+      "id": "q8441_protocol_pseudo_header",
+      "topic": "extended_connect",
+      "source": "RFC 8441 - Bootstrapping WebSockets with HTTP2.txt",
+      "expected": "A new pseudo-header field :protocol MAY be included on request",
+      "summary": "RFC 8441 defines the :protocol pseudo-header for Extended CONNECT."
+    },
+    {
+      "id": "q8336_origin_frame_type",
+      "topic": "origin_frame",
+      "source": "RFC 8336 - The ORIGIN HTTP2 Frame.txt",
+      "expected": "The ORIGIN frame type is 0xc (decimal 12) and contains zero or more",
+      "summary": "The HTTP/2 ORIGIN frame is type 0xc."
+    }
+  ]
+}

@@ -1,40 +1,50 @@
 from __future__ import annotations
 
-"""Docling-aware chunker (simplified).
+"""Docling-aware chunker.
 
-For now we proxy the old MarkdownRecursiveChunker but add:
-• sentence-aware packing to max_tokens with overlap
-• breadcrumb metadata stubs so downstream code already handles them
+Two entry points:
+• chunk_document(doc) walks a DoclingDocument element tree, emitting tables and
+  code as atomic chunks and token-packing paragraphs up to max_tokens.
+• chunk()/split_markdown() fall back to MarkdownRecursiveChunker plus
+  sentence-aware packing when only Markdown is available.
 
-In a follow-up we can replace the internals with true Docling element-tree
-walking once the PDFConverter returns structured nodes.
+Both attach heading-path / block-type metadata to every chunk.
 """
-from typing import List, Dict, Any, Tuple
-import math
+from typing import List, Dict, Any
 import re
-from itertools import islice
 from rag_system.ingestion.chunking import MarkdownRecursiveChunker
 from transformers import AutoTokenizer
 
 class DoclingChunker:
-    def __init__(self, *, max_tokens: int = 512, overlap: int = 1, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
+    def __init__(self, *, max_tokens: int = 512, overlap: int = 1, tokenizer_model: str | None = None):
         self.max_tokens = max_tokens
         self.overlap = overlap  # sentences of overlap
-        repo_id = tokenizer_model
-        if "/" not in tokenizer_model and not tokenizer_model.startswith("Qwen/"):
-            repo_id = {
-                "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
-            }.get(tokenizer_model.lower(), tokenizer_model)
-        
+
+        if not tokenizer_model:
+            from rag_system.main import EXTERNAL_MODELS
+            tokenizer_model = EXTERNAL_MODELS["embedding_model"]
+
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_model, trust_remote_code=True)
         except Exception as e:
-            print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
+            print(f"Warning: Failed to load tokenizer {tokenizer_model}: {e}")
             print("Falling back to character-based approximation (4 chars ≈ 1 token)")
             self.tokenizer = None
         # Fallback simple sentence splitter (period, question, exclamation, newline)
         self._sent_re = re.compile(r"(?<=[\.\!\?])\s+|\n+")
-        self.legacy = MarkdownRecursiveChunker(max_chunk_size=10_000, min_chunk_size=100)
+        # Markdown fallback chunker, built lazily on first use so the common
+        # Docling path doesn't pay for a second tokenizer load.
+        self._legacy: MarkdownRecursiveChunker | None = None
+        self._legacy_tokenizer_model = tokenizer_model
+
+    @property
+    def legacy(self) -> MarkdownRecursiveChunker:
+        if self._legacy is None:
+            self._legacy = MarkdownRecursiveChunker(
+                max_chunk_size=10_000, min_chunk_size=100,
+                tokenizer_model=self._legacy_tokenizer_model,
+            )
+        return self._legacy
 
     # ------------------------------------------------------------------
     def _token_len(self, text: str) -> int:
@@ -53,14 +63,19 @@ class DoclingChunker:
             sentences = [s.strip() for s in self._sent_re.split(ch["text"]) if s.strip()]
             if not sentences:
                 continue
-            window: List[str] = []
-            while sentences:
-                # Add until over limit
-                while sentences and self._token_len(" ".join(window + [sentences[0]])) <= self.max_tokens:
-                    window.append(sentences.pop(0))
-                if not window:  # single sentence > limit → hard cut
-                    window.append(sentences.pop(0))
-                chunk_text = " ".join(window)
+            # Index-based window over the sentence list. Each iteration emits
+            # sentences[i:j] and the next window starts strictly after i, so
+            # the loop always makes progress and cannot re-emit the same
+            # window forever (the old queue-prepend version could).
+            i = 0
+            while i < len(sentences):
+                # Grow the window [i..j) until the next sentence would exceed the limit
+                j = i
+                while j < len(sentences) and self._token_len(" ".join(sentences[i:j + 1])) <= self.max_tokens:
+                    j += 1
+                if j == i:  # single sentence > limit → hard cut
+                    j = i + 1
+                chunk_text = " ".join(sentences[i:j])
                 new_chunk = {
                     "chunk_id": f"{document_id}_{global_idx}",
                     "text": chunk_text,
@@ -75,11 +90,11 @@ class DoclingChunker:
                 }
                 new_chunks.append(new_chunk)
                 global_idx += 1
-                # Overlap: prepend last `overlap` sentences of the current window to the remaining queue
-                if self.overlap and sentences:
-                    back = window[-self.overlap:] if self.overlap <= len(window) else window[:]
-                    sentences = back + sentences
-                window = []
+                if j >= len(sentences):
+                    break
+                # Overlap: restart up to `overlap` sentences back, but never at
+                # or before i — the window must strictly advance.
+                i = max(j - self.overlap, i + 1) if self.overlap else j
         return new_chunks
 
     # ------------------------------------------------------------------
@@ -88,8 +103,10 @@ class DoclingChunker:
     def chunk_document(self, doc, *, document_id: str, metadata: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
         """Walk a DoclingDocument and emit chunks.
 
-        Tables / Code / Figures are emitted as atomic chunks.
-        Paragraph-like nodes are sentence-packed to <= max_tokens.
+        Tables are emitted as atomic chunks, inline in reading order.
+        Section headers update the heading path and are not emitted.
+        Text-less items (pictures, groups) are skipped; everything with
+        text is token-packed up to max_tokens.
         """
         metadata = metadata or {}
 
@@ -125,9 +142,11 @@ class DoclingChunker:
             })
             global_idx += 1
 
-        # The Docling API exposes .body which is a tree of nodes; we fall back to .texts/.tables lists if available
+        # Walk the document with docling's iterate_items(), which yields
+        # (item, level) in true reading order — tables included inline.
+        # Attributes are read through getattr so unknown item types degrade
+        # gracefully; anything unexpected falls back to the markdown splitter.
         try:
-            # We walk doc.texts (reading order). We'll buffer consecutive paragraph items
             current_heading_path: List[str] = []
             buffer: List[str] = []
             buffer_tokens = 0
@@ -139,38 +158,42 @@ class DoclingChunker:
                     _add_chunk(" ".join(buffer), "paragraph", heading_path=current_heading_path[:], page_no=buffer_page)
                 buffer, buffer_tokens, buffer_page = [], 0, None
 
-            # Create quick lookup for table items by id to preserve later insertion order if needed
-            tables_by_anchor = {
-                getattr(t, "anchor_text_id", None): t
-                for t in getattr(doc, "tables", [])
-                if getattr(t, "anchor_text_id", None) is not None
-            }
+            def _page_of(item) -> int | None:
+                prov = getattr(item, "prov", None) or []
+                return getattr(prov[0], "page_no", None) if prov else None
 
-            for txt_item in getattr(doc, "texts", []):
-                # If this text item is a placeholder for a table anchor, emit table first
-                anchor_id = getattr(txt_item, "id", None)
-                if anchor_id in tables_by_anchor:
-                    flush_buffer()
-                    tbl = tables_by_anchor[anchor_id]
-                    try:
-                        tbl_md = tbl.export_to_markdown(doc)  # pass doc for deprecation compliance
-                    except Exception:
-                        tbl_md = tbl.export_to_markdown() if hasattr(tbl, "export_to_markdown") else str(tbl)
-                    _add_chunk(tbl_md, "table", heading_path=current_heading_path[:], page_no=getattr(tbl, "page_no", None))
+            def _emit_table(tbl) -> None:
+                try:
+                    tbl_md = tbl.export_to_markdown(doc)  # pass doc for deprecation compliance
+                except Exception:
+                    tbl_md = tbl.export_to_markdown() if hasattr(tbl, "export_to_markdown") else str(tbl)
+                _add_chunk(tbl_md, "table", heading_path=current_heading_path[:], page_no=_page_of(tbl))
 
-                role = getattr(txt_item, "role", None)
-                if role == "heading":
+            for item, _level in doc.iterate_items():
+                label = getattr(item, "label", None)
+                label_value = getattr(label, "value", label)
+
+                # Tables are atomic chunks, emitted where they appear in the flow
+                if label_value == "table":
                     flush_buffer()
-                    level = getattr(txt_item, "level", 1)
+                    _emit_table(item)
+                    continue
+
+                # Section headings update the heading path; they are not content
+                if label_value == "section_header":
+                    flush_buffer()
+                    level = getattr(item, "level", 1) or 1
                     current_heading_path = current_heading_path[: max(0, level - 1)]
-                    current_heading_path.append(txt_item.text.strip())
+                    current_heading_path.append((getattr(item, "text", "") or "").strip())
                     continue  # skip heading as content
 
-                text_piece = txt_item.text if hasattr(txt_item, "text") else str(txt_item)
+                text_piece = getattr(item, "text", None)
+                if not text_piece:
+                    continue  # pictures, groups and other text-less items
                 piece_tokens = _token_len(text_piece)
                 if piece_tokens > self.max_tokens:  # very long paragraph
                     flush_buffer()
-                    _add_chunk(text_piece, "paragraph", heading_path=current_heading_path[:], page_no=getattr(txt_item, "page_no", None))
+                    _add_chunk(text_piece, "paragraph", heading_path=current_heading_path[:], page_no=_page_of(item))
                     continue
 
                 if buffer_tokens + piece_tokens > self.max_tokens:
@@ -179,19 +202,9 @@ class DoclingChunker:
                 buffer.append(text_piece)
                 buffer_tokens += piece_tokens
                 if buffer_page is None:
-                    buffer_page = getattr(txt_item, "page_no", None)
+                    buffer_page = _page_of(item)
 
             flush_buffer()
-
-            # Emit any remaining tables that were not anchored
-            for tbl in getattr(doc, "tables", []):
-                if tbl in tables_by_anchor.values():
-                    continue  # already emitted
-                try:
-                    tbl_md = tbl.export_to_markdown(doc)
-                except Exception:
-                    tbl_md = tbl.export_to_markdown() if hasattr(tbl, "export_to_markdown") else str(tbl)
-                _add_chunk(tbl_md, "table", heading_path=current_heading_path[:], page_no=getattr(tbl, "page_no", None))
         except Exception as e:
             print(f"⚠️  Docling tree walk failed: {e}. Falling back to markdown splitter.")
             return self.split_markdown(doc.export_to_markdown(), document_id=document_id, metadata=metadata)

@@ -1,26 +1,34 @@
 /**
- * Comprehensive text normalization utility for cleaning up excessive whitespace
- * in streaming markdown responses to prevent large visual gaps in the UI.
+ * Whitespace normalization for model answers before markdown rendering.
+ *
+ * Runs OUTSIDE fenced code blocks only: collapsing space runs or blank lines
+ * inside ``` fences would corrupt code indentation and ASCII tables that
+ * answers frequently quote verbatim from documents.
  */
+
+function normalizeProse(text: string): string {
+  // Cap paragraph gaps at one blank line (with or without stray indentation).
+  text = text.replace(/[ \t]*\n[ \t]*\n[\s]*\n/g, '\n\n');
+  text = text.replace(/\n{3,}/g, '\n\n');
+  // Trailing whitespace on lines (also neutralizes markdown two-space hard
+  // breaks, which models emit accidentally — remark-breaks already renders
+  // intentional single newlines as breaks).
+  text = text.replace(/[ \t]+$/gm, '');
+  // Long horizontal space runs read as layout accidents in prose.
+  text = text.replace(/[ \t]{3,}/g, ' ');
+  return text;
+}
 
 export function normalizeWhitespace(text: string): string {
   if (!text || typeof text !== 'string') {
     return '';
   }
-
-  text = text.replace(/\n{3,}/g, '\n\n');
-  
-  text = text.replace(/[ \t]+$/gm, '');
-  
-  text = text.replace(/[ \t]{3,}/g, ' ');
-  
-  text = text.replace(/[ \t]*\n[ \t]*\n[ \t]*\n/g, '\n\n');
-  
-  text = text.replace(/[ \t]+\n/g, '\n');
-  
-  text = text.trim();
-  
-  return text;
+  // Split on fenced blocks; even segments are prose, odd segments are code.
+  const parts = text.split(/(```[\s\S]*?(?:```|$))/);
+  const out = parts
+    .map((seg, i) => (i % 2 === 1 ? seg : normalizeProse(seg)))
+    .join('');
+  return out.trim();
 }
 
 /**
@@ -31,33 +39,5 @@ export function normalizeStreamingToken(currentText: string, newToken: string): 
   if (!newToken || typeof newToken !== 'string') {
     return currentText;
   }
-
-  let combined = currentText + newToken;
-  
-  combined = normalizeWhitespace(combined);
-  
-  return combined;
-}
-
-/**
- * Check if text contains excessive whitespace that needs normalization
- */
-export function hasExcessiveWhitespace(text: string): boolean {
-  if (!text || typeof text !== 'string') {
-    return false;
-  }
-  
-  if (/\n{3,}/.test(text)) {
-    return true;
-  }
-  
-  if (/[ \t]{3,}/.test(text)) {
-    return true;
-  }
-  
-  if (/[ \t]*\n[ \t]*\n[ \t]*\n/.test(text)) {
-    return true;
-  }
-  
-  return false;
+  return normalizeWhitespace(currentText + newToken);
 }

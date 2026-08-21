@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from 'react';
 import { GlassToggle } from '@/components/ui/GlassToggle';
 import { InfoTooltip } from '@/components/ui/InfoTooltip';
 
@@ -43,7 +44,7 @@ const optionHelp: Record<string,string> = {
   'RAG (no-triage)':'Force retrieval on every query; disables index-selection triage.',
   'Verify answer':'Runs an extra LLM pass to self-critique the draft answer.',
   'Streaming':'Send tokens to the UI as they are generated.',
-  'AI reranker':'Re-orders retrieved chunks with a cross-encoder (higher quality, more latency).',
+  'AI reranker':'On by default (eval arm G). Re-orders retrieved chunks with Qwen3-Reranker-4B: measurably better ranking, but it loads 7.5GB of weights and added ~12.7s per query in our eval.',
   'Expand context window':'Adds neighbour chunks around each top chunk to provide more context.',
   'Context window size':'How many neighbour chunks to include on each side.',
   'Retrieval chunks':'Number of chunks fetched before reranking.',
@@ -53,6 +54,15 @@ const optionHelp: Record<string,string> = {
 };
 
 export function ChatSettingsModal({ options, onClose }: Props) {
+  // Escape closes the dialog
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
   const renderOption = (opt: SettingOption) => {
     switch (opt.type) {
       case 'toggle':
@@ -82,7 +92,7 @@ export function ChatSettingsModal({ options, onClose }: Props) {
               step={opt.step || 1}
               value={opt.value}
               onChange={(e) => opt.setter(Number(e.target.value))}
-              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider"
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
               style={{
                 background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((opt.value - opt.min) / (opt.max - opt.min)) * 100}%, #374151 ${((opt.value - opt.min) / (opt.max - opt.min)) * 100}%, #374151 100%)`
               }}
@@ -146,7 +156,7 @@ export function ChatSettingsModal({ options, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white/5 backdrop-blur rounded-xl w-full max-w-xl max-h-full overflow-y-auto p-6 text-white space-y-6">
+      <div role="dialog" aria-modal="true" aria-label="Chat settings" className="bg-white/5 backdrop-blur rounded-xl w-full max-w-xl max-h-full overflow-y-auto p-6 text-white space-y-6">
         <h2 className="text-lg font-semibold mb-6">Chat Settings</h2>
 
         <div className="space-y-6">

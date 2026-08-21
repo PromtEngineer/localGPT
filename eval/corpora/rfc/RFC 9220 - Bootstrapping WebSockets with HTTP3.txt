@@ -1,0 +1,168 @@
+﻿
+
+
+
+Internet Engineering Task Force (IETF)                       R. Hamilton
+Request for Comments: 9220                                        Google
+Category: Standards Track                                      June 2022
+ISSN: 2070-1721
+
+
+                  Bootstrapping WebSockets with HTTP/3
+
+Abstract
+
+   The mechanism for running the WebSocket Protocol over a single stream
+   of an HTTP/2 connection is equally applicable to HTTP/3, but the
+   HTTP-version-specific details need to be specified.  This document
+   describes how the mechanism is adapted for HTTP/3.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in Section 2 of RFC 7841.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   https://www.rfc-editor.org/info/rfc9220.
+
+Copyright Notice
+
+   Copyright (c) 2022 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (https://trustee.ietf.org/license-info) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Revised BSD License text as described in Section 4.e of the
+   Trust Legal Provisions and are provided without warranty as described
+   in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction
+   2.  Conventions and Definitions
+   3.  WebSockets Upgrade over HTTP/3
+   4.  Security Considerations
+   5.  IANA Considerations
+   6.  Normative References
+   Acknowledgments
+   Author's Address
+
+1.  Introduction
+
+   "Bootstrapping WebSockets with HTTP/2" [RFC8441] defines an extension
+   to HTTP/2 [HTTP/2] that is also useful in HTTP/3 [HTTP/3].  This
+   extension makes use of an HTTP/2 setting.  Appendix A.3 of [HTTP/3]
+   gives some guidance on what changes (if any) are appropriate when
+   porting settings from HTTP/2 to HTTP/3.
+
+2.  Conventions and Definitions
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+3.  WebSockets Upgrade over HTTP/3
+
+   [RFC8441] defines a mechanism for running the WebSocket Protocol
+   [RFC6455] over a single stream of an HTTP/2 connection.  It defines
+   an Extended CONNECT method that specifies a new ":protocol" pseudo-
+   header field and new semantics for the ":path" and ":authority"
+   pseudo-header fields.  It also defines a new HTTP/2 setting sent by a
+   server to allow the client to use Extended CONNECT.
+
+   The semantics of the pseudo-header fields and setting are identical
+   to those in HTTP/2 as defined in [RFC8441].  Appendix A.3 of [HTTP/3]
+   requires that HTTP/3 settings be registered separately for HTTP/3.
+   The SETTINGS_ENABLE_CONNECT_PROTOCOL value is 0x08 (decimal 8), as in
+   HTTP/2.
+
+   If a server advertises support for Extended CONNECT but receives an
+   Extended CONNECT request with a ":protocol" value that is unknown or
+   is not supported, the server SHOULD respond to the request with a 501
+   (Not Implemented) status code (Section 15.6.2 of [HTTP]).  A server
+   MAY provide more information via a "problem details" response
+   [RFC7807].
+
+   The HTTP/3 stream closure is also analogous to the TCP connection
+   closure of [RFC6455].  Orderly TCP-level closures are represented as
+   a FIN bit on the stream (Section 4.4 of [HTTP/3]).  RST exceptions
+   are represented with a stream error (Section 8 of [HTTP/3]) of type
+   H3_REQUEST_CANCELLED (Section 8.1 of [HTTP/3]).
+
+4.  Security Considerations
+
+   This document introduces no new security considerations beyond those
+   discussed in [RFC8441].
+
+5.  IANA Considerations
+
+   This document registers a new setting in the "HTTP/3 Settings"
+   registry (Section 11.2.2 of [HTTP/3]).
+
+   Value:  0x08
+   Setting Name:  SETTINGS_ENABLE_CONNECT_PROTOCOL
+   Default:  0
+   Status:  permanent
+   Specification:  This document
+   Change Controller:  IETF
+   Contact:  HTTP Working Group (ietf-http-wg@w3.org)
+
+6.  Normative References
+
+   [HTTP]     Fielding, R., Ed., Nottingham, M., Ed., and J. Reschke,
+              Ed., "HTTP Semantics", STD 97, RFC 9110,
+              DOI 10.17487/RFC9110, June 2022,
+              <https://www.rfc-editor.org/info/rfc9110>.
+
+   [HTTP/2]   Thomson, M., Ed. and C. Benfield, Ed., "HTTP/2", RFC 9113,
+              DOI 10.17487/RFC9113, June 2022,
+              <https://www.rfc-editor.org/info/rfc9113>.
+
+   [HTTP/3]   Bishop, M., Ed., "HTTP/3", RFC 9114, DOI 10.17487/RFC9114,
+              June 2022, <https://www.rfc-editor.org/info/rfc9114>.
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC6455]  Fette, I. and A. Melnikov, "The WebSocket Protocol",
+              RFC 6455, DOI 10.17487/RFC6455, December 2011,
+              <https://www.rfc-editor.org/info/rfc6455>.
+
+   [RFC7807]  Nottingham, M. and E. Wilde, "Problem Details for HTTP
+              APIs", RFC 7807, DOI 10.17487/RFC7807, March 2016,
+              <https://www.rfc-editor.org/info/rfc7807>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+   [RFC8441]  McManus, P., "Bootstrapping WebSockets with HTTP/2",
+              RFC 8441, DOI 10.17487/RFC8441, September 2018,
+              <https://www.rfc-editor.org/info/rfc8441>.
+
+Acknowledgments
+
+   This document had reviews and input from many contributors in the
+   IETF HTTP and QUIC Working Groups, with substantive input from David
+   Schinazi, Martin Thomson, Lucas Pardue, Mike Bishop, Dragana
+   Damjanovic, Mark Nottingham, and Julian Reschke.
+
+Author's Address
+
+   Ryan Hamilton
+   Google
+   Email: rch@google.com

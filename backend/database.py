@@ -1,30 +1,63 @@
+import os
 import sqlite3
 import uuid
 import json
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
+
+def resolve_lancedb_path() -> str:
+    """LanceDB location, kept in sync with the store the indexing pipeline writes to."""
+    env_path = os.getenv('LANCEDB_PATH')
+    if env_path:
+        return env_path
+    try:
+        from rag_system.main import PIPELINE_CONFIGS
+        uri = PIPELINE_CONFIGS.get('default', {}).get('storage', {}).get('lancedb_uri')
+        if uri:
+            return uri
+    except Exception:
+        pass
+    return './lancedb'
+
+
 class ChatDatabase:
     def __init__(self, db_path: str = None):
         if db_path is None:
+            db_path = os.getenv("DB_PATH")
+        if db_path is None:
             # Auto-detect environment and set appropriate path
-            import os
             if os.path.exists("/app"):  # Docker environment
-                self.db_path = "/app/backend/chat_data.db"
+                db_path = "/app/backend/chat_data.db"
             else:  # Local development environment
-                self.db_path = "backend/chat_data.db"
-        else:
-            self.db_path = db_path
+                db_path = "backend/chat_data.db"
+        self.db_path = db_path
+        parent_dir = os.path.dirname(os.path.abspath(self.db_path))
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
         self.init_database()
-    
+
+    def _connect(self) -> sqlite3.Connection:
+        """Open a connection with foreign keys enforced and a 30s busy timeout.
+
+        Every method must go through here: PRAGMA foreign_keys is per-connection,
+        so a bare sqlite3.connect() silently disables the ON DELETE CASCADE rules.
+        The timeout rides out write locks from the other process (the gateway and
+        the RAG API share this SQLite file).
+        """
+        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
     def init_database(self):
         """Initialize the SQLite database with required tables"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
-        
-        # Enable foreign keys
-        conn.execute("PRAGMA foreign_keys = ON")
-        
+
+        # WAL lets one process read while the other holds a write lock; the
+        # setting persists in the database file, so setting it on init is enough.
+        conn.execute("PRAGMA journal_mode=WAL")
+
         # Sessions table
         conn.execute('''
             CREATE TABLE IF NOT EXISTS sessions (
@@ -110,7 +143,7 @@ class ChatDatabase:
         session_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
         
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.execute('''
             INSERT INTO sessions (id, title, created_at, updated_at, model_used)
             VALUES (?, ?, ?, ?, ?)
@@ -123,7 +156,7 @@ class ChatDatabase:
     
     def get_sessions(self, limit: int = 50) -> List[Dict]:
         """Get all chat sessions, ordered by most recent"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
@@ -140,7 +173,7 @@ class ChatDatabase:
     
     def get_session(self, session_id: str) -> Optional[Dict]:
         """Get a specific session"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
@@ -160,7 +193,7 @@ class ChatDatabase:
         now = datetime.now().isoformat()
         metadata_json = json.dumps(metadata or {})
         
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         
         # Add the message
         conn.execute('''
@@ -183,7 +216,7 @@ class ChatDatabase:
     
     def get_messages(self, session_id: str, limit: int = 100) -> List[Dict]:
         """Get all messages for a session"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.row_factory = sqlite3.Row
         
         cursor = conn.execute('''
@@ -218,7 +251,7 @@ class ChatDatabase:
     
     def update_session_title(self, session_id: str, title: str):
         """Update session title"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.execute('''
             UPDATE sessions 
             SET title = ?, updated_at = ?
@@ -229,7 +262,11 @@ class ChatDatabase:
     
     def delete_session(self, session_id: str) -> bool:
         """Delete a session and all its messages"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
+        # messages/session_documents cascade via ON DELETE CASCADE, but the
+        # session_indexes foreign keys declare no cascade, so remove those
+        # link rows explicitly or the session delete would violate them.
+        conn.execute('DELETE FROM session_indexes WHERE session_id = ?', (session_id,))
         cursor = conn.execute('DELETE FROM sessions WHERE id = ?', (session_id,))
         deleted = cursor.rowcount > 0
         conn.commit()
@@ -242,7 +279,7 @@ class ChatDatabase:
     
     def cleanup_empty_sessions(self) -> int:
         """Remove sessions with no messages"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         
         # Find sessions with no messages
         cursor = conn.execute('''
@@ -253,9 +290,12 @@ class ChatDatabase:
         
         empty_sessions = [row[0] for row in cursor.fetchall()]
         
-        # Delete empty sessions
+        # Delete empty sessions (session_indexes links first: no ON DELETE
+        # CASCADE is declared on that table, so the link rows would otherwise
+        # block the session delete under enforced foreign keys)
         deleted_count = 0
         for session_id in empty_sessions:
+            conn.execute('DELETE FROM session_indexes WHERE session_id = ?', (session_id,))
             cursor = conn.execute('DELETE FROM sessions WHERE id = ?', (session_id,))
             if cursor.rowcount > 0:
                 deleted_count += 1
@@ -271,7 +311,7 @@ class ChatDatabase:
     
     def get_stats(self) -> Dict:
         """Get database statistics"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         
         # Get session count
         cursor = conn.execute('SELECT COUNT(*) FROM sessions')
@@ -301,7 +341,7 @@ class ChatDatabase:
 
     def add_document_to_session(self, session_id: str, file_path: str) -> int:
         """Adds a document file path to a session."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.execute(
             "INSERT INTO session_documents (session_id, file_path) VALUES (?, ?)",
             (session_id, file_path)
@@ -314,7 +354,7 @@ class ChatDatabase:
 
     def get_documents_for_session(self, session_id: str) -> List[str]:
         """Retrieves all document file paths for a given session."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.execute(
             "SELECT file_path FROM session_documents WHERE session_id = ?",
             (session_id,)
@@ -329,7 +369,7 @@ class ChatDatabase:
         idx_id = str(uuid.uuid4())
         created = datetime.now().isoformat()
         vector_table = f"text_pages_{idx_id}"
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.execute('''
             INSERT INTO indexes (id, name, description, created_at, updated_at, vector_table_name, metadata)
             VALUES (?,?,?,?,?,?,?)
@@ -340,7 +380,7 @@ class ChatDatabase:
         return idx_id
 
     def get_index(self, index_id: str) -> dict | None:
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.row_factory = sqlite3.Row
         cur = conn.execute('SELECT * FROM indexes WHERE id=?', (index_id,))
         row = cur.fetchone()
@@ -356,7 +396,7 @@ class ChatDatabase:
         return idx
 
     def list_indexes(self) -> list[dict]:
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.row_factory = sqlite3.Row
         rows = conn.execute('SELECT * FROM indexes').fetchall()
         res = []
@@ -372,27 +412,33 @@ class ChatDatabase:
         return res
 
     def add_document_to_index(self, index_id: str, filename: str, stored_path: str):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.execute('INSERT INTO index_documents (index_id, original_filename, stored_path) VALUES (?,?,?)', (index_id, filename, stored_path))
         conn.commit()
         conn.close()
 
     def link_index_to_session(self, session_id: str, index_id: str):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.execute('INSERT INTO session_indexes (session_id, index_id, linked_at) VALUES (?,?,?)', (session_id, index_id, datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
     def get_indexes_for_session(self, session_id: str) -> list[str]:
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.execute('SELECT index_id FROM session_indexes WHERE session_id=? ORDER BY linked_at', (session_id,))
+        """Index IDs linked to a session, oldest link first.
+
+        The `id` tiebreak keeps the order deterministic when two links share a
+        linked_at timestamp. Callers rely on this: the gateway and the RAG API
+        both resolve the LAST element as the session's active index.
+        """
+        conn = self._connect()
+        cursor = conn.execute('SELECT index_id FROM session_indexes WHERE session_id=? ORDER BY linked_at, id', (session_id,))
         ids = [r[0] for r in cursor.fetchall()]
         conn.close()
         return ids
 
     def delete_index(self, index_id: str) -> bool:
         """Delete an index and its related records (documents, session links). Returns True if deleted."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         try:
             # Get vector table name before deletion (optional, for LanceDB cleanup)
             cur = conn.execute('SELECT vector_table_name FROM indexes WHERE id = ?', (index_id,))
@@ -410,24 +456,53 @@ class ChatDatabase:
 
         if deleted:
             print(f"🗑️ Deleted index {index_id[:8]}... and related records")
-            # Optional: attempt to drop LanceDB table if available
             if vector_table_name:
-                try:
-                    from rag_system.indexing.embedders import LanceDBManager
-                    import os
-                    db_path = os.getenv('LANCEDB_PATH') or './rag_system/index_store/lancedb'
-                    ldb = LanceDBManager(db_path)
-                    db = ldb.db
-                    if hasattr(db, 'table_names') and vector_table_name in db.table_names():
-                        db.drop_table(vector_table_name)
-                        print(f"🚮 Dropped LanceDB table '{vector_table_name}'")
-                except Exception as e:
-                    print(f"⚠️ Could not drop LanceDB table '{vector_table_name}': {e}")
+                self._cleanup_index_artifacts(index_id, vector_table_name)
         return deleted
+
+    def _cleanup_index_artifacts(self, index_id: str, vector_table_name: str):
+        """Best-effort removal of the on-disk artifacts an index leaves behind.
+
+        Drops the base LanceDB table plus its '<table>_lc' late-chunk sibling,
+        and removes the sidecar files written next to the index: the overview
+        JSONL + embedded vectors under index_store/overviews/, and the per-table
+        embedder marker under <lancedb>/table_meta/. Never raises — a cleanup
+        failure must not turn a successful SQL delete into an error.
+        """
+        lancedb_path = resolve_lancedb_path()
+        try:
+            from rag_system.indexing.embedders import LanceDBManager
+            ldb = LanceDBManager(lancedb_path)
+            ldb_db = ldb.db
+            table_names = ldb_db.table_names() if hasattr(ldb_db, 'table_names') else []
+            for table in (vector_table_name, f"{vector_table_name}_lc"):
+                try:
+                    if table in table_names:
+                        ldb_db.drop_table(table)
+                        print(f"🚮 Dropped LanceDB table '{table}'")
+                except Exception as e:
+                    print(f"⚠️ Could not drop LanceDB table '{table}': {e}")
+        except Exception as e:
+            print(f"⚠️ Could not drop LanceDB tables for '{vector_table_name}': {e}")
+
+        sidecars = [
+            os.path.join('index_store', 'overviews', f"{index_id}.jsonl"),
+            os.path.join('index_store', 'overviews', f"{index_id}.vectors.npz"),
+            os.path.join(lancedb_path, 'table_meta', f"{vector_table_name}.json"),
+            os.path.join(lancedb_path, 'table_meta', f"{vector_table_name}_lc.json"),
+        ]
+        for path in sidecars:
+            try:
+                os.remove(path)
+                print(f"🚮 Removed sidecar '{path}'")
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                print(f"⚠️ Could not remove sidecar '{path}': {e}")
 
     def update_index_metadata(self, index_id: str, updates: dict):
         """Merge new key/values into an index's metadata JSON column."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         conn.row_factory = sqlite3.Row
         cur = conn.execute('SELECT metadata FROM indexes WHERE id=?', (index_id,))
         row = cur.fetchone()
@@ -464,12 +539,10 @@ class ChatDatabase:
                 # Try to import the RAG system modules
                 try:
                     from rag_system.indexing.embedders import LanceDBManager
-                    import os
-                    
-                    # Use the same path as the system
-                    db_path = os.getenv('LANCEDB_PATH') or './rag_system/index_store/lancedb'
-                    ldb = LanceDBManager(db_path)
-                    
+
+                    # Use the same store the indexing pipeline writes to
+                    ldb = LanceDBManager(resolve_lancedb_path())
+
                     # Check if table exists
                     if not hasattr(ldb.db, 'table_names') or vector_table_name not in ldb.db.table_names():
                         # Table doesn't exist - this means the index was never properly built
@@ -525,8 +598,14 @@ class ChatDatabase:
                                 384: 'BAAI/bge-small-en-v1.5 (or similar)',
                                 512: 'sentence-transformers/all-MiniLM-L6-v2 (or similar)',
                                 768: 'BAAI/bge-base-en-v1.5 (or similar)', 
-                                1024: 'Qwen/Qwen3-Embedding-0.6B (or similar)',
-                                1536: 'text-embedding-ada-002 (or similar)'
+                                # 1024 is ambiguous by construction: harrier-oss-v1-0.6b
+                                # (the default) and Qwen3-Embedding-0.6B share it. The
+                                # authoritative answer is the table's own embedder marker
+                                # (rag_system/indexing/embedders.py), not this guess.
+                                1024: 'microsoft/harrier-oss-v1-0.6b or Qwen/Qwen3-Embedding-0.6B (or similar)',
+                                1536: 'text-embedding-ada-002 (or similar)',
+                                2560: 'Qwen/Qwen3-Embedding-4B (or similar)',
+                                4096: 'Qwen/Qwen3-Embedding-8B (or similar)'
                             }
                             if len(vector_data) in dim_to_model:
                                 inferred_metadata['embedding_model_inferred'] = dim_to_model[len(vector_data)]
@@ -671,7 +750,7 @@ if __name__ == "__main__":
     print("🧪 Testing database...")
     
     # Create a test session
-    session_id = db.create_session("Test Chat", "llama3.2:latest")
+    session_id = db.create_session("Test Chat", os.getenv("GENERATION_MODEL", "qwen3.5:9b"))
     
     # Add some messages
     db.add_message(session_id, "Hello!", "user")

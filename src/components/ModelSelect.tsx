@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { chatAPI, ModelsResponse } from '@/lib/api';
+import { chatAPI, ModelsResponse, DEFAULT_GENERATION_MODEL, DEFAULT_EMBEDDING_MODEL } from '@/lib/api';
 
 interface Props {
   value: string | undefined;
@@ -22,9 +22,10 @@ export function ModelSelect({ value, onChange, type, className, placeholder }: P
         if (!mounted) return;
         const list = type === 'generation' ? res.generation_models : res.embedding_models;
         setModels(list);
-        // Auto-select default qwen3:0.6b if available and not chosen yet
-        if(!value && list.includes('qwen3:0.6b')){
-          onChange('qwen3:0.6b');
+        // Auto-select the role default when available and nothing is chosen yet
+        const preferred = type === 'generation' ? DEFAULT_GENERATION_MODEL : DEFAULT_EMBEDDING_MODEL;
+        if(!value && list.includes(preferred)){
+          onChange(preferred);
         }
         setLoading(false);
       })

@@ -1,70 +1,76 @@
 # 📜 Prompt Inventory (Ground-Truth)
 
-_All generation / verification prompts currently hard-coded in the codebase._  
-_Last updated: 2025-07-06_
+_Every prompt hard-coded in the codebase, re-derived from the current source._
 
-> Edit process: if you change a prompt in code, please **update this file** or, once we migrate to the central registry, delete the entry here.
+> Edit process: if you change a prompt in code, update the line range here in the same commit.
+> Line numbers drift as the code moves; the function and variable names are the stable references.
+
+## Which model runs which prompt
+
+There are two model roles (`rag_system/main.py` `OLLAMA_CONFIG`):
+
+| Role | Config key | Default | Env override |
+|------|-----------|---------|--------------|
+| Generation — user-facing answers | `generation_model` | `qwen3.5:9b` | `GENERATION_MODEL` |
+| Utility — routing, triage, decomposition, enrichment, overviews, verification | `enrichment_model` | `qwen3.5:4b` | `ENRICHMENT_MODEL` |
+
+Inside the agent the utility model is resolved by `Agent._utility_model()` (`rag_system/agent/loop.py:56-58`), which returns `ollama_config["enrichment_model"]` and falls back to `generation_model` when that key is absent. No prompt hard-codes a model name.
 
 ---
 
-## 1. Indexing / Context Enrichment
+## 1. Indexing / context enrichment
 
-| ID | File & Lines | Variable / Builder | Purpose |
-|----|--------------|--------------------|---------|
-| `overview_builder.default` | `rag_system/indexing/overview_builder.py` `12-21` | `DEFAULT_PROMPT` | Generate 1-paragraph document overview for search-time routing.
-| `contextualizer.system` | `rag_system/indexing/contextualizer.py` `11` | `SYSTEM_PROMPT` | System instruction: explain summarisation role.
-| `contextualizer.local_context` | same file `13-15` | `LOCAL_CONTEXT_PROMPT_TEMPLATE` | Human message – wraps neighbouring chunks.
-| `contextualizer.chunk` | same file `17-19` | `CHUNK_PROMPT_TEMPLATE` | Human message – shows the target chunk.
-| `graph_extractor.entities` | `rag_system/indexing/graph_extractor.py` `20-31` | `entity_prompt` | Ask LLM to list entities.
-| `graph_extractor.relationships` | same file `53-64` | `relationship_prompt` | Ask LLM to list relationships.
+| ID | File & lines | Variable / builder | Model | Purpose |
+|----|--------------|--------------------|-------|---------|
+| `overview_builder.default` | `rag_system/indexing/overview_builder.py` `13-19` | `OverviewBuilder.DEFAULT_PROMPT` | overview model (resolved at `indexing_pipeline.py:128-133`; utility model by default) | One-paragraph document overview used by the triage routers. Input is the first `first_n_chunks` chunks (default 5), truncated to 5000 characters at `overview_builder.py:37`. |
+| `contextualizer.system` | `rag_system/indexing/contextualizer.py` `12` | `SYSTEM_PROMPT` | enrichment model | Role instruction for the summariser. |
+| `contextualizer.local_context` | same file `14-16` | `LOCAL_CONTEXT_PROMPT_TEMPLATE` | — | Wraps the neighbouring-chunk window in `<local_context>` tags. |
+| `contextualizer.chunk` | same file `18-26` | `CHUNK_PROMPT_TEMPLATE` | — | Shows the target chunk and carries the actual instruction: a 2-5 sentence context summary, "Answer *only* with the succinct context and nothing else." |
 
-## 2. Retrieval / Query Transformation
+The three contextualizer parts are concatenated into a single `/api/generate` completion prompt at `contextualizer.py:42-51` (no chat roles) and sent at `contextualizer.py:53` with `enable_thinking=False`.
 
-| ID | File & Lines | Purpose |
-|----|--------------|---------|
-| `query_transformer.expand` | `rag_system/retrieval/query_transformer.py` `10-26` | Produce query rewrites (keywords, boolean). |
-| `hyde.hypothetical_doc` | same `115-122` | HyDE hypothetical document generator. |
-| `graph_query.translate` | same `124-140` | Translate user question to JSON KG query. |
+## 2. Retrieval / query transformation
 
-## 3. Pipeline Answer Synthesis
+| ID | File & lines | Model | Purpose |
+|----|--------------|-------|---------|
+| `query_transformer.decompose` | `rag_system/retrieval/query_transformer.py` `38-84` (system) + `87-196` (few-shot examples) + `250-265` (assembly) | utility model (`loop.py:30`) | Resolve pronouns/ellipsis against the last 5 turns, then split the query into standalone sub-queries. Returns RFC-8259 JSON `{requires_decomposition, reasoning, resolved_query, sub_queries}`; sent with `format="json"` at `:268`; the list is deduplicated and capped by `max_sub_queries` at `:290` (default 10). |
+| `query_transformer.decompose_single_turn` | `rag_system/retrieval/query_transformer.py`, `QueryDecomposer._decompose_single_turn` | utility model | The byte-frozen single-turn decomposer — the default path for history-less queries, and the prompt every single-turn bench number was measured against (arm C..K). It must stay byte-identical: even cosmetic edits (smart quotes, added examples) were measured to shift temp-0 decompositions on the gold set (arm L, 2026-08-16); any change re-triggers the full 5-bench gate. |
 
-| ID | File & Lines | Purpose |
-|----|--------------|---------|
-| `retrieval_pipeline.synth_final` | `rag_system/pipelines/retrieval_pipeline.py` `217-256` | Turn verified facts into answer (with directives 1-6). |
+| `retrieval.retry.reformulate` | `rag_system/pipelines/retrieval_pipeline.py`, `_reformulate_query` | enrichment/utility model, `format="json"` | Fires **only** when the evidence-sufficiency retry triggers (roadmap 2.1). Asks for one rewrite of a weak-evidence query into the concrete nouns and synonyms a document would use, preserving every entity and constraint. Returns `{"query": "…"}`; `format="json"` is what keeps a small model's thinking preamble out of the rewritten query. |
 
-## 4. Agent – Classical Loop
+Two legacy example blocks still live in the file at `199-203` and `205-248`, but they are excluded from the assembled prompt — the two lines that would concatenate them are commented out at `:253-254`.
 
-| ID | File & Lines | Purpose |
-|----|--------------|---------|
-| `agent.loop.initial_thought` | `rag_system/agent/loop.py` `157-180` | First LLM call to think about query. |
-| `agent.loop.verify_path` | same `190-205` | Secondary thought loop. |
-| `agent.loop.compose_sub` | same `506-542` | Compose answer from sub-answers. |
-| `agent.loop.router` | same `648-660` | Decide which subsystem handles query. |
+## 3. Answer synthesis
+
+| ID | File & lines | Model | Purpose |
+|----|--------------|-------|---------|
+| `retrieval_pipeline.synth_final` | `rag_system/pipelines/retrieval_pipeline.py`, `_synthesize_final_answer` | generation model | Turn the retrieved snippets into the final answer (7 numbered hard rules; instructs the model to reply exactly "I could not find that information in the provided documents." when the snippets do not cover the question; rule 7 covers the `[Source document: …]` line each snippet carries). Streamed token-by-token via `stream_completion`; each token is forwarded to the `event_callback` as a `token` event. |
+
+## 4. Agent loop (`rag_system/agent/loop.py`)
+
+| ID | Lines | Model | Purpose |
+|----|-------|-------|---------|
+| `agent.loop.history_wrapper` | `163-171` | none — template only | `_format_query_with_history` builds the `contextual_query` string that is embedded into downstream prompts. It makes no LLM call. |
+| `agent.loop.overview_router` | `615-630` | utility model (call at `632-634`, `format="json"`) | First routing pass. Interpolates the loaded document overviews (first 40, `:612-613`) under a `DOCUMENT OVERVIEWS:` header and returns `{"category": "direct_answer"}` or `{"category": "rag_query"}`. |
+| `agent.loop.triage_fallback` | `agent/loop.py`, `_triage_query_async` | utility model, `format="json"` | Last-resort routing. Reached only when the overview router returns `None` (no overviews loaded) **and** there is no chat history. Two-way vocabulary: `rag_query` / `direct_answer`; `_normalize_triage()` maps anything else to `rag_query`. |
+| `agent.loop.direct_answer` | `331-336` | generation model (streamed at `342-344`) | Answers on the `direct_answer` route from conversation history or general knowledge. Caps the reply at 1-2 sentences. |
+| `agent.loop.compose_sub` | `490-515` | generation model (streamed at `519-522`) | Compose one final answer from the JSON list of sub-question/sub-answer pairs. Used when `query_decomposition.compose_from_sub_answers` is true and decomposition produced more than one sub-query. |
 
 ## 5. Verifier
 
-| ID | File & Lines | Purpose |
-|----|--------------|---------|
-| `verifier.fact_check` | `rag_system/agent/verifier.py` `18-58` | Strict JSON-format grounding verifier. |
+| ID | File & lines | Model | Purpose |
+|----|--------------|-------|---------|
+| `verifier.fact_check` | `rag_system/agent/verifier.py` `25-85` | utility model (`loop.py:29`) | Grounding check with three few-shot examples and a `# TASK` block. The prompt is built in four appends: the base f-string ends at `:75`, the context is appended clamped to 4000 characters at `:76`, the answer at `:81`, and the `<OUTPUT>` tag at `:82-85`. Sent asynchronously with `format="json"`. Verdict labels: `SUPPORTED` / `NOT_SUPPORTED` / `NEEDS_CLARIFICATION`. **Skipped entirely when `VERIFIER_MODEL` / `verification.model` names a local NLI verifier** — that backend makes no LLM call at all (roadmap 2.4, `verifier.md`). |
 
-## 6. Backend Router (Fast path)
+## 6. Backend router (fast path) — removed
 
-| ID | File & Lines | Purpose |
-|----|--------------|---------|
-| `backend.router` | `backend/server.py` `435-448` | Decide "RAG vs direct LLM" before heavy processing. |
-
-## 7. Miscellaneous
-
-| ID | File & Lines | Purpose |
-|----|--------------|---------|
-| `vision.placeholder` | `rag_system/utils/ollama_client.py` `169` | Dummy prompt for VLM colour check. |
+The gateway's old "Respond with exactly one word: USE_RAG or DIRECT_LLM" LLM router prompt was deleted in Phase 2.3. Gateway routing is now the deterministic no-LLM gate `should_use_rag` (`backend/server.py`), which makes no model call at all, so there is no backend prompt to inventory.
 
 ---
 
-### Missing / To-Do
-1. Verify whether **ReActAgent.PROMPT_TEMPLATE** captures every placeholder – some earlier lines may need explicit ID when we move to central registry.
-2. Search TS/JS code once the backend prompts are ported (currently none).
+### Notes
 
----
-
-**Next step:** create `rag_system/prompts/registry.yaml` and start moving each prompt above into a key–value entry with identical IDs. Update callers gradually using the helper proposed earlier. 
+* `rag_system/utils/watsonx_client.py:222` contains the string `prompt="What is AI?"`, but it is literal text inside a `print()` usage banner — it is never sent to a model and is therefore not inventoried.
+* There is no prompt registry module; every prompt above is an inline literal at the cited location.
+* There is no ReAct-style think/act/observe prompt anywhere. The agent's stages are triage → (optional) decomposition → retrieval → rerank → expand → prune → synthesis → verification.
+* The eval judge prompts (`eval/judge.py`) exist but are out of scope of this runtime inventory.

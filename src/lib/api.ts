@@ -1,4 +1,11 @@
-const API_BASE_URL = 'http://localhost:8000';
+// Both must be baked in at build time (Next.js inlines NEXT_PUBLIC_* into the client bundle).
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const RAG_API_BASE_URL = process.env.NEXT_PUBLIC_RAG_API_URL || 'http://localhost:8001';
+
+// Defaults must match rag_system/main.py OLLAMA_CONFIG.
+export const DEFAULT_GENERATION_MODEL = 'qwen3.5:9b';
+export const DEFAULT_ENRICHMENT_MODEL = 'qwen3.5:4b';
+export const DEFAULT_EMBEDDING_MODEL = 'microsoft/harrier-oss-v1-0.6b';
 
 // 🆕 Simple UUID generator for client-side message IDs
 export const generateUUID = () => {
@@ -16,7 +23,7 @@ export const generateUUID = () => {
 export interface Step {
   key: string;
   label: string;
-  status: 'pending' | 'active' | 'done';
+  status: 'pending' | 'active' | 'done' | 'error';
   details: any;
 }
 
@@ -77,8 +84,8 @@ export interface SessionResponse {
 export interface SessionChatResponse {
   response: string;
   session: ChatSession;
-  user_message_id: string;
-  ai_message_id: string;
+  source_documents: any[];
+  used_rag: boolean;
 }
 
 class ChatAPI {
@@ -104,7 +111,7 @@ class ChatAPI {
         },
         body: JSON.stringify({
           message: request.message,
-          model: request.model || 'llama3.2:latest',
+          model: request.model || DEFAULT_GENERATION_MODEL,
           conversation_history: request.conversation_history || [],
         }),
       });
@@ -145,7 +152,7 @@ class ChatAPI {
     }
   }
 
-  async createSession(title: string = 'New Chat', model: string = 'llama3.2:latest'): Promise<ChatSession> {
+  async createSession(title: string = 'New Chat', model: string = DEFAULT_GENERATION_MODEL): Promise<ChatSession> {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions`, {
         method: 'POST',
@@ -183,23 +190,21 @@ class ChatAPI {
   async sendSessionMessage(
     sessionId: string,
     message: string,
-    opts: { 
-      model?: string; 
-      composeSubAnswers?: boolean; 
-      decompose?: boolean; 
-      aiRerank?: boolean; 
-      contextExpand?: boolean; 
+    opts: {
+      model?: string;
+      composeSubAnswers?: boolean;
+      decompose?: boolean;
+      aiRerank?: boolean;
+      contextExpand?: boolean;
       verify?: boolean;
-      // ✨ NEW RETRIEVAL PARAMETERS
       retrievalK?: number;
       contextWindowSize?: number;
       rerankerTopK?: number;
       searchType?: string;
-      denseWeight?: number;
       forceRag?: boolean;
       provencePrune?: boolean;
     } = {}
-  ): Promise<SessionChatResponse & { source_documents: any[] }> {
+  ): Promise<SessionChatResponse> {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -214,12 +219,10 @@ class ChatAPI {
           ...(typeof opts.aiRerank === 'boolean' && { ai_rerank: opts.aiRerank }),
           ...(typeof opts.contextExpand === 'boolean' && { context_expand: opts.contextExpand }),
           ...(typeof opts.verify === 'boolean' && { verify: opts.verify }),
-          // ✨ ADD NEW RETRIEVAL PARAMETERS
           ...(typeof opts.retrievalK === 'number' && { retrieval_k: opts.retrievalK }),
           ...(typeof opts.contextWindowSize === 'number' && { context_window_size: opts.contextWindowSize }),
           ...(typeof opts.rerankerTopK === 'number' && { reranker_top_k: opts.rerankerTopK }),
           ...(typeof opts.searchType === 'string' && { search_type: opts.searchType }),
-          ...(typeof opts.denseWeight === 'number' && { dense_weight: opts.denseWeight }),
           ...(typeof opts.forceRag === 'boolean' && { force_rag: opts.forceRag }),
           ...(typeof opts.provencePrune === 'boolean' && { provence_prune: opts.provencePrune }),
         }),
@@ -237,7 +240,7 @@ class ChatAPI {
     }
   }
 
-  async deleteSession(sessionId: string): Promise<{ message: string; deleted_session_id: string }> {
+  async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
     try {
       const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
         method: 'DELETE',
@@ -273,22 +276,6 @@ class ChatAPI {
       return await response.json();
     } catch (error) {
       console.error('Rename session failed:', error);
-      throw error;
-    }
-  }
-
-  async cleanupEmptySessions(): Promise<{ message: string; cleanup_count: number }> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/sessions/cleanup`);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(`Cleanup sessions error: ${errorData.error || response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Cleanup sessions failed:', error);
       throw error;
     }
   }
@@ -339,67 +326,22 @@ class ChatAPI {
     }
   }
 
-  // Legacy upload function - can be removed if no longer needed
-  async uploadPDFs(sessionId: string, files: File[]): Promise<{ 
-    message: string; 
-    uploaded_files: any[]; 
-    processing_results: any[];
-    session_documents: any[];
-    total_session_documents: number;
-  }> {
-    try {
-      // Test if files have content and show size info
-      let totalSize = 0;
-      for (const file of files) {
-        if (file.size === 0) {
-          throw new Error(`File ${file.name} is empty (0 bytes)`);
-        }
-        totalSize += file.size;
-        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-        console.log(`📄 File ${file.name}: ${sizeMB}MB (${file.size} bytes), type: ${file.type}`);
-      }
-      
-      const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(2);
-      console.log(`📄 Total upload size: ${totalSizeMB}MB`);
-      
-      if (totalSize > 50 * 1024 * 1024) { // 50MB limit
-        throw new Error(`Total file size ${totalSizeMB}MB exceeds 50MB limit`);
-      }
-      
-      const formData = new FormData();
-      
-      // Use a generic field name 'file' that the backend expects
-      let i = 0;
-      for (const file of files) {
-        formData.append(`file_${i}`, file, file.name);
-        i++;
-      }
-      
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(`Upload error: ${errorData.error || response.statusText}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('PDF upload failed:', error);
-      throw error;
-    }
-  }
-
   // Convert database message format to ChatMessage format
   convertDbMessage(dbMessage: Record<string, unknown>): ChatMessage {
+    const metadata = dbMessage.metadata as Record<string, unknown> | undefined;
+    // Streamed turns persist their pipeline cascade in metadata.steps —
+    // reconstruct the structured content so reloaded sessions show the
+    // retrieval/rerank/verify trail and per-step citations, not a flat bubble.
+    const steps = metadata?.steps;
+    const content = Array.isArray(steps) && steps.length > 0
+      ? { steps: steps as Step[] }
+      : dbMessage.content as string;
     return {
       id: dbMessage.id as string,
-      content: dbMessage.content as string,
+      content,
       sender: dbMessage.sender as 'user' | 'assistant',
       timestamp: dbMessage.timestamp as string,
-      metadata: dbMessage.metadata as Record<string, unknown> | undefined,
+      metadata,
     };
   }
 
@@ -423,14 +365,6 @@ class ChatAPI {
     const resp = await fetch(`${API_BASE_URL}/models`);
     if (!resp.ok) {
       throw new Error(`Failed to fetch models list: ${resp.status}`);
-    }
-    return resp.json();
-  }
-
-  async getSessionDocuments(sessionId: string): Promise<{ files: string[]; file_count: number; session: ChatSession }> {
-    const resp = await fetch(`${API_BASE_URL}/sessions/${sessionId}/documents`);
-    if (!resp.ok) {
-      throw new Error(`Failed to fetch session documents: ${resp.status}`);
     }
     return resp.json();
   }
@@ -461,11 +395,10 @@ class ChatAPI {
     return resp.json();
   }
 
-  async buildIndex(indexId: string, opts: { 
-    latechunk?: boolean; 
+  async buildIndex(indexId: string, opts: {
+    latechunk?: boolean;
     doclingChunk?: boolean;
     chunkSize?: number;
-    chunkOverlap?: number;
     retrievalMode?: string;
     windowSize?: number;
     enableEnrich?: boolean;
@@ -474,18 +407,19 @@ class ChatAPI {
     overviewModel?: string;
     batchSizeEmbed?: number;
     batchSizeEnrich?: number;
-  } = {}): Promise<{ message: string }> {
+  // The gateway returns { response, ...meta } on a fresh build and
+  // { message, note } only on the idempotent already-built path.
+  } = {}): Promise<{ response: unknown; [key: string]: unknown } | { message: string; note?: string }> {
     try {
       const response = await fetch(`${API_BASE_URL}/indexes/${indexId}/build`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           latechunk: opts.latechunk ?? false,
-          doclingChunk: opts.doclingChunk ?? false,
+          doclingChunk: opts.doclingChunk ?? true,
           chunkSize: opts.chunkSize ?? 512,
-          chunkOverlap: opts.chunkOverlap ?? 64,
           retrievalMode: opts.retrievalMode ?? 'hybrid',
           windowSize: opts.windowSize ?? 2,
           enableEnrich: opts.enableEnrich ?? true,
@@ -543,7 +477,84 @@ class ChatAPI {
     return resp.json();
   }
 
+  // Persist a completed streamed turn. The stream itself goes straight to the
+  // RAG API, so the backend gateway never sees those messages otherwise.
+  async saveStreamedTurn(
+    sessionId: string,
+    userMessage: string,
+    assistantMessage: string,
+    sourceDocuments?: any[],
+    steps?: Step[],
+  ): Promise<{ session: ChatSession }> {
+    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/messages/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_message: userMessage,
+        assistant_message: assistantMessage,
+        source_documents: sourceDocuments ?? [],
+        steps: steps ?? null,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to save streamed turn: ${response.status}`);
+    }
+    return response.json();
+  }
+
   // -------------------- Streaming (SSE-over-fetch) --------------------
+  // SSE variant of sendMessage: raw LLM chat through the gateway, token by
+  // token. Same event framing as streamSessionMessage (token/complete/error
+  // objects on data: lines), so both parsers behave identically.
+  async streamChatMessage(
+    params: { message: string; conversation_history?: any[]; model?: string },
+    onEvent: (event: { type: string; data: any }) => void,
+  ): Promise<void> {
+    const resp = await fetch(`${API_BASE_URL}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: params.message,
+        conversation_history: params.conversation_history ?? [],
+        ...(params.model && { model: params.model }),
+      }),
+    });
+
+    if (!resp.ok || !resp.body) {
+      let detail = `Stream request failed: ${resp.status}`;
+      try {
+        const errData = await resp.json();
+        if (errData && typeof errData.error === 'string') detail = errData.error;
+      } catch { /* non-JSON error body */ }
+      throw new Error(detail);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let streamClosed = false;
+    while (!streamClosed) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop() || '';
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith('data:')) continue;
+        try {
+          const evt = JSON.parse(line.replace(/^data:\s*/, ''));
+          onEvent(evt);
+          if (evt.type === 'complete' || evt.type === 'error') {
+            try { await reader.cancel(); } catch {}
+            streamClosed = true;
+            break;
+          }
+        } catch { /* noop */ }
+      }
+    }
+  }
+
   async streamSessionMessage(
     params: {
       query: string;
@@ -555,18 +566,16 @@ class ChatAPI {
       aiRerank?: boolean;
       contextExpand?: boolean;
       verify?: boolean;
-      // ✨ NEW RETRIEVAL PARAMETERS
       retrievalK?: number;
       contextWindowSize?: number;
       rerankerTopK?: number;
       searchType?: string;
-      denseWeight?: number;
       forceRag?: boolean;
       provencePrune?: boolean;
     },
     onEvent: (event: { type: string; data: any }) => void,
   ): Promise<void> {
-    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, denseWeight, forceRag, provencePrune } = params;
+    const { query, model, session_id, table_name, composeSubAnswers, decompose, aiRerank, contextExpand, verify, retrievalK, contextWindowSize, rerankerTopK, searchType, forceRag, provencePrune } = params;
 
     const payload: Record<string, unknown> = { query };
     if (model) payload.model = model;
@@ -577,23 +586,28 @@ class ChatAPI {
     if (typeof aiRerank === 'boolean') payload.ai_rerank = aiRerank;
     if (typeof contextExpand === 'boolean') payload.context_expand = contextExpand;
     if (typeof verify === 'boolean') payload.verify = verify;
-    // ✨ ADD NEW RETRIEVAL PARAMETERS TO PAYLOAD
     if (typeof retrievalK === 'number') payload.retrieval_k = retrievalK;
     if (typeof contextWindowSize === 'number') payload.context_window_size = contextWindowSize;
     if (typeof rerankerTopK === 'number') payload.reranker_top_k = rerankerTopK;
     if (typeof searchType === 'string') payload.search_type = searchType;
-    if (typeof denseWeight === 'number') payload.dense_weight = denseWeight;
     if (typeof forceRag === 'boolean') payload.force_rag = forceRag;
     if (typeof provencePrune === 'boolean') payload.provence_prune = provencePrune;
 
-    const resp = await fetch('http://localhost:8001/chat/stream', {
+    const resp = await fetch(`${RAG_API_BASE_URL}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
     if (!resp.ok || !resp.body) {
-      throw new Error(`Stream request failed: ${resp.status}`);
+      // The gateway answers chat failures with JSON {"error": ...} and a proper
+      // status (502 unreachable / 504 timeout) — surface the server's message.
+      let detail = `Stream request failed: ${resp.status}`;
+      try {
+        const errData = await resp.json();
+        if (errData && typeof errData.error === 'string') detail = errData.error;
+      } catch { /* non-JSON error body */ }
+      throw new Error(detail);
     }
 
     const reader = resp.body.getReader();
@@ -616,7 +630,7 @@ class ChatAPI {
         try {
           const evt = JSON.parse(jsonStr);
           onEvent(evt);
-          if (evt.type === 'complete') {
+          if (evt.type === 'complete' || evt.type === 'error') {
             // Gracefully close the stream so the caller unblocks
             try { await reader.cancel(); } catch {}
             streamClosed = true;

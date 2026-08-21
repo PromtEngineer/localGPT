@@ -1,0 +1,32 @@
+{
+  "corpus": "hr",
+  "document": "northwind_leave_policy.pdf",
+  "generator": "eval/corpora/make_hr_handbook.py",
+  "note": "Fictional company and fictional policy numbers. Every 'expected' string below is a verbatim substring of the rendered PDF text after whitespace normalisation (make_hr_handbook.py asserts this on every build).",
+  "facts": [
+    {"id": "hr_annual_below_g7", "topic": "annual_leave", "expected": "23 days of paid annual leave", "summary": "Employees below Grade 7 accrue 23 days of paid annual leave per calendar year."},
+    {"id": "hr_annual_g7_plus", "topic": "annual_leave", "expected": "Grade 7 and above accrue 28 days", "summary": "Grade 7 and above accrue 28 days."},
+    {"id": "hr_carryover_cap", "topic": "annual_leave", "expected": "maximum of 5 unused annual leave days may be carried", "summary": "At most 5 unused annual leave days carry into the next year."},
+    {"id": "hr_carryover_expiry", "topic": "annual_leave", "expected": "Carried days expire on 31 March", "summary": "Carried days expire on 31 March and are not paid out."},
+    {"id": "hr_request_notice", "topic": "requesting_leave", "expected": "Kestrel HR portal at least 10", "summary": "Requests go through the Kestrel HR portal at least 10 working days ahead."},
+    {"id": "hr_director_approval", "topic": "requesting_leave", "expected": "consecutive working days additionally requires written approval", "summary": "Absences over 10 consecutive working days need written director approval."},
+    {"id": "hr_sick_full_pay", "topic": "sick_leave", "expected": "100 percent of base salary for the first 12 weeks", "summary": "Sick leave is paid at 100 percent for the first 12 weeks."},
+    {"id": "hr_sick_reduced_pay", "topic": "sick_leave", "expected": "at 60 percent for a further 8 weeks", "summary": "Then 60 percent for a further 8 weeks."},
+    {"id": "hr_medical_certificate", "topic": "sick_leave", "expected": "exceeds 4 consecutive working days", "summary": "A medical certificate is required past 4 consecutive working days."},
+    {"id": "hr_parental_length", "topic": "parental_leave", "expected": "Parental leave is 18 weeks per child, of which 6 weeks are fully paid", "summary": "18 weeks per child, 6 of them fully paid."},
+    {"id": "hr_parental_deadline", "topic": "parental_leave", "expected": "before the child's third birthday", "summary": "Parental leave must be taken before the child's third birthday."},
+    {"id": "hr_parental_blocks", "topic": "parental_leave", "expected": "no more than 3 separate blocks", "summary": "Parental leave may be split into at most 3 blocks."},
+    {"id": "hr_bereavement", "topic": "bereavement", "expected": "5 working days for an immediate family member", "summary": "5 days immediate family, 2 days extended family."},
+    {"id": "hr_jury_duty", "topic": "jury_duty", "expected": "paid in full for up to 15 working days", "summary": "Jury service is paid in full up to 15 working days per year."},
+    {"id": "hr_sabbatical_eligibility", "topic": "sabbatical", "expected": "at least 4 years of continuous service", "summary": "Sabbatical eligibility requires 4 years of continuous service."},
+    {"id": "hr_sabbatical_length", "topic": "sabbatical", "expected": "unpaid sabbatical of up to 90 days", "summary": "Unpaid sabbatical of up to 90 days."},
+    {"id": "hr_sabbatical_notice", "topic": "sabbatical", "expected": "require 60 days written", "summary": "Sabbatical applications require 60 days written notice."},
+    {"id": "hr_sabbatical_approver", "topic": "sabbatical", "expected": "approved by the Head of People Operations", "summary": "Approved by the Head of People Operations."},
+    {"id": "hr_public_holiday_count", "topic": "public_holidays", "expected": "recognises 9 public holidays", "summary": "Nine recognised public holidays."},
+    {"id": "hr_public_holiday_pay", "topic": "public_holidays", "expected": "paid at 1.5 times the normal rate", "summary": "Working a public holiday pays 1.5x plus a substitute day."},
+    {"id": "hr_resignation_payout", "topic": "exclusions", "expected": "not paid out on resignation", "summary": "Annual leave is not paid out on resignation under 6 months of service."},
+    {"id": "hr_contractors_excluded", "topic": "exclusions", "expected": "Contractors engaged through an agency", "summary": "Agency contractors are not covered by the policy."},
+    {"id": "hr_policy_id", "topic": "policy_metadata", "expected": "Policy PPL-204, revision 4", "summary": "The policy is PPL-204 revision 4, effective 1 February 2026."},
+    {"id": "hr_policy_owner", "topic": "policy_metadata", "expected": "Department of People Operations, Northwind Robotics, Gothenburg", "summary": "Owned by People Operations in Gothenburg."}
+  ]
+}

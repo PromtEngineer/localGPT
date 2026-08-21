@@ -8,21 +8,19 @@ class MarkdownRecursiveChunker:
     and embeds document-level metadata into each chunk.
     """
 
-    def __init__(self, max_chunk_size: int = 1500, min_chunk_size: int = 200, tokenizer_model: str = "Qwen/Qwen3-Embedding-0.6B"):
+    def __init__(self, max_chunk_size: int = 1500, min_chunk_size: int = 200, tokenizer_model: str | None = None):
         self.max_chunk_size = max_chunk_size
         self.min_chunk_size = min_chunk_size
         self.split_priority = ["\n## ", "\n### ", "\n#### ", "```", "\n\n"]
-        
-        repo_id = tokenizer_model
-        if "/" not in tokenizer_model and not tokenizer_model.startswith("Qwen/"):
-            repo_id = {
-                "qwen3-embedding-0.6b": "Qwen/Qwen3-Embedding-0.6B",
-            }.get(tokenizer_model.lower(), tokenizer_model)
-        
+
+        if not tokenizer_model:
+            from rag_system.main import EXTERNAL_MODELS
+            tokenizer_model = EXTERNAL_MODELS["embedding_model"]
+
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_model, trust_remote_code=True)
         except Exception as e:
-            print(f"Warning: Failed to load tokenizer {repo_id}: {e}")
+            print(f"Warning: Failed to load tokenizer {tokenizer_model}: {e}")
             print("Falling back to character-based approximation (4 chars ≈ 1 token)")
             self.tokenizer = None
 
@@ -41,17 +39,21 @@ class MarkdownRecursiveChunker:
             new_chunks = []
             for chunk in chunks_to_process:
                 if self._token_len(chunk) > self.max_chunk_size:
-                    sub_chunks = re.split(f'({sep})', chunk)
+                    # re.split with a capture group interleaves segments and
+                    # separators: [seg0, sep, seg1, sep, seg2, ...]. Reattach
+                    # each separator to the segment that FOLLOWS it, keeping
+                    # every segment. (The previous loop advanced 3 positions
+                    # after consuming 2, silently dropping seg0 and every
+                    # other body segment of any document large enough to
+                    # split — real corpora lost ~half their text.)
+                    sub_chunks = re.split(f'({re.escape(sep)})', chunk)
                     combined = []
-                    i = 0
-                    while i < len(sub_chunks):
-                        if i + 1 < len(sub_chunks) and sub_chunks[i+1] == sep:
-                            combined.append(sub_chunks[i+1] + sub_chunks[i+2])
-                            i += 3
-                        else:
-                            if sub_chunks[i]:
-                                combined.append(sub_chunks[i])
-                            i += 1
+                    if sub_chunks and sub_chunks[0]:
+                        combined.append(sub_chunks[0])
+                    for j in range(1, len(sub_chunks) - 1, 2):
+                        piece = sub_chunks[j] + sub_chunks[j + 1]
+                        if piece:
+                            combined.append(piece)
                     new_chunks.extend(combined)
                 else:
                     new_chunks.append(chunk)
@@ -100,9 +102,10 @@ class MarkdownRecursiveChunker:
             test_chunk = current_chunk + chunk_text if current_chunk else chunk_text
             if not current_chunk or self._token_len(test_chunk) <= self.max_chunk_size:
                 current_chunk = test_chunk
-            elif self._token_len(current_chunk) < self.min_chunk_size:
-                 current_chunk = test_chunk
             else:
+                # An undersized current_chunk is emitted as-is when merging it
+                # forward would push the result past max_chunk_size — a merge
+                # must never overshoot the token budget.
                 merged_chunks_text.append(current_chunk)
                 current_chunk = chunk_text
         if current_chunk:
@@ -128,8 +131,20 @@ class MarkdownRecursiveChunker:
 def create_contextual_window(all_chunks: List[Dict[str, Any]], chunk_index: int, window_size: int = 1) -> str:
     if not (0 <= chunk_index < len(all_chunks)):
         raise ValueError("chunk_index is out of bounds.")
-    start = max(0, chunk_index - window_size)
-    end = min(len(all_chunks), chunk_index + window_size + 1)
+
+    def _doc_id(chunk: Dict[str, Any]):
+        metadata = chunk.get("metadata") or {}
+        return metadata.get("document_id", chunk.get("document_id"))
+
+    # The flat list spans many documents; clamp the window to chunks of the
+    # same document so one document's context never leaks into another's.
+    doc_id = _doc_id(all_chunks[chunk_index])
+    start = chunk_index
+    while start > 0 and chunk_index - (start - 1) <= window_size and _doc_id(all_chunks[start - 1]) == doc_id:
+        start -= 1
+    end = chunk_index + 1
+    while end < len(all_chunks) and end - chunk_index <= window_size and _doc_id(all_chunks[end]) == doc_id:
+        end += 1
     context_chunks = all_chunks[start:end]
     return " ".join([chunk['text'] for chunk in context_chunks])
 

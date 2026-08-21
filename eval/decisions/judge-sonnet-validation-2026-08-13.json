@@ -1,0 +1,358 @@
+{
+ "timestamp": "2026-08-13T03:36:34+00:00",
+ "judge": "claude sonnet subagents x3 (Agent tool), prompt v1, suffix-stripped",
+ "validation": {
+  "tp": 10,
+  "fn": 0,
+  "tn": 10,
+  "fp": 0
+ },
+ "hard": {
+  "correct": 18,
+  "n": 18
+ },
+ "per_case": {
+  "val_g01_brew_pressure": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_g02_descaling": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_g03_gasket": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_g04_e42_procedure": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_g05_warranty_length": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_g06_annual_leave": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_g07_sick_pay": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_g08_sabbatical": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_g09_public_holiday": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_g10_contractors": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "validation",
+   "label": true
+  },
+  "val_u01_brew_pressure_wrong": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "val_u02_descale_interval_wrong": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "val_u03_boilers_swapped": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "val_u04_e42_extra_step": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "val_u05_sensor_part_transposed": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "val_u06_warranty_length_wrong": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "val_u07_annual_leave_wrong": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "val_u08_bereavement_swapped": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "val_u09_parental_transfer_added": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "val_u10_sabbatical_notice_wrong": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "validation",
+   "label": false
+  },
+  "hard_cell1_off_acq_q04": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_off_acq_q07": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_off_acq_q09": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_off_acq_q12": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "hard",
+   "label": false
+  },
+  "hard_cell1_off_docs_d03": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_off_docs_d05": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_off_docs_d13": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "hard",
+   "label": false
+  },
+  "hard_cell1_on_acq_q04": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_on_acq_q07": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_on_acq_q09": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_on_acq_q12": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "hard",
+   "label": false
+  },
+  "hard_cell1_on_docs_d03": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_on_docs_d05": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell1_on_docs_d13": {
+   "votes": [
+    false,
+    false,
+    false
+   ],
+   "set": "hard",
+   "label": false
+  },
+  "hard_cell2_off_acq_q04": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell2_off_acq_q12": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell2_on_acq_q04": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  },
+  "hard_cell2_on_acq_q12": {
+   "votes": [
+    true,
+    true,
+    true
+   ],
+   "set": "hard",
+   "label": true
+  }
+ }
+}

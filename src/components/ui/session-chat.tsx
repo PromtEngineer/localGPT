@@ -1,12 +1,10 @@
 "use client"
 
-import * as React from "react"
 import { ConversationPage } from "./conversation-page"
 import { ChatInput } from "./chat-input"
-import { EmptyChatState } from "./empty-chat-state"
-import { ChatMessage, ChatSession, chatAPI, generateUUID } from "@/lib/api"
+import { ChatMessage, ChatSession, chatAPI, generateUUID, DEFAULT_GENERATION_MODEL } from "@/lib/api"
 import { AttachedFile } from "@/lib/types"
-import { useEffect, useState, forwardRef, useImperativeHandle, useCallback } from "react"
+import { useEffect, useState, useRef, useMemo, useCallback } from "react"
 import { normalizeStreamingToken } from "@/utils/textNormalization"
 import { Button } from "./button"
 import type { Step } from '@/lib/api'
@@ -18,49 +16,74 @@ import { Database } from 'lucide-react'
 interface SessionChatProps {
   sessionId?: string
   onSessionChange?: (session: ChatSession) => void
-  onNewMessage?: (message: ChatMessage) => void
   className?: string
-}
-
-// Export sendMessage function for parent components
-export interface SessionChatRef {
-  sendMessage: (content: string, attachedFiles?: AttachedFile[]) => Promise<void>
-  currentSession: ChatSession | null
 }
 
 // Helper to shorten long titles
 const truncate = (str: string, n: number = 18) => str.length > n ? str.slice(0, n) + '…' : str;
 
-export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({ 
+// Chat settings persist in localStorage so they survive unmount/mode switches
+const CHAT_SETTINGS_KEY = 'localgpt.chatSettings'
+
+interface PersistedChatSettings {
+  composeSubAnswers?: boolean
+  enableDecompose?: boolean
+  enableAiRerank?: boolean
+  enableContextExpand?: boolean
+  enableStream?: boolean
+  enableVerify?: boolean
+  forceDocs?: boolean
+  provencePrune?: boolean
+  retrievalK?: number
+  contextWindowSize?: number
+  rerankerTopK?: number
+  searchType?: string
+  selectedModel?: string
+}
+
+const loadPersistedChatSettings = (): PersistedChatSettings => {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(CHAT_SETTINGS_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+export function SessionChat({
   sessionId,
   onSessionChange,
-  onNewMessage,
   className = ""
-}, ref) => {
+}: SessionChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [uploadedFiles, setUploadedFiles] = useState<{filename: string, stored_path: string}[]>([])
   const [isIndexed, setIsIndexed] = useState(false)
-  const [composeSubAnswers, setComposeSubAnswers] = useState<boolean>(true)
-  const [enableDecompose, setEnableDecompose] = useState<boolean>(true)
-  const [enableAiRerank, setEnableAiRerank] = useState<boolean>(true)
-  const [enableContextExpand, setEnableContextExpand] = useState<boolean>(true)
-  const [enableStream, setEnableStream] = useState<boolean>(true)
-  const [enableVerify, setEnableVerify] = useState<boolean>(true)
+  // Settings load once from localStorage; a save effect further down writes them back on change.
+  const persistedSettings = useMemo(loadPersistedChatSettings, [])
+  // Off, matching PIPELINE_CONFIGS["default"].query_decomposition (arm H:
+  // pooled_first_stage with compose_from_sub_answers False) — see eval/DECISIONS.md.
+  const [composeSubAnswers, setComposeSubAnswers] = useState<boolean>(() => persistedSettings.composeSubAnswers ?? false)
+  const [enableDecompose, setEnableDecompose] = useState<boolean>(() => persistedSettings.enableDecompose ?? true)
+  // On by default, matching PIPELINE_CONFIGS["default"].reranker.enabled (arm G)
+  // — see eval/DECISIONS.md. Loads Qwen3-Reranker-4B lazily.
+  const [enableAiRerank, setEnableAiRerank] = useState<boolean>(() => persistedSettings.enableAiRerank ?? true)
+  const [enableContextExpand, setEnableContextExpand] = useState<boolean>(() => persistedSettings.enableContextExpand ?? true)
+  const [enableStream, setEnableStream] = useState<boolean>(() => persistedSettings.enableStream ?? true)
+  const [enableVerify, setEnableVerify] = useState<boolean>(() => persistedSettings.enableVerify ?? true)
   // Force RAG toggle
-  const [forceDocs, setForceDocs] = useState<boolean>(false)
+  const [forceDocs, setForceDocs] = useState<boolean>(() => persistedSettings.forceDocs ?? false)
   // Provence pruning toggle
-  const [provencePrune, setProvencePrune] = useState<boolean>(false)
-  
-  // ✨ NEW RETRIEVAL PARAMETERS
-  const [retrievalK, setRetrievalK] = useState<number>(20)
-  const [contextWindowSize, setContextWindowSize] = useState<number>(1)
-  const [rerankerTopK, setRerankerTopK] = useState<number>(10)
-  const [searchType, setSearchType] = useState<string>('hybrid')
+  const [provencePrune, setProvencePrune] = useState<boolean>(() => persistedSettings.provencePrune ?? false)
+
+  const [retrievalK, setRetrievalK] = useState<number>(() => persistedSettings.retrievalK ?? 20)
+  const [contextWindowSize, setContextWindowSize] = useState<number>(() => persistedSettings.contextWindowSize ?? 1)
+  const [rerankerTopK, setRerankerTopK] = useState<number>(() => persistedSettings.rerankerTopK ?? 10)
+  const [searchType, setSearchType] = useState<string>(() => persistedSettings.searchType ?? 'hybrid')
   const [generationModels,setGenerationModels]=useState<string[]>([])
-  const [selectedModel,setSelectedModel]=useState<string>('qwen3:8b')
+  const [selectedModel,setSelectedModel]=useState<string>(() => persistedSettings.selectedModel ?? DEFAULT_GENERATION_MODEL)
   const [currentIndexId, setCurrentIndexId] = useState<string | null>(null)
   const [currentIndexName, setCurrentIndexName] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
@@ -69,23 +92,49 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
   
   const apiService = chatAPI
 
+  // Persist chat settings on change (loaded on mount above)
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CHAT_SETTINGS_KEY, JSON.stringify({
+        composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand,
+        enableStream, enableVerify, forceDocs, provencePrune,
+        retrievalK, contextWindowSize, rerankerTopK, searchType, selectedModel,
+      }))
+    } catch {}
+  }, [composeSubAnswers, enableDecompose, enableAiRerank, enableContextExpand, enableStream, enableVerify, forceDocs, provencePrune, retrievalK, contextWindowSize, rerankerTopK, searchType, selectedModel])
+
+  // Monotonic load counter: a slow getSession for a session the user has
+  // already navigated away from must not clobber the one they switched to.
+  const loadSessionSeq = useRef(0)
+
   // Define loadSession with useCallback before useEffect
   const loadSession = useCallback(async (id: string) => {
+    const seq = ++loadSessionSeq.current
     try {
       setError(null)
+      // Clear per-session state up front — index/upload state from the
+      // previous session must never leak into this one (a stale index id
+      // would override the backend's session-derived table_name).
+      setCurrentIndexId(null)
+      setCurrentIndexName(null)
+      setUploadedFiles([])
+      setIsIndexed(false)
       const { session, messages: sessionMessages } = await apiService.getSession(id)
-      
+      if (seq !== loadSessionSeq.current) return // superseded by a newer load
+
       const convertedMessages = sessionMessages.map((msg: unknown) => apiService.convertDbMessage(msg as Record<string, unknown>))
       setMessages(convertedMessages)
       setCurrentSession(session)
-      
+
       if (onSessionChange) {
         onSessionChange(session)
       }
 
-      // Fetch linked indexes to know table name for streaming
+      // Fetch linked indexes to know table name for streaming. When the
+      // session has none, the up-front clear above leaves index state empty.
       try {
         const idxResp = await apiService.getSessionIndexes(id)
+        if (seq !== loadSessionSeq.current) return
         if (idxResp.indexes && idxResp.indexes.length > 0) {
           const lastIdxObj = idxResp.indexes[idxResp.indexes.length - 1] as any
           const idxId = (lastIdxObj.index_id ?? lastIdxObj.id) as string
@@ -94,6 +143,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         }
       } catch {}
     } catch (error) {
+      if (seq !== loadSessionSeq.current) return
       console.error('Failed to load session:', error)
       setError('Failed to load session')
     }
@@ -108,9 +158,14 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         loadSession(sessionId)
       }
     } else {
-      // Clear messages if no session
+      // No session: invalidate any in-flight load and clear per-session state
+      loadSessionSeq.current++
       setMessages([])
       setCurrentSession(null)
+      setCurrentIndexId(null)
+      setCurrentIndexName(null)
+      setUploadedFiles([])
+      setIsIndexed(false)
     }
   }, [sessionId, currentSession, loadSession]) // Added missing dependencies
 
@@ -121,14 +176,15 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         const resp=await apiService.getModels();
         setGenerationModels(resp.generation_models||[])
         if(resp.generation_models&&resp.generation_models.length>0){
-          const def = resp.generation_models.find((m:string)=>m==='qwen3:8b');
-          setSelectedModel(def || resp.generation_models[0])
+          const def = resp.generation_models.find((m:string)=>m===DEFAULT_GENERATION_MODEL);
+          // Keep a persisted selection only if the backend still offers it
+          setSelectedModel(prev => (prev && resp.generation_models.includes(prev)) ? prev : (def || resp.generation_models[0]))
         }
       }catch(e){console.warn('Failed to load models',e)}
     })()
   },[apiService])
 
-  const sendMessage = async (content: string, attachedFiles?: AttachedFile[]) => {
+  const sendMessage = async (content: string, attachedFiles?: AttachedFile[], opts?: { skipUserTurn?: boolean }) => {
     // --- Guard Clauses ---
     // If files are being indexed, do nothing.
     if (uploadedFiles.length > 0 && !isIndexed) {
@@ -188,9 +244,12 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
       // B) CHAT ACTION: If no files, it's a standard chat message.
       if (!content.trim()) return;
 
-      const userMessage = apiService.createMessage(content, 'user')
-      setMessages(prev => [...prev, userMessage])
-      if (onNewMessage) onNewMessage(userMessage)
+      // Regenerate passes skipUserTurn: the original user bubble stays in place,
+      // so don't append (or later persist) a duplicate of it.
+      if (!opts?.skipUserTurn) {
+        const userMessage = apiService.createMessage(content, 'user')
+        setMessages(prev => [...prev, userMessage])
+      }
 
       setIsLoading(true)
 
@@ -214,6 +273,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           { key: 'analyze', label: 'Analyzing user question', status: 'pending' as const, details: '' },
           { key: 'decompose', label: 'Generating sub-queries', status: 'pending' as const, details: '' },
           { key: 'retrieval', label: 'Retrieving context', status: 'pending' as const, details: '' },
+          // Only ever becomes visible when the evidence-sufficiency retry fires
+          // (retrieval.retry, roadmap 2.1) — on most queries it stays pending.
+          { key: 'retry', label: 'Rechecking weak evidence', status: 'pending' as const, details: '' },
           { key: 'rerank', label: 'Reranking results', status: 'pending' as const, details: '' },
           { key: 'expand', label: 'Expanding context window', status: 'pending' as const, details: '' },
           { key: 'answer', label: 'Answering sub-queries', status: 'pending' as const, details: [] },
@@ -234,6 +296,11 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         })
         // keep global isLoading true so input disabled until completion
 
+        // Written from the setMessages updater when the 'complete' event lands,
+        // read by the deferred persistence call above. Assignment is idempotent,
+        // so StrictMode's double updater invocation is harmless.
+        const finalStepsSnapshot: { steps: Step[] | null } = { steps: null }
+
         await apiService.streamSessionMessage(
           {
             query: content,
@@ -245,7 +312,6 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             contextExpand: enableContextExpand,
             verify: enableVerify,
             model: selectedModel,
-            // ✨ NEW RETRIEVAL PARAMETERS
             retrievalK,
             contextWindowSize,
             rerankerTopK,
@@ -254,7 +320,42 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             provencePrune,
           },
           (evt) => {
-            console.log('STREAM EVENT:', evt.type, evt.data); // Debug log for SSE events
+            // 💾 PERSIST + REFRESH on completion. This must happen HERE, in the
+            // event callback (fires exactly once per SSE event) — never inside the
+            // setMessages updater below, which React StrictMode invokes twice and
+            // would persist every turn twice. The save itself is deferred one tick
+            // so the updater has applied and finalStepsSnapshot holds the finished
+            // pipeline cascade (writing a ref-like local from the updater is
+            // idempotent, so StrictMode double-invocation is harmless).
+            if (evt.type === 'complete' && activeSessionId && !opts?.skipUserTurn) {
+              const answerText = typeof evt.data.answer === 'string' ? evt.data.answer : '';
+              const sourceDocs = Array.isArray(evt.data.source_documents) ? evt.data.source_documents : [];
+              setTimeout(async () => {
+                try {
+                  if (answerText) {
+                    await apiService.saveStreamedTurn(
+                      activeSessionId as string, content, answerText, sourceDocs,
+                      finalStepsSnapshot.steps ?? undefined,
+                    );
+                  }
+                  const { session } = await apiService.getSession(activeSessionId as string);
+                  setCurrentSession(session);
+                  if (onSessionChange) {
+                    onSessionChange(session);
+                  }
+                } catch (error) {
+                  console.error('Failed to persist/refresh session after completion:', error);
+                }
+              }, 0);
+            }
+            // The backend emits a terminal 'error' event and then closes the
+            // stream normally — surface it here; the updater below fails the
+            // placeholder's unfinished steps so the cascade doesn't hang.
+            if (evt.type === 'error') {
+              const errText = typeof evt.data?.error === 'string' ? evt.data.error : 'Something went wrong while generating the answer.';
+              setError(errText);
+              setIsLoading(false);
+            }
             setMessages(prev => prev.map(m => {
               if (m.id !== placeholder.id) return m;
               const steps = [...(m.content as any).steps];
@@ -285,6 +386,33 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 if (rrxIdx !== -1) {
                   steps[rrxIdx].status = 'active';
                   steps[rrxIdx].details = 'Reranking results...';
+                }
+                return { ...m, content: { steps } };
+              }
+              if (evt.type === 'retrieval_retry') {
+                const tidx = steps.findIndex(s => s.key === 'retry');
+                if (tidx !== -1) {
+                  steps[tidx].status = 'done';
+                  steps[tidx].details = evt.data?.kept === 'retry'
+                    ? `Weak evidence (${evt.data?.signal} ${evt.data?.score_before}); retried and kept the better result set.`
+                    : `Weak evidence (${evt.data?.signal} ${evt.data?.score_before}); retry did not improve it, kept the original.`;
+                }
+                return { ...m, content: { steps } };
+              }
+              if (evt.type === 'document_escalation') {
+                // Roadmap 4.1. Reported on the existing "weak evidence" step
+                // rather than a new one: escalation only ever happens because
+                // the evidence was still weak after the retry, and adding an
+                // array entry would shift the positional step indices the rest
+                // of this handler relies on.
+                const tidx = steps.findIndex(s => s.key === 'retry');
+                if (tidx !== -1) {
+                  const prior = typeof steps[tidx].details === 'string' ? steps[tidx].details : '';
+                  const note = `Escalated to the full document "${evt.data?.document_name}" `
+                    + `(${evt.data?.chunks_used}/${evt.data?.chunks_total} chunks, `
+                    + `~${evt.data?.approx_tokens} tokens${evt.data?.truncated ? ', truncated' : ''}).`;
+                  steps[tidx].status = 'done';
+                  steps[tidx].details = prior ? `${prior} ${note}` : note;
                 }
                 return { ...m, content: { steps } };
               }
@@ -344,7 +472,6 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 steps[5].status = 'done';
                 steps[6].status = 'active';
                 steps[6].details = 'Synthesizing final answer...';
-                if (isLoading) setIsLoading(false);
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'token') {
@@ -370,18 +497,12 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 }
                 let updated = current.endsWith(tok) ? current : current + tok;
                 updated = normalizeStreamingToken('', updated);
-                if (steps[finalIdx].key === 'direct') {
-                  steps[0].details = updated;
-                } else {
-                  steps[7].details = { answer: updated, source_documents: [] };
-                }
                 steps[finalIdx].details = updated;
                 // Mark "Putting everything together" step as done once tokens start
                 const synthIdx = steps.findIndex(s => s.key === 'synthesize');
                 if (synthIdx !== -1 && steps[synthIdx].status !== 'done') {
                   steps[synthIdx].status = 'done';
                 }
-                if (isLoading) setIsLoading(false);
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'sub_query_token') {
@@ -400,7 +521,6 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                   detailsArr[idx].answer = updatedAnswer;
                 }
                 steps[5].details = detailsArr;
-                if (isLoading) setIsLoading(false);
                 return { ...m, content: { steps } };
               }
               if (evt.type === 'complete') {
@@ -414,7 +534,12 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 } else {
                   steps[finalIdx].details = {
                     answer: evt.data.answer,
-                    source_documents: evt.data.source_documents || []
+                    source_documents: evt.data.source_documents || [],
+                    // Roadmap 4.5: per-query token counts, carried through the
+                    // steps snapshot into the persisted turn. Nothing renders it
+                    // yet — displaying it is tracked as backlog in
+                    // eval/decisions/phase4-escalation-tokens.md.
+                    token_usage: evt.data.token_usage ?? null,
                   };
                 }
 
@@ -423,24 +548,17 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
                 steps.forEach(s => {
                   if (s.status !== 'done') s.status = 'done';
                 });
-                
-                // 🔄 REFRESH SESSION: After completion, refresh session data to get updated title
-                if (activeSessionId) {
-                  // Always refresh session data so updated title & message count are reflected in the UI
-                  setTimeout(async () => {
-                    try {
-                      const { session } = await apiService.getSession(activeSessionId as string);
-                      setCurrentSession(session);
-                      if (onSessionChange) {
-                        onSessionChange(session);
-                      }
-                    } catch (error) {
-                      console.error('Failed to refresh session after completion:', error);
-                    }
-                  }, 100); // Small delay to ensure backend has processed the title update
-                }
-                
+
+                finalStepsSnapshot.steps = steps;
                 return { ...m, content: { steps }, metadata: { message_type: 'complete' } };
+              }
+              if (evt.type === 'error') {
+                // Terminal backend error: fail every unfinished step so the
+                // placeholder renders the failure instead of spinning forever.
+                steps.forEach(s => {
+                  if (s.status !== 'done') s.status = 'error';
+                });
+                return { ...m, content: { steps }, metadata: { message_type: 'error' } };
               }
               if (evt.type === 'direct_answer') {
                 const stepsDir: Step[] = [
@@ -460,7 +578,6 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           contextExpand: enableContextExpand, 
           verify: enableVerify,
           model: selectedModel,
-          // ✨ NEW RETRIEVAL PARAMETERS
           retrievalK,
           contextWindowSize,
           rerankerTopK,
@@ -468,30 +585,39 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
           forceRag: forceDocs,
           provencePrune,
         })
-      
+
       const aiMessage: ChatMessage = {
-        id: response.ai_message_id || generateUUID(),
+        id: generateUUID(),
         content: response.response,
         sender: 'assistant',
         timestamp: new Date().toISOString(),
-          metadata: { 
+          metadata: {
             message_type: 'sub_answer',
-            source_documents: (response as any).source_documents || [] 
+            source_documents: response.source_documents || []
           }
       }
       setMessages(prev => [...prev, aiMessage])
-      
-        if ((response as any).session) {
-          const sess = (response as any).session as ChatSession
-          setCurrentSession(sess)
-          if (onSessionChange) onSessionChange(sess)
+
+        if (response.session) {
+          setCurrentSession(response.session)
+          if (onSessionChange) onSessionChange(response.session)
         }
-        if (onNewMessage) onNewMessage(aiMessage)
       }
 
     } catch (error) {
       console.error('Failed to send message:', error)
-      setError('Failed to send message')
+      setError(error instanceof Error ? error.message : 'Failed to send message')
+      // A mid-stream network failure leaves the step placeholder mid-cascade —
+      // fail its unfinished steps instead of letting it spin forever.
+      setMessages(prev => prev.map(m => {
+        if (m.metadata?.message_type !== 'in_progress') return m
+        const steps = (m.content as { steps: Step[] }).steps
+        return {
+          ...m,
+          content: { steps: steps.map(s => s.status === 'done' ? s : { ...s, status: 'error' as const }) },
+          metadata: { message_type: 'error' }
+        }
+      }))
     } finally {
       setIsLoading(false)
     }
@@ -526,15 +652,9 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
     }
   }
 
-  // Expose functions to parent component
-  useImperativeHandle(ref, () => ({
-    sendMessage,
-    currentSession
-  }))
-
   const handleAction = async (action: string, messageId: string, messageContent: string | Record<string, any>[] | { steps: Step[] }) => {
     console.log(`Action ${action} on message ${messageId}`)
-    
+
     switch (action) {
       case 'copy':
         await navigator.clipboard.writeText(typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent, null, 2))
@@ -544,10 +664,12 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
         const messageIndex = messages.findIndex(m => m.id === messageId)
         if (messageIndex > 0 && messages[messageIndex].sender === 'assistant') {
           const userMessage = messages[messageIndex - 1]
-          if (userMessage.sender === 'user') {
-            // Remove the AI message and resend the user message
+          if (userMessage.sender === 'user' && typeof userMessage.content === 'string') {
+            // Remove the stale AI message and re-ask WITHOUT re-appending or
+            // re-persisting the user turn (skipUserTurn) — otherwise the
+            // question shows up twice in the UI and in the database.
             setMessages(prev => prev.filter(m => m.id !== messageId))
-            await sendMessage(userMessage.content as string)
+            await sendMessage(userMessage.content, undefined, { skipUserTurn: true })
           }
         }
         break
@@ -646,7 +768,7 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
             {type: 'dropdown', label:'Search type', value: searchType, setter: setSearchType, options: [
               {value: 'hybrid', label: 'Hybrid (Vector + FTS)'},
               {value: 'vector_only', label: 'Vector Only'},
-              {value: 'bm25_only', label: 'FTS Only'}
+              {value: 'fts_only', label: 'FTS Only'}
             ]},
             {type: 'slider', label:'Retrieval chunks', value: retrievalK, setter: setRetrievalK, min: 5, max: 50, unit: ' chunks'},
             
@@ -678,6 +800,4 @@ export const SessionChat = forwardRef<SessionChatRef, SessionChatProps>(({
       )}
     </div>
   )
-})
-
-SessionChat.displayName = "SessionChat"  
+}

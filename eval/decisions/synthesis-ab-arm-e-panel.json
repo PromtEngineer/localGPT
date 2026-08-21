@@ -1,0 +1,218 @@
+{
+ "rfc_q01": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q02": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q03": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q04": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q05": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q06": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q07": {
+  "votes": [
+   true,
+   true,
+   true
+  ],
+  "maj": true,
+  "xr": false
+ },
+ "rfc_q08": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q09": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q10": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q11": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q12": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q13": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q14": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": false
+ },
+ "rfc_q15": {
+  "votes": [
+   true,
+   true,
+   true
+  ],
+  "maj": true,
+  "xr": true
+ },
+ "rfc_q16": {
+  "votes": [
+   true,
+   true,
+   true
+  ],
+  "maj": true,
+  "xr": true
+ },
+ "rfc_q17": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": true
+ },
+ "rfc_q18": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": true
+ },
+ "rfc_q19": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": true
+ },
+ "rfc_q20": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": true
+ },
+ "rfc_q21": {
+  "votes": [
+   true,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": true
+ },
+ "rfc_q22": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": true
+ },
+ "rfc_q23": {
+  "votes": [
+   true,
+   true,
+   true
+  ],
+  "maj": true,
+  "xr": true
+ },
+ "rfc_q24": {
+  "votes": [
+   false,
+   false,
+   false
+  ],
+  "maj": false,
+  "xr": true
+ }
+}
