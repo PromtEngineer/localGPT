@@ -59,6 +59,34 @@ including scans of prose. Integration work if pursued: page-image storage per in
 a per-document visual/text router at indexing time, and a VLM answering path; the
 sidecar, disk cache, and benchmark are committed and rerunnable.
 
+## Failure attribution (2026-08-25 follow-up): WHY the EVIE arm loses on scanned prose
+
+The 15 scanned-acq misses were decomposed with three instruments:
+
+1. **Retrieval check (mechanical):** the answer text was present in EVIE's top-3
+   retrieved pages for **13 of 15** (only acq_q15/q20 were true retrieval misses).
+   EVIE retrieval is exonerated.
+2. **Modality test:** the same top-3 pages given as ORIGINAL TEXT to qwen3.5:9b —
+   **0 of 13 flipped to grounded.** So the loss is NOT "the VLM can't read scans":
+   a strong text model over identical content fails the same judge.
+3. **Capacity test:** the same pages as images to gemma4:31b — **6 of 13 fixed**
+   (q04/q07/q09/q10/q11/q23, including all four multi-document cells).
+   minicpm-v:8b under-reads multi-page contexts; a larger VLM recovers much of it.
+
+Reading the residuals: the text-arm answers were substantively correct on core facts
+($45M price; "tax matters"; "free of liens") but the strict judge requires the FULL
+gold answer, whose secondary specifics (source-exhibit citations, cross-references,
+compound clauses) live outside the 3 retrieved pages. The baseline pipeline wins these
+not by modality but by **context breadth and synthesis style**: reranked chunks drawn
+from all 10 documents plus query decomposition surface the secondary details.
+
+**Corrected attribution:** ~40% VLM capacity (fixable: bigger VLM), ~half context
+breadth/completeness (fixable: retrieve more pages, or two-stage VLM-extract →
+text-synthesize), ~13% retrieval (2/15). Nothing here is a MaxSim/EVIE failure.
+Design implication for a future visual pipeline: EVIE top-k=5+ pages → per-page VLM
+extraction → text-model synthesis, i.e. keep the existing synthesis machinery and
+swap only the evidence-gathering layer.
+
 ## Ops notes
 
 - ST 6.0.0 loads EVIE with `trust_remote_code=True` + the `[image]` extra (torchvision);
