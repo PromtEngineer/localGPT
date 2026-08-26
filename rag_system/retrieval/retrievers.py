@@ -241,10 +241,14 @@ class MultiVectorRetriever:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                     fts_future = executor.submit(_run_fts)
                     vec_future = executor.submit(_run_vec)
-                    # In hybrid mode a failed FTS leg degrades to dense-only
-                    # instead of failing the whole retrieval — the two legs are
-                    # redundant by design, and "one leg down" must not become
-                    # "0 results". (fts_only mode still propagates, because
+                    # In hybrid mode a failed leg — EITHER leg — degrades to the
+                    # surviving one instead of failing the whole retrieval: the
+                    # two legs are redundant by design, and "one leg down" must
+                    # not become "0 results". A dense-leg failure (embedder OOM,
+                    # corrupted model file) degrades to FTS-only exactly as an
+                    # FTS parse failure degrades to dense-only. Both legs down
+                    # re-raises the dense error so total failure stays loud.
+                    # (fts_only / vector_only modes still propagate, because
                     # there the caller asked for exactly that leg.)
                     try:
                         fts_df = fts_future.result()
@@ -252,7 +256,17 @@ class MultiVectorRetriever:
                         print(f"⚠️  FTS leg failed ({fts_err}); continuing dense-only.")
                         logger.warning("FTS leg failed on table '%s': %s", table_name, fts_err)
                         fts_df = None
-                    vec_df = vec_future.result()
+                        fts_err_saved = fts_err
+                    else:
+                        fts_err_saved = None
+                    try:
+                        vec_df = vec_future.result()
+                    except Exception as vec_err:
+                        if fts_err_saved is not None:
+                            raise
+                        print(f"⚠️  Dense leg failed ({vec_err}); continuing FTS-only.")
+                        logger.warning("Dense leg failed on table '%s': %s", table_name, vec_err)
+                        vec_df = None
 
             def _records(df) -> List[Dict[str, Any]]:
                 if df is None or len(df) == 0:
