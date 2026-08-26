@@ -33,7 +33,43 @@ import json
 
 _META_MODEL_KEY = b"localgpt_embedding_model"
 _META_NORMALIZED_KEY = b"localgpt_normalized"
+# Marker v2 (2026-08-25): the full embedding contract. dims turns the
+# undetectable same-width-swap class into a hard error where widths DO differ;
+# revision and query-instruction hash catch quieter drift (a re-released model,
+# a changed instruction prefix) as warnings — the vectors still rank, just
+# possibly worse, so v2 warns rather than refuses. v1 tables (model+normalized
+# only) keep working unchanged; new builds write v2.
+_META_DIMS_KEY = b"localgpt_embedding_dims"
+_META_REVISION_KEY = b"localgpt_model_revision"
+_META_QINSTR_KEY = b"localgpt_query_instruction_sha"
+_META_MARKER_VERSION_KEY = b"localgpt_marker_version"
 _SIDECAR_DIRNAME = "table_meta"
+
+
+def query_instruction_sha(model_name: str) -> str:
+    """sha256 of the query-side instruction in force for *model_name* ("" hashes too)."""
+    import hashlib
+
+    from rag_system.indexing.representations import default_query_instruction
+    return hashlib.sha256(default_query_instruction(model_name or "").encode("utf-8")).hexdigest()
+
+
+def resolve_model_revision(model_name: str) -> str:
+    """The HF commit hash of the locally cached *model_name*, or "unknown".
+
+    Best-effort only — indexing must never block on this. Local paths and
+    Ollama tags have no HF revision and record "unknown".
+    """
+    try:
+        from huggingface_hub import scan_cache_dir
+        for repo in scan_cache_dir().repos:
+            if repo.repo_id == model_name and repo.repo_type == "model":
+                revs = sorted(repo.revisions, key=lambda r: r.last_modified or 0)
+                if revs:
+                    return revs[-1].commit_hash
+    except Exception:
+        pass
+    return "unknown"
 
 
 class EmbedderMismatchError(RuntimeError):
@@ -67,21 +103,40 @@ def _read_sidecar(db_path: Optional[str], table_name: Optional[str]) -> Optional
         return None
 
 
-def _write_sidecar(db_path: str, table_name: str, model_name: str, normalized: bool) -> None:
+def _contract_fields(model_name: str, dims: Optional[int]) -> Dict[str, Any]:
+    return {
+        "dims": int(dims) if dims else None,
+        "model_revision": resolve_model_revision(model_name),
+        "query_instruction_sha": query_instruction_sha(model_name),
+        "marker_version": 2,
+    }
+
+
+def _write_sidecar(db_path: str, table_name: str, model_name: str, normalized: bool,
+                   dims: Optional[int] = None) -> None:
     path = _sidecar_path(db_path, table_name)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump({"embedding_model": model_name, "normalized": bool(normalized)}, fh, indent=2)
+            json.dump({"embedding_model": model_name, "normalized": bool(normalized),
+                       **_contract_fields(model_name, dims)}, fh, indent=2)
     except OSError as e:
         print(f"⚠️  Could not write table marker {path}: {e}")
 
 
-def table_schema_metadata(model_name: str, normalized: bool) -> Dict[bytes, bytes]:
-    return {
+def table_schema_metadata(model_name: str, normalized: bool,
+                          dims: Optional[int] = None) -> Dict[bytes, bytes]:
+    contract = _contract_fields(model_name, dims)
+    meta = {
         _META_MODEL_KEY: model_name.encode("utf-8"),
         _META_NORMALIZED_KEY: (b"true" if normalized else b"false"),
+        _META_REVISION_KEY: contract["model_revision"].encode("utf-8"),
+        _META_QINSTR_KEY: contract["query_instruction_sha"].encode("utf-8"),
+        _META_MARKER_VERSION_KEY: b"2",
     }
+    if contract["dims"]:
+        meta[_META_DIMS_KEY] = str(contract["dims"]).encode("utf-8")
+    return meta
 
 
 def read_table_marker(tbl, db_path: Optional[str] = None,
@@ -91,9 +146,17 @@ def read_table_marker(tbl, db_path: Optional[str] = None,
     raw_model = metadata.get(_META_MODEL_KEY)
     if raw_model:
         raw_norm = metadata.get(_META_NORMALIZED_KEY, b"false")
+        raw_dims = metadata.get(_META_DIMS_KEY)
+        raw_rev = metadata.get(_META_REVISION_KEY)
+        raw_qi = metadata.get(_META_QINSTR_KEY)
+        raw_ver = metadata.get(_META_MARKER_VERSION_KEY)
         return {
             "embedding_model": raw_model.decode("utf-8"),
             "normalized": raw_norm.decode("utf-8").lower() == "true",
+            "dims": int(raw_dims) if raw_dims else None,
+            "model_revision": raw_rev.decode("utf-8") if raw_rev else None,
+            "query_instruction_sha": raw_qi.decode("utf-8") if raw_qi else None,
+            "marker_version": int(raw_ver) if raw_ver else 1,
             "source": "lancedb schema metadata",
         }
     sidecar = _read_sidecar(db_path, table_name)
@@ -101,6 +164,10 @@ def read_table_marker(tbl, db_path: Optional[str] = None,
         return {
             "embedding_model": sidecar["embedding_model"],
             "normalized": bool(sidecar.get("normalized")),
+            "dims": sidecar.get("dims"),
+            "model_revision": sidecar.get("model_revision"),
+            "query_instruction_sha": sidecar.get("query_instruction_sha"),
+            "marker_version": int(sidecar.get("marker_version") or 1),
             "source": _sidecar_path(db_path, table_name),
         }
     return None
@@ -118,6 +185,51 @@ def assert_embedder_matches(table_name: str, marker: Dict[str, Any], configured_
         f"any result from this table would be meaningless. Rebuild the index with "
         f"'{configured_model}', or set EMBEDDING_MODEL='{recorded}' to keep using it."
     )
+
+
+def assert_dims_match(table_name: str, marker: Dict[str, Any], actual_dim: int) -> None:
+    """Raise when a v2 marker records a different vector width than the live embedder.
+
+    A width mismatch means every query would be compared against vectors in a
+    space of the wrong dimensionality — LanceDB would error or, worse, a padded
+    path would rank garbage. v1 markers record no dims and are skipped.
+    """
+    recorded = marker.get("dims")
+    if not recorded or not actual_dim or int(recorded) == int(actual_dim):
+        return
+    raise EmbedderMismatchError(
+        f"Table '{table_name}' stores {recorded}-dim vectors but the configured "
+        f"embedder produces {actual_dim}-dim vectors. The index must be rebuilt "
+        f"with the current embedder (or EMBEDDING_MODEL set back to the one that "
+        f"built it)."
+    )
+
+
+def contract_drift_warnings(table_name: str, marker: Dict[str, Any],
+                            configured_model: str) -> list:
+    """Soft-drift warnings for a v2 marker: revision and query-instruction changes.
+
+    These do not invalidate the vectors — they degrade quality quietly — so they
+    warn instead of raising. Returns the warning strings (caller prints once).
+    """
+    warnings = []
+    rec_rev = marker.get("model_revision")
+    if rec_rev and rec_rev != "unknown":
+        live_rev = resolve_model_revision(configured_model)
+        if live_rev != "unknown" and live_rev != rec_rev:
+            warnings.append(
+                f"⚠️  Table '{table_name}' was built with model revision "
+                f"{rec_rev[:12]} but the local cache now holds {live_rev[:12]}. "
+                f"If retrieval quality shifted, rebuild the index."
+            )
+    rec_qi = marker.get("query_instruction_sha")
+    if rec_qi and rec_qi != query_instruction_sha(configured_model):
+        warnings.append(
+            f"⚠️  Table '{table_name}' was built under a different query-side "
+            f"instruction than the one now in force; query and document vectors "
+            f"may be subtly misaligned. Rebuild to realign."
+        )
+    return warnings
 
 
 def legacy_table_warning(table_name: str) -> str:
@@ -213,7 +325,7 @@ class VectorIndexer:
             pa.field("document_id", pa.string()),
             pa.field("chunk_index", pa.int32()),
             pa.field("metadata", pa.string())
-        ], metadata=table_schema_metadata(embedding_model, normalize) if embedding_model else None)
+        ], metadata=table_schema_metadata(embedding_model, normalize, dims=vector_dim) if embedding_model else None)
 
         data = []
         skipped_count = 0
@@ -287,7 +399,7 @@ class VectorIndexer:
                 # LanceDB build dropped the Arrow schema metadata, fall back to the
                 # sidecar so the guard still has something to compare against.
                 if read_table_marker(self.db_manager.get_table(table_name)) is None and db_path:
-                    _write_sidecar(db_path, table_name, embedding_model, normalize)
+                    _write_sidecar(db_path, table_name, embedding_model, normalize, dims=vector_dim)
                 print(f"🔖 Table '{table_name}' marked: embedder='{embedding_model}', "
                       f"normalized={str(normalize).lower()}.")
 

@@ -10,7 +10,9 @@ from functools import lru_cache
 from rag_system.indexing.embedders import (
     EmbedderMismatchError,
     LanceDBManager,
+    assert_dims_match,
     assert_embedder_matches,
+    contract_drift_warnings,
     l2_normalize,
     legacy_table_warning,
     read_table_marker,
@@ -71,6 +73,11 @@ class MultiVectorRetriever:
 
         # Tables already reported as unmarked, so the warning is printed once each.
         self._legacy_tables_warned: set = set()
+        # Contract-drift warnings (marker v2) are printed once per table; the
+        # marker itself is stashed so the dense leg can dims-check the query
+        # vector it just produced.
+        self._contract_warned: set = set()
+        self._table_markers: Dict[str, Dict[str, Any]] = {}
 
     def _check_table_identity(self, tbl, table_name: str) -> bool:
         """Verify the table's embedder against ours; return whether to normalize.
@@ -91,6 +98,11 @@ class MultiVectorRetriever:
         configured = getattr(self.text_embedder, "model_name", None)
         if configured:
             assert_embedder_matches(table_name, marker, configured)
+            if table_name not in self._contract_warned:
+                self._contract_warned.add(table_name)
+                for warning in contract_drift_warnings(table_name, marker, configured):
+                    print(warning)
+        self._table_markers[table_name] = marker
         return bool(marker["normalized"])
 
     @staticmethod
@@ -223,6 +235,9 @@ class MultiVectorRetriever:
                     if mv_df is not None:
                         return mv_df
                 vector = self._embed_single(text_query)
+                marker = self._table_markers.get(table_name)
+                if marker:
+                    assert_dims_match(table_name, marker, len(vector))
                 if normalize_query:
                     vector = l2_normalize(vector)
                 return (
@@ -261,6 +276,10 @@ class MultiVectorRetriever:
                         fts_err_saved = None
                     try:
                         vec_df = vec_future.result()
+                    except EmbedderMismatchError:
+                        # A contract violation is not an operational hiccup:
+                        # degrading it to FTS-only would hide a broken index.
+                        raise
                     except Exception as vec_err:
                         if fts_err_saved is not None:
                             raise

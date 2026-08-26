@@ -1,7 +1,16 @@
 # Plan: retrieval-robustness & index-lifecycle hardening (from the PwC-search review)
 
-**Date:** 2026-08-25 · **Status:** planned, not started · **Source:** review of
+**Date:** 2026-08-25 · **Status:** ✅ IMPLEMENTED & GATED (same day) · **Source:** review of
 https://huggingface.co/blog/pwc-search against the current codebase.
+
+Gate results: WS1 fault-injection 6/6 + live happy path (commit 4a1ffee).
+WS2 contract tests 15/15; live build writes v2 markers (dims/revision/sha).
+WS3 on a real 10-PDF build: no-op re-run 316s → **2s** with byte-identical
+row-set; one modified file reprocessed alone in 51s, rows replaced, no
+duplicate chunk_ids; E2E smoke on the gate-built index 17/24 Sonnet —
+inside the historical acq band (15–19). Discovery during implementation:
+delete-then-append per document already existed at the vector-write layer,
+so WS3 reduced to the manifest skip + config fingerprint + remove API.
 
 Three workstreams, ordered by value/effort. None touches a synthesis or decomposer
 prompt, so none triggers the frozen-prompt full-bench revalidation gate; each has its

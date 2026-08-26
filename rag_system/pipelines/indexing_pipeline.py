@@ -1,5 +1,6 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import hashlib
+import json
 import os
 from rag_system.ingestion.document_converter import DocumentConverter
 from rag_system.ingestion.chunking import MarkdownRecursiveChunker
@@ -175,6 +176,18 @@ class IndexingPipeline:
         # Import progress tracking utilities
         from rag_system.utils.batch_processor import timer, ProgressTracker, estimate_memory_usage
         
+        # Content-hash skip (WS3): unchanged file + unchanged config -> the
+        # expensive parse/enrich/embed never runs. skip_unchanged=False (or a
+        # deleted manifest) forces a full reprocess.
+        skip_unchanged = bool(self.config.get("indexing", {}).get("skip_unchanged", True))
+        manifest = self._load_manifest()
+        fingerprint = self._config_fingerprint()
+        manifest_reusable = skip_unchanged and manifest.get("config_fingerprint") == fingerprint
+        if skip_unchanged and manifest["documents"] and not manifest_reusable:
+            print("ℹ️  Indexing config changed since the last run; reprocessing every file.")
+        processed_shas: Dict[str, str] = {}
+        skipped_docs: List[str] = []
+
         with timer("Complete Indexing Pipeline"):
             # Step 1: Document Processing and Chunking
             all_chunks = []
@@ -193,8 +206,17 @@ class IndexingPipeline:
                             suffix = hashlib.sha1(file_path.encode("utf-8")).hexdigest()[:8]
                             document_id = f"{document_id}#{suffix}"
                         seen_document_ids.add(document_id)
+
+                        with open(file_path, "rb") as fh:
+                            content_sha = hashlib.sha256(fh.read()).hexdigest()
+                        processed_shas[document_id] = content_sha
+                        if manifest_reusable and manifest["documents"].get(document_id) == content_sha:
+                            print(f"↷ {document_id} unchanged since last index; skipped.")
+                            skipped_docs.append(document_id)
+                            file_tracker.update(1)
+                            continue
                         print(f"Processing: {document_id}")
-                        
+
                         pages_data = self.document_converter.convert_to_markdown(file_path)
                         file_chunks = []
                         
@@ -230,10 +252,23 @@ class IndexingPipeline:
                         
                     except Exception as e:
                         print(f"  ❌ Error processing {file_path}: {e}")
+                        # A failed file must be retried next run: forget its sha.
+                        processed_shas.pop(document_id, None)
                         file_tracker.update(1, errors=1)
                         continue
-                
+
                 file_tracker.finish()
+
+            if not all_chunks and skipped_docs:
+                # Everything in the batch was already indexed and unchanged —
+                # a successful no-op, not a conversion failure.
+                absent = sorted(set(manifest["documents"]) - set(processed_shas))
+                if absent:
+                    print(f"ℹ️  {len(absent)} previously indexed document(s) not in this "
+                          f"batch (kept; use remove_documents() to delete).")
+                self._save_manifest(fingerprint, {**manifest["documents"], **processed_shas})
+                print(f"✅ All {len(skipped_docs)} file(s) unchanged; index untouched.")
+                return
 
             if not all_chunks:
                 raise RuntimeError(
@@ -390,13 +425,116 @@ class IndexingPipeline:
                         print(f"⚠️  Failed to embed document overviews: {e}")
 
         print("\n--- ✅ Indexing Complete ---")
+        # WS3: record what this run indexed. Written only after the vector
+        # write above succeeded — a crashed run leaves the old manifest, so the
+        # next run reprocesses rather than wrongly skipping.
+        base_docs = manifest["documents"] if manifest_reusable else {}
+        absent = sorted(set(base_docs) - set(processed_shas))
+        if absent:
+            print(f"ℹ️  {len(absent)} previously indexed document(s) not in this "
+                  f"batch (kept; use remove_documents() to delete).")
+        self._save_manifest(fingerprint, {**base_docs, **processed_shas})
+        if skipped_docs:
+            print(f"↷ Skipped {len(skipped_docs)} unchanged file(s) this run.")
+
         self._print_final_statistics(len(file_paths), len(all_chunks))
-    
+
     def _text_table_name(self, retriever_configs: Dict[str, Any]) -> str:
         return (
             self.config["storage"].get("text_table_name")
             or retriever_configs.get("dense", {}).get("lancedb_table_name", "default_text_table")
         )
+
+    # ------------------------------------------------------------------
+    # Content-hash incremental indexing (2026-08-25 plan, WS3)
+    # ------------------------------------------------------------------
+    # A per-table manifest under <db>/table_meta/<table>.documents.json maps
+    # document_id -> sha256 of the source file bytes, plus a fingerprint of
+    # the config knobs that change what indexing produces. Re-running on an
+    # unchanged file skips parsing, enrichment and embedding entirely. The
+    # manifest is a CACHE: deleting it forces a full reprocess and nothing
+    # else breaks — the lancedb table stays the single source of truth.
+
+    def _manifest_path(self) -> Optional[str]:
+        if not getattr(self, "lancedb_manager", None):
+            return None
+        table = self._text_table_name(
+            self.config.get("retrievers") or self.config.get("retrieval", {}))
+        return os.path.join(self.lancedb_manager.db_path, "table_meta",
+                            f"{table}.documents.json")
+
+    def _config_fingerprint(self) -> str:
+        """Hash of the settings that change indexing output for the same bytes.
+
+        A config change (different embedder, enrichment toggled, late chunking
+        toggled) must invalidate every skip: the file is unchanged but what we
+        would build from it is not.
+        """
+        enr = self.config.get("contextual_enricher", {}) or {}
+        knobs = {
+            "embedding_model": self.config.get("embedding_model_name"),
+            "enrich_enabled": bool(enr.get("enabled")),
+            "enrich_window": enr.get("window_size"),
+            "latechunk": bool(((self.config.get("retrievers")
+                                or self.config.get("retrieval", {})) or {})
+                              .get("latechunk", {}).get("enabled")),
+            "chunking": self.config.get("chunking") or self.config.get("chunk_size"),
+        }
+        return hashlib.sha256(json.dumps(knobs, sort_keys=True, default=str)
+                              .encode("utf-8")).hexdigest()
+
+    def _load_manifest(self) -> Dict[str, Any]:
+        path = self._manifest_path()
+        if path and os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                if isinstance(data, dict) and isinstance(data.get("documents"), dict):
+                    return data
+            except (OSError, ValueError) as e:
+                print(f"⚠️  Unreadable index manifest {path} ({e}); reprocessing everything.")
+        return {"config_fingerprint": None, "documents": {}}
+
+    def _save_manifest(self, fingerprint: str, documents: Dict[str, str]) -> None:
+        path = self._manifest_path()
+        if not path:
+            return
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump({"config_fingerprint": fingerprint, "documents": documents},
+                          fh, indent=2, sort_keys=True)
+            os.replace(tmp, path)
+        except OSError as e:
+            print(f"⚠️  Could not write index manifest {path}: {e}")
+
+    def remove_documents(self, document_ids: List[str]) -> int:
+        """Explicitly delete *document_ids* from the index (text + late-chunk
+        tables + manifest). Absence from a later run() batch never deletes —
+        this is the only removal path. Returns the number of ids processed."""
+        if not document_ids:
+            return 0
+        retriever_configs = self.config.get("retrievers") or self.config.get("retrieval", {})
+        table_name = self._text_table_name(retriever_configs)
+        for doc_id in document_ids:
+            if "'" in doc_id:
+                raise ValueError(f"Refusing document_id containing a single quote: {doc_id!r}")
+        quoted = ", ".join(f"'{d}'" for d in document_ids)
+        for tname in (table_name, f"{table_name}_lc"):
+            try:
+                tbl = self.lancedb_manager.get_table(tname)
+                tbl.delete(f"document_id IN ({quoted})")
+                print(f"🗑️  Removed {len(document_ids)} document(s) from '{tname}'.")
+            except Exception:
+                if tname == table_name:
+                    raise
+        manifest = self._load_manifest()
+        for d in document_ids:
+            manifest["documents"].pop(d, None)
+        self._save_manifest(manifest.get("config_fingerprint") or self._config_fingerprint(),
+                            manifest["documents"])
+        return len(document_ids)
 
     def _existing_document_ids(self, table_name: str) -> List[str]:
         """Document ids already in the target table, for cross-reference resolution.
